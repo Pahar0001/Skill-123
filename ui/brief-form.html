@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бриф на переработку</title>
+<meta name="description" content="Форма, которая собирает запрос для скилла site-rework: адрес, задача, референсы, ограничения — и отдаёт текст для вставки в Claude Code.">
+<style>
+  :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --accent: #7a2e1f; --accent-text: #ffffff; --radius: 12px; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --accent: #d98a5f; --accent-text: #1b1310; } }
+  :root[data-theme="dark"] { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --accent: #d98a5f; --accent-text: #1b1310; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  form { display: grid; gap: 18px; }
+  label { display: grid; gap: 6px; font-weight: 600; }
+  label small { font-weight: 400; color: var(--muted); }
+  input, textarea, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; }
+  textarea { min-height: 88px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  button { padding: 12px 20px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #out { margin-top: 28px; display: none; }
+  #out.show { display: block; }
+  pre { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; font: 14px/1.5 ui-monospace, Consolas, monospace; }
+  .hint { color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Бриф на переработку сайта</h1>
+  <p class="lead">Заполните, нажмите «Собрать» и вставьте текст в Claude Code. Обязателен только адрес.</p>
+  <form id="f">
+    <label>Адрес сайта <input name="url" type="url" placeholder="https://example.com" required></label>
+    <label>Что изменить <small>своими словами: что не нравится, чего хочется, для кого сайт</small>
+      <textarea name="task" placeholder="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию."></textarea></label>
+    <div class="row">
+      <label>Страницы в работе <small>через запятую; пусто — главная</small><input name="pages" placeholder="/, /uslugi, /kontakty"></label>
+      <label>Исходники <small>путь к проекту или «нет»</small><input name="src" placeholder="D:\projects\site или нет"></label>
+    </div>
+    <label>Референсы <small>по одному в строке; что именно нравится</small>
+      <textarea name="refs" placeholder="https://reference1.com — воздух и крупная типографика"></textarea></label>
+    <label>Пожелания по стилю <textarea name="style" placeholder="Спокойно, без кричащих цветов. Настоящие фото."></textarea></label>
+    <label>Ограничения <small>что трогать нельзя</small>
+      <textarea name="limits" placeholder="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать."></textarea></label>
+    <label>Режим
+      <select name="mode">
+        <option value="автономный — решать самому, вопросы копить в отчёт">Автономный: решать самому, вопросы в отчёт</option>
+        <option value="интерактивный — спрашивать там, где варианты ведут к разной работе">Интерактивный: спрашивать в спорных местах</option>
+      </select></label>
+    <div class="actions">
+      <button type="submit">Собрать бриф</button>
+      <button type="button" class="secondary" id="clear">Очистить</button>
+      <span class="hint">Черновик сохраняется в этом браузере.</span>
+    </div>
+  </form>
+  <section id="out" aria-live="polite">
+    <div class="actions"><button type="button" id="copy">Скопировать</button><span class="hint" id="copied"></span></div>
+    <pre id="text"></pre>
+  </section>
+</main>
+<script>
+  const f = document.getElementById('f'), out = document.getElementById('out'), text = document.getElementById('text');
+  const KEY = 'site-rework-brief';
+  try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) for (const [k, v] of Object.entries(saved)) if (f.elements[k]) f.elements[k].value = v; } catch {}
+  const data = () => Object.fromEntries([...new FormData(f)].map(([k, v]) => [k, String(v).trim()]));
+  f.addEventListener('input', () => { try { localStorage.setItem(KEY, JSON.stringify(data())); } catch {} });
+  const line = (title, v, empty) => `${title}:\n${v || empty}\n`;
+  f.addEventListener('submit', (e) => {
+    e.preventDefault(); const d = data();
+    text.textContent = ['/site-rework', '', line('URL', d.url, ''), line('ЗАДАЧА', d.task, 'найди, что мешает сайту приводить клиентов, и исправь'), line('СТРАНИЦЫ В РАБОТЕ', d.pages, 'главная'), line('РЕФЕРЕНСЫ', d.refs, 'нет'), line('ПОЖЕЛАНИЯ ПО СТИЛЮ', d.style, 'сохранить текущий язык, поднять качество деталей'), line('ОГРАНИЧЕНИЯ', d.limits, 'не менять контакты, цены, логотип, основной цвет, бэкенд'), line('ИСХОДНИКИ', d.src, 'нет — работать через зеркало'), line('РЕЖИМ', d.mode, '')].join('\n');
+    out.classList.add('show'); out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.getElementById('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(text.textContent); document.getElementById('copied').textContent = 'Скопировано — вставьте в Claude Code.'; } catch { document.getElementById('copied').textContent = 'Выделите текст и скопируйте вручную.'; } });
+  document.getElementById('clear').addEventListener('click', () => { f.reset(); out.classList.remove('show'); try { localStorage.removeItem(KEY); } catch {} });
+</script>
+</body>
+</html>
