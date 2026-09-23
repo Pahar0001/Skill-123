@@ -1029,6 +1029,11 @@ export function parseArgs(argv, { values = [], flags = [] } = {}) {
 
 export function slugFromUrl(url) {
   const u = new URL(url);
+  /* локальный файл: полный путь в имени папки бессмыслен — два последних сегмента, раскодированные */
+  if (u.protocol === 'file:') {
+    let p = u.pathname; try { p = decodeURIComponent(p); } catch { /* как есть */ }
+    return ('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file';
+  }
   return (u.hostname.replace(/^www\./, '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'site';
 }
 
