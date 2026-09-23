@@ -107,10 +107,12 @@ const STATE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'boxShadow', 
 
 const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
 let fails = 0, warns = 0;
+/* вид текущего шага — в протокол: state.mjs отличает запись (eval без --expect, снимок) от проверки */
+let curKind = 'load';
 const line = (status, what, details, data) => {
   if (status === 'FAIL') fails++; if (status === 'WARN') warns++;
   console.log(`${status.padEnd(4)} ${what}${details ? ' — ' + details : ''}`);
-  report.steps.push({ status, what, details, ...(data ? { data } : {}) });
+  report.steps.push({ status, kind: curKind, what, details, ...(data ? { data } : {}) });
 };
 let shotN = 0;
 const shot = async (name) => { const file = path.join(outDir, `${tag}-${String(++shotN).padStart(2, '0')}-${name}.png`); await page.screenshot({ path: file }); return path.basename(file); };
@@ -749,6 +751,7 @@ const show = (r) => (r === undefined ? 'undefined' : typeof r === 'string' ? r :
 
 for (const { k, v, expect } of steps) {
   const errBefore = errCount(); let handled = null;
+  curKind = k === 'eval' && expect != null ? 'expect' : k;
   try {
     if (k === 'wait') { await sleep(Number(v) || 500); line('OK', `ждали ${v} мс`); }
     else if (k === 'scroll') await scrollStep();

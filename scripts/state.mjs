@@ -13,13 +13,20 @@
  *   node state.mjs <папка> set <id>[,<id>…] impl=DOING priority=P1
  *   node state.mjs <папка> stage <этап> done|active|todo|skipped
  *   node state.mjs <папка> show [--strict]
+ *   node state.mjs --help
  *
- * Поля задачи:
- *   impl                        TODO, DOING, DONE, BLOCKED, DROPPED (IN_PROGRESS принимается как DOING)
- *   runtime, visual, mobile, perf   NOT_CHECKED, VERIFIED, FAILED, NEEDS_WORK, NA
+ * Поля задачи (одна задача — пять статусов: реализация и четыре проверки):
+ *   impl                        TODO → DOING → DONE; ещё BLOCKED и DROPPED (снята).
+ *                               IN_PROGRESS из старых журналов читается и принимается как DOING.
+ *   runtime, visual, mobile, perf   NOT_CHECKED (по умолчанию), VERIFIED, FAILED, NEEDS_WORK, NA
+ *                               runtime — в браузере работает (клики, ввод, консоль),
+ *                               visual — посмотрено глазами, mobile — на телефоне, perf — скорость.
  *   priority                    P0 сломано · P1 крупная проблема UX · P2 крупная визуальная ·
- *                               P3 тексты · P4 движение · P5 полировка
+ *                               P3 тексты · P4 движение · P5 полировка (по умолчанию P2)
  * ANALYZED — не поле задачи, а этап (stage discovered/design/tech …).
+ * Этапы: discovered browser design tech tools tokens plan ui content assets three motion
+ *   runtime visual mobile perf a11y polish report; отметки done ✓ · active → · todo · · skipped –.
+ * Режим прогона (--mode) пишется в журнал и печатается в show — для отчёта.
  *
  * Флаги:
  *   --site <папка>     папка с файлами сайта: исходники (rework), зеркало <прогон>/mirror
@@ -38,21 +45,36 @@
  *   --note "…"         заметка к задаче; для NA — обязательная причина. Без текста — ошибка.
  *                      Заметку, которая начинается с «--», писать так: --note="--scroll прошёл".
  *   --strict           (show) код выхода 1, если итог не OK.
+ *   --priority, --area (add) приоритет P0…P5 и область задачи.
+ *   --help             эта справка (журнал не читается и не пишется).
+ * Значения можно писать и так: --note="…", --evidence=runtime/x.json#3. Если сразу за
+ * --note, --evidence, --site и другими флагами со значением стоит другой флаг скрипта
+ * («--note --evidence x.json»), это ошибка «без значения», а не заметка «--evidence».
  *
  * Правила статусов (отказ — код 1, в журнал ничего не пишется):
  *   VERIFIED — только с --evidence. Доказательство — протокол скрипта (.json) или снимок
  *     (.png, .jpg, .webp, .avif, .gif), путь от папки прогона, от текущей папки или полный.
- *     Файл есть; у протокола вердикт не FAIL (verdict, иначе худший статус шагов); если
- *     указан #шаг (номер с 1 или часть названия шага, для perf — название метрики), этот
- *     шаг есть и он не FAIL; снято позже последней правки файлов сайта (время протокола —
- *     startedAt/takenAt, если оно раньше времени файла). runtime и perf — только протокол
- *     .json; visual и mobile — протокол или снимок; для mobile протокол должен быть снят
- *     на экране уже 1024 px. Доказательство не может лежать в папке сайта.
- *   VERIFIED ставится одной задаче за вызов: у каждой задачи своё доказательство.
- *     Если то же доказательство уже стоит у другой задачи для той же проверки — WARN.
+ *     Файл есть и не пустой; протокол с вердиктом FAIL не годится — ни целиком, ни шагом
+ *     (вердикт — verdict, иначе худший статус шагов); если указан #шаг (номер с 1 или часть
+ *     названия шага, для perf — название метрики), этот шаг есть и он не FAIL; снято позже
+ *     последней правки файлов сайта (время протокола — startedAt/takenAt, если оно раньше
+ *     времени файла). runtime и perf — только протокол .json; visual и mobile — протокол
+ *     или снимок; для mobile протокол должен быть снят на экране уже 1024 px (у снимка
+ *     ширина берётся из shots.json рядом, если он есть). Доказательство не может лежать
+ *     в папке сайта. Шаг-запись (eval без --expect, снимок) — WARN: он OK при любом
+ *     результате; утверждение — --assert или --eval … --expect ….
+ *   VERIFIED ставится одной задаче за вызов: у каждой задачи своё доказательство, пачкой
+ *     задним числом не проставить. Протокол .json, который уже стоит у другой задачи для
+ *     той же проверки, второй раз принимается только с #шагом; тот же файл#шаг или тот же
+ *     снимок у другой задачи — WARN.
  *   NA — только с --note: причина, почему проверка к задаче не относится.
  *   FAILED и NEEDS_WORK — --evidence по желанию (файл должен существовать).
- *   У каждой проверки хранится своё время и доказательство (proof в state.json).
+ *   У каждой проверки хранится своё время и доказательство (proof в state.json:
+ *   status, at, evidence {file, step, kind, verdict, takenAt, siteEditAt, …}, note).
+ *
+ * Пишет: <папка>/state.json; init --force сохраняет старый журнал в state.<время>.json.
+ * Код выхода: 0 — готово (и после --help); 1 — отказ (ошибка в аргументах, доказательство
+ * не годится, нет журнала) или show --strict с итогом не OK.
  *
  * show печатает режим, папку сайта и её последнюю правку, чек-лист этапов, таблицу задач,
  * список доказательств и итог по проверкам сделанных задач: «проверено N, неприменимо M,
@@ -63,6 +85,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs, readJson, writeJson, parseViewport } from './lib.mjs';
 
 const IMPL = ['TODO', 'DOING', 'DONE', 'BLOCKED', 'DROPPED'];
@@ -84,12 +107,28 @@ const IMG_EXT = /\.(png|jpe?g|webp|avif|gif)$/i;
 const IGNORE_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', '.cache', '.parcel-cache', '.turbo', '.vite', '.next', '.nuxt', '.svelte-kit', '.angular', '.idea', '.vscode', '__pycache__']);
 const IGNORE_FILE = /(\.(log|db|sqlite3?|tmp|temp|swp|swo|pid|lock)$|-(wal|shm|journal)$|~$|^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$)/i;
 
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['force', 'strict'] });
+const argv = process.argv.slice(2);
+const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area'];
+const FLAG_KEYS = ['force', 'strict', 'help', 'h'];
+const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS });
+if (opt.help || opt.h || pos.includes('-h')) {
+  const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
+  process.exit(0);
+}
+const die = (m) => { console.error(m); process.exit(1); };
+/* «--note --evidence x.json»: values забирает следующий флаг как значение — это забытое значение, а не заметка.
+   Заметку, которая начинается с «--», можно передать как --note="--scroll прошёл" или --note "--scroll прошёл". */
+const KNOWN = new Set([...VALUE_KEYS, ...FLAG_KEYS]);
+for (let i = 0; i < argv.length - 1; i++) {
+  const k = /^--([\w-]+)$/.exec(argv[i]); if (!k || !VALUE_KEYS.includes(k[1])) continue;
+  const f = /^--([A-Za-z][\w-]*)(=.*)?$/.exec(String(argv[i + 1]));
+  if (f && KNOWN.has(f[1])) die(`--${k[1]} без значения: следом стоит флаг --${f[1]}. ${k[1] === 'note' ? 'Напишите текст заметки; если она начинается с «--» — так: --note="--scroll прошёл"' : `Нужно: --${k[1]} <значение>`}`);
+}
 const [dir, cmd, ...rest] = pos;
-if (!dir || !cmd) { console.error('Нужно: node state.mjs <папка> init|meta|add|set|stage|show ...'); process.exit(1); }
+if (!dir || !cmd) die('Нужно: node state.mjs <папка> init|meta|add|set|stage|show ... (--help — справка)');
 const runRoot = path.resolve(dir);
 const file = path.join(runRoot, 'state.json');
-const die = (m) => { console.error(m); process.exit(1); };
 const fmt = (ms) => new Date(ms).toLocaleString('sv-SE');
 /* настоящий путь: раскрывает короткие имена Windows (C225~1) и ссылки, иначе «внутри папки» не сравнить */
 const real = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
@@ -151,7 +190,7 @@ const RANK = { FAIL: 3, WARN: 2, OK: 1 };
 const statusOf = (x) => String((x && (x.status || x.verdict)) || '').toUpperCase();
 /* пункты протокола, у которых есть статус: steps (runtime), lines (a11y), checks (perf) */
 function protocolItems(j) {
-  for (const k of ['steps', 'lines']) if (Array.isArray(j[k])) return j[k].map((x, i) => ({ n: i + 1, label: String(x.what || x.name || x.title || ''), status: statusOf(x) }));
+  for (const k of ['steps', 'lines']) if (Array.isArray(j[k])) return j[k].map((x, i) => ({ n: i + 1, label: String(x.what || x.name || x.title || ''), status: statusOf(x), kind: x.kind || null }));
   if (Array.isArray(j.checks)) return j.checks.map((x, i) => ({ n: i + 1, label: String(x.what || x.name || x.title || ''), status: statusOf(x) }));
   if (j.checks && typeof j.checks === 'object') return Object.entries(j.checks).map(([k, x], i) => ({ n: i + 1, label: k, status: statusOf(x) }));
   return [];
@@ -187,33 +226,45 @@ function checkEvidence(spec, check, { lenient = false } = {}) {
   if (kind === 'image') {
     if (step) P('type', 'у снимка не бывает #шага');
     if (!sniffImage(abs)) P('type', `${path.basename(abs)} — не картинка (подпись файла не PNG/JPEG/WebP/AVIF/GIF)`);
+    /* ширина экрана снимка — из shots.json рядом (shots.mjs пишет cssWidth каждого файла) */
+    const idx = readJson(path.join(path.dirname(abs), 'shots.json'));
+    const meta = idx && idx.files && idx.files[path.basename(abs)];
+    if (meta && meta.cssWidth) {
+      rec.viewport = String(meta.viewport || `${meta.cssWidth}px`); rec.cssWidth = meta.cssWidth;
+      if (check === 'mobile' && meta.cssWidth >= 1024) P('vp', `снимок снят на экране ${meta.viewport || ''} ${meta.cssWidth}px (shots.json) — для mobile нужен экран уже 1024 px`);
+    }
   } else {
     let j; try { j = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (e) { P('type', `протокол не читается как JSON: ${e.message.slice(0, 80)}`); return { problems, warns, rec }; }
+    if (!j || typeof j !== 'object' || Array.isArray(j)) { P('noverdict', 'в файле не протокол проверки (нужен объект с verdict или шагами)'); return { problems, warns, rec }; }
     const items = protocolItems(j);
     const explicit = typeof j.verdict === 'string' ? j.verdict.toUpperCase() : null;
     const derived = items.reduce((w, x) => (RANK[x.status] > (RANK[w] || 0) ? x.status : w), null);
     const verdict = explicit || derived;
     rec.verdict = verdict || null;
     if (j.url) rec.url = String(j.url);
-    if (j.viewport) rec.viewport = String(j.viewport);
+    /* viewport бывает строкой (runtime, a11y, perf) и объектом {name, width} (texture) */
+    const vpRaw = j.viewport && typeof j.viewport === 'object' ? j.viewport : null;
+    if (j.viewport) rec.viewport = vpRaw ? String(vpRaw.name || (vpRaw.width ? `${vpRaw.width}px` : '')) : String(j.viewport);
     const t = Date.parse(j.startedAt || j.takenAt || j.createdAt || '');
     if (Number.isFinite(t)) evTime = Math.min(evTime, t);
     if (!verdict) P('noverdict', 'в файле нет вердикта (verdict или шагов со статусом) — это не протокол проверки; для взгляда приложите снимок .png');
-    if (explicit === 'FAIL') P('fail', `протокол с вердиктом FAIL${items.filter((x) => x.status === 'FAIL').length ? `: ${items.filter((x) => x.status === 'FAIL').slice(0, 3).map((x) => `#${x.n} ${x.label.slice(0, 50)}`).join('; ')}` : ''} — исправить и прогнать заново`);
+    const fails = items.filter((x) => x.status === 'FAIL');
+    if (verdict === 'FAIL') P('fail', `протокол с вердиктом FAIL${fails.length ? `: ${fails.slice(0, 3).map((x) => `#${x.n} ${x.label.slice(0, 50)}`).join('; ')}` : ''} — исправить и прогнать заново (протокол с FAIL не доказывает ни одну задачу, даже шагом)`);
     if (step) {
       const f = findStep(items, step);
       if (f.err) P('step', f.err);
       else {
         rec.stepLabel = f.it.label.slice(0, 80); rec.stepStatus = f.it.status || null;
         if (f.it.status === 'FAIL') P('fail', `шаг #${f.it.n} «${f.it.label.slice(0, 60)}» — FAIL`);
-        else if (f.it.status === 'WARN') warns.push(`шаг #${f.it.n} «${f.it.label.slice(0, 60)}» — WARN`);
+        else if (f.it.status === 'WARN') warns.push(`шаг #${f.it.n} «${f.it.label.slice(0, 60)}» — WARN: в заметке написать, почему это не мешает`);
+        /* запись, а не проверка: eval без --expect и снимок — OK при любом результате */
+        /* вид шага пишет runtime.mjs (kind); у старых протоколов — по тексту */
+        if (f.it.kind ? /^(eval|shot|fullpage|wait)$/.test(f.it.kind) : /^(eval\s(?!.*\s=\s)|снимок)/i.test(f.it.label)) warns.push(`шаг #${f.it.n} «${f.it.label.slice(0, 60)}» — запись, а не проверка: он OK при любом результате. Утверждение: --assert "…" или --eval "…" --expect "…"`);
       }
     }
-    if (!explicit && derived === 'FAIL' && !step) P('fail', 'в протоколе есть пункты FAIL — укажите #шаг, который проверяет задачу, или поставьте NEEDS_WORK');
-    if (!explicit && derived === 'FAIL' && step && !problems.length) warns.push('в протоколе есть FAIL по другим пунктам');
-    if (explicit === 'WARN' && !step) warns.push('вердикт протокола WARN — в заметке написать, почему предупреждения не мешают');
-    if (check === 'mobile' && rec.viewport) {
-      const vp = parseViewport(rec.viewport);
+    if (verdict === 'WARN' && !step) warns.push('вердикт протокола WARN — в заметке написать, почему предупреждения не мешают');
+    if (check === 'mobile') {
+      const vp = vpRaw && vpRaw.width ? { width: Number(vpRaw.width) } : rec.viewport ? parseViewport(rec.viewport) : null;
       if (vp && vp.width >= 1024) P('vp', `протокол снят на экране ${rec.viewport} (${vp.width}px) — для mobile нужен экран уже 1024 px`);
     }
   }
@@ -343,6 +394,11 @@ if (cmd === 'meta') {
     if (!spec) { errors.push(`${c}=VERIFIED без доказательства: --evidence <протокол.json[#шаг]|снимок.png> (или --evidence-${c})`); continue; }
     const r = checkEvidence(spec, c);
     errors.push(...r.problems.map((x) => `${c}: ${x.msg}`)); warns.push(...r.warns.map((x) => `${c}: ${x}`)); recs[c] = r.rec;
+    /* один протокол целиком на несколько задач — это «пачка»: второй раз только со своим шагом */
+    if (r.rec && r.rec.kind === 'json' && !r.rec.step) {
+      const other = st.tasks.filter((x) => x !== tasks[0] && x[c] === 'VERIFIED' && x.proof && x.proof[c] && x.proof[c].evidence && x.proof[c].evidence.file.toLowerCase() === r.rec.file.toLowerCase());
+      if (other.length) errors.push(`${c}: протокол ${r.rec.file} уже подтверждает ${other.map((x) => `#${x.id}`).join(', ')} — у каждой задачи своё доказательство: укажите шаг, который проверяет эту задачу (${r.rec.file}#<номер или часть названия>), или снимите отдельный протокол`);
+    }
   }
   for (const c of CHECKS.filter((x) => changes[x] === 'FAILED' || changes[x] === 'NEEDS_WORK')) {
     const spec = evFor(c); if (!spec) continue;
@@ -410,8 +466,9 @@ if (cmd === 'meta') {
       const e = p.evidence; const r = cs.r;
       const cur = r && r.rec ? r.rec : e;
       const rewritten = r && r.rec && e.mtimeMs && r.rec.mtimeMs && Math.abs(r.rec.mtimeMs - e.mtimeMs) > 1 ? ' · файл перезаписан после отметки' : '';
-      const probs = r && r.problems.length ? ` · ${r.problems.map((x) => x.msg).join('; ')}` : '';
-      evLines.push(`- #${t.id} ${c} ${t[c]} ← ${evSpec(e)}${e.stepLabel ? ` «${e.stepLabel.slice(0, 50)}»` : ''}${cur.verdict ? ` ${cur.stepStatus || cur.verdict}` : ''} · снято ${cur.takenAt ? fmt(Date.parse(cur.takenAt)) : '—'} · отмечено ${fmt(Date.parse(p.at))}${rewritten}${probs}`);
+      const probs = r && r.problems.length ? ` · ${r.problems.map((x) => (x.code === 'stale' && r.rec && r.rec.siteEditFile ? `УСТАРЕЛО: ${r.rec.siteEditFile} правили ${fmt(Date.parse(r.rec.siteEditAt))} — прогнать заново` : x.msg)).join('; ')}` : '';
+      const wr = r && r.warns && r.warns.length && t[c] === 'VERIFIED' ? ` · WARN ${r.warns.join('; ')}` : '';
+      evLines.push(`- #${t.id} ${c} ${t[c]} ← ${evSpec(e)}${e.stepLabel ? ` «${e.stepLabel.slice(0, 50)}»` : ''}${cur.verdict ? ` ${cur.stepStatus || cur.verdict}` : ''} · снято ${cur.takenAt ? fmt(Date.parse(cur.takenAt)) : '—'} · отмечено ${p.at ? fmt(Date.parse(p.at)) : '—'}${rewritten}${probs}${wr}`);
     }
   }
   if (evLines.length) console.log(`\nДоказательства:\n${evLines.join('\n')}`);
