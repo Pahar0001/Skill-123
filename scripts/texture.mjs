@@ -188,11 +188,15 @@ function textureLayersInPage(opts) {
   };
 
   const layers = []; let k = 0; let tileCands = 0;
+  const small = new Map(); /* мелкие элементы с шумом (иконки, кнопки, карточки) — не слои, только сводка */
+  const asLayer = new Set();
   const all = [document.documentElement, ...document.querySelectorAll('body, body *')];
   for (const el of all) {
     const tag = el.tagName.toLowerCase();
     if (el instanceof SVGElement && tag !== 'svg') continue;
     if (tag === 'svg' && el.parentElement && el.parentElement.closest('svg')) continue;
+    /* <img> внутри <picture>, который уже слой, — тот же слой */
+    if (tag === 'img' && el.parentElement && el.parentElement.tagName === 'PICTURE' && asLayer.has(el.parentElement)) continue;
     const base = getComputedStyle(el);
     if (base.display === 'none') continue;
     for (const pseudo of [null, '::before', '::after']) {
@@ -231,6 +235,15 @@ function textureLayersInPage(opts) {
           : { x: er.x + (s.position === 'absolute' ? px(s.left, 0) : 0), y: er.y + (s.position === 'absolute' ? px(s.top, 0) : 0), width: px(s.width, er.width), height: px(s.height, er.height) };
       }
       const big = r.width >= vw * minW && r.height >= vh * minH;
+      /* слой — только заметный по площади: 0×0-svg с определением фильтра, иконка с feTurbulence или
+         кнопка с «шумным» фоном идут в сводку small, а не в слои (их не прячут на проходе «без слоя») */
+      const sizeOk = r.width * r.height >= 0.1 * vw * vh || (r.width >= vw * minW && r.height >= 100);
+      if (reason.length && !sizeOk) {
+        const key = sig(el).replace(/#[^.]+/, '') + (pseudo || '') + '|' + reason.join(',');
+        const e = small.get(key);
+        if (e) e.count++; else if (small.size < 12) small.set(key, { el: sig(el) + (pseudo || ''), reason: reason.slice(), w: Math.round(r.width), h: Math.round(r.height), count: 1 });
+        continue;
+      }
       const visualish = urls.length > 0 || (!pseudo && !!MEDIA[tag]) || !!svg;
       const veilCand = big && s.pointerEvents === 'none' && visualish;
 
@@ -260,11 +273,19 @@ function textureLayersInPage(opts) {
       const own = parseFloat(s.opacity);
       const effO = Math.round(eff(el) * (pseudo ? own : 1) * 1000) / 1000;
       const positioned = s.position === 'fixed' || s.position === 'absolute' || !!fixedBy;
-      if (veilCand && positioned && (effO < 0.6 || s.mixBlendMode !== 'normal' || blendChain.length > 0 || !!svg)) { reason.push('вуаль'); if (s.mixBlendMode !== 'normal' || blendChain.length) reason.push('режим наложения'); }
       let maybe = false;
+      if (veilCand && positioned) {
+        if (effO < 0.6 || s.mixBlendMode !== 'normal' || blendChain.length > 0 || !!svg) { reason.push('вуаль'); if (s.mixBlendMode !== 'normal' || blendChain.length) reason.push('режим наложения'); }
+        else if (!reason.length && (!pseudo && (tag === 'img' || tag === 'picture' || tag === 'canvas' || tag === 'video') || urls.length)) {
+          /* непрозрачный слой поверх страницы: шум может быть в альфе самих пикселей (холст, PNG) —
+             решит разбор файла или разность снимков «со слоем − без» (measureTexture) */
+          reason.push('поверх страницы'); maybe = true;
+        }
+      }
       if (!reason.length && tileUrls.length) { reason.push('плитка'); maybe = true; tileCands++; }
       if (!reason.length) continue;
-      const hideUrls = noiseUrls.length ? noiseUrls.slice() : maybe ? tileUrls.slice() : [];
+      if (!pseudo) asLayer.add(el);
+      const hideUrls = noiseUrls.length ? noiseUrls.slice() : maybe ? (tileUrls.length ? tileUrls.slice() : urls.slice()) : [];
       /* какой файл разбирать: шумный по имени, иначе плитка, иначе src картинки или первый фон вуали */
       const fileUrl = noiseUrls[0] || tileUrls[0] || src || urls[0] || null;
 
@@ -295,7 +316,7 @@ function textureLayersInPage(opts) {
   const pseudoUsed = (p) => { const s = getComputedStyle(document.body, p); return !(s.content === 'none' || s.content === 'normal'); };
   const res = {
     vw, vh, dpr: devicePixelRatio, bodyBg: getComputedStyle(document.body).backgroundColor, scrollY: Math.round(scrollY),
-    marked: !!o.mark, layers, svgNoise: [...turb.values()], bodyAfterUsed: pseudoUsed('::after'), bodyBeforeUsed: pseudoUsed('::before'),
+    marked: !!o.mark, layers, svgNoise: [...turb.values()], small: [...small.values()], bodyAfterUsed: pseudoUsed('::after'), bodyBeforeUsed: pseudoUsed('::before'),
     unreadableSheets: unreadable,
   };
 
@@ -365,7 +386,7 @@ export async function findTextureLayers(page, { mark = false, extras = false, mi
  * шум фильтром у блока с содержимым — filter:none. Возвращает число правил.
  */
 export async function hideTextureLayers(page, layers) {
-  const spec = (layers || []).map((L) => ({ k: L.k, pseudo: L.pseudo, hide: L.hide, urls: (L.hideUrls || []).map((u) => String(u).slice(0, 300)) }));
+  const spec = (layers || []).map((L) => ({ k: L.k, pseudo: L.pseudo, hide: L.hide, urls: (L.hideUrls || []).map((u) => String(u).slice(0, 300)), filterId: L.svg && L.svg.filterId ? L.svg.filterId : null }));
   return page.evaluate((spec) => {
     const splitTop = (str) => {
       const out = []; let depth = 0, q = null, cur = ''; const s = String(str || '');
@@ -380,16 +401,24 @@ export async function hideTextureLayers(page, layers) {
       if (cur.trim()) out.push(cur.trim());
       return out;
     };
+    const urlOf = (item) => { const m = /url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)]*?))\s*\)/.exec(item || ''); return m ? (m[1] != null ? m[1] : m[2] != null ? m[2] : m[3] || '').replace(/\\(.)/g, '$1') : null; };
+    /* верхнеуровневые части значения filter: «url(#g) contrast(1.1)» → ['url(#g)', 'contrast(1.1)'] */
+    const splitSpace = (str) => { const out = []; let depth = 0, cur = ''; for (const ch of String(str || '')) { if (ch === '(') depth++; else if (ch === ')') depth--; if (/\s/.test(ch) && depth === 0) { if (cur) out.push(cur); cur = ''; continue; } cur += ch; } if (cur) out.push(cur); return out; };
     const rules = [];
     for (const L of spec) {
       const attr = L.pseudo ? 'data-rw-tex-' + L.pseudo.slice(2) : 'data-rw-tex';
       const sel = `[${attr}="${L.k}"]${L.pseudo || ''}`;
+      const el = document.querySelector(`[${attr}="${L.k}"]`);
       if (L.hide === 'visibility') rules.push(`${sel}{visibility:hidden!important}`);
-      else if (L.hide === 'filter') rules.push(`${sel}{filter:none!important}`);
-      else {
-        const el = document.querySelector(`[${attr}="${L.k}"]`); if (!el) continue;
+      else if (L.hide === 'filter') {
+        /* убрать только ссылку на фильтр с шумом, остальные функции filter оставить */
+        if (!el) continue;
+        const parts = splitSpace(getComputedStyle(el, L.pseudo).filter).filter((p) => !(/^url\(/i.test(p) && (!L.filterId || p.includes('#' + L.filterId))));
+        rules.push(`${sel}{filter:${parts.length ? parts.join(' ') : 'none'}!important}`);
+      } else {
+        if (!el) continue;
         const bg = getComputedStyle(el, L.pseudo).backgroundImage;
-        const items = splitTop(bg).map((it) => (L.urls.some((u) => u && it.includes(u.slice(0, 120))) ? 'none' : it));
+        const items = splitTop(bg).map((it) => { const u = urlOf(it); return u != null && L.urls.some((x) => x && u.slice(0, 300) === x) ? 'none' : it; });
         rules.push(`${sel}{background-image:${items.join(', ')}!important}`);
       }
     }
