@@ -10,14 +10,14 @@
  *     hotlink_only?, download_location?, raw_url?, needs_manual?, text, art?, flags:[] }
  *
  * Что проверено вживую 2026-09-23 и зашито здесь:
- *  - Commons: уменьшенные копии раздаёт thumb.wikimedia.org (путь /thumb/ на
- *    upload.wikimedia.org отвечает 429 даже на первый запрос); ширины только
- *    стандартные (3840/1920/1280/960/500), нестандартная — 400; копию шире
- *    оригинала Commons РАСТЯГИВАЕТ, поэтому ступени берутся строго меньше
- *    ширины оригинала, а если ни одна не дотягивает — сам оригинал (один файл).
- *    fileres: — корень из площади кадра. Оригинал целиком (upload.wikimedia.org)
- *    без контакта в User-Agent отвечает 429, а по Range — 206: без MEDIA_CONTACT
- *    оригинал не считается достижимым, берётся стандартная копия.
+ *  - Commons: уменьшенные копии берутся с thumb.wikimedia.org (так их отдаёт и
+ *    сам API); ширины только стандартные (3840/1920/1280/960/500), нестандартная
+ *    — 400; копию шире оригинала Commons РАСТЯГИВАЕТ (3840 из 3264 — проверено),
+ *    поэтому ступени берутся строго меньше ширины оригинала, а если ни одна не
+ *    дотягивает до роли — сам оригинал (upload.wikimedia.org). 429 у
+ *    upload.wikimedia.org бывает от частоты запросов, а не всегда: оригинал
+ *    отдаётся и без контакта; на 429 pick берёт следующую копию и пишет об этом.
+ *    fileres: — корень из площади кадра.
  *  - Commons «Public domain» бывает «только в США» (PD-US*) — такие отбрасываются.
  *  - Openverse: реальный файл у Flickr 1024 px, хотя в выдаче размер оригинала;
  *    size=large не ставится (режет выдачу и ничего не гарантирует);
@@ -67,8 +67,7 @@ export function chooseFile(c, role, skip = null) {
     const h = o && o.width ? Math.round(o.height * w / o.width) : null;
     return { url: c.template.url.replace('{w}', String(w)), width: w, height: h, how: `${c.template.how || 'w'}-${w}`, heavy: false };
   }
-  /* оригинал Commons без контакта в User-Agent не отдаётся (429) — не обещаем его */
-  const vs = (c.variants || []).filter((v) => v.url && !(v.needs_contact && !contact()) && !(skip && skip.includes(v.url)));
+  const vs = (c.variants || []).filter((v) => v.url && !(skip && skip.includes(v.url)));
   if (!vs.length) return null;
   const known = vs.filter((v) => v.width && v.height);
   if (!known.length) return { ...vs[0] };
@@ -179,7 +178,7 @@ async function commonsSearch(q, o, mode) {
     const origUrl = String(ii.url).split('?')[0];
     const W = ii.width, H = ii.height;
     const variants = COMMONS_STEPS.filter((s) => s < W).map((s) => ({ url: commonsThumb(origUrl, s), width: s, height: Math.round(H * s / W), how: `thumb-${s}` }));
-    variants.push({ url: origUrl, width: W, height: H, bytes: ii.size, mime: ii.mime, heavy: /tiff/.test(ii.mime) || ii.size > 40 * 1048576, how: 'original', needs_contact: true });
+    variants.push({ url: origUrl, width: W, height: H, bytes: ii.size, mime: ii.mime, heavy: /tiff/.test(ii.mime) || ii.size > 40 * 1048576, how: 'original' });
     const title = String(p.title).replace(/^File:/, '');
     const artistHtml = String(md.Artist?.value || '');
     /* «Roman Kraft <a>romankraft</a>» — имя без ника-ссылки; если есть только ссылка — её текст */
@@ -200,7 +199,9 @@ async function commonsSearch(q, o, mode) {
     };
     if (mode === 'art') {
       const cats = String(md.Categories?.value || '');
-      const death = maxYear((artistHtml.match(/title="[^"]*\((\d{3,4})\s*[-–]\s*(\d{3,4})\)/) || [])[2]);
+      /* годы жизни: из подсказки ссылки «… (1836-1904)» или из текста «Gerda Palm, (Sweden, 1871-1949)» */
+      const life = artistHtml.match(/title="[^"]*\((\d{3,4})\s*[-–]\s*(\d{3,4})\)/) || clean(artistHtml).match(/\((?:[^()]*?,\s*)?(\d{3,4})\s*[-–]\s*(\d{3,4})\)/);
+      const death = maxYear((life || [])[2]);
       const oldCat = /PD-old-(?:100|auto-expired)|PD-Art \(PD-old-100|PD-anon-expired/i.test(cats);
       const work = maxYear((String(md.DateTimeOriginal?.value || '').match(/\+(\d{4})-/) || [])[1] || clean(md.DateTimeOriginal?.value));
       const term = oldCat && !death ? { ok: true, why: 'Commons: автор умер больше 100 лет назад (PD-old-100)' } : termCheck({ deathYear: death, workYear: work });

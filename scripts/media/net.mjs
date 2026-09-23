@@ -71,7 +71,7 @@ let warnedContact = false;
 export function warnNoContact(log = console.log) {
   if (warnedContact || contact()) return;
   warnedContact = true;
-  log('  WARN нет MEDIA_CONTACT: Wikimedia и AIC просят контакт в User-Agent — запросы к ним идут по одному с паузой; задайте MEDIA_CONTACT в ~/.claude/site-rework/.env');
+  log('  WARN нет MEDIA_CONTACT: Wikimedia и AIC просят контакт в User-Agent — запросы идут по одному с паузой, оригиналы Commons чаще отвечают 429 (тогда берётся стандартная копия); задайте MEDIA_CONTACT в ~/.claude/site-rework/.env');
 }
 
 /* ---------- ошибки ---------- */
@@ -133,9 +133,25 @@ export async function dohResolve(host) {
   throw Object.assign(new Error(`DoH не ответил: ${last?.message || '?'}`), { code: 'EDOH' });
 }
 
+/*
+ * Проверочный рычаг: MEDIA_TEST_DNS_FAIL="хост,dns:хост2,*" — имитация сбоя имён.
+ * «хост» — не находят ни системный DNS, ни DoH (как полный сбой сети);
+ * «dns:хост» — молчит только системный DNS (как DNS VPN), DoH должен выручить.
+ */
+function testDnsFail(hostname) {
+  const list = String(process.env.MEDIA_TEST_DNS_FAIL || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (!list.length) return null;
+  const h = hostname.toLowerCase();
+  if (list.includes('*') || list.includes(h)) return 'all';
+  if (list.includes(`dns:${h}`) || list.includes('dns:*')) return 'dns';
+  return null;
+}
+
 /** lookup для https.request: dns.lookup, а при ошибке или молчании дольше 2,5 с — DoH. */
 function smartLookup(hostname, opts, cb) {
   if (typeof opts === 'function') { cb = opts; opts = {}; }
+  const fake = testDnsFail(hostname);
+  if (fake === 'all') return process.nextTick(() => cb(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname} (MEDIA_TEST_DNS_FAIL)`), { code: 'ENOTFOUND', hostname })));
   /* IP-адрес в адресе — разрешать нечего */
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return opts && opts.all ? cb(null, [{ address: hostname, family: 4 }]) : cb(null, hostname, 4);
   let settled = false; let failures = 0; let dohStarted = false; const errors = [];
@@ -153,11 +169,14 @@ function smartLookup(hostname, opts, cb) {
     if (failures >= 2) {
       settled = true; clearTimeout(timer);
       const first = errors[0] || {};
-      cb(Object.assign(new Error(errors.map((x) => x.code || x.message).join('; ')), { code: first.code || 'ENOTFOUND' }));
+      const dnsWhy = first.code || first.message || 'нет ответа';
+      const dohWhy = (errors.find((x) => x.code === 'EDOH') || {}).message || 'DoH не ответил';
+      cb(Object.assign(new Error(`имя не найдено: системный DNS — ${dnsWhy}, запасной DoH (Cloudflare, Google) — ${dohWhy.replace(/^DoH не ответил:\s*/, '')}`), { code: 'ENOTFOUND' }));
     }
   };
   const startDoh = () => { if (dohStarted) return; dohStarted = true; dohResolve(hostname).then(win, lose); };
   timer = setTimeout(startDoh, 2500);
+  if (fake === 'dns') { process.nextTick(() => lose(Object.assign(new Error(`системный DNS молчит (MEDIA_TEST_DNS_FAIL)`), { code: 'ENOTFOUND' }))); return; }
   dns.lookup(hostname, { family: 4, all: true }, (err, addrs) => {
     if (!err && addrs && addrs.length) win({ ips: addrs.map((a) => a.address), via: 'dns' });
     else lose(err || Object.assign(new Error('пустой ответ DNS'), { code: 'ENOTFOUND' }));
@@ -182,6 +201,8 @@ const GATES = [
   { name: 'cleveland', re: /(^|\.)clevelandart\.org$/i, interval: 120 },
   { name: 'smithsonian', re: /(^|\.)si\.edu$/i, interval: 400 },
   { name: 'pixabay', re: /(^|\.)pixabay\.com$/i, interval: 700 },
+  /* CDN файлов Mixkit — не сайт: короткая пауза; сам сайт — как человек, 1,5 с */
+  { name: 'mixkit-cdn', re: /^assets\.mixkit\.co$/i, interval: 300 },
   { name: 'mixkit', re: /(^|\.)mixkit\.co$/i, interval: 1500 },
   { name: 'unsplash-api', re: /^api\.unsplash\.com$/i, interval: 250 },
   { name: 'pexels-api', re: /^api\.pexels\.com$/i, interval: 250 },
@@ -227,7 +248,8 @@ function once(url, { method, headers, timeout, maxBytes, toFile, acceptEncoding 
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
-    const h = { 'user-agent': userAgent(), ...headers };
+    /* accept как у curl: без него фронт Wikimedia на промахах кэша чаще отвечает 429 */
+    const h = { 'user-agent': userAgent(), accept: '*/*', ...headers };
     if (acceptEncoding && !h['accept-encoding']) h['accept-encoding'] = 'gzip, deflate, br';
     const t0 = Date.now();
     const req = mod.request(u, { method, headers: h, lookup: smartLookup, timeout }, (res) => {
@@ -387,6 +409,7 @@ export function sniff(buf) {
     return 'mp4';
   }
   if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return 'webm';
+  if (b.toString('ascii', 0, 4) === 'OggS') return 'ogg';
   const head = b.toString('utf8', 0, 64).trimStart().toLowerCase();
   if (head.startsWith('<!doctype') || head.startsWith('<html') || head.startsWith('<?xml') || head.startsWith('{')) return 'text';
   return null;

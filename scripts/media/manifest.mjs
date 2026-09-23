@@ -57,7 +57,8 @@ export function gate({ seen, caption, flags = [], okFlags = false, preview = '' 
   if (flags.length && !okFlags) {
     msgs.push(`у кадра пометки: ${flags.join(', ')}. Проверьте именно это глазами${preview ? ` (${preview})` : ''} и повторите с --ok-flags.`
       + ' people? — узнаваемые лица (согласий моделей у стоков нет, ст. 152.1 ГК РФ); brand? — логотипы; text-or-currency? — надписи, цены, чужая валюта;'
-      + ' art? — на снимке чужое произведение (CC0 фото картины ≠ CC0 картины); ai? — не фото; term? — срок охраны произведения; small — файл меньше нужного.');
+      + ' art? — на снимке чужое произведение (CC0 фото картины ≠ CC0 картины); ai? — не фото; term? — срок охраны произведения; small — файл меньше нужного;'
+      + ' youtube? — перезалив с YouTube на Commons: права загрузившего никто не проверял, брать в крайнем случае.');
   }
   return { ok: !msgs.length, code: msgs.length ? 2 : 0, messages: msgs };
 }
@@ -106,7 +107,7 @@ export function saveCredit(dest, rec) {
 /** Нужна ли подпись на сайте: обязательно (CC BY/BY-SA), вежливо (стоки, музеи) или не нужна. */
 export function creditNeed(rec) {
   if (rec.attribution_required) return 'обязательна';
-  if (/^(unsplash|pexels)$/.test(rec.license_code || '') || /unsplash|pexels/.test(rec.source || '')) return 'по желанию (вежливо)';
+  if (/^(unsplash|pexels|mixkit-free)$/.test(rec.license_code || '') || /unsplash|pexels|mixkit/.test(rec.source || '')) return 'по желанию (вежливо)';
   if (/^(met|aic|rijks|cleveland|smk|smithsonian)$/.test(rec.source || '')) return 'по желанию (музей просит)';
   return 'не нужна';
 }
@@ -147,13 +148,14 @@ export function politeLine(list) {
   if (!polite.length) return null;
   const by = new Map();
   for (const r of polite) {
-    const where = /unsplash/.test(r.source) ? 'Unsplash' : /pexels/.test(r.source) ? 'Pexels'
+    const where = /unsplash/.test(r.source) ? 'Unsplash' : /pexels/.test(r.source) ? 'Pexels' : /mixkit/.test(r.source) ? 'Mixkit'
       : ({ met: 'The Metropolitan Museum of Art', aic: 'The Art Institute of Chicago', rijks: 'Rijksmuseum', cleveland: 'The Cleveland Museum of Art', smk: 'SMK', smithsonian: 'Smithsonian' })[r.source] || r.source;
     if (!by.has(where)) by.set(where, new Set());
-    if (r.author && !/неизвест|не указан/i.test(r.author)) by.get(where).add(r.author);
+    if (r.author && !/неизвест|не указан|^mixkit$/i.test(r.author)) by.get(where).add(r.author);
   }
   const parts = [...by].map(([where, who]) => (who.size ? `${[...who].map(esc).join(', ')} / ${esc(where)}` : esc(where)));
-  return `<p class="credits">Фото: ${parts.join('; ')}.</p>`;
+  const what = list.some((r) => r.kind === 'video') ? (list.some((r) => r.kind !== 'video') ? 'Фото и видео' : 'Видео') : 'Фото';
+  return `<p class="credits">${what}: ${parts.join('; ')}.</p>`;
 }
 
 /** Строка для подвала: только если есть обязательная подпись; иначе null. */
@@ -163,7 +165,10 @@ export function footerLine(list) {
   const items = must.map((r) => {
     const who = r.author_url ? `<a href="${esc(r.author_url)}">${esc(r.author)}</a>` : esc(r.author);
     const lic = r.license_url ? `<a href="${esc(r.license_url)}">${esc(r.license)}</a>` : esc(r.license);
-    return `${r.title ? `«${esc(r.title)}» — ` : ''}${who}, ${lic}${r.changes ? ` (${esc(r.changes.replace(/^Изменено:\s*/i, 'изменено: ').replace(/\.$/, ''))})` : ''}`;
+    /* у ролика в подвал — коротко; подробный список изменений остаётся в CREDITS.md */
+    const ch = r.kind === 'video' ? 'изменено: вырезан фрагмент, перекодировано' : r.changes ? r.changes.replace(/^Изменено:\s*/i, 'изменено: ').replace(/\.$/, '') : '';
+    return `${r.title ? `«${esc(r.title)}» — ` : ''}${who}, ${lic}${ch ? ` (${esc(ch)})` : ''}`;
   });
-  return `<p class="credits">Фото и видео: ${items.join('; ')}.</p>`;
+  const what = must.some((r) => r.kind === 'video') ? (must.some((r) => r.kind !== 'video') ? 'Фото и видео' : 'Видео') : 'Фото';
+  return `<p class="credits">${what}: ${items.join('; ')}.</p>`;
 }
