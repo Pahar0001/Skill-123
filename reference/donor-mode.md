@@ -13,7 +13,7 @@
 node scripts/discover.mjs <донор> --out <папка>/donor                 # сводка, фактура, паспорт, медиа-слоты
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor
 node scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
-node scripts/cliche.mjs baseline <донор> --out <папка>/donor/cliche-baseline.json
+node scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 ```
 
 Старую разведку донора из прошлого прогона — перезапустить: скрипты
@@ -58,7 +58,7 @@ node scripts/cliche.mjs baseline <донор> --out <папка>/donor/cliche-ba
 ```
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
 node scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile
-node scripts/cliche.mjs <адрес сайта> --baseline <папка>/donor/cliche-baseline.json --taste --shot
+node scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 ```
 
 - `verify.mjs` — шкала, цвета, акцент («у образца акцента нет» — тоже
@@ -70,7 +70,8 @@ node scripts/cliche.mjs <адрес сайта> --baseline <папка>/donor/cl
   примечание. Подсказка назовёт причину: режим гасит на этом фоне или
   слой слишком слабый.
 - `cliche.mjs` — приёмы, которых нет у донора, «размножено», запреты из
-  журнала вкуса; вердикт по порогам из `reference/authorship.md`.
+  журнала вкуса; вердикт по порогам из `reference/authorship.md`, обоснования —
+  в `<папка>/authorship-decisions.json`.
 - Пары снимков донор/результат на одном экране, по одной на каждый
   приём-подпись: открыть обе глазами рядом (не `diff.mjs` — пиксельная
   разница здесь бессмысленна).
