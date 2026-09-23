@@ -248,7 +248,9 @@ async function pexels(q, o) {
   const p = new URLSearchParams({ query: q, per_page: String(Math.min(80, o.n)) });
   const orient = { landscape: 'landscape', portrait: 'portrait', square: 'square' }[o.orient];
   if (orient) p.set('orientation', orient);
-  if (o.role === 'hero') p.set('size', 'large'); /* 24 Мп: для первого экрана с запасом */
+  /* size=medium — от 12 Мп (≈4200x2800): на 3840 по длинной стороне хватает;
+     large (24 Мп) без нужды режет выдачу. Для остальных ролей фильтра нет — пометка small. */
+  if (o.role === 'hero') p.set('size', 'medium');
   const j = await getJson(`https://api.pexels.com/v1/search?${p}`, { headers: { authorization: k }, cacheTtl: 3600e3, fresh: o.fresh });
   return {
     items: (j.photos || []).map((r) => ({

@@ -164,6 +164,9 @@ function smartLookup(hostname, opts, cb) {
   });
 }
 
+/** То же разрешение имён для своих https.request (видео-модуль и др.). */
+export const lookup = smartLookup;
+
 /* ---------- вежливость: очереди по хостам ---------- */
 
 /* Commons и остальные вики — строго по одному, пауза ≥300 мс (политика Wikimedia);
@@ -185,14 +188,24 @@ const GATES = [
   { name: 'wordpress', re: /(^|\.)(wordpress\.org|w\.org)$/i, interval: 200 },
 ];
 const gateState = new Map();
+/* Хосты без своей очереди тоже помнят retry-after: иначе после 429 следующий кадр
+   того же сервера ушёл бы сразу. */
+const hostBlock = new Map(); /* host -> до какого времени не слать */
 function gateFor(host) { return GATES.find((g) => g.re.test(host)) || null; }
+function blockedMessage(host, until) { return temporaryMessage(host, `сервер попросил подождать (retry-after), ещё ${Math.ceil((until - Date.now()) / 1000)} с`); }
 async function throughGate(host, fn) {
   const g = gateFor(host);
+  const hb = hostBlock.get(g ? g.name : host) || 0;
+  /* долгий retry-after (больше 30 с) уважаем целиком: в этом запуске к серверу больше не идём */
+  if (hb - Date.now() > 30000) throw new NetError(blockedMessage(host, hb), { host, status: 429, retryAfter: Math.ceil((hb - Date.now()) / 1000) });
+  if (hb > Date.now()) await sleep(hb - Date.now());
   if (!g) return fn();
   let st = gateState.get(g.name);
   if (!st) { st = { chain: Promise.resolve(), last: 0, extra: 0 }; gateState.set(g.name, st); }
   const run = async () => {
-    const wait = st.last + g.interval + st.extra - Date.now();
+    const b = hostBlock.get(g.name) || 0;
+    if (b - Date.now() > 30000) throw new NetError(blockedMessage(host, b), { host, status: 429, retryAfter: Math.ceil((b - Date.now()) / 1000) });
+    const wait = Math.max(st.last + g.interval + st.extra, b) - Date.now();
     if (wait > 0) await sleep(wait);
     st.extra = 0;
     try { return await fn(); } finally { st.last = Date.now(); }
@@ -201,8 +214,12 @@ async function throughGate(host, fn) {
   st.chain = p.catch(() => {});
   return p;
 }
-/** Задержать следующий запрос к хосту (например, по retry-after). */
-function penalize(host, ms) { const g = gateFor(host); if (!g) return; const st = gateState.get(g.name); if (st) st.extra = Math.max(st.extra, ms); }
+/** Не слать запросы к хосту (или его очереди) ms миллисекунд — по retry-after. */
+function penalize(host, ms) {
+  const g = gateFor(host); const k = g ? g.name : host;
+  hostBlock.set(k, Math.max(hostBlock.get(k) || 0, Date.now() + ms));
+  if (g) { const st = gateState.get(g.name); if (st) st.extra = Math.max(st.extra, Math.min(ms, 30000)); }
+}
 
 /* ---------- один запрос ---------- */
 
@@ -267,7 +284,7 @@ export async function request(url, { method = 'GET', headers = {}, timeout = 300
       if (r.status === 429 || r.status === 503) {
         const ra = Number(r.headers['retry-after']);
         const wait = Number.isFinite(ra) && ra > 0 ? ra * 1000 : 4000 * attempt;
-        penalize(host, Math.min(wait, 30000));
+        penalize(host, wait);
         lastErr = new NetError(temporaryMessage(host, `HTTP ${r.status}${ra ? `, retry-after ${ra} с` : ''} (лимит запросов)`), { status: r.status, host, retryAfter: ra || 0 });
         if (wait > 30000 || attempt === tries) throw lastErr;
         await sleep(wait); continue;

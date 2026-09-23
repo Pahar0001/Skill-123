@@ -141,6 +141,21 @@ export function renderCreditsMd(list, { title = 'Фото и видео: авт�
   return lines.join('\n');
 }
 
+/** Вежливая строка для подвала (Pexels, Unsplash, музеи) — по желанию; null, если некого благодарить. */
+export function politeLine(list) {
+  const polite = list.filter((r) => !r.attribution_required && creditNeed(r) !== 'не нужна');
+  if (!polite.length) return null;
+  const by = new Map();
+  for (const r of polite) {
+    const where = /unsplash/.test(r.source) ? 'Unsplash' : /pexels/.test(r.source) ? 'Pexels'
+      : ({ met: 'The Metropolitan Museum of Art', aic: 'The Art Institute of Chicago', rijks: 'Rijksmuseum', cleveland: 'The Cleveland Museum of Art', smk: 'SMK', smithsonian: 'Smithsonian' })[r.source] || r.source;
+    if (!by.has(where)) by.set(where, new Set());
+    if (r.author && !/неизвест|не указан/i.test(r.author)) by.get(where).add(r.author);
+  }
+  const parts = [...by].map(([where, who]) => (who.size ? `${[...who].map(esc).join(', ')} / ${esc(where)}` : esc(where)));
+  return `<p class="credits">Фото: ${parts.join('; ')}.</p>`;
+}
+
 /** Строка для подвала: только если есть обязательная подпись; иначе null. */
 export function footerLine(list) {
   const must = list.filter((r) => r.attribution_required);

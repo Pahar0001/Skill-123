@@ -4,46 +4,61 @@
  *
  *   node shots.mjs <url> [--out папка] [--tag before|after] [--viewports desktop,tablet,mobile]
  *                  [--with-320] [--pages /,/about,/contacts] [--no-freeze] [--scheme dark]
- *                  [--segments 8] [--shot-pause 1200] [--full-mode auto|segments] [--sheet] [--strict]
+ *                  [--segments 8] [--shot-pause 1200] [--full-mode segments|auto] [--sheet]
+ *                  [--return both|jump|up] [--strict]
  *
  * Флаги:
  *   --tag         подпапка снимков (before | after | любое имя), по умолчанию before.
  *   --viewports   экраны через запятую: пресеты desktop, laptop, tablet, mobile, mobile-s (320×568@2),
  *                 android (360×800@3), запись ШxВ@плотность («320x568@2») или одна ширина («320»).
  *                 По умолчанию desktop,tablet,mobile.
- *   --with-320    добавить к выбранным экранам mobile-s (320 px) — на нём вылезают закреплённые панели.
+ *   --with-320    добавить к выбранным экранам mobile-s (320 px): на нём вылезают закреплённые панели
+ *                 и длинные подписи.
  *   --pages       страницы через запятую относительно адреса.
  *   --no-freeze   не останавливать движение (если нужно поймать именно фазу анимации).
  *   --scheme      light | dark — prefers-color-scheme.
  *   --segments N  сколько снимков окна по всей высоте (равномерно, последний — низ страницы);
  *                 0 — не снимать. По умолчанию 8.
  *   --shot-pause  пауза перед каждым снимком окна, мс (по умолчанию 1200: ленивое и появления успевают).
- *   --full-mode   auto (как раньше: целиком, при длинной странице ×1 или склейка) | segments (всегда
- *                 склейка из снимков окна — закреплённые слои в каждом экране).
+ *   --full-mode   (или --full) как снимать всю страницу:
+ *                 segments (по умолчанию) — склейка из снимков окна: закреплённые слои (зерно, шапка,
+ *                   нижняя панель) видны в каждом экране, как их видит человек при прокрутке;
+ *                 auto — как раньше: одним снимком (длинная страница — ×1), закреплённое только сверху.
  *   --sheet       ещё и лист миниатюр снимков окна (<страница>-<экран>-scroll-sheet.png).
- *   --strict      код выхода 1, если есть FAIL (состояние не сбрасывается).
+ *   --return      как возвращаться наверх перед сравнением первого экрана:
+ *                 jump — пролистать до низа и сразу наверх (клавиша Home, нажатие на логотип);
+ *                 up   — пролистать до низа и обратно вверх по шагам (как листает человек);
+ *                 both — оба пути (по умолчанию).
+ *   --strict      код выхода 1, если есть FAIL (состояние не сбрасывается или сбой съёмки).
+ *   --help        эта справка.
  *
  * Что снимается на каждой странице и каждом экране (<папка>/<tag>/):
  *   <страница>-<экран>-first.png         первый экран СРАЗУ после загрузки, до всякой прокрутки;
- *   <страница>-<экран>-scroll-NN.png     снимки окна равномерно по всей высоте — на них видны
- *                                         закреплённые слои (зерно, шапка, нижняя панель), которых
- *                                         нет на снимке всей страницы ниже первого экрана;
- *   <страница>-<экран>-first-return.png  первый экран после прокрутки до низа и обратно;
- *   <страница>-<экран>-full.png          вся страница;
- *   <страница>-<экран>-stale.png         (если есть расхождение) вырезка «при загрузке | после возврата».
+ *   <страница>-<экран>-scroll-NN.png     снимки окна равномерно по всей высоте (закреплённые слои видны);
+ *   <страница>-<экран>-first-return.png  первый экран после прохода до низа и прыжка наверх;
+ *   <страница>-<экран>-first-up.png      первый экран после прохода до низа и листания обратно вверх;
+ *   <страница>-<экран>-full.png          вся страница (способ — в shots.json, поле fullMode);
+ *   <страница>-<экран>-stale*.png        (если есть расхождение) вырезка «при загрузке | после возврата».
  * Имена одинаковые для before и after, чтобы diff.mjs сложил их в пары. В shots.json для каждого
  * файла записан масштаб (пикселей снимка на CSS-пиксель) — по нему diff.mjs приводит ×2 и ×1.
+ * Там же note — оговорка про закреплённые слои на снимке всей страницы (FULLPAGE_NOTE).
  *
- * Проверка «состояние не сбрасывается»: first и first-return сравниваются попиксельно.
- * Что меняется само (холст, видео, карусель) — отсекается вторым снимком при загрузке через 700 мс.
- * Остальное — области, в которых перечисляются элементы и что у них изменилось (класс, цвет,
- * прозрачность). Изменились класс, цвет, фон, рамка → FAIL «состояние не сбрасывается» (подсвеченный
- * пункт меню, раскрытая шапка, всплывшее сообщение). Только проявление (прозрачность 0 → 1) или
- * только холст и видео → WARN.
+ * Проверка «состояние не сбрасывается»: first сравнивается с first-return и first-up попиксельно.
+ * Проход до низа идёт шагами по 0,2 экрана с паузой 40 мс, чтобы наблюдатели пересечений (активный
+ * пункт меню, появления) увидели каждый раздел, как при настоящем листании; иначе итог зависит от
+ * того, на какие высоты попали шаги. Что меняется само (холст, видео, бегущая строка) — отсекается
+ * вторым снимком при загрузке через 700 мс; карусели и прочее, что меняет DOM само, — наблюдением
+ * за изменениями 3 с на месте (только если расхождение нашлось). Остальное — области, в которых
+ * перечисляются элементы и что у них изменилось (класс, цвет, прозрачность):
+ *   FAIL «состояние не сбрасывается» — изменились класс, цвет, фон, рамка или появился новый элемент
+ *        (подсвеченный пункт меню, раскрытая шапка, всплывшее сообщение);
+ *   WARN — только проявление (прозрачность 0 → 1), только холст и видео, только то, что меняется
+ *        само, или причина по стилям не видна (смотреть вырезку).
  *
  * Движение (без --no-freeze): перед снимком при загрузке конечные анимации доигрываются, бесконечные
  * ставятся в фазу 0; перед прокруткой — freezeMotion (переходы отключаются). Иначе два снимка одной
- * страницы различались бы фазой анимации.
+ * страницы различались бы фазой анимации. Прокрутка всегда мгновенная (forceInstantScroll): при
+ * html{scroll-behavior:smooth} снимок иначе делался бы посреди пути.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,8 +68,10 @@ import {
   sleep, loadSharp, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE,
 } from './lib.mjs';
 
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict'] });
-if (!pos[0]) { console.error('Нужен адрес: node shots.mjs <url> [--tag before|after] [--pages /,/about] [--viewports ...] [--with-320]'); process.exit(1); }
+const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict', 'help'] });
+if (opt.help) { console.log(HELP); process.exit(0); }
+if (!pos[0]) { console.error('Нужен адрес: node shots.mjs <url> [--tag before|after] [--pages /,/about] [--viewports ...] [--with-320]  (подробно: --help)'); process.exit(1); }
 const base = new URL(pos[0]);
 const run = runDir(opt, pos[0]);
 const tag = opt.tag || 'before';
@@ -63,8 +80,12 @@ const pages = opt.pages ? pagesFrom(opt.pages, base) : [base.href];
 const viewports = pickViewports(opt.viewports);
 if (opt['with-320'] && !viewports.some(([, vp]) => vp.width === 320)) viewports.push(...pickViewports('mobile-s'));
 const segments = opt.segments === undefined ? 8 : Math.max(0, Math.floor(Number(opt.segments) || 0));
-const shotPause = Math.max(0, Number(opt['shot-pause']) || 1200);
-const fullMode = opt['full-mode'] === 'segments' ? 'segments' : 'auto';
+const shotPause = opt['shot-pause'] === undefined ? 1200 : Math.max(0, Number(opt['shot-pause']) || 0);
+const fullOpt = String(opt['full-mode'] || opt.full || 'segments');
+if (!/^(segments|auto)$/.test(fullOpt)) { console.error('--full-mode: segments или auto'); process.exit(1); }
+const fullMode = fullOpt;
+const returnOpt = String(opt.return || 'both');
+if (!/^(both|jump|up)$/.test(returnOpt)) { console.error('--return: both, jump или up'); process.exit(1); }
 const freeze = !opt['no-freeze'];
 const sharp = loadSharp();
 
@@ -75,6 +96,17 @@ const still = (page) => page.evaluate(() => {
     try { const t = a.effect && a.effect.getTiming ? a.effect.getTiming() : {}; if (t.iterations === Infinity) { a.pause(); a.currentTime = 0; } else if (a.playState !== 'finished') a.finish(); } catch { /* без конца или привязана к прокрутке */ }
   }
 }).catch(() => {});
+
+const heightOf = (page) => page.evaluate(() => { const sc = window.__rwScroller; return sc && sc.isConnected ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0); });
+
+/* листание, как у человека: шаг 0,2 экрана, 40 мс между шагами — наблюдатели пересечений успевают
+   сработать на каждом разделе (при шаге в экран полоса наблюдения перескакивает короткие разделы) */
+async function sweep(page, from, to) {
+  const vh = (page.viewport() || {}).height || 800; const step = Math.max(40, Math.round(vh * 0.2));
+  const dir = to >= from ? 1 : -1; let n = 0;
+  for (let y = from; dir > 0 ? y < to : y > to; y += dir * step) { await scrollToY(page, y); await sleep(40); if (++n > 600) break; }
+  await scrollToY(page, to); await sleep(300);
+}
 
 /* состояние элементов первого экрана: по нему потом говорим, ЧТО изменилось в области */
 function rememberFirstInPage() {
@@ -88,6 +120,17 @@ function rememberFirstInPage() {
   }
   window.__rwFirst = m;
   return m.size;
+}
+
+/* что меняет DOM само, пока страница стоит на месте (карусель, часы, бегущий текст): метка __rwLive */
+function watchLiveInPage(ms) {
+  return new Promise((resolve) => {
+    let n = 0;
+    const mark = (el) => { if (el && el.nodeType === 1 && !el.__rwLive) { el.__rwLive = true; n++; } };
+    const mo = new MutationObserver((list) => { for (const m of list) { if (m.type === 'attributes') mark(m.target); else if (m.type === 'characterData') mark(m.target.parentElement); else { mark(m.target); for (const x of m.addedNodes) mark(x); } } });
+    mo.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+    setTimeout(() => { mo.disconnect(); resolve(n); }, ms);
+  });
 }
 
 function explainInPage(regions) {
@@ -113,20 +156,20 @@ function explainInPage(regions) {
       const aria = ['aria-current', 'aria-expanded', 'aria-selected', 'aria-pressed', 'open'].map((x) => el.getAttribute(x) || '').join('|');
       if (aria !== a.aria) d.push(`атрибуты ${a.aria}→${aria}`);
       if ((el.currentSrc || el.getAttribute('src') || '') !== a.src) d.push('другая картинка');
-      if (d.length) changed.push({ sig: sig(el), text: txt(el), diffs: d, appeared: a.o <= 0.05 && o > 0.5 });
+      if (d.length) changed.push({ sig: sig(el), text: txt(el), diffs: d, appeared: a.o <= 0.05 && o > 0.5, live: !!el.__rwLive });
     }
     /* что лежит сверху в области — для случаев, когда по стилям причину не видно */
-    const top = new Set(); const media = [];
+    const top = new Set(); const media = []; const newEls = new Set();
     for (let y = R.y + 2; y < R.y + R.h; y += Math.max(4, R.h / 5)) for (let x = R.x + 2; x < R.x + R.w; x += Math.max(4, R.w / 8)) {
       const el = document.elementFromPoint(x, y); if (!el) continue;
       if (/^(CANVAS|VIDEO|IFRAME)$/.test(el.tagName)) media.push(sig(el));
-      if (!first.has(el)) top.add(`${sig(el)} «${txt(el)}» (новый)`); else top.add(`${sig(el)} «${txt(el)}»`);
+      const label = `${sig(el)} «${txt(el)}»`;
+      if (!first.has(el)) { top.add(`${label} (новый)`); if (!el.__rwLive) newEls.add(label); } else top.add(label);
     }
     /* внешние изменившиеся: потомка с теми же отличиями, что у предка, не повторяем */
     const uniq = []; const seen = new Set();
     for (const c of changed) { const key = c.diffs.join(';') + c.text; if (seen.has(key)) continue; seen.add(key); uniq.push(c); }
-    const newEls = [...top].filter((t) => t.endsWith('(новый)'));
-    return { changed: uniq.slice(0, 8), changedCount: uniq.length, top: [...top].slice(0, 6), media: [...new Set(media)], newEls };
+    return { changed: uniq.slice(0, 8), changedCount: uniq.length, top: [...top].slice(0, 6), media: [...new Set(media)], newEls: [...newEls] };
   });
 }
 
@@ -138,7 +181,7 @@ async function staleRegions(bufA, bufB, bufNoise, dpr) {
   const { width: w, height: h } = a.info;
   if (b.info.width !== w || b.info.height !== h) return { error: `размеры снимков разные: ${w}×${h} и ${b.info.width}×${b.info.height}` };
   const d3 = (X, Y, i) => Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) + Math.abs(X[i + 2] - Y[i + 2]);
-  /* «живое» — то, что меняется само за 700 мс при загрузке; расширяем на 6 CSS-пикселей */
+  /* «живое» — то, что меняется само за 700 мс при загрузке; расширяем на клетку в каждую сторону */
   const cell = Math.max(4, Math.round(8 * dpr)); const cw = Math.ceil(w / cell), ch = Math.ceil(h / cell);
   const live = new Uint8Array(cw * ch); let liveCount = 0;
   if (n && n.info.width === w && n.info.height === h) {
@@ -184,8 +227,46 @@ async function staleCrop(bufA, bufB, regions, dpr, file) {
   await sharp({ create: { width: width * 2 + gap, height, channels: 4, background: { r: 230, g: 30, b: 30, alpha: 1 } } }).composite([{ input: A, left: 0, top: 0 }, { input: B, left: width + gap, top: 0 }]).png().toFile(file);
 }
 
+/* первый экран после возврата: снимок, сравнение с «при загрузке», объяснение областей */
+async function checkReturn(page, ctx, { file, cropFile }) {
+  await sleep(Math.min(800, shotPause)); if (freeze) await still(page);
+  const seg = await screenSegment(page, 0, { file, pause: 400, settle: 1500 });
+  if (seg.scrollY > 2) return { verdict: 'WARN', note: `страница не вернулась наверх (scrollY ${seg.scrollY}) — сравнение недостоверно`, regions: [] };
+  if (!sharp) return { verdict: 'WARN', note: 'нет sharp — первый экран не сравнивался', regions: [] };
+  const bufRet = fs.readFileSync(file);
+  const r = await staleRegions(ctx.bufFirst, bufRet, ctx.bufNoise, ctx.dpr);
+  if (r.error) return { verdict: 'WARN', note: r.error, regions: [] };
+  if (!r.regions.length) return { verdict: 'OK', share: r.share, liveSkipped: r.liveSkipped, regions: [] };
+  /* расхождение есть: сначала 3 с посмотреть, что меняется само, — потом объяснять */
+  if (!ctx.watched) { ctx.watched = true; ctx.liveCount = await page.evaluate(watchLiveInPage, 3000).catch(() => 0); }
+  const empty = { changed: [], top: [], media: [], newEls: [] };
+  const why = await evaluateWith(page, explainInPage, r.regions.map(({ x, y, w, h }) => ({ x, y, w, h })), { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN }).catch(() => r.regions.map(() => empty));
+  const regions = r.regions.map((g, i) => {
+    const e = why[i] || empty;
+    const real = e.changed.filter((c) => !c.appeared);
+    const stuck = real.filter((c) => !c.live);
+    const kind = stuck.length || e.newEls.length ? 'stuck' : real.length ? 'live' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
+    return { ...g, kind, changed: e.changed, top: e.top, media: e.media };
+  });
+  const out = { verdict: regions.some((g) => g.kind === 'stuck') ? 'FAIL' : 'WARN', share: r.share, liveSkipped: r.liveSkipped, regions };
+  await staleCrop(ctx.bufFirst, bufRet, regions, ctx.dpr, cropFile).then(() => { out.crop = path.basename(cropFile); }).catch(() => {});
+  return out;
+}
+
+function printReturn(label, st) {
+  if (!st) return;
+  if (st.verdict === 'OK') { console.log(`  OK   первый экран после ${label} тот же${st.liveSkipped ? ' (живые места — холст, видео — не в счёт)' : ''}`); return; }
+  if (st.note) { console.log(`  WARN первый экран после ${label}: ${st.note}`); return; }
+  console.log(`  ${st.verdict.padEnd(4)} ${st.verdict === 'FAIL' ? `состояние не сбрасывается (после ${label})` : `первый экран после ${label} отличается`}: ${st.share}% пикселей${st.crop ? `, вырезка ${st.crop}` : ''}`);
+  for (const g of st.regions) {
+    const what = g.kind === 'stuck' ? 'залипло' : g.kind === 'live' ? 'меняется само (карусель, часы) — не залипание' : g.kind === 'appeared' ? 'проявилось только после прокрутки (при загрузке пусто)' : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
+    const list = g.changed.length ? g.changed.slice(0, 4).map((c) => `${c.sig}${c.text ? ` «${c.text}»` : ''}: ${c.diffs.join(', ')}`).join(' | ') : g.top.slice(0, 3).join(' | ');
+    console.log(`       x${g.x} y${g.y} ${g.w}×${g.h}: ${what} — ${list}`);
+  }
+}
+
 const browser = await launch();
-const index = []; const files = {}; let fails = 0, warns = 0;
+const index = []; const files = {}; let fails = 0, warns = 0; const fullHow = new Set();
 const scaleOf = async (file, cssWidth) => { if (!sharp) return null; try { const m = await sharp(file).metadata(); return Math.round(m.width / cssWidth * 1000) / 1000; } catch { return null; } };
 try {
   for (const url of pages) {
@@ -193,8 +274,9 @@ try {
     for (const [name, vp] of viewports) {
       process.stdout.write(`· ${slug} ${name} … `);
       const dpr = vp.deviceScaleFactor || 1; const stem = `${slug}-${name}`;
+      let page = null;
       try {
-        const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
+        page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
         await forceInstantScroll(page);
         await waitForMedia(page, { timeout: 6000 });
         /* 1. первый экран как его видит человек при загрузке — до прокрутки */
@@ -202,72 +284,54 @@ try {
         const first = path.join(outDir, `${stem}-first.png`);
         const bufFirst = await page.screenshot({ path: first });
         await evaluateWith(page, rememberFirstInPage, null, { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN }).catch(() => 0);
-        /* второй снимок при загрузке: что меняется само (холст, видео, карусель) — не «залипание» */
+        /* второй снимок при загрузке: что меняется само (холст, видео, бегущая строка) — не «залипание» */
         await sleep(700); if (freeze) await still(page);
         const bufNoise = await page.screenshot();
         /* 2. проход до низа: ленивое, появления; затем снимки окна по всей высоте */
         if (freeze) await freezeMotion(page);
         const sc = await scrollThrough(page, { pause: 250, shotsDir: segments ? outDir : null, tag: `${stem}-scroll`, maxShots: segments, shotPause, skipTop: true, sheet: !!opt.sheet });
-        /* 3. снова наверх — первый экран после возврата */
-        await scrollToY(page, 0); await sleep(Math.min(800, shotPause));
-        if (freeze) await still(page);
-        const firstReturn = path.join(outDir, `${stem}-first-return.png`);
-        const seg = await screenSegment(page, 0, { file: firstReturn, pause: 400, settle: 1500 });
+        /* 3. первый экран после возврата: листание до низа, затем прыжок наверх и/или листание вверх */
+        const ctx = { bufFirst, bufNoise, dpr, watched: false };
+        let stale = null, staleUp = null;
+        const firstReturn = path.join(outDir, `${stem}-first-return.png`), firstUp = path.join(outDir, `${stem}-first-up.png`);
+        if (returnOpt !== 'up') {
+          await scrollToY(page, 0); await sweep(page, 0, await heightOf(page)); await scrollToY(page, 0);
+          stale = await checkReturn(page, ctx, { file: firstReturn, cropFile: path.join(outDir, `${stem}-stale.png`) });
+        }
+        if (returnOpt !== 'jump') {
+          /* низ уже пройден листанием (или проходом scrollThrough) — прыжок вниз и листание вверх */
+          if (returnOpt === 'up') { await scrollToY(page, 0); await sweep(page, 0, await heightOf(page)); }
+          const H = await heightOf(page); await scrollToY(page, H); await sleep(300); await sweep(page, H, 0);
+          staleUp = await checkReturn(page, ctx, { file: firstUp, cropFile: path.join(outDir, `${stem}-stale-up.png`) });
+        }
+        for (const st of [stale, staleUp]) { if (!st) continue; if (st.verdict === 'FAIL') fails++; else if (st.verdict === 'WARN') warns++; }
         if (freeze) await still(page);
         /* 4. вся страница */
         const full = path.join(outDir, `${stem}-full.png`);
-        const how = await fullPageShot(page, full, { mode: fullMode });
-        const h = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0));
+        const how = await fullPageShot(page, full, { mode: fullMode }); fullHow.add(how);
+        const h = await heightOf(page);
         const errors = page.log.console.filter((c) => c.type === 'error').length + page.log.errors.length;
-        /* 5. сравнение первого экрана при загрузке и после возврата */
-        let stale = { verdict: 'OK', regions: [] };
-        if (seg.scrollY > 2) stale = { verdict: 'WARN', note: `страница не вернулась наверх (scrollY ${seg.scrollY}) — сравнение недостоверно`, regions: [] };
-        else if (!sharp) stale = { verdict: 'WARN', note: 'нет sharp — первый экран не сравнивался', regions: [] };
-        else {
-          const r = await staleRegions(bufFirst, fs.readFileSync(firstReturn), bufNoise, dpr);
-          if (r.error) stale = { verdict: 'WARN', note: r.error, regions: [] };
-          else if (r.regions.length) {
-            const why = await evaluateWith(page, explainInPage, r.regions.map(({ x, y, w, h: hh }) => ({ x, y, w, h: hh })), { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN }).catch(() => r.regions.map(() => ({ changed: [], top: [], media: [], newEls: [] })));
-            const regions = r.regions.map((g, i) => {
-              const e = why[i] || { changed: [], top: [], media: [], newEls: [] };
-              const real = e.changed.filter((c) => !c.appeared);
-              const kind = real.length || e.newEls.length ? 'stuck' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
-              return { ...g, kind, changed: e.changed, top: e.top, media: e.media };
-            });
-            const bad = regions.filter((g) => g.kind === 'stuck' || g.kind === 'unknown');
-            stale = { verdict: bad.length ? 'FAIL' : 'WARN', share: r.share, liveSkipped: r.liveSkipped, regions };
-            const crop = path.join(outDir, `${stem}-stale.png`);
-            await staleCrop(bufFirst, fs.readFileSync(firstReturn), regions, dpr, crop).then(() => { stale.crop = path.basename(crop); }).catch(() => {});
-          } else stale = { verdict: 'OK', share: r.share, liveSkipped: r.liveSkipped, regions: [] };
-        }
-        if (stale.verdict === 'FAIL') fails++; else if (stale.verdict === 'WARN') warns++;
         const scrollNote = sc.stuck ? 'страница не прокручивается — снимки окна и появления недостоверны' : !sc.reachedBottom ? `до низа не доехали: ${sc.maxScrollY} из ${sc.pageHeight - (vp.height || 0)} px` : '';
         if (scrollNote) warns++;
         /* масштаб каждого файла — для diff.mjs */
         const segFiles = (sc.shots || []).map((s) => s.file);
-        for (const f of [path.basename(first), path.basename(firstReturn), path.basename(full), ...segFiles]) files[f] = { scale: await scaleOf(path.join(outDir, f), vp.width), cssWidth: vp.width, viewport: name };
+        const made = [first, full, ...(stale ? [firstReturn] : []), ...(staleUp ? [firstUp] : [])].map((f) => path.basename(f)).concat(segFiles);
+        for (const f of made) files[f] = { scale: await scaleOf(path.join(outDir, f), vp.width), cssWidth: vp.width, dpr, viewport: name, ...(f === path.basename(full) ? { fullMode: how } : {}) };
         for (const s of sc.shots || []) files[s.file].y = s.scrollY;
-        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: path.basename(firstReturn), full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, consoleErrors: errors });
-        console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}${how !== 'full' ? ` (вся страница снята как ${how})` : ''}${errors ? `, ошибок в консоли ${errors}` : ''}`);
+        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, staleUp, liveElements: ctx.liveCount ?? null, consoleErrors: errors });
+        console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}, вся страница — ${how}${errors ? `, ошибок в консоли ${errors}` : ''}`);
         if (scrollNote) console.log(`  WARN прокрутка — ${scrollNote}`);
-        if (stale.verdict === 'OK') console.log(`  OK   первый экран после прокрутки туда и обратно тот же${stale.liveSkipped ? ` (живые места — холст, видео — не в счёт)` : ''}`);
-        else if (stale.note) console.log(`  WARN первый экран: ${stale.note}`);
-        else {
-          console.log(`  ${stale.verdict.padEnd(4)} ${stale.verdict === 'FAIL' ? 'состояние не сбрасывается' : 'первый экран после возврата отличается'}: ${stale.share}% пикселей${stale.crop ? `, вырезка ${stale.crop}` : ''}`);
-          for (const g of stale.regions) {
-            const what = g.kind === 'stuck' ? 'залипло' : g.kind === 'appeared' ? 'проявилось только после прокрутки (при загрузке пусто)' : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
-            const list = g.changed.length ? g.changed.slice(0, 4).map((c) => `${c.sig}${c.text ? ` «${c.text}»` : ''}: ${c.diffs.join(', ')}`).join(' | ') : g.top.slice(0, 3).join(' | ');
-            console.log(`       x${g.x} y${g.y} ${g.w}×${g.h}: ${what} — ${list}`);
-          }
-        }
-        await page.close();
+        printReturn('прокрутки до низа и прыжка наверх', stale);
+        printReturn('листания до низа и обратно вверх', staleUp);
       } catch (e) { console.log(`сбой: ${e.message}`); index.push({ url, page: slug, viewport: name, error: e.message }); fails++; }
+      finally { if (page) await page.close().catch(() => {}); }
     }
   }
 } finally { await browser.close(); }
-writeJson(path.join(outDir, 'shots.json'), { tag, takenAt: new Date().toISOString(), note: FULLPAGE_NOTE, files, shots: index });
+const partialFull = [...fullHow].some((h) => h !== 'segments');
+writeJson(path.join(outDir, 'shots.json'), { tag, takenAt: new Date().toISOString(), note: FULLPAGE_NOTE, fullModeRequested: fullMode, files, shots: index });
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 console.log(`Снимки: ${outDir}`);
-console.log(`Оговорка: ${FULLPAGE_NOTE}`);
+if (partialFull) console.log(`Оговорка: ${FULLPAGE_NOTE}`);
 if (opt.strict && fails) process.exit(1);

@@ -12,81 +12,130 @@
  *       ключи (только имена), доступность источников (с запасным DoH), sharp, ffmpeg
  *
  *   node media.mjs search "<запрос по-английски>" --kind photo|video
- *       [--profile photo|art] [--role hero|section|card|loop]
- *       [--orient landscape|portrait|square] [--min <px>] [--sources a,b,...]
- *       [--n 24] [--out <папка>] [--run <slug>] [--fresh]
+ *       [--profile photo|art]            photo — заведения, магазины, школы (по умолчанию);
+ *                                        art — произведения из общественного достояния (музеи)
+ *       [--role hero|section|card|loop]  под что кадр: от роли зависит нужный размер
+ *                                        (hero 3840, section 2560, card 1280, loop 1920)
+ *       [--orient landscape|portrait|square] [--min <px по длинной стороне>]
+ *       [--sources a,b,...]              свой список и порядок источников
+ *       [--n 24]                         сколько кадров на лист (до 60)
+ *       [--out <папка>] [--run <slug или url сайта>] [--fresh (без кэша ответов API)]
  *     → <папка>/cand/NN.jpg, sheet-1.jpg…, manifest.json (пути относительно папки).
  *       По умолчанию <папка> = ~/.claude/site-rework/runs/<slug>/media/<запрос>.
  *       На листе: номер, источник, РЕАЛЬНЫЙ размер файла, который скачается
- *       под роль, лицензия, пометки (people? brand? text-or-currency? art? ai?
- *       term? small). Лист ОБЯЗАТЕЛЬНО открыть глазами (Read): пометки по словам
- *       пропускают чужие ценники и вывески.
+ *       под роль («из N» — если оригинал больше), лицензия, пометки (people?
+ *       brand? text-or-currency? art? ai? term? small); у видео — длительность,
+ *       размер и вес файла. Лист ОБЯЗАТЕЛЬНО открыть глазами (Read): пометки по
+ *       словам пропускают чужие ценники и вывески.
  *
  *   node media.mjs pick <папка поиска> <N> --seen "<что на кадре>" --caption "<подпись/роль>"
- *       [--ok-flags] [--role …] [--name <имя>] [--dest <папка картинок сайта>]
+ *       [--ok-flags]                     кадр с пометками берётся только с этим флагом
+ *       [--role hero|section|card|loop] [--name <имя файлов>] [--dest <папка картинок сайта>]
  *       [--look none|duotone:#RRGGBB,#RRGGBB|mono] [--contrast 0..1] [--grain 0..0.06]
- *       [--crop-mobile 4:5] [--ratio 16:9] [--src-prefix img/] [--avif auto|on|off]
- *     Ворота: без --seen/--caption, с --seen из точек или повторов, с пометками
- *     без --ok-flags — код 2. Никогда не растягивает; размер меряется по файлу.
+ *       [--crop-mobile 4:5]              отдельный кадр для телефона
+ *       [--ratio 16:9]                   обрезать основной кадр
+ *       [--src-prefix img/]              префикс путей в разметке (по умолчанию имя --dest)
+ *       [--avif auto|on|off]             AVIF рядом с WebP (auto — если быстро)
+ *       [--start <с>] [--dur <с>]        видео: откуда и сколько резать петлю
+ *     Ворота: без --seen/--caption, --seen меньше трёх разных слов (точки, повторы
+ *     не проходят), кадр с пометками без --ok-flags — код 2. Никогда не
+ *     растягивает; размер меряется по скачанному файлу. Пишет credits.json в
+ *     папку назначения и печатает готовую разметку.
  *     Unsplash: файл не пережимается, разметка — по их ссылкам (правило API).
  *
  *   node media.mjs import <url страницы> [<url или путь файла>] --license <id>
- *       [--author "…"] [--author-url …] [--title "…"] [--not-editorial] --seen … --caption …
+ *       [--author "…"] [--author-url …] [--title "…"] [--not-editorial]
+ *       --seen … --caption … [и все флаги обработки pick: --ok-flags --role --name
+ *       --dest --look --contrast --grain --crop-mobile --ratio --src-prefix --avif
+ *       --start --dur] [--run <slug>]
  *     Кадр выбрал человек на сайте без API (Kaboompics, Burst, Picjumbo,
- *     Foodiesfeed, Mixkit, Adobe Stock Free). Лицензии: cc0 pdm unsplash pexels
- *     pixabay kaboompics burst picjumbo foodiesfeed mixkit-free adobe-stock-free.
+ *     Foodiesfeed — не /generated/, Mixkit — поштучно, Adobe Stock Free).
+ *     Лицензии: cc0 pdm unsplash pexels pixabay kaboompics burst picjumbo
+ *     foodiesfeed mixkit-free adobe-stock-free. Kaboompics — только с
+ *     --not-editorial; unsplash, kaboompics, adobe-stock-free — только файл,
+ *     скачанный человеком (путь). Mixkit: без файла ролик берётся со страницы,
+ *     если на ней data-license="videoFree".
  *
- *   node media.mjs credits <папка картинок сайта> [--md <файл>]
- *     таблица авторов и лицензий, строка для подвала, если подпись обязательна.
+ *   node media.mjs credits <папка картинок сайта> [--md [<файл>]]
+ *     таблица авторов и лицензий (--md — записать CREDITS.md), строка для
+ *     подвала: обязательная (CC BY/BY-SA) или вежливая (Pexels, Unsplash, музеи).
+ *
+ *   node media.mjs <команда> --help — эта справка.
  *
  * Ключи: окружение или ~/.claude/site-rework/.env (образец — .env.example рядом):
- * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT.
- * Без ключа источник пропускается. Сетевые сбои — временные: «повторить позже».
+ * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT
+ * (UNSPLASH_APP_NAME — по желанию). Без ключа источник пропускается.
+ * MEDIA_CONTACT — контакт для User-Agent (Wikimedia, AIC); личные данные не подставляются.
+ * Сетевые сбои — временные: «повторить позже». Кэш: MEDIA_CACHE или ~/.claude/site-rework/cache.
+ * Видео — модуль media/video.mjs (контракт MEDIA_API.md); MEDIA_VIDEO_MODULE — путь к другому модулю (тесты).
+ * Итог каждой команды — строка OK / WARN / FAIL.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadSharp, getFfmpeg, parseArgs, ensureDir } from './lib.mjs';
 import * as net from './media/net.mjs';
 import { SOURCES, PROFILES, chooseFile, flagsFor, headersFor, ORIENT } from './media/photo.mjs';
-import { ROLES, MAX_GRAIN, makePreview, hamming, buildSheets, processPhoto, unsplashMarkup, cssLook, slugify, kb, mb, esc, parseLook, parseRatio, orientedSize, headerDims } from './media/process.mjs';
-import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit, readCredits, renderCreditsMd, footerLine, creditNeed } from './media/manifest.mjs';
+import { ROLES, MAX_GRAIN, makePreview, makeMosaic, hamming, buildSheets, processPhoto, applyLook, unsplashMarkup, cssLook, slugify, kb, mb, parseLook, parseRatio, orientedSize, headerDims } from './media/process.mjs';
+import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit, readCredits, renderCreditsMd, footerLine, politeLine, creditNeed } from './media/manifest.mjs';
 
-const VALUES = ['kind', 'profile', 'role', 'orient', 'min', 'sources', 'n', 'out', 'run', 'seen', 'caption', 'name', 'dest', 'look', 'contrast', 'grain', 'crop-mobile', 'ratio', 'src-prefix', 'avif', 'license', 'author', 'author-url', 'title', 'md'];
+/* Значения флагов берутся «как у всех»: следующий аргумент, если он не похож на
+   другой флаг. Поэтому `--seen --ok-flags` не съест --ok-flags как описание. */
 const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help'];
-const { pos, opt } = parseArgs(process.argv.slice(2), { values: VALUES, flags: FLAGS });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS });
 const cmd = pos[0];
 const log = (...a) => console.log(...a);
-const fail = (msg, code = 1) => { console.error(msg); process.exit(code); };
+/* код 2 — кадр не взят по воротам или по правилам лицензии; 1 — прочие сбои */
+const fail = (msg, code = 1) => { console.error(`FAIL: ${msg}`); process.exit(code); };
 const str = (v) => (typeof v === 'string' ? v : '');
 const long = (w, h) => Math.max(w || 0, h || 0);
 const today = () => new Date().toISOString().slice(0, 10);
 const RUNS = process.env.SITE_REWORK_RUNS || path.join(os.homedir(), '.claude', 'site-rework', 'runs');
+const PHOTO_SIGS = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif'];
 
-/* ---------- видео: точка подключения ---------- */
+function help(code = 0) {
+  log(fs.readFileSync(new URL(import.meta.url), 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1].replace(/^ \* ?/gm, '').trim());
+  process.exit(code);
+}
+
+/* ---------- видео: точка подключения (контракт — MEDIA_API.md) ---------- */
 
 /*
- * Видео-источники и ffmpeg живут в ./media/video.mjs (контракт — MEDIA_API.md):
  *   search(query, opts, ctx) → { items: Candidate[], status: {имя: {state, message}} }
  *   resolve(candidate, opts, ctx) → Resolved (файл под роль, HEAD, проверка лицензии)
  *   encode(resolved, opts, ctx) → { files, poster, markup, changes, warnings, original, cut, budget }
  */
+function videoModulePath() {
+  return process.env.MEDIA_VIDEO_MODULE ? path.resolve(process.env.MEDIA_VIDEO_MODULE) : fileURLToPath(new URL('./media/video.mjs', import.meta.url));
+}
 async function loadVideo() {
-  const f = new URL('./media/video.mjs', import.meta.url);
-  if (!fs.existsSync(fileURLToPath(f))) return null;
-  const m = await import(f.href);
-  for (const fn of ['search', 'resolve', 'encode']) if (typeof m[fn] !== 'function') throw new Error(`media/video.mjs не экспортирует ${fn}() — см. MEDIA_API.md`);
+  const f = videoModulePath();
+  if (!fs.existsSync(f)) return null;
+  const m = await import(pathToFileURL(f).href);
+  for (const fn of ['search', 'resolve', 'encode']) if (typeof m[fn] !== 'function') throw new Error(`${path.basename(f)} не экспортирует ${fn}() — см. MEDIA_API.md`);
   return m;
+}
+async function requireVideo() {
+  const v = await loadVideo();
+  if (!v) fail('Видео-модуль media/video.mjs ещё не подключён (контракт — MEDIA_API.md). Фото работает без него.');
+  return v;
 }
 function makeCtx(sharp) {
   return {
     net, sharp, ffmpeg: getFfmpeg(), cacheDir: net.CACHE_DIR, log, ROLES,
     flagsFor, slugify, cssLook, parseLook, parseRatio, MAX_GRAIN,
-    /** Обработать кадр (постер) той же обработкой, что фото: --look/--contrast/--grain. */
-    processStill: (buf, o) => processPhoto(sharp, buf, o),
+    /** Постер той же обработкой, что фото: → { data, info } (сырые пиксели). */
+    applyLook: (input, o) => applyLook(sharp, input, o),
   };
+}
+/** resolve/encode видео: отказ по существу — код 2, сеть — временно, код 1. */
+async function videoStep(fn, what) {
+  try { return await fn(); } catch (e) {
+    if (e && e.refuse) fail(`${what}: ${e.message}`, 2);
+    fail(`${what}: ${net.describeError(e)}`);
+  }
 }
 
 /* ---------- вспомогательное ---------- */
@@ -96,30 +145,33 @@ function requireSharp() {
   if (!sharp) fail('Нужен sharp: npm i sharp --prefix ~/.claude/site-rework (или запускать из проекта, где он установлен).');
   return sharp;
 }
-/** Убрать из манифеста служебное и возможные секреты в адресах. */
+/** Убрать из манифеста служебное, абсолютные пути и возможные секреты в адресах. */
 function sanitizeCand(c) {
-  const { text, extraFlags, _buf, previewFile, ...rest } = c;
-  return JSON.parse(JSON.stringify(rest).replace(/([?&](?:key|api_key|client_id)=)[^&"\\]+/gi, '$1***'));
+  const { text, extraFlags, _buf, _err, previewFile, ...rest } = c;
+  return JSON.parse(JSON.stringify(rest).replace(/([?&](?:key|api_key|client_id|access_key|token)=)[^&"\\]+/gi, '$1***'));
+}
+function runSlug() {
+  const run = str(opt.run) || '_media';
+  return /^https?:\/\//.test(run) ? new URL(run).hostname.replace(/^www\./, '').replace(/[^a-z0-9]+/gi, '-') : slugify(run, 60);
 }
 function searchDir(q, kind, profile) {
   if (opt.out) return path.resolve(String(opt.out));
-  const run = str(opt.run) || '_media';
-  const slug = /^https?:\/\//.test(run) ? new URL(run).hostname.replace(/^www\./, '').replace(/[^a-z0-9]+/gi, '-') : slugify(run, 60);
   const suffix = kind === 'video' ? '-video' : profile === 'art' ? '-art' : '';
-  return path.join(RUNS, slug, 'media', `${slugify(q, 60)}${suffix}`);
+  return path.join(RUNS, runSlug(), 'media', `${slugify(q, 60)}${suffix}`);
 }
 async function pool(items, n, fn) {
   const out = new Array(items.length); let i = 0;
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } }));
   return out;
 }
+const splitList = (v) => String(v).split(',').map((s) => s.trim()).filter(Boolean);
 
 /* ---------- doctor ---------- */
 
 async function cmdDoctor() {
   net.loadEnv();
   log(`media.mjs doctor · node ${process.version}`);
-  log(`\nКлючи (окружение и ${net.ENV_FILE}: ${net.envFileExists() ? 'файл есть' : 'файла нет'}):`);
+  log(`\nКлючи (окружение и ${net.ENV_FILE}: ${net.envFileExists() ? 'файл есть' : 'файла нет'}; значения не печатаются):`);
   const uses = { PEXELS_API_KEY: 'pexels (фото, видео)', UNSPLASH_ACCESS_KEY: 'unsplash', PIXABAY_API_KEY: 'pixabay (фото ≤1280, видео)', SI_API_KEY: 'smithsonian (art)', MEDIA_CONTACT: 'контакт в User-Agent (Wikimedia, AIC)' };
   for (const k of net.KEY_NAMES) log(`  ${net.key(k) ? 'OK  ' : 'WARN'} ${k.padEnd(20)} ${net.key(k) ? 'задан' : 'не задан'} — ${uses[k]}`);
   log(`  User-Agent: ${net.contact() ? 'с контактом из MEDIA_CONTACT' : net.userAgent()}`);
@@ -130,8 +182,8 @@ async function cmdDoctor() {
   let ffv = '';
   if (ff) { try { ffv = execFileSync(ff, ['-hide_banner', '-version'], { encoding: 'utf8', timeout: 15000 }).split(/\r?\n/)[0]; } catch (e) { ffv = `не запустился: ${e.message}`; } }
   log(`ffmpeg: ${ff ? `OK ${ffv}` : 'WARN не найден — видео не пережать (npm i ffmpeg-static --prefix ~/.claude/site-rework)'}`);
-  const vPath = fileURLToPath(new URL('./media/video.mjs', import.meta.url));
-  log(`видео-модуль media/video.mjs: ${fs.existsSync(vPath) ? 'есть' : 'пока нет (search/pick --kind video недоступны)'}`);
+  const vPath = videoModulePath();
+  log(`видео-модуль ${path.basename(vPath)}: ${fs.existsSync(vPath) ? 'есть' : 'WARN пока нет (search/pick --kind video недоступны, фото работает)'}`);
   log(`кэш: ${net.CACHE_DIR}`);
 
   log('\nИсточники (проба с запасным DoH; любой HTTP-ответ = сервер отвечает):');
@@ -142,8 +194,9 @@ async function cmdDoctor() {
     { name: 'images.pexels (файлы)', url: 'https://images.pexels.com/', method: 'HEAD' },
     { name: 'cdn.pixabay (файлы)', url: 'https://cdn.pixabay.com/', method: 'HEAD' },
     { name: 'videos.pexels (видео)', url: 'https://videos.pexels.com/', method: 'HEAD' },
-    { name: 'mixkit (видео, вручную)', url: 'https://mixkit.co/', method: 'HEAD' },
+    { name: 'mixkit (видео, поштучно)', url: 'https://mixkit.co/', method: 'HEAD' },
   ];
+  /* Wikimedia — строго по одному: net.mjs ставит их в очередь сам */
   const res = await Promise.all(probes.map(async (p) => ({ p, r: await net.probe(p.url, { headers: p.headers || {}, method: p.method || 'GET' }) })));
   let warn = 0;
   for (const { p, r } of res) {
@@ -151,9 +204,12 @@ async function cmdDoctor() {
     if (r.ok) log(`  OK   ${p.name.padEnd(32)} HTTP ${r.status} за ${(r.ms / 1000).toFixed(1)} с (${r.via === 'dns' ? 'DNS' : r.via})${keyNote}`);
     else { warn++; log(`  WARN ${p.name.padEnd(32)} ${r.error}${keyNote}`); }
   }
-  log(`\n${warn ? `WARN: ${warn} проб не прошли — это временно (DNS VPN, лимиты), повторить позже; источник из-за этого не вычёркивать.` : 'OK: все пробы ответили.'}`);
-  if (!net.contact()) log('WARN: нет MEDIA_CONTACT — к Wikimedia и AIC запросы идут строго по одному с паузой; контакт задаётся только этой переменной.');
-  if (!net.key('PEXELS_API_KEY') && !net.key('UNSPLASH_ACCESS_KEY')) log('Без ключей Pexels/Unsplash фото на первый экран — только Commons (CC0 из раннего Unsplash); видео-петли — нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
+  const doh = [...net.dnsStats.entries()].filter(([, v]) => v !== 'dns');
+  if (doh.length) log(`  имя найдено через DoH (системный DNS не ответил): ${doh.map(([h, v]) => `${h} → ${v}`).join(', ')}`);
+  if (!net.contact()) log('WARN: нет MEDIA_CONTACT — к Wikimedia и AIC запросы идут строго по одному с паузой; оригиналы Commons (upload.wikimedia.org) без контакта отвечают 429, берутся стандартные копии thumb.wikimedia.org. Контакт задаётся только этой переменной.');
+  if (!net.key('PEXELS_API_KEY') && !net.key('UNSPLASH_ACCESS_KEY')) log('WARN: без ключей Pexels/Unsplash фото на первый экран — только Commons (CC0 из раннего Unsplash); для видео-петель нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
+  log(`\n${!sharp ? 'FAIL: нет sharp.' : warn ? `WARN: ${warn} проб не прошли — это временно (DNS VPN, лимиты), повторить позже; источник из-за этого не вычёркивать.` : 'OK: все пробы ответили.'}`);
+  if (!sharp) process.exit(1);
 }
 
 /* ---------- search ---------- */
@@ -162,11 +218,11 @@ async function cmdSearch() {
   const q = str(pos[1]).trim();
   if (!q) fail('Нет запроса. Пример: node media.mjs search "bakery bread" --kind photo --role hero');
   const kind = str(opt.kind) || 'photo';
-  if (!['photo', 'video'].includes(kind)) fail(`--kind ${kind}: photo или video`);
+  if (!['photo', 'video'].includes(kind)) fail(`--kind ${opt.kind}: photo или video`);
   const profile = kind === 'video' ? 'video' : (str(opt.profile) || 'photo');
-  if (kind === 'photo' && !PROFILES[profile]) fail(`--profile ${profile}: photo или art`);
+  if (kind === 'photo' && !PROFILES[profile]) fail(`--profile ${opt.profile}: photo или art`);
   const role = str(opt.role) || (kind === 'video' ? 'loop' : 'section');
-  if (!ROLES[role]) fail(`--role ${role}: hero | section | card | loop`);
+  if (!ROLES[role]) fail(`--role ${opt.role}: hero | section | card | loop`);
   const orient = str(opt.orient) || null;
   if (orient && !ORIENT[orient]) fail(`--orient ${orient}: landscape | portrait | square`);
   const n = Math.max(1, Math.min(60, Number(opt.n) || 24));
@@ -178,21 +234,23 @@ async function cmdSearch() {
   for (const f of fs.readdirSync(path.join(dir, 'cand'))) fs.unlinkSync(path.join(dir, 'cand', f));
   const o = { n, role, orient, min, fresh: !!opt.fresh, log, query: q };
 
-  log(`Запрос «${q}» · ${kind}${kind === 'photo' ? ` · профиль ${profile}` : ''} · роль ${role} (нужно ${ROLES[role].ladder[0]} px, минимум ${min})${orient ? ` · ${orient}` : ''}`);
+  log(`Запрос «${q}» · ${kind}${kind === 'photo' ? ` · профиль ${profile}` : ''} · роль ${role} (нужно ${ROLES[role].ladder[0]} px по длинной стороне, минимум ${min})${orient ? ` · ${orient}` : ''}`);
+  if (kind === 'video' && opt.profile) log('  (--profile для видео не используется)');
   const status = {};
   let lists = [];
 
   if (kind === 'video') {
-    const video = await loadVideo();
-    if (!video) fail('Видео-модуль media/video.mjs ещё не подключён (контракт — MEDIA_API.md).');
-    const r = await video.search(q, { ...o, sources: opt.sources ? String(opt.sources).split(',').map((s) => s.trim()) : null }, makeCtx(sharp));
+    const video = await requireVideo();
+    let r;
+    try { r = await video.search(q, { ...o, sources: opt.sources ? splitList(opt.sources) : null }, makeCtx(sharp)); }
+    catch (e) { fail(`видео-поиск: ${net.describeError(e)}`); }
     Object.assign(status, r.status || {});
     for (const [name, st] of Object.entries(r.status || {})) log(`  ${st.state === 'ok' ? 'OK  ' : st.state === 'skip' ? 'SKIP' : 'WARN'} ${name.padEnd(17)} ${st.message || ''}`);
     const by = new Map();
     for (const c of r.items || []) { if (!by.has(c.source)) by.set(c.source, []); by.get(c.source).push(c); }
     lists = [...by.values()];
   } else {
-    const names = opt.sources ? String(opt.sources).split(',').map((s) => s.trim()).filter(Boolean) : PROFILES[profile];
+    const names = opt.sources ? splitList(opt.sources) : PROFILES[profile];
     const bad = names.filter((s) => !SOURCES[s]);
     if (bad.length) fail(`Неизвестные источники: ${bad.join(', ')}. Есть: ${Object.keys(SOURCES).join(', ')}`);
     for (const name of names) {
@@ -213,7 +271,7 @@ async function cmdSearch() {
     }
   }
 
-  /* файл под роль, ориентация, пометки */
+  /* файл под роль, ориентация */
   const prepared = lists.map((list) => list.map((c) => {
     if (kind === 'photo') { c.file = chooseFile(c, role); if (!c.file) return null; }
     const d = c.file || {};
@@ -232,7 +290,7 @@ async function cmdSearch() {
     const sk = `${c.source}|${seriesKey(c)}`; const k = bySeries.get(sk) || 0;
     if (k >= 2) return false; bySeries.set(sk, k + 1); return true;
   }));
-  /* Порядок профиля с долями: первый источник — до 40% листа, второй — 25%,
+  /* Порядок профиля с долями: первый ответивший источник — до 40% листа, второй — 25%,
      остальные — по 15%; недобор заполняется по тому же порядку. */
   const want = n + 8;
   const nonEmpty = cleanLists.filter((l) => l.length);
@@ -258,9 +316,14 @@ async function cmdSearch() {
     } catch { /* останется «?» */ }
   }
 
-  /* превью, дубли по отпечатку */
+  /* превью (у видео с кадрами — плитка 2×2), дубли по отпечатку */
   const cands = []; const failures = []; let dup = 0;
   const loaded = await pool(pre, 3, async (c) => {
+    if (kind === 'video' && Array.isArray(c.frames) && c.frames.length >= 2) {
+      const bufs = [];
+      for (const u of c.frames.slice(0, 4)) { try { bufs.push((await net.download(u, { headers: headersFor(c), timeout: 45000, maxBytes: 15 * 1048576 })).body); } catch (e) { c._err = net.describeError(e); } }
+      if (bufs.length >= 2) { try { return { c, p: await makePreview(sharp, await makeMosaic(sharp, bufs)) }; } catch (e) { c._err = e.message; } }
+    }
     for (const u of [c.preview_url, c.preview_fallback].filter(Boolean)) {
       try {
         const r = await net.download(u, { headers: headersFor(c), timeout: 45000, maxBytes: 25 * 1048576 });
@@ -268,7 +331,7 @@ async function cmdSearch() {
         return { c, p };
       } catch (e) { c._err = net.describeError(e); }
     }
-    failures.push(`${c.source} ${c.id}: ${c._err}`);
+    failures.push(`${c.source} ${c.id}: ${c._err || 'нет адреса превью'}`);
     return null;
   });
   for (const x of loaded) {
@@ -296,40 +359,54 @@ async function cmdSearch() {
   };
   writeManifest(dir, manifest);
 
+  const temp = Object.values(status).some((s) => s.state === 'temporary');
   if (!cands.length) {
-    const temp = Object.values(status).some((s) => s.state === 'temporary');
-    log(`\nНи одного кандидата.${temp ? ' Часть источников ответила временной ошибкой — повторить позже.' : ''} Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.`);
+    log(`\n${temp ? 'WARN' : 'FAIL'}: ни одного кандидата.${temp ? ' Часть источников ответила временной ошибкой — повторить позже.' : ''} Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.`);
     for (const f of failures.slice(0, 5)) log(`  ! ${f}`);
-    process.exit(temp ? 1 : 0);
+    process.exit(1);
   }
   log(`\nКандидатов: ${cands.length}${dup ? ` · дублей убрано ${dup}` : ''}${failures.length ? ` · превью не скачалось ${failures.length}` : ''}`);
   for (const f of failures.slice(0, 4)) log(`  ! ${f}`);
   for (const c of cands) {
     const f = c.file || {};
     const size = f.width ? `${f.width}x${f.height}` : '?';
+    const oL = long(c.orig?.width, c.orig?.height);
+    const of = oL && oL > long(f.width, f.height) + 2 ? `(из ${oL})` : '';
     const extra = kind === 'video' ? ` ${c.duration ? Math.round(c.duration) + 's' : '?s'} ${f.bytes ? mb(f.bytes) : '?MB'}` : '';
-    log(`  #${String(c.n).padStart(2, '0')} ${c.source.padEnd(18)} ${size.padEnd(10)}${extra} ${String(c.license).slice(0, 26).padEnd(26)} ${c.flags.join(' ')}  ${String(c.title || '').slice(0, 50)}`);
+    log(`  #${String(c.n).padStart(2, '0')} ${c.source.padEnd(18)} ${(size + of).padEnd(18)}${extra} ${String(c.license).slice(0, 26).padEnd(26)} ${c.flags.join(' ')}  ${String(c.title || '').slice(0, 50)}`);
   }
   log(`\nОТКРЫТЬ ГЛАЗАМИ (Read): ${sheets.join(' , ')}\n  вблизи — ${path.join(dir, 'cand', 'NN.jpg')}`);
   log('  Пометки — только подсказка: ценники, вывески, валюту и лица видно лишь глазами.');
   log(`\nДальше: node media.mjs pick "${dir}" <N> --seen "что на кадре" --caption "подпись на сайте" --dest <папка сайта>/img --role ${role}`);
+  log(`\n${temp ? 'WARN: часть источников ответила временной ошибкой — повторить позже' : 'OK'}: лист готов, ${cands.length} кадров.`);
 }
 
 /* ---------- обработка и учёт (pick и import) ---------- */
 
+function numOpt(name, lo, hi) {
+  if (opt[name] === undefined) return null;
+  const v = Number(opt[name]);
+  if (!(v >= lo && v <= hi)) fail(`--${name} ${opt[name]}: число от ${lo} до ${hi}`, 2);
+  return v;
+}
 function commonOpts(role, defaultDest) {
   const grain = opt.grain !== undefined ? Number(opt.grain) : 0;
   if (!(grain >= 0) || grain > MAX_GRAIN) fail(`--grain ${opt.grain}: от 0 до ${MAX_GRAIN}; сильное зерно — одним общим слоем CSS поверх страницы`, 2);
   const contrast = opt.contrast !== undefined ? Number(opt.contrast) : 0;
   if (!(contrast >= 0 && contrast <= 1)) fail(`--contrast ${opt.contrast}: от 0 до 1`, 2);
   try { parseLook(opt.look); parseRatio(opt['crop-mobile']); parseRatio(opt.ratio); } catch (e) { fail(e.message, 2); }
+  const avif = str(opt.avif) || 'auto';
+  if (!['auto', 'on', 'off'].includes(avif)) fail(`--avif ${opt.avif}: auto | on | off`, 2);
   const dest = path.resolve(str(opt.dest) || defaultDest);
   const prefix = str(opt['src-prefix']) || `${path.basename(dest)}/`;
-  return { role, look: str(opt.look) || 'none', contrast, grain, cropMobile: str(opt['crop-mobile']) || null, ratio: str(opt.ratio) || null, dest, srcPrefix: prefix, avif: str(opt.avif) || 'auto' };
+  return {
+    role, look: str(opt.look) || 'none', contrast, grain, cropMobile: str(opt['crop-mobile']) || null, ratio: str(opt.ratio) || null,
+    dest, srcPrefix: prefix, avif, start: numOpt('start', 0, 36000), dur: numOpt('dur', 2, 60),
+  };
 }
 
 function printFiles(files, source) {
-  for (const f of files) log(`  ${String(f.file).padEnd(34)} ${String(`${f.width}x${f.height}`).padEnd(10)} ${kb(f.bytes).padStart(8)}`);
+  for (const f of files) log(`  ${String(f.file).padEnd(40)} ${String(`${f.width}x${f.height}`).padEnd(10)} ${kb(f.bytes).padStart(8)}`);
   if (source) log(`  исходник (по скачанному файлу): ${source.width}x${source.height}${source.bytes ? `, ${kb(source.bytes)}` : ''}${source.format ? `, ${source.format}` : ''}`);
 }
 
@@ -337,7 +414,7 @@ function printFiles(files, source) {
 async function fetchPhoto(c, file) {
   const r = await net.download(file.url, { headers: headersFor(c), timeout: 240000, maxBytes: 150 * 1048576 });
   const kindSig = net.sniff(r.body);
-  if (!['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif'].includes(kindSig)) throw new Error(`по адресу не картинка (сигнатура: ${kindSig || 'неизвестна'}, тип ${r.headers['content-type'] || '?'}) — ${net.redact(file.url).slice(0, 120)}`);
+  if (!PHOTO_SIGS.includes(kindSig)) throw new Error(`по адресу не картинка (сигнатура: ${kindSig || 'неизвестна'}, тип ${r.headers['content-type'] || '?'}) — ${net.redact(file.url).slice(0, 120)}`);
   return { buf: r.body, bytes: r.bytes, sha256: r.sha256, format: kindSig, contentType: r.headers['content-type'] || '' };
 }
 
@@ -347,9 +424,10 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
   const exp = meta.expected || {};
   if (exp.width && (Math.abs(exp.width - real.width) > 2 || (exp.height && Math.abs(exp.height - real.height) > 2))) notes.push(`по файлу ${real.width}x${real.height}, выдача обещала ${exp.width}x${exp.height || '?'} — дальше считаем по файлу`);
   if (c.orig?.width && long(real.width, real.height) < long(c.orig.width, c.orig.height) - 2 && long(real.width, real.height) < ROLES[o.role].ladder[0]) {
-    const why = /wikimedia/.test(meta.url || '') && !net.contact() ? ' — Commons отдаёт оригинал целиком только клиентам с контактом в User-Agent (MEDIA_CONTACT)' : '';
+    const why = /wikimedia/.test(meta.url || '') && !net.contact() ? ' — оригинал Commons (upload.wikimedia.org) без контакта в User-Agent отвечает 429; задайте MEDIA_CONTACT' : '';
     notes.push(`оригинал ${c.orig.width}x${c.orig.height}, достижимая копия — ${real.width}x${real.height}${why}`);
   }
+  /* сервер мог растянуть копию больше оригинала (Commons так делает) — ложное разрешение не берём */
   if (c.orig?.width && long(real.width, real.height) > long(c.orig.width, c.orig.height) + 2) {
     fail(`Файл ${real.width}x${real.height} больше оригинала ${c.orig.width}x${c.orig.height}: сервер растянул копию. Такой кадр не берём — повторите pick с другой ролью или выберите другой кадр.`, 1);
   }
@@ -363,6 +441,7 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
     original: { width: real.width, height: real.height, bytes: meta.bytes || null, format: meta.format || real.format, sha256: meta.sha256 || null },
     files: res.files.map(({ file, width, height, bytes, format }) => ({ file, width, height, bytes, format })),
     look: { look: o.look, contrast: o.contrast, grain: o.grain }, hotlink: false, query: extra.query || '', date: today(),
+    ...(c.credit_line ? { credit_line: c.credit_line } : {}),
     ...(c.art ? { art: { death_year: c.art.death_year, work_year: c.art.work_year, term: c.art.term?.why } } : {}),
     ...(extra.note ? { note: extra.note } : {}),
   };
@@ -370,17 +449,19 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
   saveCredit(o.dest, rec);
   log(`\nКадр ${extra.label || ''} (${c.source}, ${c.license}) → ${o.dest}`);
   printFiles(res.files, { ...real, bytes: meta.bytes });
-  for (const w of [...notes, ...res.warnings]) log(`  ! ${w}`);
-  return { res, rec };
+  const warnings = [...notes, ...res.warnings];
+  for (const w of warnings) log(`  ! ${w}`);
+  return { res, rec, warnings };
 }
 
-function printTail(rec, markup, extraNotes = [], dest = '') {
+function printTail(rec, markup, extraNotes = [], dest = '', warnings = []) {
   log(`\nРазметка:\n${markup}`);
   for (const nte of extraNotes) log(nte);
   log(`\nПодпись на сайте: ${rec.credit_need}${rec.attribution_text ? `\n  ${rec.attribution_text}${rec.attribution_required ? ` ${rec.changes}` : ''}` : ''}`);
   if (rec.art) log(`  Произведение из общественного достояния (${rec.art.term || 'срок проверен'}): подписывать настоящими автором и названием, как иллюстрацию — не как товар и не под вымышленным именем.`);
   log(`  credits.json обновлён: ${path.join(dest, 'credits.json')}`);
   log('После вставки: открыть снимок страницы глазами (кадр на месте, текст поверх читается, подпись не противоречит кадру) и сверить с `media.mjs credits`.');
+  log(`\n${warnings.length ? `WARN: кадр готов, но ${warnings.length === 1 ? 'есть замечание' : `есть замечания (${warnings.length})`} — см. «!» выше` : 'OK: кадр готов'}.`);
 }
 
 /* ---------- pick ---------- */
@@ -393,32 +474,24 @@ async function cmdPick() {
   const c = m.candidates.find((x) => x.n === N);
   if (!c) fail(`Нет кандидата №${N}; всего ${m.candidates.length}.`);
   const g = gate({ seen: opt.seen, caption: opt.caption, flags: c.flags || [], okFlags: !!opt['ok-flags'], preview: path.join(dir, c.preview || '') });
-  if (!g.ok) { for (const s of g.messages) console.error(`Кадр №${N} не взят: ${s}`); process.exit(2); }
+  if (!g.ok) { for (const s of g.messages) console.error(`FAIL: кадр №${N} не взят: ${s}`); process.exit(2); }
   const role = str(opt.role) || m.role || 'section';
-  if (!ROLES[role]) fail(`--role ${role}: hero | section | card | loop`);
+  if (!ROLES[role]) fail(`--role ${opt.role}: hero | section | card | loop`);
   const o = { ...commonOpts(role, path.join(dir, 'picked')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
   o.name = slugify(str(opt.name) || `${role}-${c.source}-${c.id}`, 48);
   const sharp = requireSharp();
 
   if (m.kind === 'video') {
-    const video = await loadVideo();
-    if (!video) fail('Видео-модуль media/video.mjs ещё не подключён (контракт — MEDIA_API.md).');
+    const video = await requireVideo();
     const ctx = makeCtx(sharp);
-    const resolved = await video.resolve(c, { role, dest: o.dest }, ctx);
-    const enc = await video.encode(resolved, o, ctx);
-    const rec = {
-      name: o.name, kind: 'video', role, source: c.source, source_id: c.id, title: c.title || '', page_url: c.page_url, file_url: net.redact(resolved.url || ''),
-      author: c.author || '', author_url: c.author_url || '', license: resolved.license || c.license, license_code: c.license_code, license_url: resolved.license_url || c.license_url,
-      license_evidence: resolved.license_evidence || null, attribution_required: !!(resolved.attribution_required ?? c.attribution_required), attribution_text: c.attribution_text || '',
-      changes: `Изменено: ${(enc.changes || []).join('; ')}.`, seen: o.seen, caption: o.caption, flags: c.flags || [], ok_flags: !!opt['ok-flags'],
-      original: enc.original || null, cut: enc.cut || null, files: enc.files || [], poster: enc.poster || null, budget: enc.budget || null,
-      look: { look: o.look, contrast: o.contrast, grain: o.grain }, hotlink: false, query: m.query, date: today(),
-    };
-    rec.credit_need = creditNeed(rec);
+    const resolved = await videoStep(() => video.resolve(c, { role, dest: o.dest, import: false, start: o.start, dur: o.dur }, ctx), `ролик №${N} не взят`);
+    const enc = await videoStep(() => video.encode(resolved, o, ctx), `ролик №${N} не пережат`);
+    const rec = videoRecord(c, resolved, enc, o, { query: m.query, file_url: net.redact(resolved.url || '') });
     saveCredit(o.dest, rec);
     log(`\nРолик №${N} (${c.source}) → ${o.dest}`); printFiles(enc.files || []);
-    for (const w of enc.warnings || []) log(`  ! ${w}`);
-    printTail(rec, enc.markup || '', [], o.dest);
+    const warnings = [...(resolved.warnings || []), ...(enc.warnings || []), ...budgetLines(enc.budget)];
+    for (const w of warnings) log(`  ! ${w}`);
+    printTail(rec, enc.markup || '', [], o.dest, warnings);
   } else if (c.hotlink_only) {
     /* Unsplash: событие скачивания обязательно, файл не пережимаем — ссылки их */
     const k = net.key('UNSPLASH_ACCESS_KEY');
@@ -440,7 +513,7 @@ async function cmdPick() {
     const cssNotes = (o.look !== 'none' || o.contrast || o.grain) ? cssLook(o.look, o.contrast, o.grain).map((x) => `  ${x}`) : [];
     if (cssNotes.length) cssNotes.unshift('Обработка для Unsplash — только CSS (в их файл ничего не впечь):');
     cssNotes.push('Нужен свой файл (пережать, впечь тон) — только ручное скачивание человеком на unsplash.com, потом import --license unsplash.');
-    printTail(rec, u.markup, cssNotes, o.dest);
+    printTail(rec, u.markup, cssNotes, o.dest, u.warnings);
   } else {
     if (c.needs_manual) fail(`Кадр №${N}: в выдаче только превью. Скачайте файл вручную со страницы ${c.page_url} и используйте import.`, 2);
     let file = chooseFile(c, role);
@@ -451,19 +524,45 @@ async function cmdPick() {
       /* сервер отказал в этом файле (429/403) — следующий по величине вариант того же кадра, с честной пометкой */
       const alt = (e.status === 429 || e.status === 403) ? chooseFile(c, role, [file.url]) : null;
       if (!alt || alt.url === file.url) fail(`Не скачался: ${net.describeError(e)}`);
-      const why = /wikimedia/.test(file.url) && !net.contact() ? ' (Commons отдаёт оригиналы только клиентам с контактом в User-Agent — задайте MEDIA_CONTACT и повторите позже)' : '';
+      const why = /wikimedia/.test(file.url) && !net.contact() ? ' (оригиналы Commons без контакта в User-Agent отвечают 429 — задайте MEDIA_CONTACT и повторите позже)' : '';
       fallbackNotes.push(`${file.how} ${file.width || '?'}x${file.height || '?'} не отдан: ${net.describeError(e)}${why}; взят ${alt.how} ${alt.width || '?'}x${alt.height || '?'}`);
       log(`  ! ${fallbackNotes[0]}`);
       file = alt;
       try { got = await fetchPhoto(c, file); } catch (e2) { fail(`Не скачался и запасной вариант: ${net.describeError(e2)}`); }
     }
-    const { rec, res } = await processAndCredit(sharp, c, got.buf, { url: file.url, bytes: got.bytes, sha256: got.sha256, format: got.format, expected: { width: file.width, height: file.height } }, o, { query: m.query, label: `№${N}` });
+    const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: file.url, bytes: got.bytes, sha256: got.sha256, format: got.format, expected: { width: file.width, height: file.height } }, o, { query: m.query, label: `№${N}` });
     const notes = fallbackNotes.map((x) => `Внимание: ${x}.`);
     if (/^openverse/.test(c.source)) notes.push('Openverse: сделано с помощью Openverse; Openverse не проверяет лицензии — страница источника в credits.json.');
-    printTail(rec, res.markup, notes, o.dest);
+    printTail(rec, res.markup, notes, o.dest, [...fallbackNotes, ...warnings]);
   }
   m.picked = [...(m.picked || []).filter((p) => p.name !== o.name), { n: N, name: o.name, role, dest: path.relative(dir, o.dest) || '.', seen: o.seen, caption: o.caption, at: new Date().toISOString() }];
   writeManifest(dir, m);
+}
+
+/** Запись credits.json для ролика (поля — MEDIA_API.md). */
+function videoRecord(c, resolved, enc, o, extra) {
+  const rec = {
+    name: o.name, kind: 'video', role: o.role, source: c.source, source_id: c.id, title: c.title || '', page_url: c.page_url, file_url: extra.file_url || '',
+    author: c.author || '', author_url: c.author_url || '', license: resolved.license || c.license, license_code: resolved.license_code || c.license_code,
+    license_url: resolved.license_url || c.license_url, license_evidence: resolved.license_evidence || null,
+    attribution_required: !!(resolved.attribution_required ?? c.attribution_required), attribution_text: resolved.attribution_text || c.attribution_text || '',
+    ...((resolved.share_alike ?? c.share_alike) ? { share_alike: true } : {}),
+    changes: `Изменено: ${(enc.changes || []).join('; ') || 'нет'}.`, seen: o.seen, caption: o.caption, flags: c.flags || [], ok_flags: !!opt['ok-flags'],
+    original: enc.original || null, cut: enc.cut || null, files: (enc.files || []).map(({ file, width, height, bytes, format, codec, group }) => ({ file, width, height, bytes, format, codec, group })),
+    poster: enc.poster || null, budget: enc.budget || null,
+    look: { look: o.look, contrast: o.contrast, grain: o.grain }, hotlink: false, query: extra.query || '', date: today(),
+    ...(extra.note ? { note: extra.note } : {}),
+  };
+  rec.credit_need = creditNeed(rec);
+  return rec;
+}
+function budgetLines(b) {
+  if (!b) return [];
+  const out = [];
+  if (b.desktop_ok === false) out.push(`бюджет десктопа превышен: ${mb(b.desktop_bytes)} при норме 2.5MB`);
+  if (b.mobile_ok === false) out.push(`бюджет телефона превышен: ${mb(b.mobile_bytes)} при норме 1.0MB`);
+  if (b.desktop_ok !== false && b.mobile_ok !== false && (b.desktop_bytes || b.mobile_bytes)) log(`  бюджет: OK десктоп ${mb(b.desktop_bytes)} (≤2.5MB), телефон ${mb(b.mobile_bytes)} (≤1.0MB)`);
+  return [...out, ...(b.notes || [])];
 }
 
 /* ---------- import ---------- */
@@ -475,21 +574,24 @@ async function cmdImport() {
   if (!lic) fail(`--license ${opt.license || '(нет)'}: только из белого списка — ${Object.keys(LICENSES).join(', ')}. CC BY, BY-SA, NC, ND для фото не берём.`, 2);
   const host = new URL(pageUrl).hostname.replace(/^www\./, '');
   const isLocal = fileArg && !/^https?:\/\//.test(fileArg);
+  const isVideo = lic.video || /\.(mp4|webm|mov)(\?|$)/i.test(fileArg);
   const text = `${decodeURIComponent(new URL(pageUrl).pathname).replace(/[-_/]+/g, ' ')} ${fileArg ? path.basename(fileArg).replace(/[-_.]+/g, ' ') : ''}`;
   const flags = flagsFor(text, '', 'photo');
 
   /* проверки по источнику */
   if (lic.id === 'foodiesfeed' && /\/generated\//i.test(`${pageUrl} ${fileArg}`)) fail('Foodiesfeed: файл из /generated/ сделан нейросетью — выдуманная еда на сайте клиента недопустима. Берите кадры из /legacy/ или /uploads/.', 2);
   if (lic.id === 'kaboompics' && !opt['not-editorial']) fail('Kaboompics: подтвердите, что на странице кадра НЕТ пометки «Editorial Use Only» (такие в рекламу и на сайт нельзя) — флаг --not-editorial.', 2);
+  if (lic.id === 'mixkit-free' && !/(^|\.)mixkit\.co$/.test(host)) fail(`--license mixkit-free: страница должна быть на mixkit.co, а не ${host}.`, 2);
   if (lic.manual && fileArg && !isLocal) fail(`${lic.name}: файл скачивает человек в браузере (${lic.note || 'автоматика запрещена'}). Передайте путь к скачанному файлу вторым аргументом.`, 2);
-  if (!fileArg) fail(`Нужен второй аргумент — адрес файла или путь к скачанному файлу. Страницу ${host} скрипт не разбирает.`, 2);
+  if (!fileArg && !(isVideo && lic.id === 'mixkit-free')) fail(`Нужен второй аргумент — адрес файла или путь к скачанному файлу. Страницу ${host} скрипт не разбирает.`, 2);
   if (isLocal && !fs.existsSync(fileArg)) fail(`Нет файла ${fileArg}`);
 
   const g = gate({ seen: opt.seen, caption: opt.caption, flags, okFlags: !!opt['ok-flags'] });
-  if (!g.ok) { for (const s of g.messages) console.error(`Кадр не взят: ${s}`); process.exit(2); }
-  const role = str(opt.role) || 'section';
-  if (!ROLES[role]) fail(`--role ${role}: hero | section | card | loop`);
-  const o = { ...commonOpts(role, path.join(process.cwd(), 'media-import')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
+  if (!g.ok) { for (const s of g.messages) console.error(`FAIL: кадр не взят: ${s}`); process.exit(2); }
+  const role = str(opt.role) || (isVideo ? 'loop' : 'section');
+  if (!ROLES[role]) fail(`--role ${opt.role}: hero | section | card | loop`);
+  /* по умолчанию — не в текущую папку (это может быть репозиторий), а в папку прогона */
+  const o = { ...commonOpts(role, path.join(RUNS, runSlug(), 'media', 'import')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
   const baseName = str(opt.name) || `${role}-${host.split('.')[0]}-${path.basename(new URL(pageUrl).pathname) || 'img'}`;
   o.name = slugify(baseName, 48);
   const sharp = requireSharp();
@@ -500,20 +602,18 @@ async function cmdImport() {
     attribution_text: `${str(opt.title) ? `«${str(opt.title)}» — ` : ''}${str(opt.author) || host}, ${lic.name} (${pageUrl})`, flags,
   };
 
-  if (lic.video || /\.(mp4|webm|mov)(\?|$)/i.test(fileArg)) {
-    const video = await loadVideo();
-    if (!video) fail('Видео-модуль media/video.mjs ещё не подключён (контракт — MEDIA_API.md).');
+  if (isVideo) {
+    const video = await requireVideo();
     const ctx = makeCtx(sharp);
-    const cand = { ...c, kind: 'video', source: lic.id === 'mixkit-free' ? 'mixkit' : c.source, file: isLocal ? { path: path.resolve(fileArg) } : { url: fileArg } };
-    const resolved = await video.resolve(cand, { role, dest: o.dest, import: true }, ctx);
-    const enc = await video.encode(resolved, o, ctx);
-    const rec = { ...c, name: o.name, kind: 'video', role, file_url: isLocal ? path.basename(fileArg) : net.redact(fileArg), license_evidence: resolved.license_evidence || null,
-      changes: `Изменено: ${(enc.changes || []).join('; ')}.`, seen: o.seen, caption: o.caption, ok_flags: !!opt['ok-flags'], original: enc.original || null, cut: enc.cut || null,
-      files: enc.files || [], poster: enc.poster || null, budget: enc.budget || null, hotlink: false, date: today(), note: lic.note || '' };
-    rec.credit_need = creditNeed(rec);
+    const cand = { ...c, kind: 'video', source: lic.id === 'mixkit-free' ? 'mixkit' : c.source, file: !fileArg ? null : isLocal ? { path: path.resolve(fileArg) } : { url: fileArg }, needs_resolve: !fileArg };
+    const resolved = await videoStep(() => video.resolve(cand, { role, dest: o.dest, import: true, start: o.start, dur: o.dur }, ctx), 'ролик не взят');
+    const enc = await videoStep(() => video.encode(resolved, o, ctx), 'ролик не пережат');
+    const rec = videoRecord(cand, resolved, enc, o, { file_url: isLocal ? path.basename(fileArg) : net.redact(resolved.url || fileArg || ''), note: lic.note || '' });
     saveCredit(o.dest, rec);
-    printFiles(enc.files || []); for (const w of enc.warnings || []) log(`  ! ${w}`);
-    printTail(rec, enc.markup || '', [], o.dest);
+    log(`\nРолик с ${host} → ${o.dest}`); printFiles(enc.files || []);
+    const warnings = [...(resolved.warnings || []), ...(enc.warnings || []), ...budgetLines(enc.budget)];
+    for (const w of warnings) log(`  ! ${w}`);
+    printTail(rec, enc.markup || '', lic.note ? [`Лицензия: ${lic.note}`] : [], o.dest, warnings);
     return;
   }
 
@@ -521,48 +621,50 @@ async function cmdImport() {
   if (isLocal) {
     const buf = fs.readFileSync(fileArg);
     const sig = net.sniff(buf);
-    if (!['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif'].includes(sig)) fail(`${fileArg}: не картинка (сигнатура ${sig || 'неизвестна'})`);
+    if (!PHOTO_SIGS.includes(sig)) fail(`${fileArg}: не картинка (сигнатура ${sig || 'неизвестна'})`);
     got = { buf, bytes: buf.length, sha256: null, format: sig };
   } else {
     try { got = await fetchPhoto(c, { url: fileArg }); }
     catch (e) { fail(`Не скачался: ${net.describeError(e)}${/403/.test(String(e.message)) ? ' — сайт закрыт для скриптов: скачайте файл в браузере и передайте путь.' : ''}`); }
   }
-  const { rec, res } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? path.basename(fileArg) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}` });
-  printTail(rec, res.markup, lic.note ? [`Лицензия: ${lic.note}`] : [], o.dest);
+  const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? path.basename(fileArg) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}` });
+  printTail(rec, res.markup, lic.note ? [`Лицензия: ${lic.note}`] : [], o.dest, warnings);
 }
 
 /* ---------- credits ---------- */
 
 function cmdCredits() {
   const dest = pos[1] && path.resolve(pos[1]);
-  if (!dest) fail('Использование: node media.mjs credits <папка картинок сайта> [--md <файл>]');
+  if (!dest) fail('Использование: node media.mjs credits <папка картинок сайта> [--md [<файл>]]');
   const list = readCredits(dest);
   if (!list.length) fail(`В ${dest} нет credits.json или он пуст.`);
   const md = renderCreditsMd(list);
   log(md);
-  const foot = footerLine(list);
-  log(foot ? `Строка для подвала (подпись ОБЯЗАТЕЛЬНА, поставить до выкладки):\n${foot}` : 'Обязательной подписи нет. Вежливая строка — по желанию (см. раздел «По желанию»).');
+  const foot = footerLine(list); const polite = politeLine(list);
+  if (foot) log(`Строка для подвала (подпись ОБЯЗАТЕЛЬНА, поставить до выкладки):\n${foot}`);
+  else log(`Обязательной подписи нет.${polite ? ` Вежливая строка — по желанию:\n${polite}` : ''}`);
   if (opt.md) {
     const f = opt.md === true ? path.join(dest, 'CREDITS.md') : path.resolve(String(opt.md));
     ensureDir(path.dirname(f));
-    fs.writeFileSync(f, md + (foot ? `\n## Строка для подвала\n\n\`\`\`html\n${foot}\n\`\`\`\n` : ''));
+    const tail = foot ? `\n## Строка для подвала (обязательно)\n\n\`\`\`html\n${foot}\n\`\`\`\n` : polite ? `\n## Строка для подвала (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : '';
+    fs.writeFileSync(f, md + tail);
     log(`\nЗаписано: ${f}`);
   }
+  const noSeen = list.filter((r) => !r.seen || !r.caption).length;
+  log(`\n${noSeen ? `WARN: у ${noSeen} записей нет --seen/--caption` : `OK: ${list.length} записей, у всех есть «что на кадре» и подпись`}${foot ? '; обязательная подпись нужна' : ''}.`);
 }
 
 /* ---------- запуск ---------- */
 
 try {
-  if (cmd === 'doctor') await cmdDoctor();
+  if (opt.help || cmd === 'help' || !cmd) help(0);
+  else if (cmd === 'doctor') await cmdDoctor();
   else if (cmd === 'search') await cmdSearch();
   else if (cmd === 'pick') await cmdPick();
   else if (cmd === 'import') await cmdImport();
   else if (cmd === 'credits') cmdCredits();
-  else {
-    log(fs.readFileSync(new URL(import.meta.url), 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1].replace(/^ \* ?/gm, ''));
-    process.exit(cmd && cmd !== 'help' ? 1 : 0);
-  }
+  else { console.error(`FAIL: неизвестная команда «${cmd}»\n`); help(1); }
 } catch (e) {
-  console.error(`Ошибка: ${net.describeError(e)}`);
+  console.error(`FAIL: ${net.describeError(e)}`);
   process.exit(1);
 }

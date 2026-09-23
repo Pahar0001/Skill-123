@@ -1,0 +1,73 @@
+/* =====================================================================
+   Зерно плёнки поверх страницы — своя плитка, без чужих файлов.
+
+   Как подключить
+   1. Плитка — своя, детерминированная (чужой noise.gif донора не переносить никогда):
+        node ~/.claude/skills/site-rework/scripts/grain-tile.mjs --out <папка сайта> [--px N]
+      → grain-gray-256.png (256 px, 16 уровней, σ 78.35, ≈32 КБ).
+   2. Значения — из замера донора, а не на глаз:
+        node texture.mjs <донор> --tokens site.tokens.css --css grain.css
+      --css пишет этот файл с подставленными числами (opacity, режим, image-rendering,
+      @media по ширине, число «кадров» кипения). Вручную — блок :root ниже и число в @media.
+   3. Разметка — последним элементом body:
+        <div class="grain-overlay" aria-hidden="true"></div>
+      Отдельный элемент, а не body::after: чужой body::after не затирается (texture.mjs
+      пишет, занят ли он). Слой ровно в экран и обрезает себя сам (overflow:hidden), поэтому
+      проверка переполнения (findOverflow) не видит его «за краем».
+   4. Проверка числом: node texture.mjs compare <донор> <сайт> --viewport desktop,mobile → OK
+      (σ по полосам фона ±20 %, lag1 ±0.15, кипит / не кипит; только при одинаковом DPR).
+
+   Почему так
+   · mix-blend-mode normal (или hard-light) — одинаковая сила на любом фоне, от #000 до #fff.
+     multiply, overlay и soft-light гаснут на тёмных фонах (Y до ~50): на чёрном зерна нет;
+     overlay и soft-light гаснут и на светлых; screen — на светлых.
+   · непрозрачная серая плитка и opacity = нужная σ на снимке / σ плитки (5 / 78.35 ≈ .064).
+     normal поднимает чёрный на ≈ opacity × 127 — у плёнки так и есть.
+   · image-rendering — как у донора. На DPR 2 сглаживание (auto) делает зерно мягче и слабее
+     (σ 3.3 против 5.0 у pixelated): повторять донора, а не ставить pixelated всегда.
+   · «кипение» — сдвиг ::before трансформацией по steps(1): это делает композитор, страница
+     не перерисовывается (анимированный GIF и сдвиг background-position дают растровые задачи
+     каждый кадр). Сдвиги — внутри одной плитки, не кратные ей: в каждой точке экрана
+     оказывается несвязанный пиксель шума. Число сдвигов = число кадров донора.
+   · ::before больше экрана на плитку сверху и слева, сдвиг — меньше плитки: край не оголяется.
+   · зерно только с --grain-min-width (у донора бывает только на широких экранах);
+     переменную в @media не подставить — число стоит в @media ниже (метка grain-min-width).
+   ===================================================================== */
+:root{
+  --grain-tile: url(grain-gray-256.png);
+  --grain-size: 256px;          /* сторона плитки, px */
+  --grain-opacity: .064;        /* σ на снимке ≈ opacity × 78.35 */
+  --grain-blend: normal;        /* normal / hard-light — одинаковая сила на любом фоне */
+  --grain-rendering: auto;      /* как у донора: auto (сглаживание) или pixelated */
+  --grain-frames: 4;            /* кадров «кипения» = сдвигов в @keyframes ниже */
+  --grain-frame-ms: 100ms;      /* мс на кадр */
+  --grain-px: 1;                /* справочно: размер зерна — плитка grain-tile.mjs --px N */
+  --grain-min-width: 0px;       /* справочно: то же число стоит в @media ниже */
+}
+.grain-overlay{display:none}
+@media (min-width: 0px) { /* grain-min-width */
+  .grain-overlay{
+    display:block;
+    position:fixed; inset:0; overflow:hidden; contain:strict;
+    z-index:2147483000; pointer-events:none;
+    opacity:var(--grain-opacity); mix-blend-mode:var(--grain-blend);
+  }
+  .grain-overlay::before{
+    content:''; position:absolute;
+    top:calc(-1 * var(--grain-size)); left:calc(-1 * var(--grain-size)); right:0; bottom:0;
+    background:var(--grain-tile) 0 0 / var(--grain-size) var(--grain-size) repeat;
+    image-rendering:var(--grain-rendering);
+    will-change:transform;
+    animation:grain-boil calc(var(--grain-frames) * var(--grain-frame-ms)) steps(1, end) infinite;
+  }
+}
+/* grain-keyframes:start */
+@keyframes grain-boil{
+  0%   {transform:translate(0,0)}
+  25%  {transform:translate(97px,173px)}
+  50%  {transform:translate(211px,41px)}
+  75%  {transform:translate(59px,229px)}
+}
+/* grain-keyframes:end */
+@media (prefers-reduced-motion: reduce){ .grain-overlay::before{animation:none} }
+@media print{ .grain-overlay{display:none!important} }

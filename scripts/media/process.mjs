@@ -92,6 +92,22 @@ export async function makePreview(sharp, buf) {
   return { jpeg, hash: await dhash(sharp, jpeg), entropy: +st.entropy.toFixed(2) };
 }
 
+/**
+ * Плитка 2×2 из кадров ролика (Pexels video_pictures): лица, надписи и чужие
+ * телефоны часто появляются не на постере, а в середине ролика.
+ */
+export async function makeMosaic(sharp, bufs) {
+  const list = bufs.slice(0, 4);
+  const TW = 400, TH = 225;
+  const cols = list.length > 1 ? 2 : 1; const rows = Math.ceil(list.length / cols);
+  const layers = [];
+  for (const [i, b] of list.entries()) {
+    const img = await sharp(b, { failOn: 'none' }).rotate().resize(TW, TH, { fit: 'cover' }).toBuffer();
+    layers.push({ input: img, left: (i % cols) * TW, top: Math.floor(i / cols) * TH });
+  }
+  return sharp({ create: { width: cols * TW, height: rows * TH, channels: 3, background: '#1b1b1b' } }).composite(layers).jpeg({ quality: 85 }).toBuffer();
+}
+
 const shortLicense = (s) => String(s || '').replace(/\s*\(.*\)\s*/g, ' ').replace(/Content License|License/gi, '').replace(/\s+/g, ' ').trim().slice(0, 22);
 
 /**
@@ -101,10 +117,13 @@ const shortLicense = (s) => String(s || '').replace(/\s*\(.*\)\s*/g, ' ').replac
 export function tileLabel(c, kind) {
   const f = c.file || {};
   const dims = f.width && f.height ? `${f.width}x${f.height}${f.unverified ? '?' : ''}` : 'size ?';
+  /* оригинал крупнее достижимого файла — видно сразу («1920x1280 из 5184») */
+  const oL = Math.max(c.orig?.width || 0, c.orig?.height || 0); const fL = Math.max(f.width || 0, f.height || 0);
+  const of = oL && fL && oL > fL + 2 ? ` из ${oL}` : '';
   const l1 = `${String(c.n).padStart(2, '0')}  ${c.source}`;
   const l2 = kind === 'video'
     ? `${c.duration ? Math.round(c.duration) + 's' : '?s'}  ${dims}  ${f.bytes ? mb(f.bytes) : '?MB'}  ${shortLicense(c.license)}`
-    : `${dims}  ${shortLicense(c.license)}`;
+    : `${dims}${of}  ${shortLicense(c.license)}`;
   return [l1, l2, (c.flags || []).join(' ')];
 }
 
@@ -186,6 +205,19 @@ function grainRaw(data, width, height, ch, amount, seed) {
     const n = ((r() + r() + r() - 1.5) / 1.5) * amp * w;
     for (let k = 0; k < 3; k++) { const v = data[i + k] + n; data[i + k] = v < 0 ? 0 : v > 255 ? 255 : v; }
   }
+}
+
+/**
+ * Та же обработка, что у фото (--look, --contrast, --grain), для постера видео
+ * или любого кадра. Возвращает сырые пиксели: sharp(data, { raw: info }).
+ */
+export async function applyLook(sharp, input, { look = 'none', contrast = 0, grain = 0, seedKey = '' } = {}) {
+  const lk = parseLook(look); const c = Math.max(0, Math.min(1, Number(contrast) || 0)); const g = Number(grain) || 0;
+  if (g > MAX_GRAIN) throw new Error(`--grain ${g}: в файл не больше ${MAX_GRAIN}`);
+  const { data, info } = await sharp(input, { failOn: 'none' }).rotate().removeAlpha().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
+  if (lk.type !== 'none' || c > 0) toneRaw(data, info.channels, lk, c);
+  grainRaw(data, info.width, info.height, info.channels, g, seedOf(seedKey || 'poster'));
+  return { data, info: { width: info.width, height: info.height, channels: info.channels } };
 }
 
 /* ---------- обработка кадра ---------- */

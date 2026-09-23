@@ -74,6 +74,20 @@ export function makeFrames({ size = 256, levels = 16, px = 1, frames = 1, mode =
   return [...new Array(frames)].map(one);
 }
 
+/* Параметры PNG: серая плитка — палитра из levels цветов (32 КБ вместо 65); альфа-плитка —
+   без палитры: в sharp colours сам включает палитру, и альфа квантуется (было «уровней 3»). */
+function pngOpts(mode, levels) {
+  return mode === 'alpha' ? { compressionLevel: 9, effort: 10 } : { compressionLevel: 9, palette: true, colours: Math.min(256, Math.max(2, levels)), effort: 10 };
+}
+
+/** σ яркости плитки с такими параметрами (по умолчанию — 256 px, 16 уровней, серая, seed 7: 78.35). */
+export function tileSd({ size = 256, levels = 16, px = 1, mode = 'gray', seed = 7 } = {}) {
+  const [b] = makeFrames({ size, levels, px, frames: 1, mode, seed });
+  const ch = mode === 'alpha' ? 2 : 1; const n = size * size; let s = 0, s2 = 0;
+  for (let i = 0; i < n; i++) { const v = mode === 'alpha' ? (b[i * ch + 1] / 255) * b[i * ch] + (1 - b[i * ch + 1] / 255) * 128 : b[i * ch]; s += v; s2 += v * v; }
+  const m = s / n; return r2(Math.sqrt(Math.max(0, s2 / n - m * m)));
+}
+
 /** Ожидаемые RGBA-пиксели кадра (для сверки декодированного файла с задуманным). */
 function expectedRgba(buf, mode) {
   const ch = mode === 'alpha' ? 2 : 1; const n = buf.length / ch; const out = Buffer.alloc(n * 4);
@@ -131,6 +145,10 @@ function judge(res, { wantPages, wantDelay, lossless, alphaLost }) {
   if (wantDelay && res.delay && res.delay.some((d) => Math.abs(d - wantDelay) > 10)) probs.push(`задержки ${res.delay.join('/')} мс вместо ${wantDelay}`);
   const bad = res.frames.map((f, i) => (lossless && f.maxDiff != null && f.maxDiff > 0 ? i : -1)).filter((i) => i >= 0);
   if (bad.length && !alphaLost) probs.push(`кадры ${bad.join(', ')} не совпадают с задуманными (до ${Math.max(...bad.map((i) => res.frames[i].maxDiff))} уровней)`);
+  /* испорченный кадр: почти плоский (σ меньше половины медианы кадров) или пустой по альфе */
+  const medSd = [...res.frames.map((f) => f.sd)].sort((a, b) => a - b)[Math.floor(res.frames.length / 2)] || 0;
+  const flat = res.frames.map((f, i) => ((f.sd != null && f.sd < 0.5 * medSd) || f.sd < 1 || f.alpha === 0 ? i : -1)).filter((i) => i >= 0);
+  if (flat.length) probs.push(`кадр ${flat.join(', ')} плоский или пустой (σ ${flat.map((i) => res.frames[i].sd).join('/')}, у остальных ≈ ${medSd})`);
   const same = res.frameCorr.map((c, i) => (c != null && c > 0.2 ? i + 1 : -1)).filter((i) => i >= 0);
   if (same.length) probs.push(`кадр ${same.join(', ')} похож на предыдущий (связь ${same.map((i) => res.frameCorr[i - 1]).join('/')}) — «кипения» не будет`);
   const sds = res.frames.map((f) => f.sd);
@@ -141,17 +159,47 @@ function judge(res, { wantPages, wantDelay, lossless, alphaLost }) {
 }
 
 /* ---------------- CLI ---------------- */
+const HELP = `grain-tile.mjs — своя шумовая плитка для зерна (детерминированно; чужой файл не переносится)
+
+  node grain-tile.mjs --out папка [--size 256] [--levels 16] [--mode gray|alpha] [--px 1]
+                      [--frames 1] [--fps 10 | --frame-ms 100] [--seed 7] [--name имя]
+                      [--formats png,sprite,gif,webp] [--json файл]
+  node grain-tile.mjs --check файл.png|gif|webp [--frames N | --sprite-frames N] [--frame-ms M] [--json файл]
+
+  --out        папка для файлов (по умолчанию текущая)
+  --size       сторона плитки, px (256)
+  --levels     уровней яркости 2…256 (16: σ ≈ 78.35, ≈ 32 КБ)
+  --mode       gray — непрозрачный серый шум (normal, opacity = σ/78.35); alpha — светлые и тёмные
+               зёрна с альфой (GIF полупрозрачность не держит — только PNG/WebP)
+  --px         зерно N×N px (lag1 плитки ≈ 1 − 1/N)
+  --frames     N независимых кадров: спрайт PNG и анимированные WebP/GIF
+  --fps        кадров в секунду GIF/WebP (10 = 100 мс); --frame-ms — то же в мс на кадр
+  --seed       зерно генератора (7): тот же seed — побайтно тот же файл
+  --name       имя файлов (grain-<mode>-<size>[-pxN])
+  --formats    что писать: png, sprite, gif, webp (по умолчанию png; при --frames > 1 ещё sprite, webp, gif)
+  --json       записать итог самопроверки
+  --check      проверить готовый файл по ВСЕМ кадрам: число кадров (--frames или --sprite-frames для
+               спрайта), задержки (--frame-ms/--fps), плоские и повторяющиеся кадры
+
+Вердикты: OK; WARN — формат не держит задуманное (alpha в GIF); FAIL — кадров не столько, кадр
+испорчен, плоский или повторяет соседний (код выхода 1).`;
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 
 if (isMain) {
-  const { opt } = parseArgs(process.argv.slice(2), { flags: [] });
+  const { opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h'], values: ['out', 'size', 'levels', 'mode', 'px', 'frames', 'fps', 'frame-ms', 'seed', 'name', 'formats', 'json', 'check', 'sprite-frames'] });
   const report = { files: [] };
+  if (opt.help || opt.h) {
+    console.log(HELP);
+    process.exit(0);
+  }
   if (opt.check) {
     const f = String(opt.check);
     if (!fs.existsSync(f)) { console.error(`Нет файла ${f}`); process.exit(1); }
     const res = await checkTileFile(f, { spriteFrames: Number(opt['sprite-frames']) || 1 });
     for (let i = 0; i < res.frames.length; i++) { const fr = res.frames[i]; console.log(`     кадр ${i}: среднее ${fr.mean}, σ ${fr.sd}, альфа ${fr.alpha}, lag1 ${fr.lag1}/${fr.lag1v}, уровней ${fr.levels}`); }
-    judge(res, { wantPages: Number(opt['sprite-frames']) || null });
+    const wantPages = Number(opt['sprite-frames']) || (opt.frames && opt.frames !== true ? Number(opt.frames) : null);
+    const wantDelay = opt['frame-ms'] && opt['frame-ms'] !== true ? Number(opt['frame-ms']) : opt.fps && opt.fps !== true ? Math.round(1000 / Number(opt.fps)) : null;
+    judge(res, { wantPages, wantDelay });
     report.files.push(res);
   } else {
     const out = path.resolve(String(opt.out || '.')); fs.mkdirSync(out, { recursive: true });
@@ -169,12 +217,12 @@ if (isMain) {
     const jobs = [];
     if (formats.has('png')) {
       const f = path.join(out, `${name}.png`);
-      await sharp(bufs[0], { raw: { width: size, height: size, channels: ch } }).png({ compressionLevel: 9, palette: mode !== 'alpha' && levels <= 256, colours: levels, effort: 10 }).toFile(f);
+      await sharp(bufs[0], { raw: { width: size, height: size, channels: ch } }).png(pngOpts(mode, levels)).toFile(f);
       jobs.push({ f, expect: [expect[0]], wantPages: 1, lossless: true });
     }
     if (frames > 1 && formats.has('sprite')) {
       const f = path.join(out, `${name}-sprite${frames}.png`);
-      await sharp(Buffer.concat(bufs), { raw: { width: size, height: size * frames, channels: ch } }).png({ compressionLevel: 9, palette: mode !== 'alpha', colours: levels }).toFile(f);
+      await sharp(Buffer.concat(bufs), { raw: { width: size, height: size * frames, channels: ch } }).png(pngOpts(mode, levels)).toFile(f);
       jobs.push({ f, expect, wantPages: frames, spriteFrames: frames, lossless: true });
     }
     if (frames > 1 && (formats.has('gif') || formats.has('webp'))) {
