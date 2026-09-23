@@ -139,7 +139,7 @@ function resolveEvidencePath(p) {
   const b = path.resolve(process.cwd(), p); if (fs.existsSync(b)) return b;
   return a;
 }
-const storePath = (abs) => (inside(abs, runRoot) ? path.relative(runRoot, abs) : abs).split(path.sep).join('/');
+const storePath = (abs) => (inside(abs, runRoot) ? path.relative(real(runRoot), abs) : abs).split(path.sep).join('/');
 const sniffImage = (abs) => {
   try {
     const fd = fs.openSync(abs, 'r'); const b = Buffer.alloc(16); fs.readSync(fd, b, 0, 16, 0); fs.closeSync(fd);
@@ -181,7 +181,7 @@ function checkEvidence(spec, check, { lenient = false } = {}) {
   let s; try { s = fs.statSync(abs); } catch { /* нет */ }
   if (!s || !s.isFile() || !s.size) { P('missing', `файла нет или он пустой: ${abs}`); return { problems, warns, rec }; }
   rec.mtimeMs = s.mtimeMs;
-  if (lenient) return { problems, warns, rec };
+  if (lenient) { rec.takenAt = new Date(s.mtimeMs).toISOString(); return { problems, warns, rec }; }
   if (kind === 'image' && (check === 'runtime' || check === 'perf')) P('type', `${check} подтверждается протоколом .json, а не снимком: снимок не показывает, что клик, ввод или замер дали результат`);
   let evTime = s.mtimeMs;
   if (kind === 'image') {
