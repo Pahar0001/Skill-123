@@ -133,16 +133,40 @@ export function requireChrome() {
 }
 
 /* GPU не отключаем намеренно: без него WebGL в безголовом Chrome может не
-   подняться, и проверка 3D покажет пустой холст там, где у людей всё работает. */
-export async function launch({ headless = true } = {}) {
+   подняться, и проверка 3D покажет пустой холст там, где у людей всё работает.
+   protocolTimeout — сколько ждать ответа страницы на одну команду: зависшая
+   (нехватка памяти, бесконечный цикл) страница даёт ошибку через 90 с, а не
+   держит скрипт двадцать минут. */
+export async function launch({ headless = true, protocolTimeout = 90000 } = {}) {
   const puppeteer = loadPuppeteer();
   return puppeteer.launch({
-    executablePath: requireChrome(), headless,
+    executablePath: requireChrome(), headless, protocolTimeout,
     args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'],
   });
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Сторож страницы: если вкладка упала (событие error — «Page crashed!», чаще
+ * всего от нехватки памяти), это записывается в page.rwCrashed, и
+ * assertAlive/withDeadline сразу бросают понятную ошибку вместо ожидания.
+ */
+export function guardPage(page) {
+  if (!page || page.__rwGuard) return page;
+  Object.defineProperty(page, '__rwGuard', { value: true });
+  page.on('error', (e) => { page.rwCrashed = String((e && e.message) || e || 'вкладка упала').slice(0, 200); });
+  return page;
+}
+const crashText = (page) => `вкладка браузера упала (${page.rwCrashed}) — обычно не хватает памяти: закройте лишнее и повторите`;
+export function assertAlive(page) { if (page && page.rwCrashed) throw new Error(crashText(page)); }
+
+/** Обещание с пределом времени: не уложилось в ms — ошибка с текстом what (и о падении вкладки, если было). */
+export function withDeadline(promise, ms, what, page = null) {
+  let timer;
+  const limit = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(page && page.rwCrashed ? crashText(page) : `${what}: не уложилось в ${Math.round(ms / 1000)} с — страница зависла или ей не хватает памяти`)), ms); });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
 
 export const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 export const TABLET_UA = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -341,7 +365,7 @@ function canvasHook() {
  * trackBytes (true — байты через CDP).
  */
 export async function preparePage(browser, vp, { scheme = 'light', reducedMotion = false, userAgent = null, hookCanvas = true, trackBytes = true } = {}) {
-  const page = await browser.newPage();
+  const page = guardPage(await browser.newPage());
   await page.setViewport(vp);
   const ua = userAgent || vp.ua || (vp.isMobile ? (vp.width > 600 ? TABLET_UA : MOBILE_UA) : null);
   if (ua) await page.setUserAgent(ua);
@@ -591,15 +615,20 @@ export async function settleAnimations(page, maxMs = 2500) {
  * Возвращает { y, scrollY, offset, file?, buffer?, media }: offset — на сколько
  * страница не доехала до y (низ страницы).
  */
-export async function screenSegment(page, y, { file = null, pause = 1200, waitMedia = true, mediaTimeout = 6000, settle = 1500, type = 'png' } = {}) {
-  await scrollToY(page, y);
-  await sleep(pause);
-  const media = waitMedia ? await waitForMedia(page, { timeout: mediaTimeout }) : null;
-  if (settle) await settleAnimations(page, settle);
-  const scrollY = await currentScroll(page); /* где страница стоит в момент снимка */
-  const out = { y, scrollY, offset: Math.max(0, y - scrollY), media };
-  if (file) { await page.screenshot({ path: file, type }); out.file = file; } else out.buffer = await page.screenshot({ type });
-  return out;
+export async function screenSegment(page, y, { file = null, pause = 1200, waitMedia = true, mediaTimeout = 6000, settle = 1500, type = 'png', deadline = 60000 } = {}) {
+  assertAlive(page);
+  const run = async () => {
+    await scrollToY(page, y);
+    await sleep(pause);
+    const media = waitMedia ? await waitForMedia(page, { timeout: mediaTimeout }) : null;
+    if (settle) await settleAnimations(page, settle);
+    const scrollY = await currentScroll(page); /* где страница стоит в момент снимка */
+    const out = { y, scrollY, offset: Math.max(0, y - scrollY), media };
+    if (file) { await page.screenshot({ path: file, type }); out.file = file; } else out.buffer = await page.screenshot({ type });
+    return out;
+  };
+  /* предел на весь снимок: зависшая вкладка даёт ошибку, а не вечное ожидание */
+  return withDeadline(run(), deadline + pause + (waitMedia ? mediaTimeout : 0) + (settle || 0), `снимок окна на y=${y}`, page);
 }
 
 /**

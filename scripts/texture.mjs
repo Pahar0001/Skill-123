@@ -816,6 +816,17 @@ export async function measureTexture(page, opts = {}) {
   const bands = ['dark', 'mid', 'light'].map((k) => B.grain[k]);
   res.status = bands.some((b) => b.status === 'есть') ? 'есть' : bands.some((b) => b.status === 'нет') ? 'нет' : 'не измерено';
   res.statusNote = res.status === 'не измерено' ? `ровных плиток мало (тёмных ${B.grain.dark.tiles}, средних ${B.grain.mid.tiles}, светлых ${B.grain.light.tiles}; нужно ≥ ${MIN_TILES} в полосе) — это «не измерено», а не «зерна нет»` : '';
+  /* слой найден и снят проход «без слоя» — решает вклад слоя: σ на снимке могут давать
+     картины, градиенты и сжатие картинок, а не зерно (на «ХОЛСТе» σ 1.63 в средних тонах при вкладе 0.32) */
+  if (hasLayers && res.status === 'есть' && B.contribution) {
+    const cb = ['dark', 'mid', 'light'].map((k) => B.contribution[k]).filter((b) => b.status !== 'не измерено');
+    if (cb.length && cb.every((b) => b.sd < GRAIN_MIN_SD)) {
+      const names = { dark: 'тёмный', mid: 'средний', light: 'светлый' };
+      const from = ['dark', 'mid', 'light'].filter((k) => B.grain[k].status === 'есть').map((k) => `${names[k]} σ ${B.grain[k].sd}`).join(', ');
+      res.status = 'нет';
+      res.statusNote = `слой найден, но его вклад «со слоем − без» меньше ${GRAIN_MIN_SD} на всех фонах; σ на снимке (${from}) дают картинки и градиенты, а не зерно`;
+    }
+  }
   res.diagnosis = diagnose(res);
   if (dir) {
     const pick = (f) => allTiles.filter((t) => f(t.y_mean)).sort((x, y) => y.sd - x.sd)[Math.floor(allTiles.filter((t) => f(t.y_mean)).length / 2)];
@@ -1208,22 +1219,33 @@ if (isMain) {
       console.log(`\n${fail ? 'FAIL' : warn ? 'WARN' : 'OK'}: сверка фактуры — ${path.join(out, 'compare.json')}`);
       if (fail) process.exit(1);
     } else {
-      const url = String(pos[0]);
-      const vps = pickViewports(opt.viewport || opt.vp || 'desktop,tablet,mobile');
-      const out = path.resolve(String(opt.out || path.join(runDir({}, url), 'texture')));
-      ensureDir(out);
-      const list = await runSet(url, vps, out, Number(opt.screens) || 4, !!opt.extras, opt.label ? String(opt.label) : null);
+      /* texture.json прошлого замера вместо адреса: рецепт, --tokens, --css, --md без нового замера */
+      const fromJson = isJsonPath(pos[0]);
+      const saved = fromJson ? readJson(String(pos[0])) : null;
+      const url = fromJson ? String((saved && saved.url) || pos[0]) : String(pos[0]);
+      let list;
+      if (fromJson) {
+        list = loadSet(pos[0]);
+        if (opt.viewport || opt.vp) { const want = new Set(pickViewports(opt.viewport || opt.vp).map(([n]) => n)); list = list.filter((r) => want.has(r.viewport.name)); }
+        if (!list.length) throw new Error(`в ${pos[0]} нет замеров${opt.viewport || opt.vp ? ' для этих экранов' : ''}`);
+        console.log(`замер из ${pos[0]} (${url}, ${saved && saved.takenAt ? saved.takenAt.slice(0, 10) : 'дата неизвестна'}) — страница заново не открывается`);
+      } else {
+        const vps = pickViewports(opt.viewport || opt.vp || 'desktop,tablet,mobile');
+        const out = path.resolve(String(opt.out || path.join(runDir({}, url), 'texture')));
+        ensureDir(out);
+        list = await runSet(url, vps, out, Number(opt.screens) || 4, !!opt.extras, opt.label ? String(opt.label) : null);
+      }
       for (const r of list) printResult(r);
       const rec = recipeFrom(list);
       printRecipe(rec);
       const block = tokensBlock(rec, list);
       console.log(`\nпеременные для site.tokens.css:\n${block}`);
-      const jf = String(opt.json || path.join(out, 'texture.json'));
-      writeJson(jf, { url, takenAt: new Date().toISOString(), results: list, recipe: rec, tokens: block });
+      const jf = fromJson ? (opt.json ? String(opt.json) : null) : String(opt.json || path.join(path.resolve(String(opt.out || path.join(runDir({}, url), 'texture'))), 'texture.json'));
+      if (jf) writeJson(jf, { url, takenAt: fromJson && saved && saved.takenAt ? saved.takenAt : new Date().toISOString(), results: list, recipe: rec, tokens: block });
       if (opt.tokens) { writeTokens(String(opt.tokens), block); console.log(`блок переменных → ${opt.tokens}`); }
       if (opt.css) { ensureDir(path.dirname(path.resolve(String(opt.css)))); fs.writeFileSync(String(opt.css), fillGrainCss(rec)); console.log(`grain.css с рецептом → ${opt.css}`); }
       if (opt.md) { ensureDir(path.dirname(path.resolve(String(opt.md)))); fs.writeFileSync(String(opt.md), textureMarkdown(list, { recipe: rec })); console.log(`раздел для discovery.md → ${opt.md}`); }
-      console.log(`итог → ${jf}`);
+      if (jf) console.log(`итог → ${jf}`);
     }
   } catch (e) {
     console.error(`FAIL texture.mjs: ${e && e.message ? e.message : e}`);
