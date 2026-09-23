@@ -28,7 +28,9 @@ description: Снять дизайн-спецификацию с сайта-ре
 
 ## Порядок работы
 
-Скрипты лежат в `scripts/` рядом с этим файлом. Запускать можно из
+Скрипты лежат в `scripts/` рядом с этим файлом; `<скилл>` в командах ниже —
+`~/.claude/skills/design-reference` (в PowerShell 5.1 `~` не раскрывается —
+писать `$HOME/.claude/skills/design-reference`). Запускать можно из
 любой папки: `puppeteer-core` ищется в `DESIGN_REF_PROJECT`,
 `SITE_REWORK_PROJECT`, текущей папке и рядом со скиллом site-rework
 (`~/.claude/site-rework/node_modules`). Не нашёлся — скрипт падает с

@@ -5,6 +5,17 @@
  *   node cyrillic-check.mjs "Oswald" "Bebas Neue:400" ...
  *   node cyrillic-check.mjs --css https://site/fonts.css "Свой Шрифт"
  *   node cyrillic-check.mjs --selftest
+ *   node cyrillic-check.mjs --help | -h
+ *
+ * Гарнитура[:вес] — вес по умолчанию 400; стили берутся с Google Fonts, свои — через
+ * --css <адрес стилей> (один на все шрифты запуска). --selftest проверяет сам способ:
+ * Oswald должен дать «кириллица есть», Bebas Neue — «кириллицы НЕТ».
+ *
+ * Печатает по строке на шрифт: «кириллица есть» | «кириллицы НЕТ» | «не загрузился».
+ * Код выхода: 0 — у всех кириллица есть (для --selftest — самопроверка пройдена) и после
+ * --help/-h; 1 — иначе, а также без шрифтов и при --css без адреса. Файлов не пишет;
+ * сервер на 127.0.0.1 со случайным портом и Chrome поднимаются только для проверки и
+ * закрываются. Нужен доступ к fonts.googleapis.com (или к адресу из --css).
  *
  * Способ: на странице настоящего сервера (иначе браузер не заберёт
  * внешние стили) слово набирается шрифтом с запасным monospace и с
@@ -14,12 +25,20 @@
  * кириллицу отрисовал запасной, у шрифта её нет. Латиница проверяется
  * тем же способом: если и она «не загрузилась», виноват не шрифт, а сеть.
  */
+import fs from 'node:fs';
 import http from 'node:http';
 import { launch, parseArgs, sleep } from './lib.mjs';
 
-const { pos, opt } = parseArgs(process.argv.slice(2));
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'selftest'], values: ['css'] });
+/* справка — до сервера и браузера: раньше «-h» уходил в названия шрифтов и запускал Chrome */
+if (opt.help || opt.h || pos.includes('-h')) {
+  const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
+  console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split(/\r?\n/).map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
+  process.exit(0);
+}
+if (opt.css === true) { console.error('--css без адреса: --css https://site/fonts.css "Свой Шрифт"'); process.exit(1); }
 const fonts = opt.selftest ? ['Oswald', 'Bebas Neue'] : pos;
-if (!fonts.length) { console.error('Нужны названия гарнитур, например: node cyrillic-check.mjs "Oswald" "Bebas Neue"'); process.exit(1); }
+if (!fonts.length) { console.error('Нужны названия гарнитур, например: node cyrillic-check.mjs "Oswald" "Bebas Neue" (--help — справка)'); process.exit(1); }
 
 const server = http.createServer((_, res) => { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end('<!doctype html><meta charset="utf-8"><body></body>'); });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
