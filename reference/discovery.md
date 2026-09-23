@@ -5,7 +5,7 @@
 формулировках, а не на числах.
 
 ```
-node scripts/discover.mjs <url> [--out <папка прогона>] [--viewports desktop,tablet,mobile]
+node ~/.claude/skills/site-rework/scripts/discover.mjs <url> [--out <папка прогона>] [--viewports desktop,tablet,mobile]
      [--no-design] [--light] [--no-320] [--no-hover] [--no-texture] [--scheme dark] [--tag discover]
 ```
 
@@ -130,16 +130,16 @@ WARN в сводке, в вёрстку не брать. Что дописать
 - кнопки: первичная / вторичная / текстовая, состояния наведения, фокуса, нажатия, недоступности;
 - карточки, формы, навигация — по одному эталону каждого (чего нет у донора — `reference/authorship.md`);
 - границы, радиусы, тени — три уровня, не больше, и только из паспорта;
-- движение: тип появления донора (`motion.scrollReveal` в `site.json`), две длительности, одна кривая;
+- движение: тип появления донора (`desktop.motion.scrollReveal` и `mobile.motion.scrollReveal` в `design/site.json`), две длительности, одна кривая;
 - иконки: набор и размер;
 - картинки: пропорции из медиа-слотов, обработка (цвет, зерно, скругление);
 - фактура: блок `--grain-*` из `texture.mjs --tokens`.
 
 Все новые правки делать **через эти переменные**. Если нужной переменной
 нет — добавить в систему, а не в компонент. Проверка после правок:
-`design-reference/scripts/verify.mjs design/site.json <url>` — покажет,
+`node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/design/site.json <url>` — покажет,
 где новая страница разошлась с собственной системой; сознательные отступления
-записать в `design/site.ignore`.
+записать в `<папка>/design/site.ignore` (`.ignore` ищется рядом со спецификацией).
 
 ## Референсы и донор
 

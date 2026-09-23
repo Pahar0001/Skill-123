@@ -9,6 +9,14 @@
  *
  *   --viewport  desktop | laptop | tablet | mobile | mobile-s (320×568@2) | android (360×800@3)
  *               | ШxВ@плотность («320x568@2») | одна ширина («320»)
+ *               --viewports — то же самое. Экран один за запуск: список «mobile,desktop» —
+ *               ошибка (код 2), запускайте по разу на экран
+ *
+ *   значения: шаг или настройка берёт следующее слово, если это не шаг и не флаг этого
+ *   скрипта: «--hover --scroll» — ошибка «--hover: нужно значение» (код 2). Значение,
+ *   которое начинается с «--», пишется через «=»: --hover="--x". Неизвестный флаг —
+ *   предупреждение WARN в stderr, запуск продолжается. Все ошибки аргументов — до папок
+ *   и браузера.
  *
  *   шаги, выполняются в порядке записи:
  *        --wait 800            подождать
@@ -22,11 +30,14 @@
  *                              запросы, фокус на другом элементе, диалоги. Своя прокрутка и
  *                              фокус на нажатом — не эффект. Кнопка без эффекта — FAIL.
  *                              Якорь «#id»: дождаться остановки прокрутки и сверить верх цели
- *        --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…)
+ *        --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…);
+ *                              делится по первому «=» вне [ ], ( ) и кавычек:
+ *                              --type "input[name=phone]=89001234567"
  *        --edit "sel"          поле с маской: набор, Backspace до конца, правка в середине,
  *                              Delete, вставка «8 (900) …», Ctrl+A+Backspace
  *        --key Tab             нажать клавишу: где фокус, значение и курсор поля
- *        --select "sel=знач"   выбрать вариант списка (value или текст варианта)
+ *        --select "sel=знач"   выбрать вариант списка (value или текст варианта); делится так же,
+ *                              как --type: "select[name=work]=6", "#sel=a=b" → вариант «a=b»
  *        --resize 1152         сменить ширину окна (или 834x1112, или rotate — повернуть)
  *        --canvas              холсты: рисует ли (снимок с холстом и без), меняется ли кадр,
  *                              резкость буфера: FAIL — буфер меньше 0.85 ширины в CSS px,
@@ -48,11 +59,16 @@
  *   не шаги, а настройки:
  *        --init "js"           код до всех скриптов страницы (например, PerformanceObserver)
  *        --cpu 4               процессор в N раз медленнее
+ *        --scheme light|dark   цветовая схема (по умолчанию light)
+ *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
- *        --help                эта справка
+ *        -h, --help            эта справка (ничего не создаёт и не запускает)
  *
  * Выход: <папка>/runtime/<tag>.json, снимки рядом и протокол с вердиктами
- * OK / WARN / FAIL. Код выхода 1 при ошибках консоли или проваленных шагах.
+ * OK / WARN / FAIL. Код выхода 1 при ошибках консоли или проваленных шагах, без адреса,
+ * при неверном адресе или неизвестном экране; 2 — ошибка в аргументах (нет значения,
+ * «--expect» не сразу за «--eval», --type/--select без «=», --resize не числом,
+ * список экранов, лишние слова после адреса).
  * 404 на /favicon.ico — WARN «нет favicon», не провал загрузки.
  *
  * Вердикт OK означает «в браузере произошло то, что ожидалось». Красиво ли
@@ -69,32 +85,99 @@ import {
 /* ---------- аргументы: шаги в порядке записи ---------- */
 const argv = process.argv.slice(2);
 const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', 'edit', 'key', 'select', 'resize', 'canvas', 'motion', 'video', 'nav', 'css', 'eval', 'expect', 'assert', 'shot', 'fullpage']);
+/* без значения: шаги-флаги и настройки-флаги */
 const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'help', 'h']);
-const steps = []; const opt = {}; const pos = [];
-for (let i = 0; i < argv.length; i++) {
-  let a = argv[i];
-  if (!a.startsWith('--')) { pos.push(a); continue; }
-  let k = a.slice(2); let v;
-  const eqI = k.indexOf('=');
-  if (eqI > 0 && (STEP.has(k.slice(0, eqI)) || !FLAG.has(k.slice(0, eqI)))) { v = k.slice(eqI + 1); k = k.slice(0, eqI); }
-  else v = FLAG.has(k) ? true : argv[++i];
-  if (k === 'expect') {
-    const prev = steps[steps.length - 1];
-    if (!prev || prev.k !== 'eval') { console.error('--expect пишется сразу после --eval'); process.exit(2); }
-    prev.expect = v; continue;
-  }
-  if (STEP.has(k)) steps.push({ k, v }); else opt[k] = v;
-}
-if (opt.help || opt.h) {
+/* настройки со значением */
+const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init']);
+const usage = (msg) => { console.error(msg); process.exit(2); };
+/* имя флага из слова: «--scroll», «--scroll=1» → scroll; «-h» → h; не флаг → null */
+const nameOf = (s) => { s = String(s); if (s === '-h') return 'h'; if (!s.startsWith('--') || s === '--') return null; const k = s.slice(2); const e = k.indexOf('='); return e > 0 ? k.slice(0, e) : k; };
+const isKnown = (s) => { const n = nameOf(s); return n != null && (STEP.has(n) || FLAG.has(n) || OPTS.has(n)); };
+
+/* справка — до всего остального: без адреса, папок и браузера */
+if (argv.some((a) => a === '-h' || a === '--help' || a === '--h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
   process.exit(0);
 }
+
+/* «селектор=значение»: первый «=» вне [..], (..), кавычек и после «\» —
+   input[name=phone]=8900… → input[name=phone] | 8900…; #sel=знач=ение → #sel | знач=ение */
+function splitSelEq(s) {
+  s = String(s); let br = 0, par = 0, q = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q) { if (ch === '\\') i++; else if (ch === q) q = null; continue; }
+    if (ch === '\\') { i++; continue; }
+    if (ch === '"' || ch === "'") q = ch;
+    else if (ch === '[') br++;
+    else if (ch === ']') br = Math.max(0, br - 1);
+    else if (ch === '(') par++;
+    else if (ch === ')') par = Math.max(0, par - 1);
+    else if (ch === '=' && br === 0 && par === 0) return [s.slice(0, i), s.slice(i + 1)];
+  }
+  return null;
+}
+
+const steps = []; const opt = {}; const pos = []; const unknown = [];
+for (let i = 0; i < argv.length; i++) {
+  const a = String(argv[i]);
+  if (a === '--') { pos.push(...argv.slice(i + 1).map(String)); break; }
+  if (!a.startsWith('--')) { pos.push(a); continue; }
+  let k = a.slice(2); let v;
+  const eqI = k.indexOf('=');
+  if (eqI > 0) {
+    v = k.slice(eqI + 1); k = k.slice(0, eqI);
+    if (FLAG.has(k) && !STEP.has(k)) v = !/^(0|false|no|off|нет)$/i.test(v); /* --no-fail=0 — выключено */
+  } else if (FLAG.has(k)) v = true;
+  else {
+    /* значение — следующее слово, если это не шаг и не флаг этого скрипта:
+       «--hover --scroll» — ошибка, а не селектор «--scroll» */
+    const next = argv[i + 1];
+    if (next === undefined || isKnown(next)) {
+      if (STEP.has(k) || OPTS.has(k)) usage(`--${k}: нужно значение${next === undefined ? ' — это последнее слово в команде' : ` — следующим идёт «${next}», а это ${STEP.has(nameOf(next)) ? 'шаг' : 'флаг'}; значение, которое начинается с «--», пишите через «=»: --${k}="${next}"`}`);
+      v = true;
+    } else v = String(argv[++i]);
+  }
+  if (k === 'expect') {
+    const prev = steps[steps.length - 1];
+    if (!prev || prev.k !== 'eval') usage('--expect пишется сразу после --eval');
+    prev.expect = v; continue;
+  }
+  if (STEP.has(k)) steps.push({ k, v });
+  else { if (!FLAG.has(k) && !OPTS.has(k)) unknown.push(k); opt[k] = v; }
+}
+for (const u of unknown) console.error(`WARN неизвестный флаг --${u} — не используется (-h — список шагов и настроек)`);
 const url = pos[0];
-if (!url) { console.error('Нужен адрес: node runtime.mjs <url> [--viewport mobile] [--scroll] [--click sel] [--canvas] [--motion] ... (--help — все шаги)'); process.exit(1); }
-for (const s of steps) if (s.v === undefined && !FLAG.has(s.k)) { console.error(`--${s.k}: нужно значение`); process.exit(2); }
-const resolved = resolveViewport(opt.viewport || 'desktop');
-if (!resolved) { console.error(`Неизвестный экран ${opt.viewport}. Есть: desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@плотность`); process.exit(1); }
+if (!url) { console.error('Нужен адрес: node runtime.mjs <url> [--viewport mobile] [--scroll] [--click sel] [--canvas] [--motion] ... (-h, --help — все шаги)'); process.exit(1); }
+if (pos.length > 1) usage(`лишние слова после адреса: ${pos.slice(1).map((p) => `«${p}»`).join(', ')} — шаги и настройки пишутся с «--» (--hover "sel"), значение с пробелами — в кавычках`);
+let urlOk = null; try { urlOk = new URL(url); } catch { /* ниже */ }
+if (!urlOk || !/^(https?|file|data|about):$/.test(urlOk.protocol)) {
+  const hint = fs.existsSync(url) ? ` (файл на диске: file:///${path.resolve(url).replace(/\\/g, '/')})` : /^[\w.-]+(:\d+)?(\/|$)/.test(url) ? ` (например, http://${url})` : '';
+  console.error(`Неверный адрес «${url}» — нужен полный: http://…, https://… или file:///…${hint}`); process.exit(1);
+}
+/* значения шагов — до папок и браузера */
+const NEEDS_VALUE = new Set(['hover', 'click', 'type', 'edit', 'key', 'select', 'resize', 'shot', 'eval', 'assert']);
+for (const s of steps) {
+  if (NEEDS_VALUE.has(s.k) && (s.v === true || s.v === undefined || String(s.v).trim() === '')) usage(`--${s.k}: нужно значение`);
+  if (s.k === 'type' || s.k === 'select') {
+    const p = splitSelEq(s.v);
+    if (!p || !p[0].trim()) usage(`--${s.k} "${s.v}": нужно «селектор=${s.k === 'type' ? 'текст' : 'значение'}» (делится по первому «=» вне [ ] и кавычек: ${s.k === 'type' ? 'input[name=phone]=89001234567' : 'select[name=work]=6'})`);
+  }
+  if (s.k === 'resize' && !/^(rotate|поворот|\d+(?:[x×*]\d+)?)$/i.test(String(s.v).trim())) usage(`--resize ${s.v}: нужно число (ширина), ШxВ или rotate`);
+}
+for (const k of ['out', 'tag', 'scheme', 'cpu', 'init']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
+if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light или dark`);
+if (opt.cpu !== undefined && !(Number(opt.cpu) > 0)) usage(`--cpu ${opt.cpu}: нужно число — во сколько раз замедлить процессор (4)`);
+/* экран: --viewport и --viewports — одно и то же; runtime проверяет один экран за запуск */
+const vpGiven = ['viewport', 'viewports'].filter((k) => opt[k] !== undefined).map((k) => [k, String(opt[k]).trim()]);
+if (vpGiven.length === 2 && vpGiven[0][1] !== vpGiven[1][1]) usage(`заданы и --viewport ${vpGiven[0][1]}, и --viewports ${vpGiven[1][1]} — это один флаг; runtime проверяет один экран за запуск`);
+const [vpFlag, vpRaw] = vpGiven[0] || ['viewport', 'desktop'];
+const vpList = vpRaw.split(',').map((x) => x.trim()).filter(Boolean);
+if (!vpList.length) usage(`--${vpFlag}: нужно значение`);
+if (vpList.length > 1) usage(`--${vpFlag} ${vpRaw}: runtime проверяет один экран за запуск — запустите по разу на каждый (${vpList.map((x) => `--viewport ${x}`).join(', затем ')}); несколько экранов за один запуск снимает shots.mjs`);
+const resolved = resolveViewport(vpList[0]);
+if (!resolved) { console.error(`Неизвестный экран ${vpList[0]}. Есть: desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@плотность`); process.exit(1); }
 const [vpName, vp] = resolved;
 let cur = { ...vp };
 const run = runDir(opt, url);
@@ -414,8 +497,8 @@ async function clickStep(v) {
 }
 
 async function typeStep(v) {
-  const eq = String(v).indexOf('='); if (eq < 0) return line('FAIL', `ввод ${v}`, 'нужно «селектор=текст»');
-  const sel = String(v).slice(0, eq), text = String(v).slice(eq + 1);
+  const parts = splitSelEq(v); if (!parts) return line('FAIL', `ввод ${v}`, 'нужно «селектор=текст»');
+  const [sel, text] = parts;
   const h = await find(sel);
   if (!h) return line('FAIL', `ввод в ${sel}`, notFound());
   await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await h.focus(); await h.evaluate((el) => { try { el.select(); } catch { el.value = ''; } });
@@ -490,8 +573,8 @@ async function keyStep(v) {
 }
 
 async function selectStep(v) {
-  const eq = String(v).lastIndexOf('='); if (eq < 0) return line('FAIL', `выбор ${v}`, 'нужно «селектор=значение»');
-  const sel = String(v).slice(0, eq), want = String(v).slice(eq + 1);
+  const parts = splitSelEq(v); if (!parts) return line('FAIL', `выбор ${v}`, 'нужно «селектор=значение»');
+  const [sel, want] = parts;
   const h = await find(sel);
   if (!h) return line('FAIL', `выбор ${sel}`, notFound());
   const opts = await h.evaluate((el) => (el.options ? [...el.options].map((o) => ({ v: o.value, t: o.textContent.trim() })) : null));

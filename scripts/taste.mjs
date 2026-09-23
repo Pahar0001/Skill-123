@@ -21,18 +21,20 @@
  *   --quote "<текст>"  дословные слова пользователя, как он их написал; обязательно для --by user
  *   --why "<текст>"    что на картинке и в чём дело, своими словами; обязательно всегда
  *   --rule <id[,id]>   правила каталога cliche.mjs (node cliche.mjs rules), к которым относится запись
- *   --img <файл>       кроп; копируется в <журнал>/img/
+ *   --img <файл>       кроп; копируется в <журнал>/img/ (папка img/ создаётся только тогда)
  *   --run, --donor     прогон и адрес донора, при котором это сказано
  *   --date <ГГГГ-ММ-ДД> дата, когда сказано (по умолчанию сегодня)
  *   --source "<текст>" где сказано (сообщение, отзыв на снимок)
  *   --blocks a,b       brief: записи по этим блокам — открыть их картинки перед эскизом
  *   --last N           brief: сколько последних записей показать (10)
  *   --baseline <json>  brief/bans: база нового донора (cliche.mjs baseline) — какие запреты спорят с его чертами
- *   --viewport <имя>   brief/bans: экран базы (desktop по умолчанию)
+ *   --viewport <имя>   brief/bans: экран базы (desktop по умолчанию); --viewports — то же самое.
+ *                      Экран один: список «desktop,mobile» — ошибка (код 2)
  *   --json             bans: вывести запреты JSON-ом
- *   --help             справка
+ *   --help, -h, --h    справка (код 0, ничего не пишет)
  *
- * Коды выхода: 0 — готово; 1 — FAIL (запись отклонена, check нашёл битые строки); 2 — нет команды.
+ * Коды выхода: 0 — готово; 1 — FAIL (запись отклонена, check нашёл битые строки, не создать
+ * папку журнала); 2 — нет команды или неверный --viewport/--viewports.
  *
  * Правила журнала (исправление по аудиту A11):
  *   · by user — только с дословной цитатой пользователя в --quote. Свой вывод
@@ -45,7 +47,10 @@
  *     не блокирует молча: brief --baseline и cliche.mjs --taste выводят его
  *     вопросом пользователю.
  *
- * Файлы: journal.jsonl (одна запись — одна строка), img/, README.md. Отдельного bans.json нет:
+ * Файлы: journal.jsonl (одна запись — одна строка), img/ (только если был --img), README.md
+ * (пишет add, если его нет: что за журнал, кто что пишет, как читать; свой README не
+ * перезаписывается). brief, bans и check ничего не пишут. Все проверки аргументов add —
+ * до создания папок и файлов. Отдельного bans.json нет:
  * запреты каждый раз считаются из журнала (последняя запись по правилу решает).
  * Модуль: activeBans(), readJournal(), tasteDir(), conflictsWith(), baselineResult(), isUserWord()
  * — их берёт cliche.mjs.
@@ -149,6 +154,57 @@ function readBaseline(file, vpName) {
   try { return baselineResult(JSON.parse(fs.readFileSync(String(file), 'utf8')), vpName || 'desktop'); } catch (e) { console.error(`WARN  не прочитать базу ${file}: ${e.message}`); return null; }
 }
 
+/* README.md журнала: пишет add, если файла нет. Текст — как у ~/.claude/site-rework/taste/README.md. */
+const JOURNAL_README = [
+  '# Журнал вкуса',
+  '',
+  'Память между прогонами скилла site-rework: что пользователь отверг и что принял,',
+  'его словами и с картинкой. Пишет и читает `scripts/taste.mjs`, запреты',
+  'подхватывает `scripts/cliche.mjs --taste`.',
+  '',
+  '## Файлы',
+  '',
+  '| файл | что в нём |',
+  '|---|---|',
+  '| `journal.jsonl` | одна запись — одна строка JSON: дата, прогон, донор, блок, вердикт, кто решил, правила, цитата, пояснение, картинка |',
+  '| `img/` | кропы: что отвергли и что приняли (копирует `taste.mjs add --img`) |',
+  '| `README.md` | этот файл |',
+  '',
+  'Отдельного `bans.json` нет: запреты каждый раз считаются из журнала, последняя',
+  'запись по правилу решает.',
+  '',
+  '## Кто что пишет',
+  '',
+  '- `--by user` — **только дословная цитата пользователя** в `--quote`, как он её',
+  '  написал, с опечатками. Свой вывод («у донора 1, у нас 63», σ, проценты) —',
+  '  это `--why`, а запись тогда `--by self`.',
+  '- `--by self` — свой отсев на шаге авторства. Запретом не бывает: это подсказка,',
+  '  выход прогона она не блокирует.',
+  '- Запрет = запись `by user` + `verdict rejected` + правило из каталога',
+  '  (`node cliche.mjs rules`).',
+  '- Снять запрет может только пользователь: запись `by user` с `accepted` или',
+  '  `preferred` по тому же правилу; с `--donor` — только для этого донора.',
+  '- Запрет, который спорит с явной чертой нового донора (у донора этот приём',
+  '  есть), не блокирует молча: `cliche.mjs --taste` и `taste.mjs brief --baseline`',
+  '  выводят его как ВОПРОС пользователю.',
+  '',
+  '## Команды',
+  '',
+  '```',
+  'node scripts/taste.mjs brief --blocks form,hero,faq [--baseline <база донора>]   # этап 0 прогона',
+  'node scripts/taste.mjs add --block form --verdict rejected --by user --rule form-kit \\',
+  '     --quote "<дословно>" --why "<что на картинке>" --img <кроп.png> --run <прогон> --donor <url>',
+  'node scripts/taste.mjs bans [--baseline <база донора>] [--json]',
+  'node scripts/taste.mjs check',
+  '```',
+  '',
+  '## Чего здесь быть не должно',
+  '',
+  'Личных данных пользователя (почта, имя, телефон) и чужих данных из переписки.',
+  'Единственный текст пользователя в журнале — дословная цитата его оценки.',
+  '',
+].join('\n');
+
 /* справка = шапка этого файла */
 function help() {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
@@ -157,9 +213,10 @@ function help() {
 }
 
 function cli() {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks', 'viewport'], flags: ['json', 'help', 'h'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json', 'help', 'h'] });
   const cmd = pos[0];
-  if (opt.help || opt.h || cmd === 'help') { help(); return; }
+  /* -h, --h, --help и «help» — справка у любой команды, код 0, ничего не пишется */
+  if (opt.help || opt.h || pos.includes('-h') || cmd === 'help') { help(); return; }
   const dir = tasteDir(opt.dir);
   const J = path.join(dir, 'journal.jsonl'); const IMG = path.join(dir, 'img');
   const str = (k) => (opt[k] === undefined || opt[k] === true ? '' : String(opt[k]));
@@ -180,22 +237,40 @@ function cli() {
     if (e.by === 'user' && looksLikeOwnConclusion(quote)) console.error('WARN  цитата похожа на вывод из замеров, а не на слова пользователя — проверьте, что это дословно его текст');
     const src = str('img');
     if (src && !fs.existsSync(src)) { console.error(`FAIL  нет файла ${src}`); process.exit(1); }
-    fs.mkdirSync(IMG, { recursive: true });
-    if (src) {
-      const n = readJournal(dir).length + 1;
-      const name = `${e.date}-${e.block.replace(/[^\wа-яё-]+/gi, '-')}-${e.verdict}-${n}${path.extname(src) || '.png'}`;
-      fs.copyFileSync(src, path.join(IMG, name)); e.img = 'img/' + name;
+    if (src && !fs.statSync(src).isFile()) { console.error(`FAIL  --img ${src}: это не файл`); process.exit(1); }
+    /* все проверки позади — теперь папки и файлы; img/ — только под картинку */
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      if (src) {
+        fs.mkdirSync(IMG, { recursive: true });
+        const n = readJournal(dir).length + 1;
+        const name = `${e.date}-${e.block.replace(/[^\wа-яё-]+/gi, '-')}-${e.verdict}-${n}${path.extname(src) || '.png'}`;
+        fs.copyFileSync(src, path.join(IMG, name)); e.img = 'img/' + name;
+      }
+      if (!e.source) delete e.source;
+      fs.appendFileSync(J, JSON.stringify(e) + '\n');
+    } catch (err) { console.error(`FAIL  не записать в журнал ${dir}: ${err.message}`); process.exit(1); }
+    /* README журнала — если его нет (первая запись в новом журнале); свой не перезаписывается */
+    const README = path.join(dir, 'README.md');
+    if (!fs.existsSync(README)) {
+      try { fs.writeFileSync(README, JOURNAL_README, { flag: 'wx' }); console.log(`OK    README.md журнала: ${README}`); }
+      catch (err) { if (err.code !== 'EEXIST') console.error(`WARN  не записать ${README}: ${err.message}`); }
     }
-    if (!e.source) delete e.source;
-    fs.appendFileSync(J, JSON.stringify(e) + '\n');
     const ban = e.by === 'user' && e.verdict === 'rejected' && e.rules.length;
     console.log(`OK    записано: ${e.verdict} · ${e.block} · ${e.by} · ${e.rules.join(', ') || 'без правила'}${e.img ? ' · ' + e.img : ''}${ban ? ' — действует как запрет для cliche.mjs --taste' : e.by === 'self' ? ' — подсказка, не запрет' : ''}`);
     return;
   }
 
   if (cmd === 'brief' || cmd === 'bans') {
+    /* экран базы: --viewport и --viewports — одно и то же, экран один */
+    const vpGiven = ['viewport', 'viewports'].filter((k) => opt[k] !== undefined).map((k) => [k, str(k).trim()]);
+    if (vpGiven.length === 2 && vpGiven[0][1] !== vpGiven[1][1]) { console.error(`FAIL  заданы и --viewport ${vpGiven[0][1] || '(пусто)'}, и --viewports ${vpGiven[1][1] || '(пусто)'} — это один флаг; экран базы один`); process.exit(2); }
+    const [vpFlag, vpRaw] = vpGiven[0] || ['viewport', ''];
+    const vpList = vpRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (vpGiven.length && !vpList.length) { console.error(`FAIL  --${vpFlag}: нужно имя экрана (desktop, mobile…)`); process.exit(2); }
+    if (vpList.length > 1) { console.error(`FAIL  --${vpFlag} ${vpRaw}: экран базы один — запустите по разу на каждый (${vpList.map((x) => `--viewport ${x}`).join(', затем ')})`); process.exit(2); }
     const all = readJournal(dir); const bans = activeBans(all);
-    const donor = readBaseline(opt.baseline, str('viewport'));
+    const donor = readBaseline(opt.baseline, vpList[0] || 'desktop');
     const conflicts = conflictsWith(bans, donor);
     if (cmd === 'bans' && opt.json) { console.log(JSON.stringify({ dir, bans, conflicts: conflicts.map((c) => ({ rule: c.rule, donorCount: c.donorCount })) }, null, 1)); return; }
     console.log(`Журнал вкуса: ${dir} · записей ${all.length}${all.bad.length ? ` · битых строк ${all.bad.length}` : ''}`);

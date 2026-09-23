@@ -7,12 +7,20 @@
  *
  *   node texture.mjs <url> [--viewport desktop,tablet,mobile] [--out папка] [--screens 4]
  *                    [--label имя] [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras]
+ *   node texture.mjs <texture.json> [--viewport desktop,mobile] [--tokens файл] [--css файл] [--md файл]
+ *                    [--json файл]      рецепт и файлы по прошлому замеру: страница заново не открывается
  *   node texture.mjs compare <донор: url|texture.json> <сайт: url|texture.json>
  *                    [--viewport desktop,mobile] [--out папка] [--screens 4] [--sd-tol 0.2] [--lag-tol 0.15]
  *   node texture.mjs --png снимок.png [--png2 через-250мс.png] [--png3 ещё.png]
  *                    [--without без-слоя.png] [--region x,y,w,h] [--json файл]
  *   node texture.mjs --tile файл.gif|png|webp|svg      разбор файла текстуры по всем кадрам
- *   node texture.mjs --help
+ *   node texture.mjs --help | -h
+ *
+ * Режим <texture.json>: вместо адреса — texture.json прошлого замера (файл должен существовать
+ * и кончаться на .json; массив результатов, { results: [...] } или один результат). Печатает
+ * замеры, рецепт и блок переменных, пишет --tokens/--css/--md; --viewport оставляет только эти
+ * экраны (нет таких — ошибка, код 1); texture.json пишется, только если задан --json;
+ * --out, --screens, --label и --extras здесь не действуют.
  *
  * Флаги:
  *   --viewport  экраны через запятую (пресеты lib.mjs или ШxВ@плотность); по умолчанию
@@ -1137,10 +1145,14 @@ const HELP = `texture.mjs — фактура: слои зерна, их пара
 
   node texture.mjs <url> [--viewport desktop,tablet,mobile] [--out папка] [--screens 4] [--label имя]
                    [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras]
+  node texture.mjs <texture.json> [--viewport desktop,mobile] [--tokens файл] [--css файл] [--md файл] [--json файл]
+                   рецепт, --tokens/--css/--md по прошлому замеру — страница заново не открывается;
+                   --viewport оставляет только эти экраны; texture.json пишется только с --json
   node texture.mjs compare <донор: url|texture.json> <сайт: url|texture.json> [--viewport desktop,mobile]
                    [--out папка] [--screens 4] [--sd-tol 0.2] [--lag-tol 0.15]
   node texture.mjs --png снимок.png [--png2 b.png] [--png3 c.png] [--without без-слоя.png] [--region x,y,w,h] [--json файл]
   node texture.mjs --tile файл.gif|png|webp|svg
+  node texture.mjs --help | -h
 
   --viewport  экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@DPR);
               по умолчанию desktop,tablet,mobile (compare: desktop,mobile). --vp — старое имя.
@@ -1233,7 +1245,8 @@ const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.rea
 if (isMain) {
   const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h'], values: ['viewport', 'vp', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens'] });
   try {
-    if (opt.help || opt.h || (!pos.length && !opt.png && !opt.tile)) {
+    /* короткий -h parseArgs отдаёт позиционным — без этой проверки он уходил в замер как адрес */
+    if (opt.help || opt.h || pos.includes('-h') || (!pos.length && !opt.png && !opt.tile)) {
       console.log(HELP);
     } else if (opt.tile) {
       const t = await analyzeTile(String(opt.tile));

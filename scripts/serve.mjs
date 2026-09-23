@@ -16,7 +16,14 @@
  *           оригинал — зеркало перестаёт сыпать 404 в консоль. Передаются метод, тело,
  *           Content-Type и Range; редирект на сам оригинал переписывается в локальный
  *           путь; ответа ждём до 60 с, иначе 502.
- * --help    эта справка.
+ * --help, -h  эта справка.
+ *
+ * Занятый порт. До запуска сервер пробует подключиться к 127.0.0.1:порт и [::1]:порт (и к
+ * адресу из --host, если он не 0.0.0.0, не :: и не localhost). Ответил кто-то — «FAIL порт
+ * занят», код 1. Так ловится и сервер, который слушает 0.0.0.0 или [::]: Windows позволяет
+ * занять поверх него 127.0.0.1 и ::1, и без этой проверки новый сервер молча перехватил бы
+ * localhost у старого. Если подключение не дали (на части машин к ::1 — EACCES) или ответа
+ * нет, на Windows слушатели порта смотрятся в netstat; не удалось и там — WARN «не проверено».
  *
  * Без кэша (Cache-Control: no-store), чтобы правки в rework.css были видны по F5.
  * Отдаются только файлы внутри папки: «..», «%2e%2e», «%5c..», обратные слеши и ссылки
@@ -32,10 +39,13 @@
  * Коды ответа: 200, 206, 301 (папка без «/»), 400 (плохой адрес), 403 (вне папки,
  * скрытый файл), 404, 405 (не GET/HEAD без --proxy), 416 (диапазон за концом файла),
  * 502 (оригинал не ответил). Код выхода: 0 после --help; 1 — нет папки, неверный
- * --port или --proxy, порт занят. Файлов не пишет. Останавливать Ctrl+C.
+ * --port, --proxy или --host, порт занят (в том числе слушателем на 0.0.0.0 или [::]).
+ * Файлов не пишет. Останавливать Ctrl+C.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from './lib.mjs';
@@ -155,6 +165,51 @@ function handle(req, res) {
     return plain(res, 405, '405: только GET и HEAD', { allow: 'GET, HEAD' });
   }
   sendFile(req, res, file, st);
+}
+
+/* Занят ли порт. Windows без SO_EXCLUSIVEADDRUSE разрешает слушать 127.0.0.1:port и ::1:port,
+   когда другой процесс уже слушает 0.0.0.0:port или [::]:port, и тогда новый сервер молча
+   перехватывает localhost. Поэтому до listen пробуем подключиться: к 127.0.0.1 и ::1 (их слышит
+   и слушатель на 0.0.0.0 или [::]) и к самому --host, если это отдельный адрес. Подключились —
+   порт занят. Отказ (ECONNREFUSED) или нет такой сети (нет IPv6) — свободен. Иной ответ
+   (EACCES: на части машин подключение к ::1 запрещено даже к своему серверу) или тишина 1 с —
+   на Windows смотрим слушателей в netstat; не вышло и там — WARN «не проверено». */
+const WILDCARD = new Set(['0.0.0.0', '::', '[::]', '0:0:0:0:0:0:0:0']);
+const LOOPBACK = new Set(['127.0.0.1', '::1', '[::1]', 'localhost']);
+const FREE = new Set(['ECONNREFUSED', 'EADDRNOTAVAIL', 'ENETUNREACH', 'EHOSTUNREACH', 'EAFNOSUPPORT']);
+const shown = (a) => (a.includes(':') ? `[${a}]` : a);
+function probe(addr) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host: addr, port });
+    const done = (v) => { s.destroy(); resolve(v); };
+    s.setTimeout(1000, () => done('нет ответа за 1 с'));
+    s.once('connect', () => done('busy'));
+    s.once('error', (e) => done(FREE.has(e.code) ? 'free' : e.code || e.message));
+  });
+}
+/* слушатели порта по netstat (Windows): у слушающего сокета удалённый адрес 0.0.0.0:0 или [::]:0 —
+   так не зависим от языка столбца состояния. null — netstat не сработал. */
+function netstatListeners(addr) {
+  if (process.platform !== 'win32') return null;
+  const v6 = addr.includes(':');
+  let out; try { out = execFileSync('netstat', ['-ano', '-p', v6 ? 'TCPv6' : 'TCP'], { encoding: 'latin1', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
+  const want = new Set(v6 ? ['[::]', `[${addr.toLowerCase()}]`] : ['0.0.0.0', addr]);
+  const found = [];
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^\s*TCP\s+(\S+):(\d+)\s+(0\.0\.0\.0:0|\[::\]:0)\s+.*?(\d+)\s*$/i.exec(line);
+    if (m && Number(m[2]) === port && want.has(m[1].toLowerCase())) found.push(`${m[1]}:${m[2]} (PID ${m[4]})`);
+  }
+  return found;
+}
+const probeAddrs = ['127.0.0.1', '::1'];
+if (host && !WILDCARD.has(host) && !LOOPBACK.has(host)) probeAddrs.push(host.replace(/^\[|\]$/g, ''));
+for (const a of probeAddrs) {
+  const r = await probe(a);
+  if (r === 'busy') die(`порт ${port} занят: на ${shown(a)}:${port} уже отвечает другой сервер (он может слушать 0.0.0.0 или [::] — тогда localhost достался бы ему или нам вперемешку) — укажите другой: --port ${port + 1}`);
+  if (r === 'free') continue;
+  const ls = netstatListeners(a);
+  if (ls && ls.length) die(`порт ${port} занят: подключиться к ${shown(a)}:${port} не дали (${r}), но netstat показывает слушателя ${ls.join(', ')} — укажите другой: --port ${port + 1}`);
+  if (!ls) console.log(`WARN ${shown(a)}:${port}: ${r} — занят ли порт на этом адресе, не проверено`);
 }
 
 /* по умолчанию — только эта машина: 127.0.0.1 и ::1 (браузер может открыть localhost по любому из них) */

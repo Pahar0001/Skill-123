@@ -14,8 +14,19 @@ description: Автономная переработка существующе�
 Скриптам нужны `puppeteer-core`, `sharp`, для видео — `ffmpeg-static`. Они
 стоят в `~/.claude/site-rework/node_modules`, поэтому скрипты запускаются
 из любой папки (ещё ищутся в `SITE_REWORK_PROJECT` и в текущей папке).
-Папка прогона по умолчанию `~/.claude/site-rework/runs/<slug>`, своя —
-`--out`. У каждого скрипта `--help` печатает все флаги.
+Команды даны полным путём `node ~/.claude/skills/site-rework/scripts/…`: в
+Git Bash `~` раскрывается сам, в PowerShell 5.1 — нет, там писать
+`$HOME/.claude/skills/site-rework/scripts/…`. У каждого скрипта `--help`
+печатает все флаги.
+
+**Папка прогона** без `--out` берётся из адреса проверяемой страницы, а не
+из журнала: `~/.claude/site-rework/runs/<slug адреса>` (в версии 83e9493 у
+любого `localhost` — одна общая `runs/localhost` без порта). Поэтому каждому скрипту передавать `--out
+<папка>` (у `cliche.mjs` — `--run <папка>`, у `cliche.mjs baseline` —
+`--out <файл.json>`); у `texture.mjs` `--out` — сама
+папка замера (`<папка>/texture`, для `compare` — `<папка>/texture-compare`).
+Иначе в режимах донора и зеркала протоколы по адресу сайта лягут в чужую
+папку, и `--evidence <папка>/runtime/<tag>.json` не найдётся.
 
 ## Вход
 
@@ -24,10 +35,12 @@ description: Автономная переработка существующе�
 
 | поле | что делать, если нет |
 |---|---|
-| URL | без него не начинать — единственный обязательный вопрос |
+| URL | без него не начинать — обязательный вопрос (в режиме донора — ещё «о чём сайт») |
 | Задача | «улучши» без уточнений → пройти воронку UX (`reference/analysis.md`) и предложить сам |
 | Референсы | снять через скилл `design-reference`; не копировать, брать принципы |
 | Донор | «сделай сайт в языке вот этого» — режим донора (ниже) |
+| О чём сайт и что продаёт | в переработке — из самого сайта; в режиме донора без этого не начинать — спросить (выдумывать бизнес нельзя) |
+| Кадры и видео | свои → свободные источники (`media.mjs`) → генерация с согласия; ключ Pexels — см. «Когда спрашивать» |
 | Пожелания по стилю | вывести из текущего сайта: сохранять его язык, если не просили менять |
 | Ограничения | по умолчанию: не менять контакты, цены, логотип, основной цвет, бэкенд |
 | Исходники | искать самому, см. режимы ниже |
@@ -81,14 +94,19 @@ Bash на Windows не проходит. Git Bash подменяет аргум�
 VERIFIED ставится **только с доказательством**, снятым после последней
 правки файлов сайта: протокол `runtime/*.json` (или его шаг) с вердиктом не
 FAIL, снимок, замер — `state.mjs set … --evidence <файл[#шаг]>`. Журнал
-сам отвергает доказательство с FAIL, старше правки сайта, и пачку
-статусов одним вызовом. NA — только с причиной (`--note`); отчёт считает
-раздельно: «проверено N, неприменимо M, без доказательства K, устарело S».
+сам отвергает доказательство с FAIL, старше правки сайта или лежащее в
+папке сайта, VERIFIED нескольким задачам одним вызовом (`set 1,2 …`) и
+протокол целиком, уже подтвердивший другую задачу (второй раз — только с
+`#шагом`). NA — только с причиной (`--note`); отчёт считает раздельно:
+«проверено N, неприменимо M, без доказательства K, устарело S».
 Поля журнала: `impl` — TODO / DOING / DONE / BLOCKED / DROPPED; `runtime`,
 `visual`, `mobile`, `perf` — NOT_CHECKED / VERIFIED / FAILED / NEEDS_WORK / NA;
 ANALYZED — этап, а не поле. runtime и perf подтверждаются только протоколом
 `.json`, visual и mobile — протоколом или снимком (для mobile — снятым на
-телефонном экране). «WebGL проверен» без открытого
+экране уже 1024 px: протокол журнал проверяет по его viewport, снимок —
+только если он из `shots.mjs` и рядом лежит `shots.json`; снимок
+`runtime/*.png` по ширине не проверяется — для mobile брать протокол
+`--viewport mobile` или `after/*-mobile-*.png`). «WebGL проверен» без открытого
 холста, «mobile готов» без снимка на 390 и 320 px, «оптимизировано» без
 замера — запрещённые фразы.
 
@@ -115,14 +133,17 @@ ANALYZED — этап, а не поле. runtime и perf подтверждаю�
 
 ## Порядок работы
 
-Этапы отмечать в журнале: `node scripts/state.mjs <папка> stage <этап> done`,
-и показывать пользователю чек-лист (`state.mjs show`) при каждом переходе.
+Этапы отмечать в журнале: `node ~/.claude/skills/site-rework/scripts/state.mjs <папка> stage <этап> done|active|todo|skipped`
+(этапы: discovered browser design tech tools tokens plan ui content assets
+three motion runtime visual mobile perf a11y polish report; другое имя —
+отказ), и показывать пользователю чек-лист (`state.mjs show`) при каждом
+переходе.
 
 ### 0. Подготовка
 
 ```
-node scripts/state.mjs <папка> init <url> "<запрос>" --site <папка сайта> --mode rework|mirror|donor
-node scripts/taste.mjs brief --blocks <блоки из запроса>      # запреты и эталоны прошлых прогонов
+node ~/.claude/skills/site-rework/scripts/state.mjs <папка> init <url> "<запрос>" --site <папка сайта> --mode rework|mirror|donor
+node ~/.claude/skills/site-rework/scripts/taste.mjs brief --blocks <блоки из запроса>      # запреты и эталоны прошлых прогонов
 ```
 Открыть `Read` картинки из вывода `taste.mjs`: запреты — в матрицу «не
 делать». Определить режим; папка сайта для `--site`: исходники — папка
@@ -134,17 +155,17 @@ node scripts/taste.mjs brief --blocks <блоки из запроса>      # з
 ### 1. Разведка — состояние ANALYZED
 
 ```
-node scripts/discover.mjs <url>                      # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система
-node scripts/runtime.mjs <url> --scroll --canvas --motion --video --fullpage
-node scripts/runtime.mjs <url> --viewport mobile --scroll --click "<переключатель меню>" --shot menu
-node scripts/runtime.mjs <url> --css --hover-all --nav     # автопроверки состояния, reference/qa.md
-node scripts/perf.mjs <url>                          # телефон, медленная сеть — база для сравнения
-node scripts/a11y.mjs <url> --viewport mobile
-node scripts/shots.mjs <url> --tag before --pages /,<другие страницы в задаче> --with-320
-node scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
+node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка>        # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --scroll --canvas --motion --video --fullpage
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --viewport mobile --scroll --click "<переключатель меню>" --shot menu
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --css --hover-all --nav     # автопроверки состояния, reference/qa.md
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка>            # телефон, медленная сеть — база для сравнения
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --viewport mobile
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag before --pages /,<другие страницы в задаче> --with-320
+node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
 ```
-Если у сайта или донора есть зерно, шум, плёнка — `node scripts/texture.mjs
-<url>` (рецепт и `--grain-*`, `reference/engines.md` → «Фактура»).
+Если у сайта или донора есть зерно, шум, плёнка — `node ~/.claude/skills/site-rework/scripts/texture.mjs
+<url> --out <папка>/texture` (рецепт и `--grain-*`, `reference/engines.md` → «Фактура»).
 
 Прочитать `discovery.md`. **Открыть снимки** (`Read` показывает PNG): первый
 экран, лист прокрутки, `scroll-NN` на desktop и mobile, вырезки фактуры 1:1.
@@ -174,7 +195,7 @@ node scripts/cliche.mjs baseline <url или донор> --out <папка>/clic
 План — задачи в журнале с приоритетом:
 
 ```
-node scripts/state.mjs <папка> add "Меню на телефоне не открывается" --priority P0 --area mobile
+node ~/.claude/skills/site-rework/scripts/state.mjs <папка> add "Меню на телефоне не открывается" --priority P0 --area mobile
 ```
 P0 сломано · P1 крупная проблема UX · P2 крупная визуальная · P3 тексты ·
 P4 движение · P5 полировка. Порядок: P0 → P5, внутри — зависимости:
@@ -187,7 +208,8 @@ P4 движение · P5 полировка. Порядок: P0 → P5, вну�
 под неё → снимок → открыть глазами → исправить → повторить. Не принимать
 первый результат: минимум один круг исправлений на каждую заметную задачу.
 
-- вёрстка и UI: правки в дизайн-системе сайта (переменные из `design/site.tokens.css`),
+- вёрстка и UI: правки в дизайн-системе сайта (переменные из `design/site.tokens.css`,
+  в режиме донора — `donor/design/donor.tokens.css`),
   не поверх; без новых сборщиков и фреймворков на сайте, где их нет;
 - тексты: `reference/analysis.md`, раздел «Тексты»;
 - фото и видео: `reference/engines.md` → «Картинки и видео»: `media.mjs search` → лист-контакт
@@ -199,22 +221,25 @@ P4 движение · P5 полировка. Порядок: P0 → P5, вну�
 
 После каждой задачи — статусы с доказательствами:
 ```
-node scripts/state.mjs <папка> set <id> impl=DONE runtime=VERIFIED --evidence <папка>/runtime/<tag>.json
-node scripts/state.mjs <папка> set <id> visual=VERIFIED --evidence <папка>/after/<снимок>.png
+node ~/.claude/skills/site-rework/scripts/state.mjs <папка> set <id> impl=DONE runtime=VERIFIED --evidence <папка>/runtime/<tag>.json
+node ~/.claude/skills/site-rework/scripts/state.mjs <папка> set <id> visual=VERIFIED --evidence <папка>/after/<снимок>.png
 ```
 
 ### 4. Проверка — по `reference/qa.md`
 
 ```
-node scripts/shots.mjs <url> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
-node scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
-node scripts/runtime.mjs <url> --scroll --canvas --motion --video --click ... --edit ... --select ...   # desktop и mobile
-node scripts/runtime.mjs <url> --css --hover-all --nav
-node scripts/runtime.mjs <url> --viewport mobile-s --scroll
-node scripts/perf.mjs <url> --runs 3                     # медиана трёх прогонов против базы; --overlay — цена слоя зерна
-node scripts/a11y.mjs <url> --viewport mobile
-node scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
+node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click ... --edit ... --select ...   # и то же с --viewport mobile --tag controls-mobile
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag state --css --hover-all --nav
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --viewport mobile-s --scroll
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --runs 3       # медиана трёх прогонов против базы; --overlay — цена слоя зерна
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --viewport mobile
+node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 ```
+У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),
+и следующий запуск на том же экране его перезаписывает — у каждого набора
+шагов свой `--tag`.
 Режим донора — плюс `verify.mjs` и `texture.mjs compare` (`reference/donor-mode.md` §5).
 Открыть глазами все `after/*` на desktop, tablet, mobile, вырезки 1:1
 изменённых компонентов и все `diff/*.png`: изменения только там, где
@@ -231,7 +256,8 @@ node scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste 
 
 Обязательные разделы: сайт и режим, запрос, что изучено, инструменты и
 зачем, изменения, авторские решения, проверено в браузере (контрол →
-сценарии → протокол), проверено глазами, скорость (до и после), кадры и
+сценарии → протокол), функции (чек-лист: да / нет / неприменимо с
+причиной), проверено глазами, скорость (до и после), кадры и
 лицензии, **не проверено**, что осталось, рекомендации. Таблица задач — из
 `state.mjs show`. Пути к снимкам и протоколам — в отчёт.
 
@@ -257,6 +283,11 @@ node scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste 
 допущение, записать его в отчёт и продолжать):
 - запрос конфликтует с ограничением («сделай ярче» при «не менять основной цвет»);
 - генерация картинок или 3D стоит денег на счету пользователя (Higgsfield);
+- нужны крупные кадры первого экрана или видео, а `media.mjs doctor` пишет, что
+  `PEXELS_API_KEY` не задан, — один раз попросить бесплатный ключ (pexels.com/api);
+  перед поиском на Commons без `MEDIA_CONTACT` — спросить контакт для User-Agent
+  (сайт или рабочая почта; личные данные самому не подставлять). Подробно —
+  `reference/engines.md` → «Картинки и видео»;
 - удаление секций, смена цен, контактов, юридических текстов;
 - запрет из журнала вкуса спорит с явной чертой нового донора;
 - две трактовки ведут к разным сайтам, и референсов нет — предложить два направления одним вопросом, с эскизами.
@@ -283,7 +314,19 @@ node scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste 
 | нет модели для 3D | процедурная геометрия в Three.js, шейдер — не ждать модель; или без 3D |
 | сервер отдаёт 429 | подождать минуту, не перезапускать |
 | `net::ERR_TIMED_OUT`, `ERR_CONNECTION_RESET` (медленное TLS) | скрипты повторяют переход трижды и пишут «с N-й попытки»; не гонять несколько скриптов по такому сайту параллельно |
+| внешний ресурс не загрузился (шрифт Google Fonts `ERR_CONNECTION_CLOSED`, CDN) — `runtime.mjs` ставит загрузке FAIL | перепрогнать один раз; протокол с FAIL доказательством не служит, чистый повтор — служит, оба пути — в отчёт. Повторилось — это зависимость сайта от чужого сервера: отдельная задача (свои файлы шрифта или запасная гарнитура), не примечание |
 | страница за логином, зеркало не снимается | попросить доступ или исходники; работать по снимкам пользователя как ANALYZED |
+
+**Правка самих скриптов во время прогона.** Инструмент, изменившийся между
+замерами, делает «до» и «после» несравнимыми. Правка скрипта — отдельным
+коммитом в git скилла (`git -C ~/.claude/skills/site-rework …`), потом
+заново прогнать все проверки, которые этот скрипт уже делал. Версию скрипта
+в протокол пишут только `extract.mjs` (design-reference); `discover`,
+`runtime`, `shots`, `perf`, `a11y`, `texture` — нет, и журнал сверяет время
+доказательства только с правками сайта, а не скриптов. Поэтому сверять
+руками: протокол старше `git -C ~/.claude/skills/site-rework log -1
+--format=%ci -- scripts/<скрипт>.mjs` или снят до незакоммиченной правки
+(`git -C ~/.claude/skills/site-rework status`) — устарел.
 
 ## Файлы скилла
 

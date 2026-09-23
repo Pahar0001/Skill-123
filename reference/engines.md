@@ -30,20 +30,20 @@
 ### media.mjs — подбор из бесплатных источников
 
 ```
-node scripts/media.mjs doctor                                   # ключи (только имена), источники, sharp, ffmpeg
-node scripts/media.mjs search "bakery bread" --kind photo --role hero [--profile art] [--orient landscape] [--n 24]
-node scripts/media.mjs search "steaming mug" --kind video [--sources commons,mixkit] [--frames 8|all]
-node scripts/media.mjs pick <папка поиска> 3 --seen "хлеб на деревянных полках пекарни" --caption "Свежий хлеб утром" \
+node ~/.claude/skills/site-rework/scripts/media.mjs doctor                                   # ключи (только имена), источники, sharp, ffmpeg
+node ~/.claude/skills/site-rework/scripts/media.mjs search "bakery bread" --kind photo --role hero [--profile art] [--orient landscape] [--n 24]
+node ~/.claude/skills/site-rework/scripts/media.mjs search "steaming mug" --kind video [--sources commons,mixkit] [--frames 8|all]
+node ~/.claude/skills/site-rework/scripts/media.mjs pick <папка поиска> 3 --seen "хлеб на деревянных полках пекарни" --caption "Свежий хлеб утром" \
      --role hero --dest <сайт>/img [--look duotone:#111111,#E9E6E0|mono] [--contrast 0.3] [--grain 0.04] [--crop-mobile 4:5]
-node scripts/media.mjs import <страница кадра> [<файл>] --license <из белого списка> --seen … --caption …
-node scripts/media.mjs credits <сайт>/img --md <сайт>/CREDITS.md
+node ~/.claude/skills/site-rework/scripts/media.mjs import <страница кадра> [<файл>] --license <из белого списка> --seen … --caption …
+node ~/.claude/skills/site-rework/scripts/media.mjs credits <сайт>/img --md <сайт>/CREDITS.md
 ```
 
 Порядок источников (профиль `photo`): Unsplash и Pexels (по ключу) →
 Wikimedia Commons (CC0, «Quality images») → Pixabay (ключ, 1280 — для
 карточек) → WordPress Photos → Openverse (только карточки: реальный потолок
-500–1024 px). Профиль `art`: The Met, Cleveland, Rijksmuseum, Art Institute
-of Chicago, SMK, Commons — общественное достояние с настоящим автором и
+500–1024 px). Профиль `art` по порядку: The Met, Cleveland, Rijksmuseum,
+Art Institute of Chicago, SMK, Smithsonian (по ключу), Commons — общественное достояние с настоящим автором и
 названием, как иллюстрация, не как товар и не под вымышленными именами;
 срок охраны — по году смерти (жизнь + 70). Видео: Pexels и Pixabay (по
 ключу) → Commons (в основном CC BY — подпись обязательна; перезаливы с
@@ -52,11 +52,24 @@ YouTube помечены `youtube?` и стоят в конце) → Mixkit (п�
 Restricted — отказ). Coverr, Videezy, Vecteezy, Freepik — не встраиваются.
 
 Ключи — бесплатная регистрация, в `~/.claude/site-rework/.env` (имена — в
-`.env.example`): `PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY`, `PIXABAY_API_KEY`,
-`MEDIA_CONTACT` (контакт для User-Agent по правилам Wikimedia и AIC; личные
-данные сами не подставляются). Без ключей работают Commons, Mixkit, музеи,
-Openverse. У Unsplash кадр не пережимается у себя: pick выдаёт разметку со
-ссылками `images.unsplash.com` по его правилам API.
+`.env.example`): `PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY` (и по желанию
+`UNSPLASH_APP_NAME`), `PIXABAY_API_KEY`, `SI_API_KEY` (Smithsonian в профиле
+`art`), `MEDIA_CONTACT` (контакт для User-Agent по правилам Wikimedia и AIC;
+личные данные сами не подставляются). Без ключей работают Commons, Mixkit,
+музеи кроме Smithsonian, Openverse. У Unsplash кадр не пережимается у себя:
+pick выдаёт разметку со ссылками `images.unsplash.com` по его правилам API.
+
+Без ключей крупный кадр первого экрана — в основном Commons, видео — Commons
+(шумная выдача, чаще CC BY) и Mixkit поштучно; Openverse — только карточки.
+Если первому экрану или видео-петле этого мало, а `media.mjs doctor` пишет,
+что `PEXELS_API_KEY` не задан, — один раз попросить у пользователя
+бесплатный ключ (pexels.com/api → Your API Key) и положить в `.env`.
+
+`MEDIA_CONTACT` не задан — `media.mjs` пишет WARN, но Commons и AIC всё
+равно запрашивает, с User-Agent без контакта, а политика Wikimedia контакт
+требует (запросы без него могут блокировать, оригиналы Commons и так чаще
+отвечают 429). До поиска на Commons спросить у пользователя адрес сайта или
+рабочую почту для таких писем; самому почту из git или профиля не брать.
 
 **Отбор — глазами по листу-контакту** (`<папка>/sheet-1.jpg`): номер,
 источник, реальный размер файла, лицензия, флаги `people?`, `brand?`,
@@ -64,6 +77,14 @@ Openverse. У Unsplash кадр не пережимается у себя: pick 
 вывески, валюту и лица они пропускают, решает взгляд. Люди в кадре: согласий
 моделей у стоков нет (и ст. 152.1 ГК РФ) — для фонов брать кадры без
 узнаваемых лиц; руки без лица допустимы.
+
+**Стоковый кадр — не товар.** Pexels, Unsplash и Pixabay запрещают
+продавать кадры без переработки как принты и постеры, а на витрине с ценой
+кадр читается именно товаром. Картиной, принтом или постером на продажу
+бывают только работы заказчика; музейная работа — иллюстрация с настоящим
+автором и названием, без цены; стоковый кадр — только обстановка (стена,
+интерьер). Флаг `art?` значит, что на кадре чужое произведение: лицензия
+фотографа на него не распространяется.
 
 **Ворота pick**: без `--seen` (что на кадре, своими словами, не меньше трёх
 слов) и `--caption` (подпись или роль на сайте) — отказ, код 2; кадр с
@@ -121,7 +142,7 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
 
 1. **Замер донора** (или своего сайта «до»):
    ```
-   node scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/texture
+   node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/texture
    ```
    Слои (фон, `img`, `picture`, `svg` с feTurbulence, `canvas`, `video`,
    псевдоэлементы; шум в фоне body/секции), файл текстуры по всем кадрам
@@ -130,14 +151,18 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
    на каких экранах есть (`@media` у слоя). Итог — рецепт и блок `--grain-*`.
 2. **Своя плитка** — чужой файл не переносится никогда:
    ```
-   node scripts/grain-tile.mjs --out <папка сайта> [--px 2] [--frames 4 --frame-ms 100]
+   node ~/.claude/skills/site-rework/scripts/grain-tile.mjs --out <папка сайта> [--px N]   # N = --grain-px из рецепта
    ```
+   Для `templates/grain.css` нужен один кадр: кипение делается сдвигом, а
+   имя плитки в нём — `grain-gray-256[-pxN].png`, поэтому `--px` должен
+   совпасть с `--grain-px` рецепта. `--frames 4 --frame-ms 100` пишет
+   анимированную плитку (спрайт, GIF, WebP) — шаблон её не использует.
    Детерминированно (тот же `--seed` — побайтно тот же файл), серая
    непрозрачная плитка 256 px, 16 уровней, σ 78.35; `--check файл` проверяет
    готовую плитку по всем кадрам.
 3. **Слой по шаблону** `templates/grain.css`:
    ```
-   node scripts/texture.mjs <папка>/texture/texture.json --css <сайт>/grain.css --tokens <сайт>/site.tokens.css
+   node ~/.claude/skills/site-rework/scripts/texture.mjs <папка>/texture/texture.json --css <сайт>/grain.css --tokens <сайт>/site.tokens.css
    ```
    Рецепт подставляется без нового замера: прозрачность, режим,
    `image-rendering` как у донора, `@media (min-width)` — где у донора
@@ -201,10 +226,10 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
 **Проверка 3D — только так, никак иначе:**
 
 ```
-node scripts/runtime.mjs <url> --canvas --shot hero --motion          # рисует, кадр меняется, резкость буфера, кадры/с
-node scripts/runtime.mjs <url> --viewport mobile --canvas --resize rotate --shot hero
-node scripts/runtime.mjs <url> --reduced-motion --canvas               # что при «меньше движения»
-node scripts/perf.mjs <url>                                            # телефон: кадры/с при прокрутке, память
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --canvas --shot hero --motion          # рисует, кадр меняется, резкость буфера, кадры/с
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile --canvas --resize rotate --shot hero
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --reduced-motion --canvas               # что при «меньше движения»
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url>                                            # телефон: кадры/с при прокрутке, память
 ```
 Резкость: FAIL, если буфер меньше 0.85 от ширины в CSS px (размыт на любом
 экране); WARN, если меньше 0.85 от ширины × DPR — для WebGL это бывает
@@ -223,7 +248,7 @@ node scripts/perf.mjs <url>                                            # тел�
 (загрузка, прокрутка, наведение, клик), что при «меньше движения».
 
 Сначала — язык движения донора или сайта: тип появления из
-`design/site.json` → `motion.scrollReveal`, длительности и кривые оттуда же,
+`design/site.json` → `desktop.motion.scrollReveal` (и `mobile.…`), длительности и кривые оттуда же,
 «что появляется при наведении» — из разведки. У streetwearbrands при
 прокрутке появляется один блок, а подписи карточек — при наведении: 21
 блок со сдвигом 22 px на своём сайте — это уже не его язык.
@@ -261,8 +286,8 @@ node scripts/perf.mjs <url>                                            # тел�
 остаётся при «меньше движения» — в отдельной вкладке; какие законченные
 анимации держат свойство), `--hover-all` (каждое правило `:hover` меняет
 объявленное; анимация с `fill: both` его перебивает — FAIL), снимки
-в фазах (`--shot`), `perf.mjs` — кадры/с при прокрутке не ниже 55 на десктопе
-и 40 на телефоне.
+в фазах (`--shot`), `perf.mjs` — кадры/с при прокрутке: 55 и выше — OK, от 40
+до 55 — WARN, ниже 40 — FAIL (порог один для любого экрана).
 
 ## Телефон и планшет
 

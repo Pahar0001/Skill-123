@@ -1027,6 +1027,12 @@ export function parseArgs(argv, { values = [], flags = [] } = {}) {
   return { pos, opt };
 }
 
+/**
+ * Имя папки прогона по адресу: хост без www, порт, путь — через «-».
+ * https://www.site.ru/news/x → site-ru-news-x; http://localhost:4177/ → localhost-4177;
+ * http://127.0.0.1:8080/a → 127-0-0-1-8080-a; http://[::1]:4177/ → ip6-localhost-4177;
+ * http://site.ru:8080/ → site-ru-8080; file:///C:/w/site/index.html → file-site-index-html.
+ */
 export function slugFromUrl(url) {
   const u = new URL(url);
   /* локальный файл: полный путь в имени папки бессмыслен — два последних сегмента, раскодированные */
@@ -1034,7 +1040,15 @@ export function slugFromUrl(url) {
     let p = u.pathname; try { p = decodeURIComponent(p); } catch { /* как есть */ }
     return ('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file';
   }
-  return (u.hostname.replace(/^www\./, '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'site';
+  /* порт: у этой машины (localhost, *.localhost, 127.x.x.x, [::1], 0.0.0.0) — всегда, иначе все
+     локальные сайты делят одну папку runs/localhost; у остальных — только явный нестандартный
+     (URL сам убирает :80 у http и :443 у https), так старые папки доменов находятся как раньше.
+     IPv6 без скобок и двоеточий: [::1] → ip6-localhost, [2001:db8::1] → ip6-2001-db8-1. */
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const local = h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0';
+  const port = u.port || (local ? (u.protocol === 'https:' ? '443' : '80') : '');
+  const name = h === '::1' ? 'ip6-localhost' : h.includes(':') ? `ip6-${h}` : h.replace(/^www\./, '');
+  return (name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'site';
 }
 
 export function pageSlug(url) {

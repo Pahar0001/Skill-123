@@ -9,7 +9,11 @@
  * этим словам. С Pinterest на сайт не попадает ни один файл.
  *
  *   node media.mjs doctor
- *       ключи (только имена), доступность источников (с запасным DoH), sharp, ffmpeg
+ *       ключи (только имена), доступность источников (с запасным DoH), sharp, ffmpeg.
+ *       Итог: OK — все пробы ответили и все ключи заданы; WARN — часть проб не прошла
+ *       (временно) и/или не заданы ключи (отдельный WARN перечисляет их и что без них
+ *       недоступно; без MEDIA_CONTACT — спросить контакт у пользователя); FAIL — нет sharp.
+ *       Код 1 только без sharp, иначе 0.
  *
  *   node media.mjs search "<запрос по-английски>" --kind photo|video
  *       [--profile photo|art]            photo — заведения, магазины, школы (по умолчанию);
@@ -74,7 +78,8 @@
  *     (иначе CRF +2). Печатает шов петли числом и лист из 4 кадров для глаз
  *     (<папка поиска>/check/<имя>-frames.jpg). 4K на сайт не отдаётся. Нужен ffmpeg.
  *
- *   node media.mjs <команда> --help — эта справка.
+ *   node media.mjs <команда> --help (или -h, --h) — эта справка, код 0; команда при этом
+ *     не выполняется: ни сети, ни файлов.
  *
  * Ключи: окружение или ~/.claude/site-rework/.env (образец — .env.example рядом):
  * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT
@@ -99,7 +104,7 @@ import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit
 
 /* Значения флагов берутся «как у всех»: следующий аргумент, если он не похож на
    другой флаг. Поэтому `--seen --ok-flags` не съест --ok-flags как описание. */
-const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help'];
+const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help', 'h'];
 const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS });
 const cmd = pos[0];
 const log = (...a) => console.log(...a);
@@ -203,7 +208,11 @@ async function cmdDoctor() {
   log(`media.mjs doctor · node ${process.version}`);
   log(`\nКлючи (окружение и ${net.ENV_FILE}: ${net.envFileExists() ? 'файл есть' : 'файла нет'}; значения не печатаются):`);
   const uses = { PEXELS_API_KEY: 'pexels (фото, видео)', UNSPLASH_ACCESS_KEY: 'unsplash', PIXABAY_API_KEY: 'pixabay (фото ≤1280, видео)', SI_API_KEY: 'smithsonian (art)', MEDIA_CONTACT: 'контакт в User-Agent (Wikimedia, AIC)' };
-  for (const k of net.KEY_NAMES) log(`  ${net.key(k) ? 'OK  ' : 'WARN'} ${k.padEnd(20)} ${net.key(k) ? 'задан' : 'не задан'} — ${uses[k]}`);
+  const missing = missingKeys();
+  for (const k of net.KEY_NAMES) {
+    const ok = !missing.includes(k);
+    log(`  ${ok ? 'OK  ' : 'WARN'} ${k.padEnd(20)} ${ok ? 'задан' : net.key(k) ? 'задан, но пуст без скобок и переводов строк' : 'не задан'} — ${uses[k]}`);
+  }
   log(`  User-Agent: ${net.contact() ? 'с контактом из MEDIA_CONTACT' : net.userAgent()}`);
 
   const sharp = loadSharp();
@@ -236,10 +245,40 @@ async function cmdDoctor() {
   }
   const doh = [...net.dnsStats.entries()].filter(([, v]) => v !== 'dns');
   if (doh.length) log(`  имя найдено через DoH (системный DNS не ответил): ${doh.map(([h, v]) => `${h} → ${v}`).join(', ')}`);
-  if (!net.contact()) log('WARN: нет MEDIA_CONTACT — политика Wikimedia и AIC просит контакт в User-Agent; запросы к ним идут строго по одному с паузой. Контакт задаётся только этой переменной (адрес сайта студии или рабочая почта), личные данные скрипт не подставляет.');
-  if (!net.key('PEXELS_API_KEY') && !net.key('UNSPLASH_ACCESS_KEY')) log('WARN: без ключей Pexels/Unsplash фото на первый экран — только Commons (CC0 из раннего Unsplash); для видео-петель нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
-  log(`\n${!sharp ? 'FAIL: нет sharp.' : warn ? `WARN: ${warn} проб не прошли — это временно (DNS VPN, лимиты), повторить позже; источник из-за этого не вычёркивать.` : 'OK: все пробы ответили.'}`);
+
+  /* Незаданные ключи — отдельный WARN: пробы отвечают и без ключей, но источники без ключа
+     search пропускает, а без MEDIA_CONTACT Commons и AIC получают безымянный User-Agent. */
+  if (missing.length) {
+    log(`\nWARN: не заданы ключи (${missing.length} из ${net.KEY_NAMES.length}): ${missing.join(', ')} — чем грозит:`);
+    for (const k of missing) log(`  · ${k.padEnd(20)} ${KEY_RISK[k]}`);
+    const has = (k) => !missing.includes(k);
+    if (!has('PEXELS_API_KEY') && !has('UNSPLASH_ACCESS_KEY')) log('  → фото на первый экран — в основном Commons (CC0 из раннего Unsplash); Openverse — только карточки.');
+    if (!has('PEXELS_API_KEY') && !has('PIXABAY_API_KEY')) log('  → видео-петли — только Commons (шумная выдача, чаще CC BY) и Mixkit поштучно; нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
+    if (!has('MEDIA_CONTACT')) log('  → до поиска на Commons и в AIC спросить у пользователя контакт (адрес сайта студии или рабочую почту) и записать MEDIA_CONTACT=… в ~/.claude/site-rework/.env; почту из git или профиля самому не брать.');
+    log(`  Ключи кладутся в ${net.ENV_FILE} (образец — ${path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env.example')}) или в окружение; без ключа источник пропускается, остальные работают.`);
+  }
+
+  const parts = [];
+  if (warn) parts.push(`${warn} проб не прошли — это временно (DNS VPN, лимиты), повторить позже; источник из-за этого не вычёркивать`);
+  if (missing.length) {
+    const what = [missing.some((k) => k !== 'MEDIA_CONTACT') ? 'часть источников недоступна' : '', missing.includes('MEDIA_CONTACT') ? 'Commons и AIC идут без контакта в User-Agent (спросить контакт у пользователя)' : ''].filter(Boolean).join(', ');
+    parts.push(`${warn ? '' : 'пробы ответили, но '}не заданы ключи: ${missing.join(', ')} — ${what}`);
+  }
+  log(`\n${!sharp ? 'FAIL: нет sharp.' : parts.length ? `WARN: ${parts.join('; ')}.` : 'OK: все пробы ответили, все ключи заданы.'}`);
   if (!sharp) process.exit(1);
+}
+
+/* Что теряется без ключа (doctor). Источники — SOURCES в media/photo.mjs и видео в media/video.mjs. */
+const KEY_RISK = {
+  PEXELS_API_KEY: 'нет Pexels — ни фото, ни видео (главный источник видео-петель)',
+  UNSPLASH_ACCESS_KEY: 'нет Unsplash — крупных фото для первого экрана меньше',
+  PIXABAY_API_KEY: 'нет Pixabay — ни фото (до 1280 px), ни видео',
+  SI_API_KEY: 'нет Smithsonian в профиле art (остальные музеи работают)',
+  MEDIA_CONTACT: 'Commons (Wikimedia) и AIC получают User-Agent без контакта — вопреки их правилам: запросы могут блокировать, оригиналы Commons чаще отвечают 429, запросы идут строго по одному с паузой',
+};
+/** Незаданные ключи по порядку net.KEY_NAMES; MEDIA_CONTACT, который после очистки пуст, считается незаданным. */
+function missingKeys() {
+  return net.KEY_NAMES.filter((k) => !(k === 'MEDIA_CONTACT' ? net.contact() : net.key(k)));
 }
 
 /* ---------- search ---------- */
@@ -747,7 +786,8 @@ function cmdCredits() {
 /* ---------- запуск ---------- */
 
 try {
-  if (opt.help || cmd === 'help' || !cmd) help(0);
+  /* -h и --h — как --help у любой команды: справка, код 0, без сети и файлов */
+  if (opt.help || opt.h || pos.includes('-h') || cmd === 'help' || !cmd) help(0);
   else if (cmd === 'doctor') await cmdDoctor();
   else if (cmd === 'search') await cmdSearch();
   else if (cmd === 'pick') await cmdPick();

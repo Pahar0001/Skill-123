@@ -2,17 +2,22 @@
 /**
  * Доступность: то, что можно проверить в живом DOM без чтения экрана.
  *
- *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--no-grain]
- *   node a11y.mjs --help
+ *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--no-grain] [--strict]
+ *   node a11y.mjs --help   (или -h)
  *
  * Флаги:
  *   --viewport  экран: пресет (desktop, laptop, tablet, mobile, mobile-s, android), запись ШxВ@плотность
- *               («320x568@2») или одна ширина; по умолчанию desktop.
+ *               («320x568@2») или одна ширина; по умолчанию desktop. Один экран за запуск: список
+ *               через запятую — ошибка с кодом 1 (запускать по разу на экран, итоги ложатся в разные
+ *               файлы). --viewports — то же самое (синоним).
  *   --out       папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>), итог — <out>/a11y/<tag>.json.
  *   --tag       имя файла итога (по умолчанию имя экрана).
  *   --no-grain  не учитывать слой зерна поверх текста в контрасте (см. ниже).
- *   --help      эта справка.
- * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON), 1 — неверные аргументы.
+ *   --strict    код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
+ *   --help, -h  эта справка.
+ * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict,
+ * вердикт FAIL. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и запуска
+ * браузера.
  *
  * Проверяется: контраст текста к фактическому фону (WCAG AA: 4.5:1, крупный
  * текст 3:1) — по вычисленным цветам, а на картинках, градиентах и чужих подложках по снимку
@@ -20,7 +25,8 @@
  * текста, но не его предок (фигура под текстом в Tilda Zero Block, плашка плавающего меню), или
  * предок с фоном, чья коробка под текстом не лежит (текст вынесен fixed/absolute). Закреплённый
  * текст (прозрачная шапка, нижняя панель) сравнивается с подложками в координатах окна на верху
- * страницы — шапка поверх фото первого экрана меряется по снимку, а не по фону body. Не проверяется
+ * страницы — шапка поверх фото первого экрана меряется по снимку, а не по фону body; ниже по
+ * странице — отдельной проверкой (см. «Закреплённый текст на прокрутке»). Не проверяется
  * текст, которого на экране нет: центр за краем предка с overflow ≠ visible (слайд за краем,
  * заглушка Tilda за коробкой artboard). Текст, перекрытый чужим непрозрачным блоком в момент
  * снимка или ушедший за окно, не мерится, но и не считается OK: WARN со списком («смотреть глазами»).
@@ -54,6 +60,29 @@
  * «контраст с учётом зерна»; пары в пределах 10 % над нормой перечисляются. Для текста на
  * картинке снимок фона уже содержит слой: отображение применяется только к цвету текста.
  *
+ * Закреплённый текст на прокрутке. Текст в блоке с position: fixed или sticky (шапка, плавающее
+ * меню, нижняя панель) лежит над разными секциями: прозрачная шапка с белыми ссылками над тёмным
+ * фото первого экрана проходит, а над белым каталогом ниже — нет, если сайт не меняет шапку. Верх
+ * страницы мерится вместе со всем текстом (строки «контраст» выше); сверх того страница ставится ещё
+ * на несколько высот, не больше 8: сначала по одной на каждый фон секций, которого закреплённый текст
+ * наверху не касался (для каждой полосы такого текста — сверху, снизу), затем на остальные секции по
+ * порядку. Секции — дети body и обёрток во всю высоту страницы (не fixed и не absolute); фон секции —
+ * свой цвет или картинка, иначе крупная (от половины площади) картинка или блок с фоном внутри,
+ * иначе «фон страницы». Секций с другим фоном нет — одна высота посередине страницы (сайт мог сменить
+ * шапку после прокрутки). На каждой высоте — пауза и ожидание переходов (сайт перекрашивает шапку по
+ * прокрутке), цвет текста читается заново, текст прячется, и снимок окна даёт фон под его строками
+ * (коробки строк текста, а не всего элемента: значок рядом с подписью не в счёт); худшие 10 %
+ * пикселей против нормы AA, зерно учитывается как выше. Провал — FAIL с высотой и секцией:
+ * «на 1840 px меню nav.menu над светлой секцией section#catalog «Каталог»: a «Каталог» #FFFFFF 16px
+ * — 1.07:1». К высотам подъезжают сверху (прокрутка вниз); если часть текста на высоте спрятана или
+ * за окном, — ещё раз снизу: шапка, которая прячется при прокрутке вниз, видна при прокрутке вверх
+ * (в выводе «прокрутка вверх»). Текст, который и так спрятан, за окном (sticky уехал со своим
+ * блоком) или перекрыт другим блоком, на этой высоте не мерится — в выводе сколько таких; ни
+ * одного замера — WARN «смотреть глазами». Прокручивается не документ, а блок во весь экран —
+ * секции ищутся в нём. Берётся до 40 элементов (больше — сначала мелкие блоки: шапка и меню раньше
+ * закреплённых секций, и не больше трёх одинаковых). Закреплённый текст ищется наверху и на высоте
+ * одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
+ *
  * Мелкий текст: видимый текст кеглем меньше 12 px — WARN, меньше 10 px — FAIL (подписи вроде
  * «не обязательно» 9 px читать трудно, особенно на телефоне). Скрытый для глаз текст
  * (sr-only: коробка 1–2 px или clip) не в счёт.
@@ -73,18 +102,35 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   launch, openPage, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir, loadSharp,
-  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith,
+  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, VIEWPORTS,
   SIG_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN, HEX_FN,
 } from './lib.mjs';
 import { findTextureLayers } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'no-grain'], values: ['viewport', 'out', 'tag'] });
-if (opt.help) { console.log(HELP); process.exit(0); }
-if (!pos[0]) { console.error('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)'); process.exit(1); }
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'no-grain', 'strict'], values: ['viewport', 'viewports', 'out', 'tag'] });
+/* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
+if (opt.help || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
+const die = (msg) => { console.error(msg); process.exit(1); };
+for (const k of ['viewport', 'viewports', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
+if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)');
 const url = pos[0];
-const [vpName, vp] = resolveViewport(opt.viewport || 'desktop') || [];
-if (!vp) { console.error(`Неизвестный экран ${opt.viewport}`); process.exit(1); }
+{
+  let ok = false; try { ok = /^(https?|file|data|about):$/i.test(new URL(url).protocol); } catch { /* не адрес */ }
+  if (!ok) die(`Неверный адрес «${url}»: нужен полный адрес — http://…, https://… или file:///…  (подробно: --help)`);
+}
+/* --viewport и --viewports — один флаг; экран один за запуск */
+function oneViewport(dflt) {
+  const a = opt.viewport, b = opt.viewports;
+  if (a !== undefined && b !== undefined && String(a).trim() !== String(b).trim()) die(`Заданы и --viewport ${a}, и --viewports ${b} — это один флаг, оставьте один`);
+  const raw = a ?? b; const list = String(raw ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!list.length) list.push(dflt);
+  if (list.length > 1) die(`a11y меряет один экран за запуск, а задано ${list.length}: ${list.join(', ')}. Запустите по разу на экран: ${list.map((v) => `--viewport ${v}`).join(', затем ')} — итоги лягут в разные файлы (<out>/a11y/<экран>.json)`);
+  const r = resolveViewport(list[0]);
+  if (!r) die(`Неизвестный экран «${list[0]}». Есть: ${Object.keys(VIEWPORTS).join(', ')} или запись ШxВ@плотность, например 320x568@2`);
+  return r;
+}
+const [vpName, vp] = oneViewport('desktop');
 const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'a11y'));
 const tag = opt.tag || vpName;
 const sharp = loadSharp();
@@ -247,6 +293,250 @@ function domInPage({ isMobile, map }) {
   return { contrast, smallText, clippedText: clippedCount, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, smallInputs, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
 }
 
+/* ---------- закреплённый текст на прокрутке: функции страницы ---------- */
+
+/* текст в блоках position: fixed или sticky, видимый в окне сейчас: метка data-rw-fx=<номер>.
+   Повторный вызов добавляет только новые (шапка, ставшая fixed после прокрутки). band — где по
+   высоте окна стоит центр текста, когда блок закреплён (у sticky — по его top или bottom). */
+function fixedTextInPage({ limit }) {
+  const vw = innerWidth, vh = innerHeight;
+  const pinned = (n) => { const p = getComputedStyle(n).position; return p === 'fixed' || p === 'sticky'; };
+  const hosts = document.body ? [...document.body.querySelectorAll('*')].filter(pinned) : [];
+  const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+  const hostOf = (el) => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) if (pinned(n)) return n; return null; };
+  const kindOf = (el, host) => {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) { if (n.tagName === 'NAV' || n.getAttribute('role') === 'navigation') return 'меню'; if (n === host) break; }
+    const c = (typeof host.className === 'string' ? host.className : '') + ' ' + (host.id || ''); const role = host.getAttribute('role') || '';
+    if (host.tagName === 'HEADER' || role === 'banner' || /head|top/i.test(c)) return 'шапка';
+    if (/nav|menu|tab/i.test(c)) return 'меню';
+    if (host.tagName === 'FOOTER' || /foot|bottom/i.test(c)) return 'нижняя панель';
+    return 'закреплённый блок';
+  };
+  const seen = new Set(); const found = [];
+  for (const h of hosts) {
+    for (const el of [h, ...h.querySelectorAll('*')]) {
+      if (seen.has(el)) continue; seen.add(el);
+      if (el instanceof SVGElement || el.hasAttribute('data-rw-fx') || !ownText(el) || !vis(el)) continue;
+      const r = el.getBoundingClientRect(); if (r.width <= 2 || r.height <= 2) continue; /* sr-only */
+      const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      if (cx < 0 || cy < 0 || cx > vw || cy > vh) continue; /* закрытое меню за краем окна */
+      const host = hostOf(el); const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
+      let band = cy;
+      if (hs.position === 'sticky') { if (hs.top !== 'auto') band = parseFloat(hs.top) + (cy - hr.top); else if (hs.bottom !== 'auto') band = vh - parseFloat(hs.bottom) - (hr.bottom - cy); }
+      band = Math.max(1, Math.min(vh - 1, band));
+      found.push({ el, host, pos: hs.position, band, area: hr.width * hr.height, key: sig(el).replace(/#[^.]*/, '') + '|' + (hexc(getComputedStyle(el).color) || '') + '|' + sig(host) });
+    }
+  }
+  const total = found.length;
+  /* больше предела: сначала мелкие блоки (шапка и меню раньше закреплённых секций), не больше трёх одинаковых */
+  let take = found;
+  if (found.length > limit) { const per = {}; take = [...found].sort((a, b) => a.area - b.area).filter((f) => (per[f.key] = (per[f.key] || 0) + 1) <= 3).slice(0, Math.max(0, limit)); }
+  let n = window.__rwFxN || 0; const items = [];
+  for (const f of take) {
+    const idx = n++; f.el.setAttribute('data-rw-fx', idx);
+    items.push({ idx, sig: sig(f.el), text: f.el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30), host: sig(f.host), kind: kindOf(f.el, f.host), pos: f.pos, band: Math.round(f.band) });
+  }
+  window.__rwFxN = n;
+  return { items, total };
+}
+
+/* секции страницы (метка data-rw-sec) с фоном и положением в документе; высоты прокрутки */
+function sectionsInPage() {
+  const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null;
+  const cur = sc ? sc.scrollTop : scrollY;
+  const docH = sc ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+  const viewH = sc ? sc.clientHeight : innerHeight; const vw = innerWidth;
+  const skip = /^(SCRIPT|STYLE|LINK|META|NOSCRIPT|TEMPLATE|BR)$/;
+  const kids = (n) => [...n.children].filter((c) => {
+    if (skip.test(c.tagName) || c.hasAttribute('data-rw-grain')) return false;
+    const s = getComputedStyle(c); if (s.display === 'none' || s.position === 'fixed' || s.position === 'absolute') return false;
+    const r = c.getBoundingClientRect();
+    if (s.position === 'sticky' && r.height < viewH * 0.5) return false; /* закреплённая шапка — не секция */
+    return r.height >= 1 && r.width >= vw * 0.5;
+  });
+  /* обёртки во всю высоту (main, #allrecords …) раскрываются в их детей */
+  const expand = (n, depth) => { const out = []; for (const c of kids(n)) { const h = c.getBoundingClientRect().height; if (depth < 6 && h >= docH * 0.6 && h > viewH * 1.5 && kids(c).length >= 1) out.push(...expand(c, depth + 1)); else out.push(c); } return out; };
+  const probe = (n) => {
+    const s = getComputedStyle(n); const bi = s.backgroundImage;
+    if (bi && bi !== 'none' && !/^linear-gradient\(rgba\(0, 0, 0, 0\)/.test(bi)) return 'картинка';
+    const c = hexc(s.backgroundColor); if (c && (c.length === 7 || parseInt(c.slice(7, 9), 16) > 12)) return c.slice(0, 7);
+    return null;
+  };
+  const bgOf = (sec) => {
+    const own = probe(sec); if (own) return own;
+    const R = sec.getBoundingClientRect(); const area = R.width * R.height; let k = 0;
+    for (const d of sec.querySelectorAll('*')) {
+      if (++k > 400) break;
+      const r = d.getBoundingClientRect(); if (r.width * r.height < area * 0.5) continue;
+      if (/^(IMG|VIDEO|CANVAS|PICTURE|IFRAME)$/.test(d.tagName)) return 'картинка';
+      const p = probe(d); if (p) return p;
+    }
+    return 'фон страницы';
+  };
+  /* прокручивается блок во весь экран (body{overflow:hidden}, .app{overflow:auto}) — секции в нём,
+     координаты — от начала его содержимого; scTop — где его верх в окне (полосы считаются от него) */
+  const scTop = sc ? sc.getBoundingClientRect().top : 0;
+  const list = sc ? expand(sc, 0) : document.body ? expand(document.body, 0) : [];
+  const sections = list.map((el, i) => {
+    el.setAttribute('data-rw-sec', i); const r = el.getBoundingClientRect();
+    const hd = el.querySelector('h1,h2,h3'); const t = (hd ? hd.textContent : '').trim().replace(/\s+/g, ' '); const title = t.length > 30 ? t.slice(0, 29).trimEnd() + '…' : t;
+    return { i, sig: sig(el), title, top: Math.round(r.top - scTop + cur), bottom: Math.round(r.bottom - scTop + cur), bg: bgOf(el) };
+  });
+  return { sections, docH: Math.round(docH), viewH, scTop: Math.round(scTop), maxScroll: Math.max(0, Math.round(docH - viewH)), scroller: sc ? sig(sc) : null };
+}
+
+/* состояние помеченного закреплённого текста на текущей высоте: виден ли, цвет сейчас, коробки строк */
+function fixedStateInPage({ ids }) {
+  const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null;
+  const at = Math.round(sc ? sc.scrollTop : scrollY);
+  const sg = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.classList.length ? '.' + [...n.classList].slice(0, 2).join('.') : '');
+  const secs = [...document.querySelectorAll('[data-rw-sec]')];
+  const out = ids.map((i) => {
+    const el = document.querySelector(`[data-rw-fx="${i}"]`); if (!el) return { i, state: 'нет' };
+    if (!vis(el)) return { i, state: 'скрыт' };
+    const rects = [];
+    for (const n of el.childNodes) {
+      if (n.nodeType !== 3 || n.textContent.trim().length < 2) continue;
+      const rg = document.createRange(); rg.selectNodeContents(n);
+      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) rects.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    if (!rects.length) return { i, state: 'скрыт' };
+    const l = Math.min(...rects.map((r) => r.x)), t = Math.min(...rects.map((r) => r.y)), rr = Math.max(...rects.map((r) => r.x + r.w)), b = Math.max(...rects.map((r) => r.y + r.h));
+    const cx = (l + rr) / 2, cy = (t + b) / 2;
+    if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return { i, state: 'вне окна' };
+    el.classList.add('rw-pe-fx');
+    try {
+      for (const n of document.elementsFromPoint(cx, cy)) {
+        if (n === el || el.contains(n) || n.contains(el)) break;
+        const s = getComputedStyle(n); const c = hexc(s.backgroundColor); const a = c ? (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) : 0;
+        if (/^(IMG|VIDEO|CANVAS|IFRAME)$/.test(n.tagName) || s.backgroundImage !== 'none' || a >= 0.99) return { i, state: 'перекрыт', by: sg(n) };
+      }
+    } finally { el.classList.remove('rw-pe-fx'); }
+    const s = getComputedStyle(el); const fill = s.webkitTextFillColor; const c = hexc(fill && fill !== s.color ? fill : s.color);
+    if (!c) return { i, state: 'прозрачный цвет' };
+    const fa = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
+    let sec = null; for (const n of secs) { const r = n.getBoundingClientRect(); if (cy >= r.top && cy < r.bottom && cx >= r.left && cx <= r.right) sec = Number(n.getAttribute('data-rw-sec')); }
+    const size = parseFloat(s.fontSize);
+    return { i, state: 'виден', fg: { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) }, hex: c.slice(0, 7), alpha: Math.min(1, fa * eff(el)), size, need: size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5, rects, sec };
+  });
+  return { at, items: out };
+}
+
+/* ---------- закреплённый текст на прокрутке: высоты и замер ---------- */
+const FX_MAX_POS = 8, FX_LIMIT = 40;
+
+/* высоты прокрутки: полоса закреплённого текста (band) над секцией — её середина под полосой.
+   Сначала каждый фон секций, которого полосы не касались наверху (там мерит основной проход), затем
+   остальные секции (подряд идущие с одним фоном — одна); жадно, не больше max */
+function pickPositions(bands, secs, maxScroll, max) {
+  if (!secs.length || maxScroll < 1) return [];
+  const at = (y, b) => { const d = y + b; let s = null; for (const x of secs) if (d >= x.top && d < x.bottom) s = x; return s; };
+  const runOf = new Map(); let run = -1, prev = null;
+  for (const s of secs) { if (!prev || prev.bg !== s.bg) run++; runOf.set(s.i, run); prev = s; }
+  const keysAt = (y) => { const k1 = new Set(), k2 = new Set(); for (const b of bands) { const s = at(y, b); if (!s) continue; k1.add(`${b}|${s.bg}`); k2.add(`${b}|${runOf.get(s.i)}`); } return { k1, k2 }; };
+  const cands = [];
+  for (const b of bands) for (const s of secs) {
+    const lo = Math.max(1, Math.ceil(s.top - b)), hi = Math.min(maxScroll, Math.floor(s.bottom - b - 1));
+    if (lo > hi) continue;
+    const y = Math.round(Math.min(hi, Math.max(lo, (s.top + s.bottom) / 2 - b)));
+    if (!cands.some((c) => Math.abs(c.y - y) < 16)) cands.push({ y, ...keysAt(y) });
+  }
+  const top = keysAt(0); const got = { k1: new Set(top.k1), k2: new Set(top.k2) }; const chosen = [];
+  for (const level of ['k1', 'k2']) {
+    while (chosen.length < max) {
+      let best = null, gain = 0;
+      for (const c of cands) { if (chosen.includes(c)) continue; const g = [...c[level]].filter((k) => !got[level].has(k)).length; if (g > gain) { best = c; gain = g; } }
+      if (!best) break;
+      chosen.push(best); for (const k of best.k1) got.k1.add(k); for (const k of best.k2) got.k2.add(k);
+    }
+  }
+  return chosen.map((c) => c.y).sort((a, b) => a - b);
+}
+
+/* пиксели снимка внутри коробок строк (CSS-пиксели окна × k), не больше ~4000 */
+function sampleRects(data, info, rects, k, maxN = 4000) {
+  const W = info.width, H = info.height, ch = info.channels; const boxes = []; let area = 0;
+  for (const r of rects) {
+    const x0 = Math.max(0, Math.floor(r.x * k)), y0 = Math.max(0, Math.floor(r.y * k)), x1 = Math.min(W, Math.ceil((r.x + r.w) * k)), y1 = Math.min(H, Math.ceil((r.y + r.h) * k));
+    if (x1 > x0 && y1 > y0) { boxes.push([x0, y0, x1, y1]); area += (x1 - x0) * (y1 - y0); }
+  }
+  const stride = Math.max(1, Math.floor(area / maxN)); const px = []; let n = 0;
+  for (const [x0, y0, x1, y1] of boxes) for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { if (n++ % stride) continue; const i = (y * W + x) * ch; px.push([data[i], data[i + 1], data[i + 2]]); }
+  return px;
+}
+
+async function fixedOnScroll(page, map) {
+  const lumRgb = (r, g, b) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const f1 = (pts, c) => (c <= 128 ? pts[0] + (pts[1] - pts[0]) * c / 128 : pts[1] + (pts[2] - pts[1]) * (c - 128) / 127);
+  const r2 = (v) => Math.round(v * 100) / 100;
+  await scrollToY(page, 0); await sleep(400);
+  const scan = await evaluateWith(page, sectionsInPage, null, DEPS);
+  const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT }, DEPS);
+  let b = { items: [], total: 0 };
+  if (scan.maxScroll > 0 && a.items.length < FX_LIMIT) {
+    await scrollToY(page, Math.min(scan.viewH, scan.maxScroll)); await sleep(500); await settleAnimations(page, 1500);
+    b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length }, DEPS);
+  }
+  const items = [...a.items, ...b.items];
+  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'прозрачный цвет': 0, 'нет': 0 }, measured: 0, worst: null };
+  if (!items.length) return { ...out, none: true };
+  if (!sharp) return { ...out, error: 'нет sharp — снимки фона не разобрать' };
+  const bands = [...new Set(items.map((it) => Math.round((it.band - (scan.scTop || 0)) / 8) * 8))];
+  let positions = pickPositions(bands, scan.sections, scan.maxScroll, FX_MAX_POS); out.how = 'секции с другим фоном';
+  if (!positions.length && scan.maxScroll >= 1) { positions = [Math.round(scan.maxScroll / 2)]; out.how = 'секций с другим фоном нет — одна высота посередине'; }
+  out.positions = positions;
+  await page.addStyleTag({ content: '.rw-hide-fx,.rw-hide-fx *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;transition:none!important}\n.rw-pe-fx,.rw-pe-fx *{pointer-events:auto!important}' });
+  const byIdx = new Map(items.map((it) => [it.idx, it]));
+  const ids = items.map((it) => it.idx);
+  const shownN = (st) => st.items.filter((s) => s.state === 'виден').length;
+  const goTo = async (y, from) => {
+    if (from != null) { await scrollToY(page, from); await sleep(200); }
+    await scrollToY(page, y); await sleep(450); await settleAnimations(page, 1500);
+    return evaluateWith(page, fixedStateInPage, { ids }, DEPS);
+  };
+  await scrollToY(page, 0); await sleep(300);
+  for (const y of positions) {
+    /* высоты по возрастанию — к каждой подъезжаем сверху (прокрутка вниз). Шапка, которая прячется при
+       прокрутке вниз, видна при прокрутке вверх — если часть текста спрятана или за окном, подъехать снизу */
+    let st = await goTo(y); let approach = 'сверху';
+    if (st.items.some((s) => s.state === 'вне окна' || s.state === 'скрыт') && scan.maxScroll > 160) {
+      /* низ страницы: ниже подъехать некуда — встать на 160 px выше, подъехав от низа */
+      const y2 = y < scan.maxScroll ? y : Math.max(1, y - 160);
+      const n1 = shownN(st); const st2 = await goTo(y2, Math.min(scan.maxScroll, y2 + 160));
+      if (shownN(st2) > n1) { st = st2; approach = 'снизу'; } else if (shownN(st2) < n1 || y2 !== y) st = await goTo(y, Math.max(0, y - 160));
+    }
+    const shown = st.items.filter((s) => s.state === 'виден');
+    const res = { y, scrollY: st.at, approach, measured: 0, skipped: {} };
+    for (const s of st.items) if (s.state !== 'виден') { out.skipped[s.state] = (out.skipped[s.state] || 0) + 1; res.skipped[s.state] = (res.skipped[s.state] || 0) + 1; }
+    out.results.push(res);
+    if (!shown.length) continue;
+    await page.evaluate((list) => { for (const i of list) { const el = document.querySelector(`[data-rw-fx="${i}"]`); if (el) el.classList.add('rw-hide-fx'); } }, shown.map((s) => s.i));
+    let buf;
+    try { await sleep(150); buf = await page.screenshot({ type: 'png' }); } finally { await page.evaluate(() => { for (const el of document.querySelectorAll('.rw-hide-fx')) el.classList.remove('rw-hide-fx'); }); }
+    const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const k = info.width / vp.width;
+    for (const s of shown) {
+      const px = sampleRects(data, info, s.rects, k); if (!px.length) continue;
+      const it = byIdx.get(s.i); const F = map ? { r: f1(map[0], s.fg.r), g: f1(map[1], s.fg.g), b: f1(map[2], s.fg.b) } : s.fg; const al = s.alpha;
+      const ratios = []; const bgL = [];
+      for (const [R, G, B] of px) {
+        const l = lumRgb(R, G, B); const fl = lumRgb(al * F.r + (1 - al) * R, al * F.g + (1 - al) * G, al * F.b + (1 - al) * B);
+        ratios.push((Math.max(l, fl) + 0.05) / (Math.min(l, fl) + 0.05)); bgL.push(l);
+      }
+      ratios.sort((x, z) => x - z); bgL.sort((x, z) => x - z);
+      const p10 = ratios[Math.floor(ratios.length * 0.1)], median = ratios[Math.floor(ratios.length / 2)];
+      const lo = bgL[Math.floor(bgL.length * 0.1)], mid = bgL[Math.floor(bgL.length / 2)], hi = bgL[Math.floor(bgL.length * 0.9)];
+      const tone = (hi + 0.05) / (lo + 0.05) > 3 ? 'пёстрой' : mid >= 0.45 ? 'светлой' : mid <= 0.12 ? 'тёмной' : 'средней по яркости';
+      const sec = s.sec != null ? scan.sections[s.sec] : null;
+      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
+      res.measured++; out.measured++;
+      if (!out.worst || p10 / s.need < out.worst.p10 / out.worst.need) out.worst = rec;
+      if (p10 < s.need) out.failures.push(rec);
+    }
+  }
+  return out;
+}
+
 /* ---------- зерно поверх текста: действие слоя по трём снимкам ---------- */
 async function grainMap(page) {
   if (!sharp) return { skipped: 'нет sharp' };
@@ -319,7 +609,7 @@ async function focusWalk(page) {
 
 /* ---------- прогон ---------- */
 const browser = await launch();
-let dom, focus, reveal, sc, grain = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
+let dom, focus, reveal, sc, grain = null, fx = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
 try {
   const page = await openPage(browser, url, vp);
   await forceInstantScroll(page);
@@ -387,6 +677,8 @@ try {
       } catch { imgContrast.skipped++; try { await h.evaluate((el) => el.classList.remove('rw-hide-text')); } catch { /* ушёл */ } }
     }
   }
+  /* закреплённый текст (шапка, меню, нижняя панель) над секциями ниже верха страницы */
+  fx = await fixedOnScroll(page, map).catch((e) => ({ error: String(e.message || e).slice(0, 200) }));
   await page.close();
 
   /* фокус — на свежей странице (отдельная вкладка): старт обхода не должен зависеть от прокруток выше */
@@ -412,6 +704,25 @@ L(cf.length ? 'FAIL' : cut ? 'WARN' : 'OK', `контраст: проверен�
 /* перекрытый или ушедший за окно текст не мерился — это не «OK», а «проверить глазами» (WARN) */
 const covTxt = imgContrast.coveredList.length ? `не измерены — ${imgContrast.coveredList.slice(0, 5).map((c) => `${c.sig} «${c.text}» ${c.state === 'перекрыт' ? `перекрыт ${c.by}` : 'вне окна'}`).join(', ')}${imgContrast.coveredList.length > 5 ? ` и ещё ${imgContrast.coveredList.length - 5}` : ''} — смотреть глазами` : '';
 if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt].filter(Boolean).join('; '));
+if (fx && !fx.none) {
+  const T = 'контраст закреплённого текста на прокрутке';
+  const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
+  if (fx.error) L('WARN', `${T}: не измерен`, fx.error);
+  else if (!fx.positions.length) L('OK', `${T}: ${fx.items.length} элементов`, 'страница в один экран — других высот нет (верх страницы — в строках контраста выше)');
+  else {
+    const who = [...new Set(fx.items.map((it) => `${it.kind} ${it.host}`))].slice(0, 4).join(', ');
+    const up = fx.results.filter((r) => r.approach === 'снизу').length;
+    const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
+    if (fx.failures.length) {
+      /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над светлой секцией …: a «Каталог» … 1.07:1» */
+      const groups = new Map();
+      for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.tone} секцией ${f.section || '(вне секций)'}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
+      const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
+      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}`);
+    } else if (!fx.measured) L('WARN', head, 'ни одного замера: закреплённый текст на этих высотах спрятан, за окном или перекрыт — смотреть глазами');
+    else { const w = fx.worst; L('OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.tone} секцией ${w.section || '(вне секций)'}`); }
+  }
+}
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
 else if (grain && grain.layers && grain.layers.length) {
   const G = C.grain; const hexs = (m) => '#' + m.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -453,5 +764,6 @@ if (dom.iframesNoTitle) L('WARN', `iframe без title: ${dom.iframesNoTitle}`);
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 const file = path.join(outDir, `${tag}.json`);
-writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, focus, lines, verdict });
+writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, focus, lines, verdict });
 console.log(`Сохранено: ${file}`);
+if (opt.strict && verdict === 'FAIL') { console.log('Код выхода 1: вердикт FAIL (--strict)'); process.exitCode = 1; }

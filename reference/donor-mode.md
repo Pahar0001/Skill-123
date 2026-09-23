@@ -10,10 +10,10 @@
 ## 1. Снять донора целиком, а не только токены
 
 ```
-node scripts/discover.mjs <донор> --out <папка>/donor                 # сводка, фактура, паспорт, медиа-слоты
-node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor
-node scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
-node scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
+node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <папка>/donor --no-design     # сводка, фактура, паспорт, медиа-слоты; дизайн-систему снимает extract ниже
+node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
+node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
+node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 ```
 
 Старую разведку донора из прошлого прогона — перезапустить: скрипты
@@ -57,8 +57,8 @@ node scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.js
 
 ```
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
-node scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile
-node scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
+node ~/.claude/skills/site-rework/scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile --out <папка>/texture-compare
+node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 ```
 
 - `verify.mjs` — шкала, цвета, акцент («у образца акцента нет» — тоже

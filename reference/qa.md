@@ -12,20 +12,34 @@
 
 ## Runtime
 
+Во всех командах этого файла `--out <папка>` опущен для краткости — передавать
+его всегда (SKILL.md → «Папка прогона»), а `runtime.mjs` — ещё свой `--tag`
+на каждый набор шагов: без него протокол называется по экрану и следующий
+запуск на том же экране его перезаписывает.
+
 ```
-node scripts/runtime.mjs <url> --scroll --canvas --motion --video --fullpage
-node scripts/runtime.mjs <url> --viewport mobile --scroll --click "<меню>" --shot menu --click "<закрыть>" --shot closed
-node scripts/runtime.mjs <url> --viewport mobile-s --scroll                      # 320: переполнение по элементам
-node scripts/runtime.mjs <url> --hover-all --nav --css
-node scripts/runtime.mjs <url> --click "a[href='#contacts']" --edit "input[type=tel]" --type "input[name=phone]=89001234567" --click "form button[type=submit]" --shot sent
-node scripts/runtime.mjs <url> --reduced-motion --scroll --motion --canvas
-node scripts/runtime.mjs <url> --eval "document.querySelectorAll('.card').length" --expect 12
-node scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector('.cta')).position === 'sticky'"
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --scroll --canvas --motion --video --fullpage
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile --scroll --click "<меню>" --shot menu --click "<закрыть>" --shot closed
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile-s --scroll                      # 320: переполнение по элементам
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --hover-all --nav --css
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --click "a[href='#contacts']" --edit "input[type=tel]" --type "#phone=89001234567" --click "form button[type=submit]" --shot sent
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --reduced-motion --scroll --motion --canvas
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --eval "document.querySelectorAll('.card').length" --expect 12
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector('.cta')).position === 'sticky'"
 ```
 
 `--eval` без `--expect` — запись, а не проверка: он всегда OK. Утверждения
 писать через `--assert` (ложь или отклонённый Promise — FAIL) или
 `--eval … --expect значение`.
+
+Селектор в `--type` и `--select` писать без «=» внутри — `#id` или класс:
+строка «селектор=текст» делится по «=». `runtime.mjs` версии 83e9493 делит
+`--type` по первому «=», и `input[name=phone]=8900…` становится селектором
+`input[name` — текст уходит в чужое поле, а шаг показывает OK.
+
+`--cpu 4` — процессор вчетверо медленнее, как у среднего телефона: холсты,
+анимации и тяжёлые обработчики на `--viewport mobile` проверять с ним
+(`perf.mjs` на телефоне замедляет так же сам).
 
 Что считается эффектом клика: изменения DOM за время клика (атрибуты,
 классы, узлы) за вычетом того, что менялось и без клика (карусель,
@@ -36,7 +50,9 @@ node scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector
 закреплённой шапки) ±8 px.
 
 Что должно быть на выходе: ноль ошибок консоли и исключений (404 на
-`/favicon.ico` — отдельный WARN, не провал); все блоки появления
+`/favicon.ico` — отдельный WARN, не провал; не загрузился внешний шрифт
+или CDN — тоже FAIL: перепрогнать, а если повторилось — задача, см.
+SKILL.md → «Восстановление после сбоев»); все блоки появления
 показались; переполнения по элементам нет ни на одном экране, включая
 320; меню открывается и закрывается; у каждого правила `:hover` есть
 видимый эффект; ввод и правка поля с маской проходят все сценарии;
@@ -58,7 +74,7 @@ node scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector
 | холсты размыты после смены ширины | `--resize 1152` | FAIL 12 холстов ×0.77 |
 | вкладка нижней панели за краем на 320 | `--viewport mobile-s --scroll` | FAIL `a [fixed] 279…334px «ЗАЯВКА»` |
 | наведение перебито анимацией | `--hover-all` | FAIL `.hero:hover .tilt { transform }` — держит `tiltIn (fill: both)` |
-| подсвеченный пункт меню не на экране | `--nav` | FAIL «[верх] подсвечен catalog, а раздела нет на экране» |
+| подсвеченный пункт меню не на экране | `--nav` | FAIL «[снова верх] Разделы: подсвечен «order», а этого раздела нет на экране» (раздел и положение зависят от предыдущих шагов) |
 | мёртвая кнопка | `--click "<кнопка>"` | FAIL «КНОПКА БЕЗ ЭФФЕКТА» |
 | якорь не доводит до раздела | `--click "a[href='#id']"` | FAIL «верх цели 300px — ЦЕЛЬ НЕ У ВЕРХА ОКНА» |
 | видео: автоплей со звуком, без poster, без playsinline | `--video` | FAIL / WARN по каждому ролику; пауза вне экрана и при «меньше движения» |
@@ -96,8 +112,8 @@ node scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector
 ## Визуал
 
 ```
-node scripts/shots.mjs <url> --tag after --pages <те же, что в before> --viewports desktop,tablet,mobile --with-320
-node scripts/diff.mjs <папка>/before <папка>/after
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --tag after --pages <те же, что в before> --viewports desktop,tablet,mobile --with-320
+node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after
 ```
 
 `shots.mjs` снимает первый экран **до** прокрутки, потом листает до низа и
@@ -126,7 +142,10 @@ node scripts/diff.mjs <папка>/before <папка>/after
 `diff.mjs` приводит снимки ×2 и ×1 к одному масштабу по `shots.json` (без
 него — по ширине) и предупреждает; края букв после приведения всё равно
 расходятся на несколько процентов — это не изменение. `--no-rescale` —
-без приведения, `--all` — сравнивать и вырезки `*-stale`, листы.
+без приведения, `--all` — сравнивать и вырезки `*-stale`, листы. Два
+отдельных файла (например, `first` и `first-return` одного экрана) —
+`diff.mjs --pair a.png b.png`; пары донор/результат так не сравнивают
+(`reference/donor-mode.md` §5).
 
 У Chrome есть предел высоты снимка около 16 тысяч пикселей в устройстве:
 выше него полноэкранный снимок молча повторяет верх страницы (телефон при
@@ -141,7 +160,7 @@ node scripts/diff.mjs <папка>/before <папка>/after
 - иерархия: первым читается то, что должно; кнопка видна;
 - типографика: шкала выдержана, строки не длиннее 75 знаков, кириллица на месте (нет подмены гарнитуры);
 - вёрстка: ничего не наезжает, не обрезано, не прилипло к краю; отступы из ритма системы;
-- цвет: роли соблюдены, акцент один, контраст читается;
+- цвет: роли соблюдены; акцент — только если он есть у донора или сайта («акцента нет» — тоже правило); контраст читается;
 - картинки: не растянуты, в фокусе, соответствуют подписям, единая обработка;
 - движение: конечные состояния появлений — видимые; ничего не дёргается на снимках прокрутки;
 - 3D: холст на месте, не перекрывает текст, на телефоне не пустой;
@@ -158,7 +177,9 @@ node scripts/diff.mjs <папка>/before <папка>/after
 сообщение после отправки, письмо/запись доходит (если есть доступ к
 бэкенду — проверить, если нет — записать «отправка не проверена»); слайдеры
 листаются кнопками и свайпом; вкладки и аккордеоны открываются с клавиатуры;
-диалоги закрываются по Esc и по клику вне; 404 существует.
+диалоги закрываются по Esc и по клику вне; 404 существует. Каждый пункт
+отметить в отчёте (`templates/report.md` → «Функции»): да / нет /
+неприменимо с причиной.
 
 ## Телефон
 
@@ -177,10 +198,10 @@ node scripts/diff.mjs <папка>/before <папка>/after
 ## Скорость
 
 ```
-node scripts/perf.mjs <url>                     # телефон, ×4 процессор, fast3g — как у покупателя
-node scripts/perf.mjs <url> --viewport desktop --net none --cpu 1
-node scripts/perf.mjs <url> --runs 3            # медиана трёх прогонов — для решения «хуже или нет»
-node scripts/perf.mjs <url> --overlay           # цена слоя зерна или вуали в покое
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url>                     # телефон, ×4 процессор, fast3g — как у покупателя
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --viewport desktop --net none --cpu 1
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --runs 3            # медиана трёх прогонов — для решения «хуже или нет»
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --overlay           # цена слоя зерна или вуали в покое
 ```
 
 Что ещё проверяет `perf.mjs`, кроме LCP, CLS, веса и кадров:
@@ -192,8 +213,9 @@ node scripts/perf.mjs <url> --overlay           # цена слоя зерна �
   (cover — по большей оси): FAIL ниже 1 пикселя картинки на CSS-пиксель,
   WARN ниже плотности экрана; настоящий размер `srcset` и `<picture>`
   перечитывается;
-- **видео**: полный вес ролика первого экрана — телефон ≤1 МБ, desktop
-  ≤2.5 МБ (выше — FAIL), без poster — WARN;
+- **видео**: полный вес роликов первого экрана — телефон и планшет ≤1 МБ,
+  desktop ≤2.5 МБ — OK; до вдвое больше — WARN; выше — FAIL; размер не
+  определён или нет poster — WARN;
 - **`--overlay [селектор]`**: растровые задачи и Paint за 2 с покоя со слоем
   и без, не меньше 5 чередующихся раундов (`--rounds`), медиана и разброс;
   бюджет — прибавка не больше 2 задач. Кипящее через GIF или
@@ -212,7 +234,7 @@ node scripts/perf.mjs <url> --overlay           # цена слоя зерна �
 ранние сдвиги не видит. Ставить его до всех скриптов страницы:
 
 ```
-node scripts/runtime.mjs <url> --init "window.__ls=[];new PerformanceObserver(l=>{for(const e of l.getEntries())if(!e.hadRecentInput)window.__ls.push({v:e.value,t:Math.round(e.startTime),src:(e.sources||[]).map(s=>(s.node&&s.node.tagName?s.node.tagName+'#'+s.node.id+'.'+s.node.className:'text')+' y'+Math.round(s.previousRect.y)+'→'+Math.round(s.currentRect.y)+' h'+Math.round(s.previousRect.height)+'→'+Math.round(s.currentRect.height))})}).observe({type:'layout-shift',buffered:true})" --wait 3000 --eval "window.__ls"
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --init "window.__ls=[];new PerformanceObserver(l=>{for(const e of l.getEntries())if(!e.hadRecentInput)window.__ls.push({v:e.value,t:Math.round(e.startTime),src:(e.sources||[]).map(s=>(s.node&&s.node.tagName?s.node.tagName+'#'+s.node.id+'.'+s.node.className:'text')+' y'+Math.round(s.previousRect.y)+'→'+Math.round(s.currentRect.y)+' h'+Math.round(s.previousRect.height)+'→'+Math.round(s.currentRect.height))})}).observe({type:'layout-shift',buffered:true})" --wait 3000 --eval "window.__ls"
 ```
 В `src` — элементы, которые поехали, и на сколько. Типичные виновники:
 подмена шрифта меняет число строк заголовка (лечится запасным шрифтом с
@@ -223,8 +245,8 @@ node scripts/runtime.mjs <url> --init "window.__ls=[];new PerformanceObserver(l=
 ## Доступность
 
 ```
-node scripts/a11y.mjs <url> --viewport mobile
-node scripts/a11y.mjs <url>
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --viewport mobile
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url>
 ```
 плюс `lighthouse_audit` (chrome-devtools) для полного списка по WCAG и SEO.
 
@@ -241,6 +263,12 @@ node scripts/a11y.mjs <url>
   («не обязательно» 9 px на «ХОЛСТе»);
 - **фокус** — обход Tab на свежей странице; обошли меньше min(5, число
   фокусируемых) — WARN «обход не состоялся», а не OK.
+
+Закреплённый текст (шапка, меню, нижняя панель) `a11y.mjs` мерит в одном
+положении — на верху страницы; над фонами, которые проезжают под ним при
+прокрутке, контраст не проверяется. Открыть `scroll-NN` глазами на каждом
+фоне; правило подложки — `reference/authorship.md` §4.
+
 Без `FAIL` в `a11y.mjs`; `WARN` — с решением в отчёте. Скилл
 `design:accessibility-review` — когда нужен разбор конкретного экрана.
 
@@ -254,6 +282,30 @@ node scripts/a11y.mjs <url>
 - аналитика и счётчики на месте;
 - проектные тесты, если они есть (`npm test`, smoke, e2e, скилл `predrelease`), — зелёные.
 
+## Сверка с планом и решениями
+
+Журнал этого не делает: `state.mjs` принимает протокол без FAIL и не
+сверяет его с колонкой «чем проверяем» плана — VERIFIED задаче, где план
+требовал `--hover` по первому экрану, пройдёт и по протоколу без наведения.
+Поэтому перед отчётом, руками:
+
+- по каждой задаче плана (`analysis.md` → «План») найти в её доказательстве
+  шаг, названный в «чем проверяем»; нет шага — прогнать и перепоставить статус;
+- пройти решения `analysis.md` — матрицу «менять / не трогать», трение из
+  воронки («одно действие на первом экране»), паспорт донора «как / никогда»
+  — и у каждого отметить на готовой странице: выполнено (снимок или число)
+  или нет. Невыполненное — задача или строка в «Что осталось».
+
+## Известные ограничения проверок
+
+| что | чего код не делает | чем закрывать |
+|---|---|---|
+| план и протоколы | `state.mjs` не сверяет «чем проверяем» с шагами протокола | сверка выше |
+| правка скриптов | `discover`, `runtime`, `shots`, `perf`, `a11y`, `texture` не пишут версию в протокол; журнал сверяет время только с правками сайта | SKILL.md → «Восстановление после сбоев» |
+| закреплённый текст | контраст — только на верху страницы | `scroll-NN` глазами на каждом фоне |
+| `html{scroll-behavior:smooth}` | проверки с FAIL нет: `discovery.md` пишет «плавная прокрутка: да», `runtime --motion` упоминает её, только если она остаётся при «меньше движения»; `a11y`, `perf`, `shots` прокручивают мимо неё | решить, нужна ли; проверка — `runtime.mjs --assert "getComputedStyle(document.documentElement).scrollBehavior !== 'smooth'"` |
+| код выхода | `discover`, `a11y`, одиночный `texture`, `extract` и `shots` без `--strict` выходят с 0 и при FAIL | вердикт читать в выводе и json; для остановки по коду — `runtime`, `cliche`, `texture compare`, `shots --strict`, `state show --strict`, `verify.mjs` |
+
 ## Условие завершения
 
 Все задачи P0–P2: `impl=DONE`, `runtime=VERIFIED`, `visual=VERIFIED`,
@@ -263,6 +315,6 @@ node scripts/a11y.mjs <url>
 FAIL; `shots` без «состояние не сбрасывается»; 320 без переполнения; `perf` не
 хуже базы; `a11y` без `FAIL`; `cliche.mjs` без FAIL против базы; фактура —
 `texture.mjs compare` OK, если у донора она есть; проектные тесты зелёные;
-регресс чист. Если что-то из этого не
+регресс чист; план и решения `analysis.md` сверены. Если что-то из этого не
 достигнуто — либо ещё круг, либо строка в «Что осталось» отчёта с
 настоящим статусом. Третьего варианта («почти готово») нет.

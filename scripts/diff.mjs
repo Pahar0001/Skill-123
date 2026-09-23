@@ -9,12 +9,16 @@
  * Флаги:
  *   --out         куда положить картинки различий и diff.json (по умолчанию <папка-after>/../diff,
  *                 для --pair — <папка b>/../diff).
- *   --threshold   порог различия пикселя, доля от 255 по худшему каналу (по умолчанию 0.1).
+ *   --threshold   порог различия пикселя, доля от 255 по худшему каналу, от 0 до 1 (по умолчанию
+ *                 0.1). 0 — считать любое отличие канала хотя бы на 1 из 255; вне 0…1 — код 1.
  *   --pair        сравнить два файла (без папок).
  *   --no-rescale  не приводить масштаб: сравнивать пиксели как есть (раньше так было всегда).
  *   --all         сравнивать и служебные файлы shots.mjs — вырезки *-stale*.png и листы *-sheet.png
  *                 (по умолчанию пропускаются: это не снимки страницы, а их производные).
- *   --help        эта справка.
+ *   --help, -h    эта справка.
+ *
+ * Папка --out создаётся только после проверки аргументов: неверный --threshold, нет папки
+ * или файла, лишние аргументы, нет ни одной пары — код 1, и ничего не создано.
  *
  * Пары складываются по одинаковым именам файлов. Для каждой пары:
  * доля изменившихся пикселей, полосы по высоте, где изменения сосредоточены,
@@ -39,21 +43,30 @@
  * Скрипт отвечает «что изменилось и где», а не «стало ли лучше»:
  * на второй вопрос отвечают только открытые глазами снимки.
  * Нужен sharp (берётся из проекта, как и puppeteer-core).
- * Код выхода: 0 — сравнение сделано (сколько бы ни изменилось), 1 — нет sharp, нет пар или неверные аргументы.
+ * Код выхода: 0 — сравнение сделано (сколько бы ни изменилось) и после --help/-h; 1 — нет sharp,
+ * нет пар, нет папки или файла, неверные аргументы.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadSharp, parseArgs, ensureDir, writeJson, readJson } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'no-rescale', 'all'] });
-if (opt.help) { console.log(HELP); process.exit(0); }
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-rescale', 'all'] });
+if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
+const die = (m) => { console.error(m); process.exit(1); };
+
+/* порог: доля 0…1; 0 — любое отличие канала хотя бы на 1 из 255 */
+let thr = 0.1;
+if (opt.threshold !== undefined) {
+  thr = opt.threshold === true ? NaN : Number(String(opt.threshold).trim().replace(',', '.'));
+  if (String(opt.threshold).trim() === '' || !Number.isFinite(thr) || thr < 0 || thr > 1) die(`--threshold: доля от 0 до 1 (0 — любое отличие, по умолчанию 0.1), а не «${opt.threshold === true ? '' : opt.threshold}»`);
+}
+if (opt.out === true) die('--out без папки: --out <папка>');
+const threshold = Math.round(255 * thr);
+const rescale = !opt['no-rescale'];
 
 const sharp = loadSharp();
-if (!sharp) { console.error('Нужен sharp: запускайте из папки проекта, где он установлен, или укажите её в SITE_REWORK_PROJECT.'); process.exit(1); }
-
-const threshold = Math.round(255 * (parseFloat(opt.threshold) || 0.1));
-const rescale = !opt['no-rescale'];
+if (!sharp) die('Нужен sharp: запускайте из папки проекта, где он установлен, или укажите её в SITE_REWORK_PROJECT.');
 
 async function load(input) {
   const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -125,12 +138,17 @@ let outDir;
 if (opt.pair) {
   const [a, b] = typeof opt.pair === 'string' ? [opt.pair, pos[0]] : pos;
   if (!a || !b) { console.error('Нужно: node diff.mjs --pair a.png b.png'); process.exit(1); }
-  outDir = ensureDir(opt.out ? path.resolve(String(opt.out)) : path.join(path.dirname(path.resolve(b)), '..', 'diff'));
+  const extra = typeof opt.pair === 'string' ? pos.slice(1) : pos.slice(2);
+  if (extra.length) die(`лишние аргументы: ${extra.join(' ')} — для --pair нужно ровно два файла`);
+  for (const f of [a, b]) if (!fs.existsSync(f) || !fs.statSync(f).isFile()) die(`нет файла ${path.resolve(f)}`);
+  outDir = opt.out ? path.resolve(String(opt.out)) : path.join(path.dirname(path.resolve(b)), '..', 'diff');
   pairs = [{ name: path.basename(b), a, b }];
 } else {
   if (pos.length < 2) { console.error('Нужно: node diff.mjs <папка-before> <папка-after> [--out папка]  или  --pair a.png b.png  (подробно: --help)'); process.exit(1); }
   const [da, db] = pos.map((p) => path.resolve(p));
-  outDir = ensureDir(opt.out ? path.resolve(String(opt.out)) : path.join(path.dirname(db), 'diff'));
+  for (const d of [da, db]) if (!fs.existsSync(d) || !fs.statSync(d).isDirectory()) die(`нет папки ${d}${fs.existsSync(d) ? ' (это файл: два файла сравниваются через --pair a.png b.png)' : ''}`);
+  if (pos.length > 2) die(`лишние аргументы: ${pos.slice(2).join(' ')} — нужно ровно две папки`);
+  outDir = opt.out ? path.resolve(String(opt.out)) : path.join(path.dirname(db), 'diff');
   /* производные shots.mjs (вырезки залипания, листы миниатюр) — не снимки страницы */
   const service = (f) => !opt.all && /-(stale(-up)?|scroll-sheet|sheet)\.png$/.test(f);
   const pngs = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.png') && !service(f));
@@ -141,6 +159,8 @@ if (opt.pair) {
   pairs = names.map((n) => ({ name: n, a: path.join(da, n), b: path.join(db, n) }));
 }
 if (!pairs.length) { console.error('Нет пар снимков с одинаковыми именами.'); process.exit(1); }
+/* папка результатов — только после проверки аргументов и пар */
+ensureDir(outDir);
 
 const results = [];
 for (const p of pairs) {

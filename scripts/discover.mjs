@@ -6,13 +6,14 @@
  *
  *   node discover.mjs <url> [--out <папка прогона>] [--viewports desktop,tablet,mobile]
  *                     [--no-design] [--light] [--scheme dark] [--tag discover]
- *                     [--no-320] [--no-hover] [--no-texture] [--help]
+ *                     [--no-320] [--no-hover] [--no-texture] [--strict] [--help | -h]
  *
  * Флаги:
  *   --out <папка>      папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>)
  *   --viewports <list> экраны через запятую: desktop, laptop, tablet, mobile, mobile-s (320),
  *                      android (360), запись ШxВ@плотность («360x800@3») или одна ширина («320»).
- *                      По умолчанию desktop,tablet,mobile
+ *                      По умолчанию desktop,tablet,mobile. --viewport — то же самое, тоже списком;
+ *                      оба сразу с разными значениями — ошибка
  *   --no-320           без дополнительного прохода на 320 px (он только ищет переполнение,
  *                      без снимков; делается, если 320 нет в --viewports)
  *   --no-design        без дизайн-системы (скилл design-reference)
@@ -23,14 +24,28 @@
  *   --no-texture       не снимать фактуру по пикселям (слои всё равно перечисляются)
  *   --no-texture-module  не подключать texture.mjs, даже если он рядом: запасной путь discover
  *                      (для проверки и на случай, если texture.mjs сломан)
- *   --help             эта справка
+ *   --strict           код выхода 1, если в итоговых вердиктах есть FAIL (переполнение по ширине,
+ *                      экран или проход 320 px не снялся); без него FAIL только печатается, код 0
+ *   --help, -h         эта справка (ничего не создаёт и не запускает браузер)
+ *
+ * Коды выхода: 0 — готово (без --strict — даже если в выводе есть FAIL); 1 — нет адреса или
+ * он не http(s):// и не file://, неизвестные экраны, флаг без значения, неверная --scheme,
+ * не снялся ни один экран, а с --strict — ещё и любой FAIL в итоге. Аргументы проверяются
+ * до того, как создаётся папка прогона: с ошибкой в них на диске ничего не появляется.
  *
  * В папке прогона появляются:
  *   discovery.json   сырые данные по каждому экрану
  *   discovery.md     сводка для чтения: что найдено и какие снимки открыть глазами
  *   discover/        снимки разведки: первый экран, серия по прокрутке (равномерно по всей
  *                    высоте) и её лист миниатюр, вся страница, фактура «со слоем / без»
- *   design/          дизайн-система через скилл design-reference (если он рядом)
+ *   design/          дизайн-система через скилл design-reference (если он рядом):
+ *                    site.json и site.tokens.css. В site.tokens.css discover дописывает блок
+ *                    переменных --grain-* между маркерами-комментариями texture:start и texture:end
+ *                    (рецепт texture.mjs: recipeFrom + tokensBlock; блок заменяется, если он есть) —
+ *                    когда фактура снята texture.mjs и хотя бы на одном экране зерно «есть» или
+ *                    «нет». Если зерно не измерено ни на одном экране, фактура снята запасным
+ *                    путём или не снималась (--no-texture), блока нет, причина — в discovery.md
+ *                    (раздел «Дизайн-система») и в discovery.json (textureTokens)
  *
  * Снимки разведки — для взгляда. Набор «до» для сравнения с «после» снимает только
  * `shots.mjs --tag before`: у него свои имена, и diff.mjs складывает пары по именам.
@@ -39,6 +54,9 @@
  *
  * discovery.json и discovery.md пишутся ДО шага дизайн-системы и дописываются после:
  * если design-reference упадёт, разведка уже на диске.
+ *
+ * В конце печатаются строки «FAIL|WARN <что>» и строка «Итог: FAIL N · WARN M» (или «Итог: OK»).
+ * FAIL — переполнение по ширине и экран (или проход 320 px), который не снялся.
  *
  * Фактура (зерно, вуали) — через scripts/texture.mjs, если он рядом; без него —
  * запасной путь внутри этого файла (поиск слоёв и замер «со слоем / без»).
@@ -686,6 +704,36 @@ async function textureModule() {
   return texMod;
 }
 
+/* Блок --grain-* (texture.mjs: recipeFrom + tokensBlock) в файл переменных — как texture.mjs --tokens:
+   блок между texture:start и texture:end заменяется, иначе дописывается в конец через пустую строку.
+   Пишется, только если фактура снята texture.mjs и хотя бы на одном экране зерно «есть» или «нет»:
+   при «не измерено» везде рецепт выключил бы слой (opacity 0) без доказательства, что зерна нет.
+   → { written, file, replaced?, grain?, opacity?, blend?, minWidth?, px?, frames?, frameMs?, why? } */
+const TEX_BLOCK_RE = /\/\* texture:start \*\/[\s\S]*?\/\* texture:end \*\//;
+function addTextureTokens(file, texResults, opt = {}) {
+  const T = texMod;
+  const base = { written: false, file: path.basename(file) };
+  if (!texResults.length) {
+    const why = opt['no-texture'] ? 'фактура не мерилась по пикселям (--no-texture)'
+      : opt['no-texture-module'] ? 'фактура снята запасным путём discover (--no-texture-module), рецепта нет'
+        : `фактура снята не texture.mjs${texNote ? ` (${texNote})` : ''} — рецепта нет`;
+    return { ...base, why };
+  }
+  if (!texResults.some((r) => r.status === 'есть' || r.status === 'нет')) return { ...base, why: 'зерно не измерено ни на одном экране (мало ровных участков) — решать глазами по вырезам 1:1 в папке texture/ рядом со снимками разведки' };
+  if (!T || typeof T.recipeFrom !== 'function' || typeof T.tokensBlock !== 'function') return { ...base, why: 'в texture.mjs нет recipeFrom или tokensBlock' };
+  try {
+    const rec = T.recipeFrom(texResults);
+    const block = T.tokensBlock(rec, texResults);
+    const prev = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    const replaced = TEX_BLOCK_RE.test(prev);
+    /* функция-замена: в блоке может быть «$» (адрес), строковая замена поняла бы его как шаблон */
+    const next = replaced ? prev.replace(TEX_BLOCK_RE, () => block) : (prev ? prev.replace(/\s*$/, '\n\n') : '') + block + '\n';
+    ensureDir(path.dirname(file)); fs.writeFileSync(file, next);
+    const grain = !rec.none ? 'есть' : texResults.some((r) => r.status === 'не измерено') ? 'нет, часть экранов не измерена' : 'нет';
+    return { ...base, written: true, replaced, grain, opacity: rec.none ? 0 : rec.opacity, blend: rec.blend, minWidth: rec.minWidth || 0, px: rec.px, frames: rec.frames, frameMs: rec.frameMs, statuses: Object.fromEntries(texResults.map((r) => [r.viewport.name, r.status])) };
+  } catch (e) { return { ...base, why: `не записан: ${String(e.message || e).slice(0, 160)}` }; }
+}
+
 const HIDE_CSS = '[data-rw-tex]{visibility:hidden!important;opacity:0!important}[data-rw-tex-before]::before{visibility:hidden!important;opacity:0!important}[data-rw-tex-after]::after{visibility:hidden!important;opacity:0!important}[data-rw-tex-bg]{background-image:none!important}';
 
 /* Файл плитки: кадры и задержки GIF/WebP (запасной путь; с texture.mjs — его analyzeTile). */
@@ -1009,8 +1057,9 @@ function writeSummary(url, run, per, design, order, extra) {
     else if (!p.scroll.reachedBottom) L.push(`    - **WARN** прокрутка: не доехали до низа (дошли до ${p.scroll.maxScrollY} из ${p.scroll.pageHeight - p.viewport.height}px)${p.scroll.capped ? `, остановились на пределе ${p.scroll.screens} шагов` : ''} — нижние блоки могли не появиться`);
     for (const n of p.notes || []) L.push(`    - шаг не сработал: ${n}`);
   }
+  for (const [v, err] of Object.entries(extra.failed || {})) L.push(`- ${v}: **FAIL экран не снялся** — ${String(err).replace(/\n/g, ' ').slice(0, 200)}; разведка по нему не делалась`);
   for (const [v, p] of Object.entries(extra320 || {})) {
-    if (p.error) { L.push(`- ${v} (${p.width || 320}px, только переполнение): сбой — ${p.error}`); continue; }
+    if (p.error) { L.push(`- ${v} (${p.width || 320}px, только переполнение): **FAIL** сбой — ${p.error}; переполнение на этой ширине не проверено`); continue; }
     L.push(`- ${v} (${p.viewport.width}px, отдельный проход только ради переполнения): **${p.overflow.verdict}** — ${p.overflow.summary}${p.scroll.stuck || !p.scroll.reachedBottom ? ' · **WARN** прокрутка не дошла до низа' : ''}`);
   }
   L.push('');
@@ -1092,6 +1141,11 @@ function writeSummary(url, run, per, design, order, extra) {
     L.push('', `Цвета токенов по снимкам: ${tokenCheck.map((x) => `--${x.name} ${x.color} ${pctS(x.share)}`).join(', ')}.`);
     if (bad.length) L.push(`**WARN**: ${bad.map((x) => `--${x.name} ${x.color}`).join(', ')} — в CSS есть, на экране нет (меньше 0.1% пикселей): в вёрстку не брать, роль выбрать из видимых цветов.`);
   }
+  const tt = extra.textureTokens;
+  if (tt) L.push('', tt.written
+    ? `Фактура: блок \`--grain-*\` (между texture:start и texture:end) ${tt.replaced ? 'заменён' : 'дописан'} в \`design/${tt.file}\` — ${tt.grain === 'есть' ? `зерно есть: opacity ${tt.opacity}, наложение ${tt.blend}, зерно ${tt.px} px, кадров ${tt.frames} × ${tt.frameMs} мс, с ширины ${tt.minWidth}px` : tt.grain === 'нет' ? 'зерна нет: --grain-opacity 0, слой выключен' : 'зерна нет там, где измерено, часть экранов не измерена: --grain-opacity 0, слой выключен — проверить глазами по вырезам 1:1'} (по экранам: ${Object.entries(tt.statuses || {}).map(([k, v]) => `${k} ${v}`).join(', ')}). Значения — рецепт из раздела «Фактура» выше; сборка берёт их отсюда.`
+    : `Фактура: блок \`--grain-*\` в \`design/${tt.file}\` не дописан — ${tt.why}.`);
+  else if (!design && extra.texResults && extra.texResults.length) L.push('', 'Фактура: блок `--grain-*` — в разделе «Фактура» выше (дизайн-системы нет, дописывать некуда).');
   L.push('');
   L.push('## Что дальше', '', '1. Открыть снимки и заполнить визуальный разбор по `reference/discovery.md` (язык дизайна, иерархия, приём, что сохранить). «Паспорт донора» и «Подписные приёмы» — рамка для своих решений.', '2. Прогнать `runtime.mjs` по всему, что зависит от JS: меню, формы, слайдеры, холсты, появления.', '3. Составить матрицу «менять / не трогать» и план по приоритетам P0–P5 (`reference/analysis.md`).', '');
   return L.join('\n');
@@ -1100,20 +1154,29 @@ function writeSummary(url, run, per, design, order, extra) {
 /* =====================================================================
    Запуск
    ===================================================================== */
-const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'scheme', 'tag'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'help'] });
-if (opt.help || opt.h) {
+const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'viewport', 'scheme', 'tag'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'strict', 'help', 'h'] });
+/* справка — первой, до любых проверок и побочных эффектов; короткий -h parseArgs отдаёт позиционным */
+if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
   process.exit(0);
 }
-if (!pos[0]) { console.error('Нужен адрес: node discover.mjs <url> [--out папка] [--viewports desktop,tablet,mobile] [--no-design] [--light] [--no-320] [--tag discover] (--help — все флаги)'); process.exit(1); }
-const url = pos[0];
+/* все проверки аргументов — до того, как на диске что-то появится */
+const argFail = (msg) => { console.error(msg); process.exit(1); };
+if (!pos[0]) argFail('Нужен адрес: node discover.mjs <url> [--out папка] [--viewports desktop,tablet,mobile] [--no-design] [--light] [--no-320] [--tag discover] [--strict] (--help — все флаги)');
+const url = String(pos[0]);
+let urlObj = null; try { urlObj = new URL(url); } catch { /* ниже — понятная ошибка */ }
+if (!urlObj || !/^(https?|file):$/.test(urlObj.protocol)) argFail(`Неверный адрес «${url}»: нужен полный адрес с http://, https:// или file:// (например http://localhost:4177/)`);
+for (const k of ['out', 'tag', 'scheme', 'viewports', 'viewport']) if (opt[k] === true) argFail(`У --${k} нет значения`);
+if (opt.scheme != null && !/^(light|dark)$/.test(String(opt.scheme))) argFail(`--scheme: «${opt.scheme}» — можно light или dark`);
+if (opt.viewports != null && opt.viewport != null && String(opt.viewports) !== String(opt.viewport)) argFail(`Указаны --viewports «${opt.viewports}» и --viewport «${opt.viewport}» — это один флаг, оставьте один`);
+const vpSpec = opt.viewports != null ? opt.viewports : opt.viewport;
+const viewports = pickViewports(vpSpec); /* неизвестный экран: pickViewports печатает список и выходит с кодом 1 */
+if (!viewports.length) argFail(`Неизвестные экраны: ${vpSpec}`);
+const has320 = viewports.some(([, vp]) => vp.width <= 320);
 const run = ensureDir(runDir(opt, url));
 const tag = String(opt.tag || 'discover');
 const shotsDir = ensureDir(path.join(run, tag));
-const viewports = pickViewports(opt.viewports);
-if (!viewports.length) { console.error(`Неизвестные экраны: ${opt.viewports}`); process.exit(1); }
-const has320 = viewports.some(([, vp]) => vp.width <= 320);
 
 const browser = await launch();
 const per = {}; const extra320 = {};
@@ -1134,6 +1197,8 @@ try {
 const good = Object.fromEntries(Object.entries(per).filter(([, v]) => !v.error));
 if (!Object.keys(good).length) { console.error('Ни один экран не снялся — адрес недоступен или браузер не поднялся.'); process.exit(1); }
 const order = Object.keys(good);
+/* экраны, которые не снялись: в сводку и в итог (FAIL) — иначе частичная разведка выглядит полной */
+const failed = Object.fromEntries(Object.entries(per).filter(([, v]) => v.error).map(([k, v]) => [k, v.error]));
 
 /* палитра по пикселям: first и full всех экранов (плюс серия прокрутки при --light нет) */
 const shotFiles = order.flatMap((v) => [path.join(shotsDir, `${v}-first.png`), path.join(shotsDir, `${v}-full.png`)]);
@@ -1141,9 +1206,10 @@ const paletteColors = [...new Set(order.flatMap((v) => { const p = good[v].visua
 const shares = await pixelShares(shotFiles, paletteColors).catch(() => null);
 const texResults = order.map((v) => good[v].texture).filter((t) => t && t.source === 'texture.mjs');
 
-const extra = { tag, extra320, shares, texResults, tokenCheck: null, designNote: null };
+const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null };
+const textureSource = opt['no-texture-module'] ? 'discover (запасной путь, --no-texture-module)' : texNote || 'texture.mjs';
 const save = (design) => {
-  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, per: good, extra320, pixelShares: shares, textureSource: texNote || 'texture.mjs', design, tokenCheck: extra.tokenCheck });
+  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens });
   fs.writeFileSync(path.join(run, 'discovery.md'), writeSummary(url, run, good, design, order, extra));
 };
 
@@ -1174,10 +1240,17 @@ if (!opt['no-design']) {
     } catch (e) { console.log(`пропущена: ${e.message}`); extra.designNote = `Шаг дизайн-системы не прошёл: ${String(e.message || e).slice(0, 200)}. Палитра и шрифты выше — только по замерам этой страницы.`; }
   } else extra.designNote = 'Скилла design-reference рядом нет — палитра и шрифты выше только по замерам этой страницы.';
 }
+/* G8: рецепт фактуры — в переменные дизайн-системы, чтобы сборка брала --grain-* отсюда, а не «на глаз» */
+if (design) {
+  extra.textureTokens = addTextureTokens(path.join(run, 'design', 'site.tokens.css'), texResults, opt);
+  const tt = extra.textureTokens;
+  console.log(tt.written ? `· фактура → design/site.tokens.css: блок --grain-* (${tt.grain === 'есть' ? `зерно есть, opacity ${tt.opacity}, ${tt.blend}` : `зерна ${tt.grain}, opacity 0`}${tt.replaced ? ', прежний блок заменён' : ''})` : `· фактура: блок --grain-* в design/site.tokens.css не дописан — ${tt.why}`);
+}
 save(design);
 
 /* вердикты в консоль */
 const verdicts = [];
+for (const [v, err] of Object.entries(failed)) verdicts.push(['FAIL', `экран ${v} не снялся: ${String(err).replace(/\n/g, ' ')}`]);
 for (const v of order) {
   const p = good[v];
   if (p.overflow.verdict !== 'OK') verdicts.push([p.overflow.verdict, `переполнение ${v}: ${p.overflow.summary}`]);
@@ -1186,8 +1259,14 @@ for (const v of order) {
   for (const x of p.motion.hoverConflicts) verdicts.push(['WARN', `${v}: наведение перебито удерживающей анимацией — ${x.target} ${x.anim} держит ${x.props.join(', ')}`]);
   for (const dg of (p.texture && p.texture.diagnosis) || []) verdicts.push(['WARN', `фактура ${v}: ${dg}`]);
 }
-for (const [v, p] of Object.entries(extra320)) if (!p.error && p.overflow.verdict !== 'OK') verdicts.push([p.overflow.verdict, `переполнение ${v}: ${p.overflow.summary}`]);
+for (const [v, p] of Object.entries(extra320)) {
+  if (p.error) verdicts.push(['FAIL', `проход ${v} (${p.width || 320}px) не снялся: ${p.error} — переполнение на этой ширине не проверено`]);
+  else if (p.overflow.verdict !== 'OK') verdicts.push([p.overflow.verdict, `переполнение ${v}: ${p.overflow.summary}`]);
+}
 if (shares) { const ghost = paletteColors.filter((c) => shares.shares[c] < 0.1 && order.some((v) => good[v].visual.palette.backgrounds.concat(good[v].visual.palette.ctaBackgrounds).some((x) => x.value === c))); if (ghost.length) verdicts.push(['WARN', `в CSS есть, на экране нет (<0.1% пикселей): ${ghost.join(', ')}`]); }
 if (extra.tokenCheck) { const bad = extra.tokenCheck.filter((x) => x.share < 0.1); if (bad.length) verdicts.push(['WARN', `токены цвета не видны на снимках: ${bad.map((x) => `--${x.name} ${x.color} ${pctS(x.share)}`).join(', ')}`]); }
 if (verdicts.length) { console.log(''); for (const [vv, msg] of verdicts) console.log(`${vv.padEnd(5)} ${msg.slice(0, 300)}`); }
-console.log(`\nГотово: ${run}\n  discovery.md — сводка, discovery.json — данные, ${tag}/ — снимки${design ? ', design/ — переменные' : ''}`);
+const nFail = verdicts.filter(([vv]) => vv === 'FAIL').length; const nWarn = verdicts.filter(([vv]) => vv === 'WARN').length;
+console.log(`\nИтог: ${nFail || nWarn ? [nFail && `FAIL ${nFail}`, nWarn && `WARN ${nWarn}`].filter(Boolean).join(' · ') : 'OK'}${opt.strict ? ` (--strict: код выхода ${nFail ? 1 : 0})` : ''}`);
+console.log(`Готово: ${run}\n  discovery.md — сводка, discovery.json — данные, ${tag}/ — снимки${design ? `, design/ — переменные${extra.textureTokens && extra.textureTokens.written ? ' (с блоком --grain-*)' : ''}` : ''}`);
+if (opt.strict && nFail) process.exit(1);

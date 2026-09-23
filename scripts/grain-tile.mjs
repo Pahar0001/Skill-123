@@ -9,9 +9,14 @@
  *                       [--px 1] [--frames 1] [--fps 10 | --frame-ms 100] [--seed 7]
  *                       [--name имя] [--formats png,sprite,gif,webp] [--json файл]
  *   node grain-tile.mjs --check файл.png|gif|webp [--sprite-frames N] [--json файл]
+ *   node grain-tile.mjs --help | -h     справка, код 0, ничего не пишет
+ *   node grain-tile.mjs                 без аргументов — справка и код 1, ничего не пишет
  *
  * Флаги:
- *   --out        папка для файлов (по умолчанию текущая).
+ *   --out        папка для файлов (по умолчанию текущая — если задан хоть один другой флаг).
+ *                Создаётся только после проверки аргументов: неизвестный --mode, неизвестное
+ *                имя или ни одного пригодного в --formats, позиционный аргумент, --out без
+ *                папки — код 1, и ничего не создано.
  *   --size       сторона плитки в пикселях (256).
  *   --levels     число уровней яркости, 2…256 (16: sd ≈ 78, файл ≈ 32 КБ).
  *   --mode gray  непрозрачный серый шум, равномерный 0…255 (среднее 127, sd ≈ 78).
@@ -43,6 +48,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSharp, parseArgs, writeJson } from './lib.mjs';
+
+/* справка — до загрузки sharp: -h и запуск без аргументов ничего не создают и работают без него */
+const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
+const HELP = `grain-tile.mjs — своя шумовая плитка для зерна (детерминированно; чужой файл не переносится)
+
+  node grain-tile.mjs --out папка [--size 256] [--levels 16] [--mode gray|alpha] [--px 1]
+                      [--frames 1] [--fps 10 | --frame-ms 100] [--seed 7] [--name имя]
+                      [--formats png,sprite,gif,webp] [--json файл]
+  node grain-tile.mjs --check файл.png|gif|webp [--frames N | --sprite-frames N] [--frame-ms M] [--json файл]
+  node grain-tile.mjs --help | -h
+  node grain-tile.mjs              без аргументов — эта справка и код 1, ничего не записано
+
+  --out        папка для файлов (по умолчанию текущая — если задан хоть один другой флаг)
+  --size       сторона плитки, px (256)
+  --levels     уровней яркости 2…256 (16: σ ≈ 78.35, ≈ 32 КБ)
+  --mode       gray — непрозрачный серый шум (normal, opacity = σ/78.35); alpha — светлые и тёмные
+               зёрна с альфой (GIF полупрозрачность не держит — только PNG/WebP)
+  --px         зерно N×N px (lag1 плитки ≈ 1 − 1/N)
+  --frames     N независимых кадров: спрайт PNG и анимированные WebP/GIF
+  --fps        кадров в секунду GIF/WebP (10 = 100 мс); --frame-ms — то же в мс на кадр
+  --seed       зерно генератора (7): тот же seed — побайтно тот же файл
+  --name       имя файлов (grain-<mode>-<size>[-pxN])
+  --formats    что писать: png, sprite, gif, webp (по умолчанию png; при --frames > 1 ещё sprite, webp, gif)
+  --json       записать итог самопроверки
+  --check      проверить готовый файл по ВСЕМ кадрам: число кадров (--frames или --sprite-frames для
+               спрайта), задержки (--frame-ms/--fps), плоские и повторяющиеся кадры
+
+Папка --out создаётся только после проверки аргументов. Код 1 и ничего не создано: неизвестный
+--mode, --formats без формата, который можно записать (при одном кадре — только png), неизвестное
+имя в --formats, позиционный аргумент (папка задаётся только через --out), --out без папки.
+
+Вердикты: OK; WARN — формат не держит задуманное (alpha в GIF); FAIL — кадров не столько, кадр
+испорчен, плоский или повторяет соседний (код выхода 1).`;
+if (isMain) {
+  const argv = process.argv.slice(2);
+  if (!argv.length) { console.log(HELP); console.error('\nБез аргументов плитка не пишется: укажите --out папка (или --check файл).'); process.exit(1); }
+  if (argv.includes('-h') || argv.includes('--help') || argv.includes('--h')) { console.log(HELP); process.exit(0); }
+}
 
 const sharp = loadSharp();
 if (!sharp) { console.error('Нужен sharp: npm i sharp --prefix ~/.claude/site-rework (или запускать из папки проекта, где он есть).'); process.exit(1); }
@@ -159,39 +202,14 @@ function judge(res, { wantPages, wantDelay, lossless, alphaLost }) {
 }
 
 /* ---------------- CLI ---------------- */
-const HELP = `grain-tile.mjs — своя шумовая плитка для зерна (детерминированно; чужой файл не переносится)
-
-  node grain-tile.mjs --out папка [--size 256] [--levels 16] [--mode gray|alpha] [--px 1]
-                      [--frames 1] [--fps 10 | --frame-ms 100] [--seed 7] [--name имя]
-                      [--formats png,sprite,gif,webp] [--json файл]
-  node grain-tile.mjs --check файл.png|gif|webp [--frames N | --sprite-frames N] [--frame-ms M] [--json файл]
-
-  --out        папка для файлов (по умолчанию текущая)
-  --size       сторона плитки, px (256)
-  --levels     уровней яркости 2…256 (16: σ ≈ 78.35, ≈ 32 КБ)
-  --mode       gray — непрозрачный серый шум (normal, opacity = σ/78.35); alpha — светлые и тёмные
-               зёрна с альфой (GIF полупрозрачность не держит — только PNG/WebP)
-  --px         зерно N×N px (lag1 плитки ≈ 1 − 1/N)
-  --frames     N независимых кадров: спрайт PNG и анимированные WebP/GIF
-  --fps        кадров в секунду GIF/WebP (10 = 100 мс); --frame-ms — то же в мс на кадр
-  --seed       зерно генератора (7): тот же seed — побайтно тот же файл
-  --name       имя файлов (grain-<mode>-<size>[-pxN])
-  --formats    что писать: png, sprite, gif, webp (по умолчанию png; при --frames > 1 ещё sprite, webp, gif)
-  --json       записать итог самопроверки
-  --check      проверить готовый файл по ВСЕМ кадрам: число кадров (--frames или --sprite-frames для
-               спрайта), задержки (--frame-ms/--fps), плоские и повторяющиеся кадры
-
-Вердикты: OK; WARN — формат не держит задуманное (alpha в GIF); FAIL — кадров не столько, кадр
-испорчен, плоский или повторяет соседний (код выхода 1).`;
-const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 
 if (isMain) {
-  const { opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h'], values: ['out', 'size', 'levels', 'mode', 'px', 'frames', 'fps', 'frame-ms', 'seed', 'name', 'formats', 'json', 'check', 'sprite-frames'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h'], values: ['out', 'size', 'levels', 'mode', 'px', 'frames', 'fps', 'frame-ms', 'seed', 'name', 'formats', 'json', 'check', 'sprite-frames'] });
   const report = { files: [] };
-  if (opt.help || opt.h) {
-    console.log(HELP);
-    process.exit(0);
-  }
+  const die = (m) => { console.error(m); process.exit(1); };
+  /* всё проверяется до первой записи: папка --out не появляется, если аргументы неверны */
+  if (pos.length) die(`Лишний аргумент «${pos[0]}»: папка для плиток задаётся только --out папка, файл для проверки — --check файл (справка: --help)`);
+  if (opt.check === true) die('--check без файла: --check файл.png|gif|webp');
   if (opt.check) {
     const f = String(opt.check);
     if (!fs.existsSync(f)) { console.error(`Нет файла ${f}`); process.exit(1); }
@@ -202,15 +220,20 @@ if (isMain) {
     judge(res, { wantPages, wantDelay });
     report.files.push(res);
   } else {
-    const out = path.resolve(String(opt.out || '.')); fs.mkdirSync(out, { recursive: true });
+    if (opt.out === true) die('--out без папки: --out папка');
+    if (opt.mode !== undefined && !['gray', 'alpha'].includes(String(opt.mode))) die(`Неизвестный --mode ${opt.mode === true ? '(пусто)' : opt.mode}: gray или alpha`);
+    const out = path.resolve(String(opt.out || '.'));
     const size = Math.max(8, Number(opt.size) || 256), levels = Math.max(2, Math.min(256, Number(opt.levels) || 16)), px = Math.max(1, Number(opt.px) || 1);
     const frames = Math.max(1, Number(opt.frames) || 1), mode = opt.mode === 'alpha' ? 'alpha' : 'gray';
-    if (opt.mode && !['gray', 'alpha'].includes(String(opt.mode))) { console.error(`Неизвестный --mode ${opt.mode}: gray или alpha`); process.exit(1); }
     const frameMs = Number(opt['frame-ms']) || Math.round(1000 / (Number(opt.fps) || 10));
     const seed = opt.seed != null && opt.seed !== true ? Number(opt.seed) : 7;
     const name = opt.name && opt.name !== true ? String(opt.name) : `grain-${mode}-${size}${px > 1 ? `-px${px}` : ''}`;
     const def = frames > 1 ? (mode === 'alpha' ? 'png,sprite,webp' : 'png,sprite,webp,gif') : 'png';
     const formats = new Set(String(opt.formats && opt.formats !== true ? opt.formats : def).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+    const unknown = [...formats].filter((x) => !['png', 'sprite', 'gif', 'webp'].includes(x));
+    if (unknown.length) die(`Неизвестный формат в --formats: ${unknown.join(', ')} — есть png, sprite, gif, webp`);
+    if (!formats.has('png') && !(frames > 1 && ['sprite', 'gif', 'webp'].some((x) => formats.has(x)))) die(`Нечего писать: --formats ${[...formats].join(',')} (при одном кадре есть только png)`);
+    fs.mkdirSync(out, { recursive: true });
     const bufs = makeFrames({ size, levels, px, frames, mode, seed });
     const ch = mode === 'alpha' ? 2 : 1;
     const expect = bufs.map((b) => expectedRgba(b, mode));
