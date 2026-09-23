@@ -81,12 +81,14 @@ function beforeScroll() {
   /* бесконечная анимация (бегущая строка) — не появление */
   const loops = new Set();
   for (const a of document.getAnimations()) { const t = a.effect && a.effect.getTiming ? a.effect.getTiming() : {}; if (t.iterations === Infinity && a.effect.target) loops.add(a.effect.target); }
-  const cand = [...document.body.querySelectorAll('*')].filter((el) => {
-    if (loops.has(el)) return false;
+  /* сначала прозрачные (настоящие кандидаты), потом только сдвинутые — чтобы 60 мест не съели постоянно повёрнутые карточки */
+  const cand = [...document.body.querySelectorAll('*')].map((el) => {
+    if (loops.has(el)) return null;
     const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-    if (!(r.width > 0 && r.height > 30 && r.right > 0 && r.left < vw) || s.display === 'none' || s.visibility === 'hidden') return false;
-    return r.top + scrollY > vh && (parseFloat(s.opacity) < 0.95 || (s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)'));
-  }).slice(0, 60);
+    if (!(r.width > 0 && r.height > 30 && r.right > 0 && r.left < vw) || s.display === 'none' || s.visibility === 'hidden' || r.top + scrollY <= vh) return null;
+    const faded = parseFloat(s.opacity) < 0.95, moved = s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)';
+    return faded || moved ? { el, rank: faded ? 0 : 1 } : null;
+  }).filter(Boolean).sort((a, b) => a.rank - b.rank).slice(0, 80).map((x) => x.el);
   cand.forEach((el, i) => el.setAttribute('data-dref-reveal', i));
   const first = (v) => v.split(/,(?![^(]*\))/)[0].trim();
   return cand.map((el) => { const s = getComputedStyle(el); return { el: sig(el), opacity: s.opacity, transform: s.transform, transition: first(s.transitionDuration) + ' ' + first(s.transitionTimingFunction) + ', задержка ' + first(s.transitionDelay) }; });
@@ -155,7 +157,12 @@ function inPage() {
   /* фактура: полноэкранные слои с pointer-events:none (зерно, плёнка, виньетка) — не палитра */
   const texture = [], texEls = new Set();
   const isFixed = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return true; return false; };
-  const shortImg = (v) => (v === 'none' ? null : v.replace(/url\("?data:([^;,)"]+)[^)]*\)/g, (m, t) => { let d = m; try { d = decodeURIComponent(m); } catch { /* как есть */ } return `url(data:${t}…${/feTurbulence/i.test(d) ? ' feTurbulence' : ''})`; }).slice(0, 220));
+  /* url() в вычисленном стиле всегда в двойных кавычках; внутри data:svg бывают «)» — поэтому по кавычкам, а не до первой скобки */
+  const shortUrl = (u) => {
+    if (/^data:/i.test(u)) { const t = (/^data:([^;,]+)/i.exec(u) || [])[1] || '?'; let dd = u; try { dd = decodeURIComponent(u); } catch { /* как есть */ } return `url(data:${t}…${/feTurbulence/i.test(dd) ? ' feTurbulence' : ''})`; }
+    return `url(${u.length > 140 ? u.slice(0, 70) + '…' + u.slice(-60) : u})`;
+  };
+  const shortImg = (v) => (!v || v === 'none' ? null : v.replace(/url\("((?:[^"\\]|\\.)*)"\)/g, (m, u) => shortUrl(u)).replace(/url\(([^)"']*)\)/g, (m, u) => (/^data:|…/.test(u) ? m : shortUrl(u))).slice(0, 260));
   const paints = (s, media) => media || s.backgroundImage !== 'none' || !!hex(s.backgroundColor) || s.mixBlendMode !== 'normal' || (!!s.backdropFilter && s.backdropFilter !== 'none');
   const texInfo = (el, s, pseudo, w, h, o) => ({
     el: sig(el) + pseudo, position: s.position, width: Math.round(w), height: Math.round(h), opacity: Math.round(o * 1000) / 1000,
@@ -173,7 +180,8 @@ function inPage() {
     if (!(r.width >= vw * 0.8 && r.height >= vh * 0.8) || !(r.height >= docH * 0.8 || isFixed(el))) continue;
     if (!paints(s, /^(CANVAS|VIDEO|IMG)$/.test(el.tagName)) || (el.innerText || '').trim().length > 2) continue;
     const o = effOf(el); if (!(o > 0.001)) continue;
-    texEls.add(el); if (texture.length < 12) texture.push(texInfo(el, s, '', r.width, r.height, o));
+    texEls.add(el); el.setAttribute('data-dref-tex', ''); /* проверка пикселей потом обходит слой */
+    if (texture.length < 12) texture.push(texInfo(el, s, '', r.width, r.height, o));
   }
   for (const el of [document.documentElement, document.body, ...bodyEls]) {
     for (const p of ['::before', '::after']) {
@@ -309,22 +317,25 @@ function inPage() {
 
   /* шрифты: что объявлено и откуда грузится; есть ли тёмная тема в CSS */
   const fontFaces = [...document.fonts].map((f) => ({ family: f.family.replace(/["']/g, ''), weight: f.weight, style: f.style, status: f.status, unicodeRange: f.unicodeRange }));
-  const fontLinks = [...document.querySelectorAll('link[href*="font"], link[rel="preload"][as="font"]')].map((l) => l.href);
-  const keyframes = [], faceSrc = []; let reducedMotion = false, unreadableSheets = 0, darkMedia = false;
+  const fontLinks = [...new Set([...document.querySelectorAll('link[href*="font"], link[rel="preload"][as="font"]')].map((l) => l.href))];
+  const keyframes = [], faceSrc = []; let reducedMotion = false, unreadableSheets = 0, darkMedia = false, lightDark = false;
+  const unreadable = [];
   const DARK = /prefers-color-scheme\s*:\s*dark/i;
   const walkSheet = (sh, depth = 0) => {
     try { if (sh.media && DARK.test(sh.media.mediaText)) darkMedia = true; } catch { /* нет media */ }
-    let rules; try { rules = sh.cssRules; } catch { unreadableSheets++; return; }
+    let rules; try { rules = sh.cssRules; } catch { unreadableSheets++; if (sh.href && unreadable.length < 20) unreadable.push(sh.href); return; }
     const walk = (list) => { for (const r of list) {
       if (r.type === CSSRule.KEYFRAMES_RULE) keyframes.push({ name: r.name, css: r.cssText.slice(0, 600) });
       else if (r.type === CSSRule.FONT_FACE_RULE) faceSrc.push({ family: r.style.getPropertyValue('font-family').replace(/["']/g, ''), src: r.style.getPropertyValue('src').slice(0, 200) });
       else if (r.type === CSSRule.IMPORT_RULE) { if (r.media && DARK.test(r.media.mediaText)) darkMedia = true; if (r.styleSheet && depth < 4) walkSheet(r.styleSheet, depth + 1); }
       else if (r.type === CSSRule.MEDIA_RULE) { const c = r.conditionText || (r.media && r.media.mediaText) || ''; if (/prefers-reduced-motion/.test(c)) reducedMotion = true; if (DARK.test(c)) darkMedia = true; walk(r.cssRules); }
+      else if (r.type === CSSRule.STYLE_RULE) { if (!lightDark && r.style && r.style.cssText.includes('light-dark(')) lightDark = true; if (r.cssRules && r.cssRules.length) walk(r.cssRules); }
       else if (r.cssRules) walk(r.cssRules);
     } };
     walk(rules);
   };
   for (const sh of document.styleSheets) walkSheet(sh);
+  const metaScheme = ((document.querySelector('meta[name="color-scheme"]') || {}).content || '').trim();
 
   /* движение */
   const libs = {};
@@ -344,7 +355,7 @@ function inPage() {
     scale, bodyProbe, containers: top(containers, 5), grids: gridInfo.slice(0, 25),
     spacing: top(space, 16), shape: { radius: top(radius, 6), shadow: top(shadow, 4), borderWidth: top(bw, 4) },
     sections, texture, passport,
-    colorScheme: { darkMedia, unreadableSheets },
+    colorScheme: { darkMedia, lightDark, root: htmlS.colorScheme || 'normal', meta: metaScheme || null, unreadableSheets, unreadable },
     motion: { libs, scriptHints, transitions: top(trans, 10), running, keyframes: keyframes.slice(0, 30), sticky, reducedMotion },
   };
 }
@@ -384,25 +395,91 @@ async function states(page) {
 }
 
 /* ---------- пиксели снимков: сколько на экране каждого цвета-кандидата ---------- */
-async function countPixels(sharp, buf, targets, acc) {
+
+/**
+ * В странице: где на экране CSS ставит каждый цвет-кандидат — прямоугольники
+ * (в пикселях окна) видимых элементов с таким фоном, цветом собственного текста
+ * или рамкой. Слои фактуры и невидимое (итоговая прозрачность ≤ 0.05) не в счёт.
+ * Пиксели считаются только внутри них: жёлтый баннер на фотографии — не акцент
+ * интерфейса, а цвет, который в CSS есть, но на экране закрыт, — не виден.
+ */
+function colorRects(values) {
+  const vw = innerWidth, vh = innerHeight;
+  const want = new Map(values.map((v, i) => [v, i]));
+  const out = values.map(() => []);
+  const own = (el) => { for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) return true; return false; };
+  for (const el of document.body.querySelectorAll('*')) {
+    if (/^(STYLE|SCRIPT|NOSCRIPT|TEMPLATE)$/i.test(el.tagName)) continue;
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0) || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+    const s = getComputedStyle(el);
+    const hits = new Set();
+    const b = hex(s.backgroundColor); if (b && want.has(b)) hits.add(want.get(b));
+    const c = hex(s.color); if (c && want.has(c) && own(el)) hits.add(want.get(c));
+    for (const side of ['Top', 'Right', 'Bottom', 'Left']) if (parseFloat(s['border' + side + 'Width']) > 0) { const x = hex(s['border' + side + 'Color']); if (x && want.has(x)) hits.add(want.get(x)); }
+    if (!hits.size || el.closest('[data-dref-tex]') || !(eff(el) > 0.05)) continue;
+    const x0 = Math.max(0, r.left), y0 = Math.max(0, r.top), x1 = Math.min(vw, r.right), y1 = Math.min(vh, r.bottom);
+    for (const k of hits) if (out[k].length < 800) out[k].push([x0, y0, x1 - x0, y1 - y0]);
+  }
+  return out;
+}
+
+/**
+ * Снимок окна → сколько пикселей каждого кандидата: всего на снимке и внутри
+ * его прямоугольников (rects[k], пиксели окна; scale — сколько пикселей
+ * снимка в пикселе окна). acc копит суммы по всем снимкам.
+ */
+async function countPixels(sharp, buf, targets, rects, dpr, acc) {
   let img = sharp(buf); const meta = await img.metadata();
-  if (meta.width > 1600) img = img.resize({ width: Math.round(meta.width / 2), kernel: 'nearest' });
+  let scale = dpr || 1;
+  if (meta.width > 1600) { img = img.resize({ width: Math.round(meta.width / 2), kernel: 'nearest' }); scale /= 2; }
   const { data, info } = await img.removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const t2 = PIXEL_TOLERANCE * PIXEL_TOLERANCE;
-  acc.pixels += info.width * info.height;
-  for (let i = 0; i < data.length; i += 3) {
-    const r = data[i], g = data[i + 1], b = data[i + 2];
-    for (let k = 0; k < targets.length; k++) { const T = targets[k].rgb; const dr = r - T[0], dg = g - T[1], db = b - T[2]; if (dr * dr + dg * dg + db * db <= t2) acc.counts[k]++; }
+  const W = info.width, H = info.height, N = W * H, t2 = PIXEL_TOLERANCE * PIXEL_TOLERANCE;
+  acc.pixels += N;
+  const mask = new Uint8Array(N);
+  for (let k = 0; k < targets.length; k++) {
+    mask.fill(0);
+    for (const [x, y, w, h] of rects[k] || []) {
+      const X0 = Math.max(0, Math.floor(x * scale)), X1 = Math.min(W, Math.ceil((x + w) * scale));
+      const Y0 = Math.max(0, Math.floor(y * scale)), Y1 = Math.min(H, Math.ceil((y + h) * scale));
+      if (X1 > X0) for (let row = Y0; row < Y1; row++) mask.fill(1, row * W + X0, row * W + X1);
+    }
+    const T = targets[k].rgb; let all = 0, ui = 0;
+    for (let p = 0, i = 0; p < N; p++, i += 3) {
+      const dr = data[i] - T[0], dg = data[i + 1] - T[1], db = data[i + 2] - T[2];
+      if (dr * dr + dg * dg + db * db <= t2) { all++; if (mask[p]) ui++; }
+    }
+    acc.all[k] += all; acc.ui[k] += ui;
+    if (ui / N > acc.maxShot[k]) acc.maxShot[k] = ui / N;
   }
 }
 
 /* ---------- один проход по странице ---------- */
 const DEPS = { hex: HEX_SRC, eff: EFF_SRC, sig: SIG_SRC, layer: layerBg.toString() };
-async function measure(browser, url, viewport, { shotsDir, tag, withStates, scheme = 'light', pixels = false }) {
+const DARK_TEXT = /prefers-color-scheme\s*:\s*dark/i;
+const MOBILE_UA = (SR && SR.MOBILE_UA) || 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+const r6 = (x) => Math.round(x * 1e6) / 1e6;
+
+/** Есть ли у страницы тёмная тема: причина строкой или null. */
+export function darkSource(cs) {
+  if (!cs) return null;
+  if (cs.darkMedia) return cs.darkFrom === 'css-text' ? '@media (prefers-color-scheme: dark) в таблице стилей с чужого домена' : '@media (prefers-color-scheme: dark)';
+  if (cs.lightDark) return 'light-dark() в CSS';
+  if (/dark/i.test(cs.root || '')) return `color-scheme: ${cs.root}`;
+  if (/dark/i.test(cs.meta || '')) return `<meta name="color-scheme" content="${cs.meta}">`;
+  return null;
+}
+
+async function measure(browser, url, viewport, { shotsDir, tag, withStates, scheme = 'light', pixels = false, readCss = false }) {
   const page = await browser.newPage();
+  /* таблицы стилей с чужого домена CSSOM не читает — тёмную тему в них ищем по тексту ответа */
+  const cssTexts = [];
+  const onResp = (resp) => { try { if (resp.request().resourceType() === 'stylesheet') cssTexts.push({ url: resp.url(), text: resp.text().catch(() => '') }); } catch { /* ответ без тела */ } };
   try {
     await page.setViewport(viewport);
+    if (viewport.isMobile) await page.setUserAgent(MOBILE_UA);
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: scheme }]);
+    if (readCss) page.on('response', onResp);
     await gotoRetry(page, url, { waitUntil: 'networkidle2', timeout: 60000 });
     const gotoInfo = page.gotoInfo || { attempt: 1, waitUntil: 'networkidle2' };
     await page.evaluate(() => document.fonts.ready).catch(() => {}); await sleep(600);
@@ -413,30 +490,47 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
     const after = await revealAfter(page);
     const data = await evaluateWith(page, inPage, null, DEPS);
     data.motion.scrollReveal = revealBefore.map((b, i) => { const a = after.find((x) => x.i === i); return a && (a.opacity !== b.opacity || a.transform !== b.transform) ? { ...b, becomes: { opacity: a.opacity, transform: a.transform } } : null; }).filter(Boolean).slice(0, 20);
-    data.scroll = { steps: pass.screens, reachedBottom: pass.reachedBottom, stuck: !!pass.stuck };
+    data.scroll = { steps: pass.screens, pageHeight: pass.pageHeight, maxScrollY: pass.maxScrollY, reachedBottom: pass.reachedBottom, stuck: !!pass.stuck };
     data.tool = { goto: gotoInfo };
-    /* проход 2: снимки окна равномерно по высоте — в файлы и для проверки цвета по пикселям */
+    if (readCss) {
+      page.off('response', onResp);
+      /* читаемые таблицы CSSOM уже проверил — значит, найденное в тексте пришло из нечитаемой */
+      if (!data.colorScheme.darkMedia && data.colorScheme.unreadableSheets) {
+        for (const c of cssTexts) if (DARK_TEXT.test(await c.text)) { data.colorScheme.darkMedia = true; data.colorScheme.darkFrom = 'css-text'; data.colorScheme.darkSheet = c.url.slice(0, 200); break; }
+      }
+    }
+    /* проход 2: снимки окна равномерно по высоте — в файлы и для проверки акцента по пикселям */
     const targets = pixels ? accentPool(data).slice(0, 6).map((c) => ({ value: c.value, rgb: rgb(c.seen) })) : [];
     const sharp = targets.length ? loadSharp() : null;
     if (shotsDir || sharp) {
       const ys = segmentPositions(data.pageHeight, viewport.height, { maxShots: shotsDir ? 10 : 8 });
-      const acc = { pixels: 0, counts: targets.map(() => 0) };
+      const acc = { pixels: 0, all: targets.map(() => 0), ui: targets.map(() => 0), maxShot: targets.map(() => 0) };
       for (let k = 0; k < ys.length; k++) {
         const s = await screenAt(page, ys[k]);
         if (shotsDir) fs.writeFileSync(path.join(shotsDir, `${tag}-scroll-${String(k).padStart(2, '0')}.png`), s.buffer);
-        if (sharp) await countPixels(sharp, s.buffer, targets, acc);
+        if (sharp) {
+          const rects = await evaluateWith(page, colorRects, targets.map((t) => t.value), DEPS);
+          await countPixels(sharp, s.buffer, targets, rects, viewport.deviceScaleFactor || 1, acc);
+        }
       }
       await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await sleep(300);
       if (pixels) {
         data.palette.pixelCheck = targets.length && !sharp
           ? { error: 'нет sharp — акцент не проверен по снимкам', shots: ys.length }
-          : { shots: ys.length, pixels: acc.pixels, tolerance: PIXEL_TOLERANCE, share: Object.fromEntries(targets.map((t, k) => [t.value, acc.pixels ? Math.round(acc.counts[k] / acc.pixels * 1e6) / 1e6 : 0])) };
+          : {
+            shots: ys.length, pixels: acc.pixels, tolerance: PIXEL_TOLERANCE, min: ACCENT_MIN_SHARE,
+            /* share — доля пикселей всех снимков окна, где цвет стоит на своём месте (фон, текст или рамка элемента с этим цветом) */
+            share: Object.fromEntries(targets.map((t, k) => [t.value, acc.pixels ? r6(acc.ui[k] / acc.pixels) : 0])),
+            /* shareAll — тот же цвет где угодно на снимке, в том числе на фотографиях; maxShot — наибольшая доля на одном снимке */
+            shareAll: Object.fromEntries(targets.map((t, k) => [t.value, acc.pixels ? r6(acc.all[k] / acc.pixels) : 0])),
+            maxShot: Object.fromEntries(targets.map((t, k) => [t.value, r6(acc.maxShot[k])])),
+          };
       }
-    } else if (pixels) data.palette.pixelCheck = targets.length ? { error: 'нет sharp — акцент не проверен по снимкам', shots: 0 } : { shots: 0, pixels: 0, tolerance: PIXEL_TOLERANCE, share: {} };
+    } else if (pixels) data.palette.pixelCheck = targets.length ? { error: 'нет sharp — акцент не проверен по снимкам', shots: 0 } : { shots: 0, pixels: 0, tolerance: PIXEL_TOLERANCE, min: ACCENT_MIN_SHARE, share: {} };
     if (shotsDir) data.fullShot = await fullShot(page, path.join(shotsDir, `${tag}-full.png`));
     if (withStates) data.states = await states(page);
     return data;
-  } finally { await page.close().catch(() => {}); }
+  } finally { page.off('response', onResp); await page.close().catch(() => {}); }
 }
 
 /**
@@ -449,12 +543,17 @@ export async function extract(url, { shotsDir = null, light = false, pixels = tr
   const br = browser || await launch();
   try {
     if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
-    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: !light, pixels });
+    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: !light, pixels, readCss: !light });
     const mobile = await measure(br, url, MOBILE, { shotsDir, tag: 'mobile', withStates: false });
     let dark = null, darkReason = null;
+    const why = darkSource(desktop.colorScheme);
     if (light) darkReason = 'не снималась (--light)';
-    else if (!desktop.colorScheme.darkMedia) darkReason = 'не снималась: в CSS нет @media (prefers-color-scheme: dark)' + (desktop.colorScheme.unreadableSheets ? `; ${desktop.colorScheme.unreadableSheets} табл. стилей с чужого домена прочитать нельзя` : '');
-    else { const d = await measure(br, url, DESKTOP, { shotsDir: null, tag: 'dark', withStates: false, scheme: 'dark' }); dark = { page: d.page, palette: d.palette, differs: d.page.background !== desktop.page.background }; }
+    else if (!why) darkReason = 'не снималась: в CSS нет @media (prefers-color-scheme: dark), light-dark() и color-scheme с dark' + (desktop.colorScheme.unreadableSheets ? ` (таблиц стилей с чужого домена: ${desktop.colorScheme.unreadableSheets}, их текст тоже проверен)` : '');
+    else {
+      const d = await measure(br, url, DESKTOP, { shotsDir: null, tag: 'dark', withStates: false, scheme: 'dark' });
+      const th = themes(d);
+      dark = { page: d.page, palette: d.palette, themes: th, source: why, differs: d.page.background !== desktop.page.background || d.page.color !== desktop.page.color };
+    }
     let sharpOk = false; try { sharpOk = !!loadSharp(); } catch { /* нет */ }
     return { source: url, takenAt: new Date().toLocaleDateString('sv-SE'), tool: { version: VERSION, siteRework: !!SR, sharp: sharpOk }, desktop, mobile, dark, darkReason };
   } finally { if (own) await br.close().catch(() => {}); }
@@ -533,10 +632,13 @@ export function accentInfo(d) {
   const pc = d.palette.pixelCheck;
   if (!pool.length) return { value: null, status: 'нет', note: 'насыщенных цветов в палитре нет' };
   if (!pc || pc.error || !pc.share) return { value: pool[0].value, status: 'не проверен', note: pc && pc.error ? pc.error : 'снимками окна не проверялся', candidates: pool.slice(0, 6).map((c) => ({ value: c.value })) };
-  const cand = pool.slice(0, 6).map((c) => ({ value: c.value, share: pc.share[c.value] }));
-  const ok = cand.find((c) => c.share != null && c.share >= ACCENT_MIN_SHARE);
+  const min = pc.min || ACCENT_MIN_SHARE;
+  const cand = pool.slice(0, 6).map((c) => ({ value: c.value, share: pc.share[c.value], shareAll: pc.shareAll ? pc.shareAll[c.value] : undefined }));
+  const ok = cand.find((c) => c.share != null && c.share >= min);
   if (ok) return { value: ok.value, status: 'подтверждён', share: ok.share, note: `${pct(ok.share)} пикселей снимков окна`, candidates: cand };
-  return { value: null, status: 'нет', note: `в CSS есть ${cand.slice(0, 3).map((c) => `${c.value} (${c.share == null ? '—' : pct(c.share)})`).join(', ')}, на снимках окна меньше ${pct(ACCENT_MIN_SHARE)} — акцента нет`, candidates: cand };
+  const onPhotos = cand.filter((c) => c.shareAll != null && c.shareAll >= min && !(c.share >= min));
+  const list = cand.slice(0, 3).map((c) => `${c.value} (${c.share == null ? '—' : pct(c.share)}${c.shareAll != null && c.shareAll > (c.share || 0) * 2 && c.shareAll >= 0.0001 ? `, на снимке всего ${pct(c.shareAll)}` : ''})`).join(', ');
+  return { value: null, status: 'нет', note: `в CSS есть ${list}, на своих местах на снимках окна меньше ${pct(min)} — акцента нет${onPhotos.length ? `; ${onPhotos.map((c) => c.value).join(', ')} видно только вне элементов с этим цветом (фото, картинки)` : ''}`, candidates: cand };
 }
 
 /** Тема, к которой относится фон страницы (для старых ролей text/muted). */
@@ -686,7 +788,7 @@ function skeleton(data, slug) {
 
 ## 1. Палитра
 ${Object.entries(r).map(roleLine).join('\n')}
-- тёмная тема системы: ${data.dark ? (data.dark.differs ? `есть, фон ${data.dark.page.background}, текст ${data.dark.page.color}` : 'не выявлена') : (data.darkReason || 'не проверялась')}
+- тёмная тема системы: ${darkLine(data)}
 
 Роли текста по реальному фону секций:
 ${themeLine('dark', 'тёмные секции')}
@@ -781,7 +883,7 @@ export function summaryLines(data) {
   for (const [b, label] of [[bc, 'широкий'], [bcm, 'узкий']]) if (b) out.push(`${b.ok ? 'OK  ' : 'WARN'} основной текст (${label}): ${b.note}`);
   if (m.scale.body && parseFloat(m.scale.body.fontSize) < 6) out.push(`FAIL основной текст на узком экране ${m.scale.body.fontSize}`);
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
-  out.push(`OK   тёмная тема: ${data.dark ? (data.dark.differs ? 'есть' : 'снята, не отличается') : data.darkReason}`);
+  out.push(`OK   тёмная тема: ${darkLine(data)}`);
   if (!data.tool || !data.tool.siteRework) out.push('WARN site-rework рядом нет — запасной путь: без ожидания картинок на снимках, прозрачность без теневого DOM');
   return out;
 }
