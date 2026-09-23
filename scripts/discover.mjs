@@ -1120,7 +1120,7 @@ const per = {}; const extra320 = {};
 try {
   for (const [name, vp] of viewports) {
     process.stdout.write(`· ${name} ${vp.width}×${vp.height} … `);
-    try { per[name] = await inspect(browser, url, name, vp, shotsDir, opt); console.log(`ок (${(per[name].took / 1000).toFixed(1)} с, ошибок в консоли ${per[name].log.consoleErrors.length})`); }
+    try { per[name] = await inspect(browser, url, name, vp, shotsDir, opt); console.log(`ок (${(per[name].took / 1000).toFixed(1)} с, ошибок в консоли ${per[name].log.consoleErrors.length}, исключений ${per[name].log.pageErrors.length})`); }
     catch (e) { console.log(`сбой: ${e.message}`); per[name] = { error: e.message }; }
   }
   if (!opt['no-320'] && !has320) {
