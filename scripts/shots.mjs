@@ -55,14 +55,26 @@
  * пункт меню, появления) увидели каждый раздел, как при настоящем листании; иначе итог зависит от
  * того, на какие высоты попали шаги. Что меняется само (холст, видео, бегущая строка) — отсекается
  * вторым снимком при загрузке через 700 мс; холст, видео или iframe, в котором за эти 700 мс
- * изменился хоть один пиксель, отсекается целиком по своему положению; карусели и прочее, что меняет
- * DOM само, — наблюдением за изменениями 3 с на месте (только если расхождение нашлось; живым
- * считается и элемент, у которого менялся предок). Остальное — области, в которых
- * перечисляются элементы и что у них изменилось (класс, цвет, прозрачность):
+ * изменился хоть один пиксель, по пикселям отсекается целиком по своему положению. Но под такой
+ * маской (живой фон на весь экран, WebGL-герой) пиксели слепы, поэтому там сверяется состояние
+ * элементов, а не пиксели: у каждого элемента первого экрана поверх живого места (кроме самих
+ * холстов, видео и iframe и того, что ими закрыто) сравниваются цвет, фон, рамка, сдвиг,
+ * подчёркивание, картинка, прозрачность; изменилось и элемент не живой — FAIL, как и по пикселям;
+ * только проявилось (прозрачность 0 → 1, текст первого экрана виден лишь после прокрутки) — WARN
+ * с вырезкой по коробкам; если проявление включил класс у предка (.hero.in), предок назван у потомка.
+ * Сравнение числами, с допуском на невидимое: сдвиг — угол коробки ушёл на 1 CSS px и больше
+ * (остаток плавного параллакса в сотые пикселя — не отличие), цвет — канал на 4 из 255 или альфа
+ * на 0,04, прозрачность — на 0,1.
+ * Карусели и прочее, что меняет DOM само, — наблюдением за изменениями на месте до 8 с (до второй
+ * смены; только если расхождение нашлось); живым считается и элемент, у которого менялся предок
+ * или сосед того же вида (слайд, который за наблюдение не сменился). Карусель, которая и за 8 с не
+ * сменилась, узнаётся по «переключению между соседями»: у одного соседа класс снят, у другого тот
+ * же поставлен, и это не ссылки и не меню (там это и есть залипшая подсветка) — WARN, не FAIL.
+ * Остальное — области, в которых перечисляются элементы и что у них изменилось (класс, цвет, прозрачность):
  *   FAIL «состояние не сбрасывается» — изменились класс, цвет, фон, рамка или появился новый элемент
  *        (подсвеченный пункт меню, раскрытая шапка, всплывшее сообщение);
  *   WARN — только проявление (прозрачность 0 → 1), только холст и видео, только то, что меняется
- *        само, или причина по стилям не видна (смотреть вырезку).
+ *        само (карусель), или причина по стилям не видна (смотреть вырезку).
  *
  * Движение (без --no-freeze): перед снимком при загрузке конечные анимации доигрываются, бесконечные
  * ставятся в фазу 0; перед прокруткой — freezeMotion (переходы отключаются). Иначе два снимка одной
@@ -97,6 +109,8 @@ const returnOpt = String(opt.return || 'both');
 if (!/^(both|jump|up)$/.test(returnOpt)) { console.error('--return: both, jump или up'); process.exit(1); }
 const freeze = !opt['no-freeze'];
 const sharp = loadSharp();
+/* наблюдение за тем, что меняется само: до 8 с (карусель Bootstrap — 5 с), раньше — после второй смены */
+const WATCH_MS = 8000;
 
 /* конечные анимации и переходы — в конец, бесконечные — в фазу 0 (как freezeMotion, но без
    отключения переходов: при загрузке страница ещё должна жить своей жизнью) */
@@ -124,11 +138,14 @@ function rememberFirstInPage() {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     const s = getComputedStyle(el);
-    m.set(el, { cls: el.getAttribute('class') || '', o: eff(el), color: s.color, bg: s.backgroundColor, bd: `${s.borderTopColor} ${s.borderBottomColor} ${s.outlineStyle} ${s.outlineColor}`, tr: s.transform, td: s.textDecorationLine, aria: ['aria-current', 'aria-expanded', 'aria-selected', 'aria-pressed', 'open'].map((a) => el.getAttribute(a) || '').join('|'), src: el.currentSrc || el.getAttribute('src') || '' });
+    m.set(el, { cls: el.getAttribute('class') || '', o: eff(el), color: s.color, bg: s.backgroundColor, bdc: [s.borderTopColor, s.borderBottomColor, s.outlineColor], os: s.outlineStyle, tr: s.transform, td: s.textDecorationLine, aria: ['aria-current', 'aria-expanded', 'aria-selected', 'aria-pressed', 'open'].map((a) => el.getAttribute(a) || '').join('|'), src: el.currentSrc || el.getAttribute('src') || '' });
     if (m.size >= 5000) break;
   }
   window.__rwFirst = m;
-  /* холсты, видео, iframe в первом экране: если за 700 мс они изменились сами — маскируются целиком */
+  /* классы body и html — чтобы назвать причину, если проявление или подсветку включил класс на них */
+  window.__rwFirstRoot = { body: document.body ? document.body.getAttribute('class') || '' : '', html: document.documentElement.getAttribute('class') || '' };
+  /* холсты, видео, iframe в первом экране: если за 700 мс они изменились сами — по пикселям маскируются
+     целиком, а поверх них сверяется состояние элементов (maskedChangesInPage) */
   const media = [];
   for (const el of document.querySelectorAll('canvas, video, iframe')) {
     const r = el.getBoundingClientRect();
@@ -138,45 +155,114 @@ function rememberFirstInPage() {
   return { count: m.size, media };
 }
 
-/* что меняет DOM само, пока страница стоит на месте (карусель, часы, бегущий текст): метка __rwLive */
+/* что меняет DOM само, пока страница стоит на месте (карусель, часы, бегущий текст): метка __rwLive.
+   Наблюдение до ms, но заканчивается раньше — через 300 мс после второй смены (две пачки изменений
+   с промежутком больше 0,5 с): у карусели с интервалом 5 с за 3 с смена часто не успевала */
 function watchLiveInPage(ms) {
   return new Promise((resolve) => {
-    let n = 0;
+    let n = 0, bursts = 0, last = 0, timer = null;
+    const t0 = performance.now();
+    /* классы, которые переключались сами (active, on…): для сравнения соседей «того же вида» они не в счёт */
+    const toggled = window.__rwToggled || (window.__rwToggled = new Set());
     const mark = (el) => { if (el && el.nodeType === 1 && !el.__rwLive) { el.__rwLive = true; n++; } };
-    const mo = new MutationObserver((list) => { for (const m of list) { if (m.type === 'attributes') mark(m.target); else if (m.type === 'characterData') mark(m.target.parentElement); else { mark(m.target); for (const x of m.addedNodes) mark(x); } } });
-    mo.observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
-    setTimeout(() => { mo.disconnect(); resolve(n); }, ms);
+    const finish = () => { mo.disconnect(); clearTimeout(timer); resolve({ marked: n, bursts, ms: Math.round(performance.now() - t0), toggled: [...toggled].slice(0, 12) }); };
+    const mo = new MutationObserver((list) => {
+      for (const m of list) {
+        if (m.type === 'attributes') {
+          mark(m.target);
+          if (m.attributeName === 'class') { const A = new Set(String(m.oldValue || '').split(/\s+/).filter(Boolean)), B = new Set(String(m.target.getAttribute('class') || '').split(/\s+/).filter(Boolean)); for (const c of A) if (!B.has(c)) toggled.add(c); for (const c of B) if (!A.has(c)) toggled.add(c); }
+        } else if (m.type === 'characterData') mark(m.target.parentElement); else { mark(m.target); for (const x of m.addedNodes) mark(x); }
+      }
+      const now = performance.now(); if (now - last > 500) bursts++; last = now;
+      if (bursts >= 2) { clearTimeout(timer); timer = setTimeout(finish, 300); }
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeOldValue: true, childList: true, characterData: true, subtree: true });
+    timer = setTimeout(finish, ms);
   });
+}
+
+/* что изменилось у элемента с момента первого снимка: общая часть explainInPage и maskedChangesInPage.
+   Возвращает { d: [отличия], visual: есть ли видимое отличие (не только класс или атрибуты), o, removed, added }.
+   Сравнение числами, с допуском на то, чего глазом не видно: цвет — канал на 4 из 255 (с учётом альфы)
+   или альфа на 0,04; сдвиг — угол коробки ушёл на 1 CSS px и больше (остаток плавного параллакса,
+   translateY(0.049px), — не отличие); прозрачность — на 0,1 */
+function stateDiffInPage() {
+  const short = (c) => String(c).replace(/rgba?\(([^)]+)\)/g, (m0, v) => { const p = v.split(/[,\s/]+/).filter(Boolean).map(Number); return '#' + p.slice(0, 3).map((x) => Math.round(x).toString(16).padStart(2, '0')).join('').toUpperCase() + (p.length > 3 && p[3] < 1 ? `/${p[3]}` : ''); });
+  const rgba = (c) => { const m = /^rgba?\(([^)]+)\)$/.exec(String(c).trim()); if (!m) return null; const p = m[1].split(/[,\s/]+/).filter(Boolean).map(Number); if (p.length < 3 || p.some((x) => !Number.isFinite(x))) return null; return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+  /* цвет, который не разобрать (oklch, color()), сравнивается строкой */
+  const colorDiff = (x, y) => { if (x === y) return false; const A = rgba(x), B = rgba(y); if (!A || !B) return true; if (A[3] < 0.02 && B[3] < 0.02) return false; return Math.max(Math.abs(A[0] - B[0]), Math.abs(A[1] - B[1]), Math.abs(A[2] - B[2])) * Math.max(A[3], B[3]) >= 4 || Math.abs(A[3] - B[3]) >= 0.04; };
+  const mat = (t) => { if (!t || t === 'none') return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; const m = /^matrix(3d)?\(([^)]+)\)$/.exec(String(t).trim()); if (!m) return null; const v = m[2].split(',').map(Number); if (v.some((x) => !Number.isFinite(x))) return null; if (m[1]) return v.length === 16 ? v : null; if (v.length !== 6) return null; return [v[0], v[1], 0, 0, v[2], v[3], 0, 0, 0, 0, 1, 0, v[4], v[5], 0, 1]; };
+  /* на сколько CSS px ушёл самый дальний угол коробки от смены матрицы (вокруг transform-origin);
+     сдвиг по z тоже в счёт (под перспективой предка он виден); неразобранная матрица — Infinity */
+  const shift = (el, s, t0, t1) => {
+    if (t0 === t1) return 0; const A = mat(t0), B = mat(t1); if (!A || !B) return Infinity;
+    const r = el.getBoundingClientRect(); const w = el.offsetWidth ?? r.width, h = el.offsetHeight ?? r.height;
+    const og = String(s.transformOrigin || '').split(' ').map(parseFloat); const ox = og[0] || 0, oy = og[1] || 0;
+    const P = (m, x, y) => { const W = m[3] * x + m[7] * y + m[15] || 1e-6; return [(m[0] * x + m[4] * y + m[12]) / W, (m[1] * x + m[5] * y + m[13]) / W, m[2] * x + m[6] * y + m[14]]; };
+    let max = 0;
+    for (const x of [-ox, w - ox]) for (const y of [-oy, h - oy]) { const p = P(A, x, y), q = P(B, x, y); max = Math.max(max, Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1]), Math.abs(p[2] - q[2])); }
+    return max;
+  };
+  return (el, a) => {
+    const s = getComputedStyle(el); const d = []; let visual = false;
+    const cls = el.getAttribute('class') || ''; let added = [], removed = [];
+    if (cls !== a.cls) { const A = new Set(a.cls.split(/\s+/).filter(Boolean)), B = new Set(cls.split(/\s+/).filter(Boolean)); added = [...B].filter((c) => !A.has(c)); removed = [...A].filter((c) => !B.has(c)); d.push(`класс ${added.map((c) => '+' + c).concat(removed.map((c) => '−' + c)).join(' ')}`); }
+    const o = eff(el);
+    if (Math.abs(o - a.o) > 0.1) { d.push(`прозрачность ${a.o}→${o}`); visual = true; }
+    if (colorDiff(a.color, s.color)) { d.push(`цвет ${short(a.color)}→${short(s.color)}`); visual = true; }
+    if (colorDiff(a.bg, s.backgroundColor)) { d.push(`фон ${short(a.bg)}→${short(s.backgroundColor)}`); visual = true; }
+    /* цвет обводки при outline-style: none не виден */
+    if (s.outlineStyle !== a.os || colorDiff(a.bdc[0], s.borderTopColor) || colorDiff(a.bdc[1], s.borderBottomColor) || (s.outlineStyle !== 'none' && colorDiff(a.bdc[2], s.outlineColor))) { d.push('рамка или обводка'); visual = true; }
+    const sh = shift(el, s, a.tr, s.transform);
+    if (sh >= 1) { d.push(Number.isFinite(sh) ? `сдвиг (transform) на ${Math.round(sh)} px` : 'сдвиг (transform)'); visual = true; }
+    if (s.textDecorationLine !== a.td) { d.push('подчёркивание'); visual = true; }
+    const aria = ['aria-current', 'aria-expanded', 'aria-selected', 'aria-pressed', 'open'].map((x) => el.getAttribute(x) || '').join('|');
+    if (aria !== a.aria) d.push(`атрибуты ${a.aria}→${aria}`);
+    if ((el.currentSrc || el.getAttribute('src') || '') !== a.src) { d.push('другая картинка'); visual = true; }
+    return { d, visual, o, added, removed };
+  };
+}
+
+/* живое — сам элемент или предок (до 5 уровней) менялся, пока страница стояла на месте (карусель за
+   время наблюдения может вернуться к тому же слайду, и отличия по стилям уже не видно), или менялся
+   сосед того же вида у элемента или его родителя (слайд 3, пока смена шла между 1 и 2). «Того же вида» —
+   тот же тег и общий постоянный класс (slide у div.slide.s1 и div.slide.s3) или у обоих постоянных
+   классов нет (точки i и i.on, когда on переключался сам): живые часы div.clock не делают живой
+   соседнюю залипшую кнопку div.cta */
+function liveTestInPage() {
+  const toggled = window.__rwToggled || new Set();
+  const fam = (e) => [...e.classList].filter((c) => !toggled.has(c));
+  const same = (a, b) => { if (a.tagName !== b.tagName) return false; const fa = fam(a), fb = fam(b); return (!fa.length && !fb.length) || fa.some((c) => fb.includes(c)); };
+  const sib = (e) => { const p = e.parentElement; if (!p) return false; for (const s of p.children) if (s !== e && s.__rwLive && same(s, e)) return true; return false; };
+  return (el) => { for (let e = el, k = 0; e && k < 5; e = e.parentElement, k++) { if (e.__rwLive) return true; if (k < 2 && sib(e)) return true; } return false; };
+}
+
+/* «переключение между соседями»: у одного соседа класс снят, у другого тот же поставлен (карусель,
+   которая за наблюдение не сменилась). Ссылки и меню не в счёт: там это и есть залипшая подсветка */
+function markSwaps(list) {
+  const menu = (el) => el.matches('a[href], button') || !!el.closest('nav, header, [role=navigation], [role=menubar], [role=menu], [role=tablist]');
+  for (const x of list) for (const y of list) {
+    if (x === y || !x.removed.length || !y.added.length || x.el.parentElement !== y.el.parentElement || x.el.tagName !== y.el.tagName) continue;
+    if (!x.removed.some((c) => y.added.includes(c)) || menu(x.el) || menu(y.el)) continue;
+    x.swap = y.swap = true;
+  }
 }
 
 function explainInPage(regions) {
   const first = window.__rwFirst || new Map();
   const txt = (el) => (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24);
-  /* живое — сам элемент или предок (до 5 уровней) менялся, пока страница стояла на месте:
-     карусель за 3 с наблюдения может вернуться к тому же слайду, и отличия по стилям уже не видно */
-  const isLive = (el) => { for (let e = el, k = 0; e && k < 5; e = e.parentElement, k++) if (e.__rwLive) return true; return false; };
-  const short = (c) => String(c).replace(/rgba?\(([^)]+)\)/g, (m0, v) => { const p = v.split(/[,\s/]+/).filter(Boolean).map(Number); return '#' + p.slice(0, 3).map((x) => Math.round(x).toString(16).padStart(2, '0')).join('').toUpperCase() + (p.length > 3 && p[3] < 1 ? `/${p[3]}` : ''); });
+  const isLive = liveTest(); const diffOf = stateDiff();
   return regions.map((R) => {
     const hit = (r) => !(r.right < R.x || r.left > R.x + R.w || r.bottom < R.y || r.top > R.y + R.h);
-    const changed = [];
+    const raw = [];
     for (const [el, a] of first) {
       if (!el.isConnected) continue;
       const r = el.getBoundingClientRect(); if (!hit(r)) continue;
-      const s = getComputedStyle(el); const d = [];
-      const cls = el.getAttribute('class') || '';
-      if (cls !== a.cls) { const A = new Set(a.cls.split(/\s+/).filter(Boolean)), B = new Set(cls.split(/\s+/).filter(Boolean)); const add = [...B].filter((c) => !A.has(c)), rem = [...A].filter((c) => !B.has(c)); d.push(`класс ${add.map((c) => '+' + c).concat(rem.map((c) => '−' + c)).join(' ')}`); }
-      const o = eff(el);
-      if (Math.abs(o - a.o) > 0.1) d.push(`прозрачность ${a.o}→${o}`);
-      if (s.color !== a.color) d.push(`цвет ${short(a.color)}→${short(s.color)}`);
-      if (s.backgroundColor !== a.bg) d.push(`фон ${short(a.bg)}→${short(s.backgroundColor)}`);
-      if (`${s.borderTopColor} ${s.borderBottomColor} ${s.outlineStyle} ${s.outlineColor}` !== a.bd) d.push('рамка или обводка');
-      if (s.transform !== a.tr) d.push('сдвиг (transform)');
-      if (s.textDecorationLine !== a.td) d.push('подчёркивание');
-      const aria = ['aria-current', 'aria-expanded', 'aria-selected', 'aria-pressed', 'open'].map((x) => el.getAttribute(x) || '').join('|');
-      if (aria !== a.aria) d.push(`атрибуты ${a.aria}→${aria}`);
-      if ((el.currentSrc || el.getAttribute('src') || '') !== a.src) d.push('другая картинка');
-      if (d.length) changed.push({ sig: sig(el), text: txt(el), diffs: d, appeared: a.o <= 0.05 && o > 0.5, live: isLive(el) });
+      const { d, o, added, removed } = diffOf(el, a);
+      if (d.length) raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: d, appeared: a.o <= 0.05 && o > 0.5, live: isLive(el) });
     }
+    swaps(raw);
+    const changed = raw.map(({ el, added, removed, ...c }) => ({ ...c, swap: !!c.swap }));
     /* что лежит сверху в области — для случаев, когда по стилям причину не видно */
     const top = new Set(); const media = []; const newEls = new Set(); let liveHits = 0;
     for (let y = R.y + 2; y < R.y + R.h; y += Math.max(4, R.h / 5)) for (let x = R.x + 2; x < R.x + R.w; x += Math.max(4, R.w / 8)) {
@@ -193,6 +279,50 @@ function explainInPage(regions) {
   });
 }
 
+/* под маской живого холста, видео или iframe пиксели слепы: сверяем состояние элементов первого экрана,
+   которые лежат поверх маски, — кроме самих холстов, видео, iframe и того, что ими закрыто.
+   Считается только видимое отличие (цвет, фон, рамка, сдвиг, подчёркивание, картинка, прозрачность):
+   смена одного класса без видимого следа (lazyloaded) — не залипание. Но если класс сменился у предка,
+   а видимое отличие появилось у потомка (.hero.in → h1 проявился), предок называется у потомка как
+   причина. Потомки уже найденного не повторяются: залипшего — никакие, проявившегося — проявившиеся. */
+function maskedChangesInPage(rects) {
+  const first = window.__rwFirst || new Map(); const root = window.__rwFirstRoot || {};
+  const txt = (el) => (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+  const isLive = liveTest(); const diffOf = stateDiff();
+  const delta = (was, now) => { const A = new Set(String(was).split(/\s+/).filter(Boolean)), B = new Set(String(now).split(/\s+/).filter(Boolean)); return [...B].filter((c) => !A.has(c)).map((c) => '+' + c).concat([...A].filter((c) => !B.has(c)).map((c) => '−' + c)).join(' '); };
+  /* ближайший предок (включая body и html), у которого сменился класс */
+  const causeOf = (el) => {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const was = first.has(p) ? first.get(p).cls : p === document.body ? root.body : p === document.documentElement ? root.html : undefined;
+      if (was === undefined) continue; const now = p.getAttribute('class') || '';
+      if (now !== was) return `${sig(p)} (класс ${delta(was, now)})`;
+    }
+    return '';
+  };
+  const MEDIA = /^(CANVAS|VIDEO|IFRAME)$/;
+  const vw = innerWidth, vh = innerHeight;
+  const hitAny = (r) => rects.some((R) => !(r.right < R.x || r.left > R.x + R.w || r.bottom < R.y || r.top > R.y + R.h));
+  const raw = []; let checked = 0;
+  for (const [el, a] of first) {
+    if (!el.isConnected || MEDIA.test(el.tagName) || (el.parentElement && el.parentElement.closest('canvas, video, iframe'))) continue;
+    const r = el.getBoundingClientRect(); if (!r.width || !r.height || !hitAny(r)) continue;
+    /* закрыт самим холстом или видео (ролик поверх) — его отличия не видны */
+    const cx = Math.min(vw - 1, Math.max(0, (r.left + r.right) / 2)), cy = Math.min(vh - 1, Math.max(0, (r.top + r.bottom) / 2));
+    const topEl = document.elementFromPoint(cx, cy); if (topEl && MEDIA.test(topEl.tagName) && !el.contains(topEl)) continue;
+    checked++;
+    const { d, visual, o, added, removed } = diffOf(el, a);
+    if (!d.length || !visual) continue;
+    if (a.o <= 0.05 && o <= 0.05) continue;
+    const cause = causeOf(el);
+    raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: cause ? d.concat(`после смены класса у предка ${cause}`) : d, cause, appeared: a.o <= 0.05 && o > 0.5, live: isLive(el), rect: { x: Math.max(0, Math.round(r.left)), y: Math.max(0, Math.round(r.top)), w: Math.round(Math.min(vw, r.right) - Math.max(0, r.left)), h: Math.round(Math.min(vh, r.bottom) - Math.max(0, r.top)) } });
+  }
+  swaps(raw);
+  /* внешние: потомок залипшего не повторяется; потомок проявившегося — если и сам только проявился */
+  const out = [];
+  for (const c of raw) { if (out.some((p) => p.el.contains(c.el) && (!p.appeared || c.appeared))) continue; out.push(c); }
+  return { checked, changed: out.slice(0, 12).map(({ el, added, removed, ...c }) => ({ ...c, swap: !!c.swap })) };
+}
+
 /* попиксельное сравнение двух снимков окна: области (в CSS-пикселях), где отличие не объясняется «живыми» местами */
 async function staleRegions(bufA, bufB, bufNoise, dpr, mediaRects = []) {
   const a = await sharp(bufA).removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -203,7 +333,7 @@ async function staleRegions(bufA, bufB, bufNoise, dpr, mediaRects = []) {
   const d3 = (X, Y, i) => Math.abs(X[i] - Y[i]) + Math.abs(X[i + 1] - Y[i + 1]) + Math.abs(X[i + 2] - Y[i + 2]);
   /* «живое» — то, что меняется само за 700 мс при загрузке; расширяем на клетку в каждую сторону */
   const cell = Math.max(4, Math.round(8 * dpr)); const cw = Math.ceil(w / cell), ch = Math.ceil(h / cell);
-  const live = new Uint8Array(cw * ch); let liveCount = 0; const liveMedia = [];
+  const live = new Uint8Array(cw * ch); let liveCount = 0; const liveMedia = [], liveMediaRects = [];
   if (n && n.info.width === w && n.info.height === h) {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 3; if (d3(a.data, n.data, i) > 60) { liveCount++; live[((y / cell) | 0) * cw + ((x / cell) | 0)] = 1; } }
     /* холст, видео, iframe, в котором за 700 мс хоть что-то изменилось, — живой целиком
@@ -213,7 +343,7 @@ async function staleRegions(bufA, bufB, bufNoise, dpr, mediaRects = []) {
       const cx1 = Math.min(cw - 1, Math.floor((m.x + m.w) * dpr / cell)), cy1 = Math.min(ch - 1, Math.floor((m.y + m.h) * dpr / cell));
       let any = false; for (let cy = cy0; cy <= cy1 && !any; cy++) for (let cx = cx0; cx <= cx1; cx++) if (live[cy * cw + cx]) { any = true; break; }
       if (!any) continue;
-      liveMedia.push(m.sig);
+      liveMedia.push(m.sig); liveMediaRects.push({ x: m.x, y: m.y, w: m.w, h: m.h, sig: m.sig });
       for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) live[cy * cw + cx] = 1;
     }
     const grown = new Uint8Array(live); for (let cy = 0; cy < ch; cy++) for (let cx = 0; cx < cw; cx++) if (live[cy * cw + cx]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = cy + dy, xx = cx + dx; if (yy >= 0 && yy < ch && xx >= 0 && xx < cw) grown[yy * cw + xx] = 1; }
@@ -241,7 +371,7 @@ async function staleRegions(bufA, bufB, bufNoise, dpr, mediaRects = []) {
     regions.push({ x: Math.round(x0 * cell / dpr), y: Math.round(y0 * cell / dpr), w: Math.round((x1 - x0 + 1) * cell / dpr), h: Math.round((y1 - y0 + 1) * cell / dpr), pixels: px });
   }
   regions.sort((p, q) => q.pixels - p.pixels);
-  return { changed, liveSkipped, livePixels: liveCount, liveMedia, regions: regions.slice(0, 6), share: Math.round(changed / (w * h) * 10000) / 100 };
+  return { changed, liveSkipped, livePixels: liveCount, liveMedia, liveMediaRects, regions: regions.slice(0, 6), share: Math.round(changed / (w * h) * 10000) / 100 };
 }
 
 /* вырезка «при загрузке | после возврата» по общей рамке областей */
@@ -266,34 +396,62 @@ async function checkReturn(page, ctx, { file, cropFile }) {
   const bufRet = fs.readFileSync(file);
   const r = await staleRegions(ctx.bufFirst, bufRet, ctx.bufNoise, ctx.dpr, ctx.media);
   if (r.error) return { verdict: 'WARN', note: r.error, regions: [] };
-  if (!r.regions.length) return { verdict: 'OK', share: r.share, liveSkipped: r.liveSkipped, liveMedia: r.liveMedia, regions: [] };
-  /* расхождение есть: сначала 3 с посмотреть, что меняется само, — потом объяснять */
-  if (!ctx.watched) { ctx.watched = true; ctx.liveCount = await page.evaluate(watchLiveInPage, 3000).catch(() => 0); }
+  const watch = async () => { if (!ctx.watched) { ctx.watched = true; const w = await page.evaluate(watchLiveInPage, WATCH_MS).catch(() => null); ctx.liveCount = w ? w.marked : 0; ctx.watch = w; } };
+  /* под маской живого холста или видео — сверка состояния элементов (по пикселям там не видно ничего) */
+  let masked = null;
+  if (r.liveMediaRects.length) {
+    const rects = r.liveMediaRects.map(({ x, y, w, h }) => ({ x, y, w, h }));
+    const ask = () => evaluateWith(page, maskedChangesInPage, rects, DEPS).catch(() => ({ checked: 0, changed: [] }));
+    let mc = await ask();
+    /* и проявившееся — тоже после наблюдения: слайд карусели, который проявился сам, — не ошибка */
+    if (mc.changed.some((c) => !c.live)) { await watch(); mc = await ask(); }
+    masked = { media: r.liveMedia, checked: mc.checked, changed: mc.changed };
+  }
+  const maskedStuck = masked ? masked.changed.filter((c) => !c.appeared && !c.live && !c.swap) : [];
+  /* проявилось поверх живого места только после прокрутки (при загрузке пусто) — WARN, как по пикселям */
+  const maskedAppeared = masked ? masked.changed.filter((c) => c.appeared && !c.live && !c.swap) : [];
+  const maskedLive = masked ? masked.changed.filter((c) => c.live || c.swap) : [];
+  if (!r.regions.length && !maskedStuck.length && !maskedAppeared.length) return { verdict: 'OK', share: r.share, liveSkipped: r.liveSkipped, liveMedia: r.liveMedia, masked, regions: [] };
+  /* расхождение есть: сначала посмотреть на месте (до 8 с, до второй смены), что меняется само, — потом объяснять */
+  if (r.regions.length) await watch();
   const empty = { changed: [], top: [], media: [], newEls: [] };
-  const why = await evaluateWith(page, explainInPage, r.regions.map(({ x, y, w, h }) => ({ x, y, w, h })), { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN }).catch(() => r.regions.map(() => empty));
+  const why = r.regions.length ? await evaluateWith(page, explainInPage, r.regions.map(({ x, y, w, h }) => ({ x, y, w, h })), DEPS).catch(() => r.regions.map(() => empty)) : [];
   const regions = r.regions.map((g, i) => {
     const e = why[i] || empty;
     const real = e.changed.filter((c) => !c.appeared);
-    const stuck = real.filter((c) => !c.live);
-    const kind = stuck.length || e.newEls.length ? 'stuck' : real.length || e.liveHits ? 'live' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
+    const stuck = real.filter((c) => !c.live && !c.swap);
+    const kind = stuck.length || e.newEls.length ? 'stuck' : real.some((c) => c.live) || e.liveHits ? 'live' : real.length ? 'carousel' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
     return { ...g, kind, changed: e.changed, top: e.top, media: e.media };
   });
-  const out = { verdict: regions.some((g) => g.kind === 'stuck') ? 'FAIL' : 'WARN', share: r.share, liveSkipped: r.liveSkipped, regions };
+  /* залипшее поверх живого места — отдельными областями по коробке элемента */
+  for (const c of maskedStuck.slice(0, 6)) regions.push({ ...c.rect, pixels: null, kind: 'stuck', masked: true, changed: [c], top: [], media: masked.media });
+  /* проявившееся поверх живого места — одной областью по общей рамке их коробок */
+  if (maskedAppeared.length) {
+    const A = maskedAppeared.slice(0, 6); const x0 = Math.min(...A.map((c) => c.rect.x)), y0 = Math.min(...A.map((c) => c.rect.y));
+    const x1 = Math.max(...A.map((c) => c.rect.x + c.rect.w)), y1 = Math.max(...A.map((c) => c.rect.y + c.rect.h));
+    regions.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, pixels: null, kind: 'appeared', masked: true, changed: A, top: [], media: masked.media });
+  }
+  const out = { verdict: regions.some((g) => g.kind === 'stuck') ? 'FAIL' : 'WARN', share: r.share, liveSkipped: r.liveSkipped, masked, maskedLive: maskedLive.length, regions };
   await staleCrop(ctx.bufFirst, bufRet, regions, ctx.dpr, cropFile).then(() => { out.crop = path.basename(cropFile); }).catch(() => {});
   return out;
 }
 
 function printReturn(label, st) {
   if (!st) return;
-  if (st.verdict === 'OK') { console.log(`  OK   первый экран после ${label} тот же${st.liveSkipped ? ' (живые места — холст, видео — не в счёт)' : ''}`); return; }
+  const M = st.masked;
+  const maskNote = M ? ` (живое место ${M.media.join(', ')} по пикселям не в счёт; поверх него сверено состояние ${M.checked} элементов${st.maskedLive ? `, меняется само ${st.maskedLive}` : ''})` : '';
+  if (st.verdict === 'OK') { console.log(`  OK   первый экран после ${label} тот же${M ? maskNote : st.liveSkipped ? ' (живые места — холст, видео — не в счёт)' : ''}`); return; }
   if (st.note) { console.log(`  WARN первый экран после ${label}: ${st.note}`); return; }
-  console.log(`  ${st.verdict.padEnd(4)} ${st.verdict === 'FAIL' ? `состояние не сбрасывается (после ${label})` : `первый экран после ${label} отличается`}: ${st.share}% пикселей${st.crop ? `, вырезка ${st.crop}` : ''}`);
+  console.log(`  ${st.verdict.padEnd(4)} ${st.verdict === 'FAIL' ? `состояние не сбрасывается (после ${label})` : `первый экран после ${label} отличается`}: ${st.share}% пикселей${st.crop ? `, вырезка ${st.crop}` : ''}${maskNote}`);
   for (const g of st.regions) {
-    const what = g.kind === 'stuck' ? 'залипло' : g.kind === 'live' ? 'меняется само (карусель, часы) — не залипание' : g.kind === 'appeared' ? 'проявилось только после прокрутки (при загрузке пусто)' : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
+    const what = g.kind === 'stuck' ? (g.masked ? `залипло поверх живого места (${g.media.join(', ')}): по пикселям не видно, по стилям — да` : 'залипло') : g.kind === 'live' ? 'меняется само (карусель, часы) — не залипание' : g.kind === 'carousel' ? 'переключение между соседями (карусель, за наблюдение не сменилась) — не залипание, проверить вырезку' : g.kind === 'appeared' ? `проявилось только после прокрутки (при загрузке пусто)${g.masked ? `, поверх живого места (${g.media.join(', ')}) — по стилям` : ''}` : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
     const list = g.changed.length ? g.changed.slice(0, 4).map((c) => `${c.sig}${c.text ? ` «${c.text}»` : ''}: ${c.diffs.join(', ')}`).join(' | ') : g.top.slice(0, 3).join(' | ');
     console.log(`       x${g.x} y${g.y} ${g.w}×${g.h}: ${what} — ${list}`);
   }
 }
+
+/* функции страницы видят их как свободные переменные (evaluateWith) */
+const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, liveTest: liveTestInPage.toString(), stateDiff: stateDiffInPage.toString(), swaps: markSwaps.toString() };
 
 const browser = await launch();
 const index = []; const files = {}; let fails = 0, warns = 0; const fullHow = new Set();
@@ -313,7 +471,7 @@ try {
         if (freeze) { await settleAnimations(page, 2500); await still(page); await sleep(150); }
         const first = path.join(outDir, `${stem}-first.png`);
         const bufFirst = await page.screenshot({ path: first });
-        const firstInfo = await evaluateWith(page, rememberFirstInPage, null, { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN }).catch(() => ({ count: 0, media: [] }));
+        const firstInfo = await evaluateWith(page, rememberFirstInPage, null, DEPS).catch(() => ({ count: 0, media: [] }));
         /* второй снимок при загрузке: что меняется само (холст, видео, бегущая строка) — не «залипание» */
         await sleep(700); if (freeze) await still(page);
         const bufNoise = await page.screenshot();
@@ -351,7 +509,7 @@ try {
         /* производные — тоже с экраном: state.mjs по cssWidth/viewport не принимает снимок не того экрана */
         for (const st of [stale, staleUp]) if (st && st.crop) files[st.crop] = { kind: 'вырезка', scale: dpr, cssWidth: vp.width, dpr, viewport: name };
         if (sc.sheet) files[sc.sheet] = { kind: 'лист', scale: null, cssWidth: vp.width, dpr, viewport: name };
-        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, staleUp, liveElements: ctx.liveCount ?? null, consoleErrors: errors });
+        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, consoleErrors: errors });
         console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}, вся страница — ${how}${errors ? `, ошибок в консоли ${errors}` : ''}`);
         if (scrollNote) console.log(`  WARN прокрутка — ${scrollNote}`);
         printReturn('прокрутки до низа и прыжка наверх', stale);

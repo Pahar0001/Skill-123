@@ -18,7 +18,16 @@
  * текст 3:1) — по вычисленным цветам, а на картинках, градиентах и чужих подложках по снимку
  * фона за текстом (худшие 10% пикселей). Чужая подложка — блок с фоном, который лежит под центром
  * текста, но не его предок (фигура под текстом в Tilda Zero Block, плашка плавающего меню), или
- * предок с фоном, чья коробка под текстом не лежит (текст вынесен fixed/absolute).
+ * предок с фоном, чья коробка под текстом не лежит (текст вынесен fixed/absolute). Закреплённый
+ * текст (прозрачная шапка, нижняя панель) сравнивается с подложками в координатах окна на верху
+ * страницы — шапка поверх фото первого экрана меряется по снимку, а не по фону body. Не проверяется
+ * текст, которого на экране нет: центр за краем предка с overflow ≠ visible (слайд за краем,
+ * заглушка Tilda за коробкой artboard). Текст, перекрытый чужим непрозрачным блоком в момент
+ * снимка или ушедший за окно, не мерится, но и не считается OK: WARN со списком («смотреть глазами»).
+ * Проверка перекрытия идёт через elementsFromPoint, а он не видит pointer-events:none — на время
+ * проверки тексту ставится pointer-events:auto (частый .hero__content{pointer-events:none}).
+ * Контраст считается у всего видимого текста; при больше 5000 текстовых элементов — первые 5000 и
+ * WARN «взято N из M (обрезано)».
  * Ещё: мелкий текст; картинки без alt, поля без подписи, кнопки и ссылки без имени,
  * порядок заголовков, число h1, lang, запрет масштабирования, положительный tabindex,
  * видимость фокуса при обходе клавишей Tab, размер целей нажатия на телефоне (24 px),
@@ -52,7 +61,10 @@
  * Фокус. Обход клавишей Tab идёт на СВЕЖЕЙ странице — отдельная вкладка, без прокруток и кликов:
  * после проверок контраста фокус оставался в нижней панели, обход проходил 1 элемент и писал OK
  * (связка blur()+scrollTo+body.focus() старт не сбрасывает, сбрасывает только загрузка). Если
- * обошли меньше min(5, число фокусируемых) — WARN «обход не состоялся», а не OK.
+ * обошли меньше min(5, число фокусируемых) — WARN «обход не состоялся», а не OK. Фокус внутри iframe
+ * (карта, видео): activeElement страницы — сам iframe, его стиль не меняется; видимость там не
+ * проверяется, Tab жмётся, пока фокус не вернётся в страницу (до 40 раз), в выводе — «внутри iframe
+ * не проверялся». Не вернулся — WARN, не ложный FAIL «не видно фокуса на iframe» и не «ловушка».
  *
  * Не заменяет Lighthouse и не проверяет чтение экраном — это дополнение,
  * которое работает на любом адресе и даёт список конкретных элементов.
@@ -135,17 +147,36 @@ function domInPage({ isMobile, map }) {
     X = over(X, canvasBg); Y = over(Y, canvasBg);
     return { fg: { r: X.r, g: X.g, b: X.b }, bg: { r: Y.r, g: Y.g, b: Y.b }, raw: fg, alpha: fg.a, opacity: rest[0] };
   };
-  const contrast = { checked: 0, translucent: 0, unknown: 0, transparentText: 0, failures: {}, imgList: [], grain: map ? { checked: 0, failures: {}, near: {} } : null };
+  const contrast = { checked: 0, translucent: 0, unknown: 0, transparentText: 0, total: 0, considered: 0, failures: {}, imgList: [], grain: map ? { checked: 0, failures: {}, near: {} } : null };
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
-  const allText = [...document.body.querySelectorAll('*')].filter((el) => !(el instanceof SVGElement) && ownText(el) && V(el));
-  const textEls = allText.slice(0, 600);
+  /* центр текста за краем предка с overflow ≠ visible (слайд карусели за краем, заглушка Tilda за
+     коробкой своего artboard) — на экране его нет: ни в контраст, ни в кегль */
+  const clipped = (el) => {
+    if (getComputedStyle(el).position === 'fixed') return false;
+    const r = el.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.overflowX !== 'visible' || s.overflowY !== 'visible') { const b = n.getBoundingClientRect(); if (cx < b.left - 1 || cx > b.right + 1 || cy < b.top - 1 || cy > b.bottom + 1) return true; }
+      if (s.position === 'fixed') break;
+    }
+    return false;
+  };
+  let clippedCount = 0;
+  const allText = [...document.body.querySelectorAll('*')].filter((el) => { if (el instanceof SVGElement || !ownText(el) || !V(el)) return false; if (clipped(el)) { clippedCount++; return false; } return true; });
+  /* контраст — у всего текста (раньше молча у первых 600: бледная подпись в конце каталога не мерилась);
+     предел TEXT_LIMIT только от зависания на гигантских страницах, и тогда вывод говорит «N из M (обрезано)» — WARN */
+  const TEXT_LIMIT = 5000;
+  const textEls = allText.slice(0, TEXT_LIMIT);
   /* картинки, лежащие не в предках текста, а рядом (карточка: фото и подпись поверх — соседи):
      если такой элемент накрывает центр текста, фон надо мерить по снимку, а не по цвету секции */
   /* Чужие подложки: картинки, видео, холсты и блоки с фоном (цвет или картинка), которые не предки и
      не потомки текста, но лежат под его центром — карточка «фото и подпись поверх» или фигура под
      текстом в Tilda Zero Block (соседи, а не предки). Тогда фон по цепочке предков неверен — по снимку.
      Слой зерна во весь экран (data-rw-grain) не в счёт: его действие учтено отображением map.
-     Закреплённые (fixed) сравниваются только с закреплённым текстом: у них другие координаты. */
+     Обычный текст сравнивается с обычными подложками в координатах документа (закреплённая плашка
+     лежит под ним только на миг прокрутки). Закреплённый текст (шапка, нижняя панель) — со всеми
+     подложками, и закреплёнными, и обычными, в координатах окна на текущей прокрутке (здесь — верх
+     страницы): прозрачная шапка поверх фото первого экрана иначе мерилась по фону body. */
   const fixedOf = (el) => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true; return false; };
   const imgLike = [...document.body.querySelectorAll('*')].filter((e) => {
     if ((map && e.hasAttribute('data-rw-grain')) || e instanceof SVGElement || !V(e)) return false;
@@ -153,10 +184,17 @@ function domInPage({ isMobile, map }) {
     const s = getComputedStyle(e); const bi = s.backgroundImage;
     if (bi && bi !== 'none' && !/^linear-gradient\(rgba\(0, 0, 0, 0\)/.test(bi)) return true;
     const c = parseC(s.backgroundColor); return !!(c && c.a > 0.05);
-  }).map((e) => { const r = e.getBoundingClientRect(); const fx = fixedOf(e); const oy = fx ? 0 : scrollY; return { e, fx, l: r.left, t: r.top + oy, r: r.right, b: r.bottom + oy }; });
-  const coveredByImage = (el) => { const r = el.getBoundingClientRect(); const fx = fixedOf(el); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2 + (fx ? 0 : scrollY); const hit = imgLike.filter((i) => i.fx === fx && i.e !== el && !i.e.contains(el) && !el.contains(i.e) && cx >= i.l && cx <= i.r && cy >= i.t && cy <= i.b); return hit.length ? hit.map((i) => sig(i.e)).join('+') : null; };
+  }).map((e) => { const r = e.getBoundingClientRect(); const fx = fixedOf(e); const oy = fx ? 0 : scrollY; return { e, fx, l: r.left, t: r.top + oy, r: r.right, b: r.bottom + oy, vt: r.top, vb: r.bottom }; });
+  const coveredByImage = (el) => {
+    const r = el.getBoundingClientRect(); const fx = fixedOf(el); const cx = (r.left + r.right) / 2;
+    const mine = (i) => i.e !== el && !i.e.contains(el) && !el.contains(i.e) && cx >= i.l && cx <= i.r;
+    const cyV = (r.top + r.bottom) / 2, cyD = cyV + scrollY;
+    const hit = fx ? imgLike.filter((i) => mine(i) && cyV >= i.vt && cyV <= i.vb) : imgLike.filter((i) => !i.fx && mine(i) && cyD >= i.t && cyD <= i.b);
+    return hit.length ? hit.map((i) => sig(i.e)).join('+') : null;
+  };
   const r2 = (v) => Math.round(v * 100) / 100;
   const add = (bucket, key, rec, example) => { const f = bucket[key] || (bucket[key] = { ...rec, count: 0, examples: [] }); f.count++; if (f.examples.length < 3) f.examples.push(example); };
+  contrast.total = allText.length; contrast.considered = textEls.length;
   for (const el of textEls) {
     const s = getComputedStyle(el);
     const size = parseFloat(s.fontSize); const large = size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700); const need = large ? 3 : 4.5;
@@ -171,7 +209,7 @@ function domInPage({ isMobile, map }) {
       /* ключ ограничения «не больше трёх одинаковых»: подпись без id (у карточек он у каждой свой) и то,
          что лежит под текстом (пункт меню на плашке и такой же на плашке поверх фото — разные случаи) */
       const key = sig(el).replace(/#[^.]*/, '') + '|' + hex(c.fg) + '|' + (under || (c.displaced ? 'вынесен' : '')); contrast.perSig = contrast.perSig || {}; contrast.perSig[key] = (contrast.perSig[key] || 0) + 1;
-      if (contrast.imgList.length < 60 && contrast.perSig[key] <= 3) { const idx = contrast.imgList.length; el.setAttribute('data-rw-imgbg', idx); const fgG = grain(c.fg); contrast.imgList.push({ idx, sig: sig(el), text: el.textContent.trim().slice(0, 30), fg: hex(c.fg), fgRgb: { r: c.fg.r, g: c.fg.g, b: c.fg.b }, fgGrain: map ? { r: fgG.r, g: fgG.g, b: fgG.b } : null, alpha: r2(Math.min(1, c.alpha)), size: Math.round(size), need }); }
+      if (contrast.imgList.length < 60 && contrast.perSig[key] <= 3) { const idx = contrast.imgList.length; el.setAttribute('data-rw-imgbg', idx); const fgG = grain(c.fg); contrast.imgList.push({ idx, sig: sig(el), text: el.textContent.trim().slice(0, 30), fg: hex(c.fg), fgRgb: { r: c.fg.r, g: c.fg.g, b: c.fg.b }, fgGrain: map ? { r: fgG.r, g: fgG.g, b: fgG.b } : null, alpha: r2(Math.min(1, c.alpha)), size: Math.round(size), need, fixed: fixedOf(el) }); }
       continue;
     }
     contrast.checked++;
@@ -206,7 +244,7 @@ function domInPage({ isMobile, map }) {
   const targets = isMobile ? [...document.querySelectorAll('a[href], button, [role=button], input[type=checkbox], input[type=radio], summary')].filter((el) => { if (!V(el)) return false; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); const inline = s.display === 'inline' && el.parentElement && /^(p|li|td|span|dd)$/i.test(el.parentElement.tagName); return !inline && (r.width < 24 || r.height < 24); }).map((el) => { const r = el.getBoundingClientRect(); return `${sig(el)} ${Math.round(r.width)}×${Math.round(r.height)}`; }).slice(0, 10) : [];
   const smallInputs = isMobile ? [...document.querySelectorAll('input:not([type=hidden]), select, textarea')].filter((i) => V(i) && parseFloat(getComputedStyle(i).fontSize) < 16).map((el) => sig(el)).slice(0, 6) : [];
   let reduced = false; for (const sh of document.styleSheets) { try { const walk = (rs) => { for (const r of rs) { if (r.type === CSSRule.MEDIA_RULE) { if (/prefers-reduced-motion/.test(r.conditionText)) reduced = true; walk(r.cssRules); } } }; walk(sh.cssRules); } catch { /* кросс-домен */ } }
-  return { contrast, smallText, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, smallInputs, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
+  return { contrast, smallText, clippedText: clippedCount, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, smallInputs, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
 }
 
 /* ---------- зерно поверх текста: действие слоя по трём снимкам ---------- */
@@ -249,16 +287,31 @@ async function focusWalk(page) {
     if (el.disabled) return false; const ti = el.getAttribute('tabindex'); if (ti !== null && Number(ti) < 0) return false;
     const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible';
   }).length);
-  const focus = { focusables, expected: Math.min(5, focusables), visited: 0, invisible: [], trapped: false, first: null, stuckAt: null };
-  let sameSteps = 0;
+  const focus = { focusables, expected: Math.min(5, focusables), visited: 0, invisible: [], trapped: false, first: null, stuckAt: null, iframes: [], iframeStuck: null };
+  let sameSteps = 0, skipPress = false;
   for (let i = 0; i < 30; i++) {
-    await page.keyboard.press('Tab'); await sleep(80);
-    /* сравниваем сами элементы, а не подписи: пять ссылок подряд с одной подписью — не ловушка */
-    const cur = await page.evaluate((props, sigSrc) => { const sig = eval(sigSrc); const el = document.activeElement; if (!el || el === document.body) return null; const type = (el.getAttribute('type') || '').toLowerCase(); if (el.__rwSeen) return { sig: sig(el), same: true, type }; el.__rwSeen = true; const s = getComputedStyle(el); const focused = Object.fromEntries(props.map((p) => [p, s[p]])); el.blur(); const s2 = getComputedStyle(el); const base = Object.fromEntries(props.map((p) => [p, s2[p]])); el.focus({ preventScroll: true }); return { sig: sig(el), changed: props.some((p) => focused[p] !== base[p]), same: false, type }; }, PROPS, SIG_FN);
+    if (!skipPress) { await page.keyboard.press('Tab'); await sleep(80); }
+    skipPress = false;
+    /* сравниваем сами элементы, а не подписи: пять ссылок подряд с одной подписью — не ловушка.
+       iframe: фокус внутри него, activeElement страницы — сам iframe; blur() выбросил бы фокус наружу,
+       поэтому видимость не проверяется, а элемент помечается __rwInside */
+    const cur = await page.evaluate((props, sigSrc) => { const sig = eval(sigSrc); const el = document.activeElement; if (!el || el === document.body) return null; const type = (el.getAttribute('type') || '').toLowerCase(); if (el.__rwSeen) return { sig: sig(el), same: true, type, iframe: el.tagName === 'IFRAME' }; el.__rwSeen = true; if (el.tagName === 'IFRAME') { el.__rwInside = true; return { sig: sig(el), same: false, type, iframe: true }; } const s = getComputedStyle(el); const focused = Object.fromEntries(props.map((p) => [p, s[p]])); el.blur(); const s2 = getComputedStyle(el); const base = Object.fromEntries(props.map((p) => [p, s2[p]])); el.focus({ preventScroll: true }); return { sig: sig(el), changed: props.some((p) => focused[p] !== base[p]), same: false, type }; }, PROPS, SIG_FN);
     if (!cur) break;
     /* поле даты в Chrome — три внутренних сегмента: Tab ходит по ним, это не ловушка */
     if (cur.same) { if (/^(date|time|datetime-local|month|week)$/.test(cur.type) && (sameSteps = sameSteps + 1) <= 4) continue; focus.trapped = true; focus.stuckAt = cur.sig; break; }
     sameSteps = 0; focus.visited++; if (!focus.first) focus.first = cur.sig;
+    if (cur.iframe) {
+      /* Tab ходит по элементам внутри iframe (карта, видео): жмём, пока фокус не вернётся в страницу;
+         следующий элемент страницы проверяется без лишнего нажатия */
+      focus.iframes.push(cur.sig); let left = false;
+      for (let k = 0; k < 40; k++) {
+        await page.keyboard.press('Tab'); await sleep(60);
+        const inside = await page.evaluate(() => !!(document.activeElement && document.activeElement.__rwInside));
+        if (!inside) { left = true; break; }
+      }
+      if (!left) { focus.iframeStuck = cur.sig; break; }
+      skipPress = true; continue;
+    }
     if (!cur.changed) focus.invisible.push(cur.sig);
   }
   return focus;
@@ -266,7 +319,7 @@ async function focusWalk(page) {
 
 /* ---------- прогон ---------- */
 const browser = await launch();
-let dom, focus, reveal, sc, grain = null; const imgContrast = { measured: 0, skipped: 0, failures: [] };
+let dom, focus, reveal, sc, grain = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
 try {
   const page = await openPage(browser, url, vp);
   await forceInstantScroll(page);
@@ -281,11 +334,33 @@ try {
   /* контраст на картинках и градиентах: прячем текст, снимаем фон за ним, считаем по пикселям */
   if (sharp && dom.contrast.imgList.length) {
     const lumRgb = (r, g, b) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
-    await page.addStyleTag({ content: '.rw-hide-text,.rw-hide-text *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}' });
+    await page.addStyleTag({ content: '.rw-hide-text,.rw-hide-text *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}\n.rw-pe,.rw-pe *{pointer-events:auto!important}' });
     for (const it of dom.contrast.imgList) {
       const h = await page.$(`[data-rw-imgbg="${it.idx}"]`); if (!h) { imgContrast.skipped++; continue; }
       try {
-        await h.evaluate((el) => { el.scrollIntoView({ block: 'center', behavior: 'instant' }); el.classList.add('rw-hide-text'); });
+        /* виден ли текст: сверху в его центре должен лежать он сам (или потомок), а не чужой непрозрачный
+           блок — иначе на снимке будет перекрывший его блок, а не фон текста. elementsFromPoint не видит
+           элементов с pointer-events:none (частый .hero__content{pointer-events:none}) — на время проверки
+           им ставится pointer-events:auto (класс rw-pe). Закреплённый текст мерится на верху страницы:
+           там его подложка и определялась (scrollIntoView его не двигает, а страницу оставил предыдущий). */
+        const state = await h.evaluate((el, fixed) => {
+          if (fixed) scrollTo({ top: 0, behavior: 'instant' }); else el.scrollIntoView({ block: 'center', behavior: 'instant' });
+          const sg = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.classList.length ? '.' + [...n.classList].slice(0, 2).join('.') : '');
+          const r = el.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+          if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return { state: 'вне окна' };
+          el.classList.add('rw-pe');
+          try {
+            for (const n of document.elementsFromPoint(cx, cy)) {
+              if (n === el || el.contains(n)) return { state: 'виден' };
+              if (n.contains(el)) return { state: 'виден' };
+              const s = getComputedStyle(n); const m = /rgba?\(([^)]+)\)/.exec(s.backgroundColor); const a = m ? (m[1].split(/[,\s/]+/).filter(Boolean)[3] ?? 1) : 0;
+              if (/^(IMG|VIDEO|CANVAS|IFRAME)$/.test(n.tagName) || s.backgroundImage !== 'none' || Number(a) >= 0.99) return { state: 'перекрыт', by: sg(n) };
+            }
+            return { state: 'виден' };
+          } finally { el.classList.remove('rw-pe'); }
+        }, !!it.fixed);
+        if (state.state !== 'виден') { imgContrast.covered = (imgContrast.covered || 0) + 1; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: state.state, by: state.by || null }); continue; }
+        await h.evaluate((el) => el.classList.add('rw-hide-text'));
         await sleep(120);
         const box = await h.boundingBox();
         if (!box || box.width < 4 || box.height < 4 || box.width * box.height > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
@@ -323,6 +398,7 @@ try {
 } finally { await browser.close(); }
 
 /* ---------- вердикты ---------- */
+if (dom.clippedText) console.log(`Текст за краем обрезающего блока (слайд за краем, заглушка): ${dom.clippedText} — не проверялся`);
 const lines = []; let fails = 0, warns = 0;
 const L = (st, what, det) => { if (st === 'FAIL') fails++; if (st === 'WARN') warns++; lines.push({ status: st, what, details: det }); console.log(`${st.padEnd(4)} ${what}${det ? ' — ' + det : ''}`); };
 {
@@ -331,8 +407,11 @@ const L = (st, what, det) => { if (st === 'FAIL') fails++; if (st === 'WARN') wa
 }
 const C = dom.contrast;
 const cf = Object.entries(C.failures).sort((a, b) => b[1].count - a[1].count);
-L(cf.length ? 'FAIL' : 'OK', `контраст: проверено ${C.checked} элементов${C.translucent ? ` (из них ${C.translucent} полупрозрачных — смешаны с фоном)` : ''}${C.unknown ? `, ещё ${C.unknown} на картинке, градиенте или чужой подложке — см. ниже` : ''}${C.transparentText ? `, прозрачный цвет текста (градиент через background-clip) — ${C.transparentText}, не проверялись` : ''}`, cf.length ? cf.slice(0, 5).map(([k, v]) => `${k} = ${v.ratio}:1 (нужно ${v.need}:1), ${v.count} эл.: ${v.examples.join(', ')}`).join(' | ') : 'все пары проходят AA');
-if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'везде не ниже нормы' : 'нет sharp — не измерено');
+const cut = C.total > C.considered;
+L(cf.length ? 'FAIL' : cut ? 'WARN' : 'OK', `контраст: проверено ${C.checked} элементов${cut ? ` — взято ${C.considered} из ${C.total} текстовых (обрезано: остальные не проверялись)` : ` (текстовых на странице ${C.total})`}${C.translucent ? ` (из них ${C.translucent} полупрозрачных — смешаны с фоном)` : ''}${C.unknown ? `, ещё ${C.unknown} на картинке, градиенте или чужой подложке — см. ниже` : ''}${C.transparentText ? `, прозрачный цвет текста (градиент через background-clip) — ${C.transparentText}, не проверялись` : ''}`, cf.length ? cf.slice(0, 5).map(([k, v]) => `${k} = ${v.ratio}:1 (нужно ${v.need}:1), ${v.count} эл.: ${v.examples.join(', ')}`).join(' | ') : 'все пары проходят AA');
+/* перекрытый или ушедший за окно текст не мерился — это не «OK», а «проверить глазами» (WARN) */
+const covTxt = imgContrast.coveredList.length ? `не измерены — ${imgContrast.coveredList.slice(0, 5).map((c) => `${c.sig} «${c.text}» ${c.state === 'перекрыт' ? `перекрыт ${c.by}` : 'вне окна'}`).join(', ')}${imgContrast.coveredList.length > 5 ? ` и ещё ${imgContrast.coveredList.length - 5}` : ''} — смотреть глазами` : '';
+if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt].filter(Boolean).join('; '));
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
 else if (grain && grain.layers && grain.layers.length) {
   const G = C.grain; const hexs = (m) => '#' + m.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -357,11 +436,13 @@ L(dom.zoomBlocked ? 'FAIL' : 'OK', 'масштабирование', dom.zoomBlo
 L(dom.positiveTabindex ? 'WARN' : 'OK', `положительный tabindex: ${dom.positiveTabindex}`, dom.positiveTabindex ? 'ломает естественный порядок обхода' : '');
 {
   const f = focus; const short = f.visited < f.expected;
-  const st = f.invisible.length ? 'FAIL' : f.trapped ? 'WARN' : short ? 'WARN' : f.focusables ? 'OK' : 'OK';
-  const det = f.invisible.length ? `не видно фокуса на: ${f.invisible.slice(0, 8).join(', ')}${short ? `; к тому же обход не состоялся (${f.visited} из ${f.focusables})` : ''}`
-    : f.trapped ? `ловушка фокуса или перехват Tab на ${f.stuckAt} — проверить руками`
-      : short ? `обход не состоялся: Tab прошёл ${f.visited} из ожидаемых ${f.expected} (фокусируемых на странице ${f.focusables}) — Tab перехвачен, фокус уходит из страницы или стартует не сначала`
-        : f.focusables ? `фокус виден везде (первым — ${f.first})` : 'фокусируемых элементов нет';
+  const st = f.invisible.length ? 'FAIL' : f.trapped || f.iframeStuck ? 'WARN' : short ? 'WARN' : f.focusables ? 'OK' : 'OK';
+  const inFrames = f.iframes.length ? `; внутри iframe (${f.iframes.slice(0, 3).join(', ')}) фокус не проверялся — чужой документ` : '';
+  const det = (f.invisible.length ? `не видно фокуса на: ${f.invisible.slice(0, 8).join(', ')}${short ? `; к тому же обход не состоялся (${f.visited} из ${f.focusables})` : ''}`
+    : f.iframeStuck ? `из iframe ${f.iframeStuck} за 40 нажатий Tab фокус не вернулся в страницу — проверить руками`
+      : f.trapped ? `ловушка фокуса или перехват Tab на ${f.stuckAt} — проверить руками`
+        : short ? `обход не состоялся: Tab прошёл ${f.visited} из ожидаемых ${f.expected} (фокусируемых на странице ${f.focusables}) — Tab перехвачен, фокус уходит из страницы или стартует не сначала`
+          : f.focusables ? `фокус виден везде (первым — ${f.first})` : 'фокусируемых элементов нет') + inFrames;
   L(st, `фокус: обошли ${f.visited} элементов на свежей странице`, det);
 }
 if (vp.isMobile) { L(dom.targets.length ? 'WARN' : 'OK', `цели нажатия мельче 24px: ${dom.targets.length}`, dom.targets.join(', ')); L(dom.smallInputs.length ? 'WARN' : 'OK', `поля мельче 16px: ${dom.smallInputs.length}`, dom.smallInputs.length ? 'iOS увеличит страницу при фокусе: ' + dom.smallInputs.join(', ') : ''); }

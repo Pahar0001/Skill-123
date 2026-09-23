@@ -54,6 +54,14 @@
  * повтором — нет), от 64×48 CSS-пикселей, видимые (итоговая opacity > 0.05), не SVG. Проверка
  * здесь, а не в a11y.mjs: рядом «крупнее показанного» — тот же расчёт в другую сторону
  * (плотность > 1.5 × dpr — лишний вес, справочно).
+ * Перед замером плотности страница проходится ещё раз — lib.scrollThrough с паузой 350 мс и
+ * ожиданием картинок в кадре (до 1,5 с на шаг): быстрый проход замера кадров/с (~2 с) ленивые не
+ * успевают догрузить, и на Tilda при fast3g фоны карточек оставались заглушками …/-/resizeb/20x/.
+ * LCP, CLS, память и вес по сети снимаются до этого прохода (как раньше); догруженное им — отдельной
+ * строкой. Что так и осталось заглушкой (≤ 64 px по стороне в коробке от 200 px и адрес заглушки,
+ * data-original/data-src/… с ещё не подставленным адресом или класс lazy; без признаков — ≤ 32 px),
+ * не мерится: WARN «заглушка ленивой загрузки не догрузилась — не измерено», а не FAIL «размыто».
+ * В выводе у адреса — хост и хвост пути (thb.tildacdn.com/…/-/resizeb/20x/1.jpg), полный — в JSON (url).
  *
  * Видео: вес каждого ролика — полный размер файла (Content-Range или Content-Length ответа, иначе
  * запрос HEAD), не то, что успело скачаться. Бюджет роликов первого экрана: телефон и планшет
@@ -81,7 +89,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir,
-  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN,
+  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers } from './texture.mjs';
 
@@ -138,7 +146,32 @@ function scrollInPage() {
    Свободные переменные eff и sig — из lib.mjs (evaluateWith). */
 async function mediaInPage() {
   const dpr = devicePixelRatio; const need = Math.min(dpr, 2); const TOL = 0.97;
-  const short = (u) => { if (!u) return ''; if (/^data:/i.test(u)) return u.slice(0, 30) + '…'; try { const p = new URL(u, location.href); return (p.pathname.split('/').pop() || p.hostname).slice(0, 60); } catch (e) { return String(u).slice(0, 60); } };
+  /* адрес для вывода: чужой хост и хвост пути — по «1.jpg» не видно, что это заглушка …/-/resizeb/20x/1.jpg */
+  const short = (u) => { if (!u) return ''; if (/^data:/i.test(u)) return u.slice(0, 30) + '…'; try { const p = new URL(u, location.href); const segs = p.pathname.split('/').filter(Boolean); const tail = segs.slice(-4).join('/'); return ((p.host !== location.host ? p.host : '') + (segs.length > 4 ? '/…/' : '/') + tail).slice(-100); } catch (e) { return String(u).slice(0, 100); } };
+  /* заглушка ленивой загрузки: крошечная картинка (≤ 64 px по стороне) в коробке от 200 px и признак
+     ленивой загрузки — адрес заглушки (Tilda …/-/resize/20x/, …/-/empty/, lqip, placeholder, blank)
+     или атрибут с настоящим адресом (data-original, data-src, data-bg…), который ещё не подставлен,
+     или класс lazy без loaded; без признаков — если картинка не больше 32 px (растянута в 6+ раз) */
+  const PH_URL = /\/-\/(resizeb?\/\d{1,2}x\d{0,2}|empty)\/|(lqip|placeholder|blank|spacer|lazy[-_]?load)[^/]*\.(gif|png|jpe?g|webp)(\?|#|$)/i;
+  const LAZY_ATTRS = ['data-original', 'data-src', 'data-lazy', 'data-lazy-src', 'data-bg', 'data-background', 'data-background-image', 'data-srcset', 'data-lazy-srcset', 'data-bgset'];
+  const abs = (u) => { try { return new URL(String(u).trim().split(/[\s,]+/)[0], location.href).href; } catch (e) { return String(u); } };
+  const lazyEvidence = (el, cur) => {
+    const curAbs = cur ? abs(cur) : '';
+    for (const host of [el, el.parentElement && el.parentElement.tagName === 'PICTURE' ? el.parentElement : null]) {
+      if (!host) continue;
+      for (const a of LAZY_ATTRS) { const v = host.getAttribute(a); if (v && v.trim() && !/^data:/i.test(v.trim()) && abs(v) !== curAbs) return a; }
+    }
+    const cls = typeof el.className === 'string' ? el.className : '';
+    if (/(^|[\s_-])lazy/i.test(cls) && !/lazy-?loaded/i.test(cls)) return `класс ${cls.split(/\s+/).find((c) => /lazy/i.test(c))}`;
+    return null;
+  };
+  const placeholderOf = (el, src, nw, nh, bw, bh) => {
+    const tiny = (nw <= 64 && bw >= 200) || (nh <= 64 && bh >= 200); if (!tiny) return null;
+    if (PH_URL.test(src || '')) return 'адрес заглушки';
+    const ev = lazyEvidence(el, src); if (ev) return `ленивая загрузка: ${ev}`;
+    if ((nw <= 32 && bw >= 200) || (nh <= 32 && bh >= 200)) return 'крошечная картинка, растянутая в 6+ раз';
+    return null;
+  };
   const isSvg = (u) => /^data:image\/svg|\.svg(\?|#|$)/i.test(u || '');
   const px = (v) => parseFloat(v) || 0;
   const splitTop = (str) => { const out = []; let depth = 0, cur = ''; for (const ch of String(str || '')) { if (ch === '(') depth++; else if (ch === ')') depth--; if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; } cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
@@ -164,8 +197,9 @@ async function mediaInPage() {
     let nw = img.naturalWidth, nh = img.naturalHeight, how = 'natural';
     if (img.srcset || img.getAttribute('sizes') || (img.parentElement && img.parentElement.tagName === 'PICTURE')) { const z = await realSize(src); if (z) { nw = z.w; nh = z.h; how = 'файл'; } }
     const d = densityOf(s.objectFit, bw, bh, nw, nh); if (d == null) continue;
-    checked++;
-    items.push({ kind: 'img', el: sig(img), src: short(src), natural: `${nw}×${nh}`, box: `${Math.round(bw)}×${Math.round(bh)}`, fit: s.objectFit, density: Math.round(d * 100) / 100, sizeFrom: how });
+    const ph = placeholderOf(img, src, nw, nh, bw, bh);
+    if (!ph) checked++;
+    items.push({ kind: 'img', el: sig(img), src: short(src), url: src.slice(0, 300), natural: `${nw}×${nh}`, box: `${Math.round(bw)}×${Math.round(bh)}`, fit: s.objectFit, density: Math.round(d * 100) / 100, sizeFrom: how, placeholder: ph });
   }
   for (const v of document.querySelectorAll('video[poster]')) {
     const r = v.getBoundingClientRect(); if (r.width < 64 || r.height < 48 || eff(v) <= 0.05) continue;
@@ -173,7 +207,7 @@ async function mediaInPage() {
     const z = await realSize(src); if (!z) { notLoaded++; continue; }
     const s = getComputedStyle(v); const d = densityOf(s.objectFit === 'fill' ? 'contain' : s.objectFit, r.width, r.height, z.w, z.h); if (d == null) continue;
     checked++;
-    items.push({ kind: 'poster', el: sig(v), src: short(src), natural: `${z.w}×${z.h}`, box: `${Math.round(r.width)}×${Math.round(r.height)}`, fit: s.objectFit, density: Math.round(d * 100) / 100, sizeFrom: 'файл' });
+    items.push({ kind: 'poster', el: sig(v), src: short(src), url: src.slice(0, 300), natural: `${z.w}×${z.h}`, box: `${Math.round(r.width)}×${Math.round(r.height)}`, fit: s.objectFit, density: Math.round(d * 100) / 100, sizeFrom: 'файл', placeholder: null });
   }
   const bgEls = document.body ? [...document.body.querySelectorAll('*')] : [];
   for (const el of bgEls) {
@@ -204,12 +238,14 @@ async function mediaInPage() {
           if (pw && ph) d = Math.min(z.w / pw, z.h / ph); else if (pw) d = z.w / pw; else if (ph) d = z.h / ph; else d = 1;
         }
         if (!(d > 0)) continue;
-        checked++;
-        items.push({ kind: 'фон', el: sig(el) + (pseudo || ''), src: short(zsrc), natural: `${z.w}×${z.h}`, box: `${Math.round(W)}×${Math.round(H)}`, fit: `background-size:${size}`, density: Math.round(d * 100) / 100, sizeFrom: 'файл' });
+        const ph = placeholderOf(el, zsrc, z.w, z.h, W, H);
+        if (!ph) checked++;
+        items.push({ kind: 'фон', el: sig(el) + (pseudo || ''), src: short(zsrc), url: String(zsrc).slice(0, 300), natural: `${z.w}×${z.h}`, box: `${Math.round(W)}×${Math.round(H)}`, fit: `background-size:${size}`, density: Math.round(d * 100) / 100, sizeFrom: 'файл', placeholder: ph });
       }
     }
   }
-  for (const it of items) it.status = it.density < TOL ? 'FAIL' : it.density < need * TOL ? 'WARN' : it.density > Math.max(dpr, 1) * 1.5 ? 'BIG' : 'OK';
+  /* LAZY — заглушка ленивой загрузки не догрузилась: плотность не мерится (иначе ложный FAIL «размыто») */
+  for (const it of items) it.status = it.placeholder ? 'LAZY' : it.density < TOL ? 'FAIL' : it.density < need * TOL ? 'WARN' : it.density > Math.max(dpr, 1) * 1.5 ? 'BIG' : 'OK';
   const videos = [...document.querySelectorAll('video')].filter((v) => { const r = v.getBoundingClientRect(); return r.width >= 24 && r.height >= 24 && eff(v) > 0.05; }).map((v) => {
     const r = v.getBoundingClientRect(); const srcEl = v.querySelector('source[src]');
     return { el: sig(v), src: v.currentSrc || v.src || (srcEl ? srcEl.src : ''), poster: v.getAttribute('poster') || '', autoplay: v.autoplay, muted: v.muted, loop: v.loop, preload: v.preload, first: r.top < innerHeight && r.bottom > 0 && r.left < innerWidth && r.right > 0, w: Math.round(r.width), h: Math.round(r.height), videoSize: v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : null };
@@ -253,13 +289,24 @@ async function measure() {
     const scroll = await page.evaluate(scrollInPage);
     await sleep(800);
     await page.evaluate(() => { const se = document.scrollingElement || document.documentElement; scrollTo({ top: 0, behavior: 'instant' }); se.scrollTop = 0; }); await sleep(500);
-    const media = await evaluateWith(page, mediaInPage, null, { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN }).catch((e) => ({ error: String(e.message || e).slice(0, 200), items: [], videos: [], checked: 0, notLoaded: 0 }));
+    /* показатели загрузки и памяти — сразу после замера прокрутки, до прохода за ленивым (он догружает
+       картинки и сдвигал бы CLS и вес по сети относительно прежних замеров) */
     const m = await page.evaluate(() => {
       const n = performance.getEntriesByType('navigation')[0] || {}; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)]));
       return { ttfb: Math.round(n.responseStart || 0), domContentLoaded: Math.round(n.domContentLoadedEventEnd || 0), load: Math.round(n.loadEventEnd || 0), fcp: p['first-contentful-paint'] || null, lcp: window.__rw.lcp || null, cls: Math.round(window.__rw.cls * 1000) / 1000, longTasks: window.__rw.longTasks, longTotal: Math.round(window.__rw.longTotal), nodes: document.getElementsByTagName('*').length, images: [...document.images].filter((i) => i.naturalWidth > 0).length, fonts: [...document.fonts].filter((f) => f.status === 'loaded').length, canvases: document.querySelectorAll('canvas').length, animations: document.getAnimations().length };
     });
     const metrics = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value]));
-    return { loadMs, m, res, idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount };
+    const resAtMetrics = res.length;
+    /* плотность картинок: сначала проход с паузами и ожиданием картинок в кадре — быстрый проход замера
+       кадров/с (~2 с) ленивые не успевают догрузить, и фоны оставались заглушками …/-/resizeb/20x/ */
+    const t1 = Date.now();
+    const lazyPass = await scrollThrough(page, { pause: 350, onStep: () => waitForMedia(page, { timeout: 1500 }) }).catch((e) => ({ error: String(e.message || e).slice(0, 120) }));
+    await scrollToY(page, 0).catch(() => {}); await waitForMedia(page, { timeout: 3000 });
+    const lazyMs = Date.now() - t1;
+    const media = await evaluateWith(page, mediaInPage, null, { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN }).catch((e) => ({ error: String(e.message || e).slice(0, 200), items: [], videos: [], checked: 0, notLoaded: 0 }));
+    media.lazyPass = { ms: lazyMs, steps: lazyPass.screens ?? null, error: lazyPass.error || null };
+    /* вес по сети — как раньше, до прохода за ленивым; догруженное проходом — отдельно */
+    return { loadMs, m, res: res.slice(0, resAtMetrics), resLazy: res.slice(resAtMetrics), idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount };
   } finally { await browser.close(); }
 }
 
@@ -392,11 +439,13 @@ if (samples.length) {
   const media = ref.media || { items: [], videos: [], checked: 0, notLoaded: 0 };
   const small = media.items.filter((i) => i.status === 'FAIL' || i.status === 'WARN').sort((a, b) => a.density - b.density);
   const big = media.items.filter((i) => i.status === 'BIG').sort((a, b) => b.density - a.density);
+  const lazy = media.items.filter((i) => i.status === 'LAZY');
   const smallStatus = small.some((i) => i.status === 'FAIL') ? 'FAIL' : small.length ? 'WARN' : 'OK';
+  const resLazy = ref.resLazy || [];
   for (const v of media.videos) {
     if (!v.src) { v.bytes = null; v.sizeFrom = 'нет источника'; continue; }
     if (/^blob:/i.test(v.src)) { v.bytes = null; v.sizeFrom = 'поток (blob:)'; continue; }
-    const hit = samples.flatMap((s) => s.res).find((r) => r.url === v.src && r.total);
+    const hit = samples.flatMap((s) => s.res.concat(s.resLazy || [])).find((r) => r.url === v.src && r.total);
     if (hit) { v.bytes = hit.total; v.sizeFrom = 'ответ сервера'; } else { v.bytes = await headSize(v.src); v.sizeFrom = v.bytes ? 'HEAD' : 'не определён'; }
   }
   const firstVideos = media.videos.filter((v) => v.first);
@@ -424,6 +473,7 @@ if (samples.length) {
     'Память JS': B(heapMb, 30, 80, ' МБ', true, spread((s) => s.heapMb, ' МБ')),
     'Картинки мельче показанного': { value: small.length, unit: '', status: smallStatus, budget: `плотность ≥ ${media.need || 2} / ≥ 1`, spread: '' },
   };
+  if (lazy.length) checks['Заглушки ленивой загрузки (не измерены)'] = { value: lazy.length, unit: '', status: 'WARN', budget: '0', spread: '', note: 'полная картинка не догрузилась к замеру — плотность не мерилась' };
   if (media.videos.length) {
     const st = firstUnknown.length ? 'WARN' : firstBytes <= videoBudget ? 'OK' : firstBytes <= videoBudget * 2 ? 'WARN' : 'FAIL';
     checks['Видео первого экрана'] = { value: r2(firstBytes / MB), unit: ' МБ', status: firstVideos.length ? st : 'OK', budget: `${r1(videoBudget / MB)} МБ / ${r1(videoBudget * 2 / MB)} МБ`, spread: '', note: firstUnknown.length ? `размер не определён: ${firstUnknown.map((v) => v.el).join(', ')}` : '' };
@@ -443,15 +493,18 @@ if (samples.length) {
   console.log(`По сети (${res.length} ответов): ${Object.entries(by).map(([k, v]) => `${k} ${v.count}/${v.kb} КБ`).join(' · ')} · сторонние домены ${thirdParty} КБ`);
   console.log(`Самое тяжёлое: ${largest.map((l) => `${l.file} ${l.kb} КБ`).join('; ')}`);
   const fmtImg = (i) => `${i.kind} ${i.src} ${i.natural} в ${i.box} (${i.fit}) — ${i.density} пикс./CSS-пикс.`;
-  console.log(`Плотность картинок (dpr ${media.dpr}, нужно ≥ ${media.need}): проверено ${media.checked}${media.notLoaded ? `, не загрузились к замеру ${media.notLoaded}` : ''}${media.error ? `, ошибка: ${media.error}` : ''}`);
+  if (resLazy.length) console.log(`Догружено проходом за ленивым (${media.lazyPass ? `${Math.round(media.lazyPass.ms / 100) / 10} с` : ''}; в вес выше не входит): ${resLazy.length} ответов, ${Math.round(resLazy.reduce((a, r) => a + r.bytes, 0) / 1024)} КБ`);
+  console.log(`Плотность картинок (dpr ${media.dpr}, нужно ≥ ${media.need}): проверено ${media.checked}${lazy.length ? `, заглушек ленивой загрузки ${lazy.length} (не измерены)` : ''}${media.notLoaded ? `, не загрузились к замеру ${media.notLoaded}` : ''}${media.error ? `, ошибка: ${media.error}` : ''}`);
   if (small.length) for (const i of small.slice(0, 10)) console.log(`  ${i.status.padEnd(4)} ${fmtImg(i)}${i.status === 'FAIL' ? ' — меньше пикселя картинки на CSS-пиксель: размыто на любом экране' : ` — ниже ${media.need}: размыто на этом экране`}`);
+  if (lazy.length) for (const i of lazy.slice(0, 6)) console.log(`  WARN ${i.kind} ${i.src} ${i.natural} в ${i.box} — заглушка ленивой загрузки не догрузилась (${i.placeholder}) — не измерено`);
+  if (lazy.length > 6) console.log(`       … и ещё ${lazy.length - 6} заглушек (полный список — в JSON, images.lazy)`);
   if (big.length) console.log(`Картинки крупнее показанного (лишний вес, справочно): ${big.slice(0, 8).map((o) => `${o.src} ${o.natural}→${o.box} (×${o.density})`).join('; ')}`);
   if (media.videos.length) {
     console.log(`Видео (${media.videos.length}): бюджет первого экрана ${r1(videoBudget / MB)} МБ (${vp.isMobile ? 'телефон' : 'десктоп'}) — роликов в первом экране ${firstVideos.length}, вес ${mbs(firstBytes)}`);
     for (const v of media.videos) console.log(`  ${v.first ? 'первый экран' : 'ниже'}: ${v.el} ${v.src.split('/').pop().split('?')[0].slice(0, 50) || v.src.slice(0, 50)} — ${mbs(v.bytes)} (${v.sizeFrom})${v.videoSize ? `, кадр ${v.videoSize}` : ''}, показ ${v.w}×${v.h}${v.autoplay ? ', autoplay' : ''}${v.muted ? ' muted' : ''}${v.loop ? ' loop' : ''}, preload ${v.preload || '—'}, ${v.poster ? 'постер есть' : 'БЕЗ постера'}`);
   }
   if (m.canvases) console.log(`Холстов: ${m.canvases}, анимаций в момент замера: ${m.animations} — кадры/с выше говорят, тянет ли их страница`);
-  report = { ...report, runs: samples.length, loadMs, metrics: m, checks, byType: by, totalKb, thirdPartyKb: thirdParty, largest, scroll: { ...ref.scroll, fps: fpsScroll, valid: scrollValid, minShare }, idleFps, images: { dpr: media.dpr, need: media.need, checked: media.checked, notLoaded: media.notLoaded, small, big, all: media.items }, videos: { budgetBytes: videoBudget, firstBytes, list: media.videos }, cdp: { heapMb, scriptMs: ref.scriptMs, layoutCount: ref.layoutCount, styleRecalcs: ref.styleRecalcs }, samples: samples.map((s) => ({ lcp: s.m.lcp, fcp: s.m.fcp, ttfb: s.m.ttfb, cls: s.m.cls, longTotal: s.m.longTotal, fpsScroll: s.fpsScroll, idleFps: s.idleFps, heapMb: s.heapMb, loadMs: s.loadMs, scrollShare: s.scroll.share, scrollReached: s.scroll.reached, scrollPlanned: s.scroll.planned })) };
+  report = { ...report, runs: samples.length, loadMs, metrics: m, checks, byType: by, totalKb, thirdPartyKb: thirdParty, largest, scroll: { ...ref.scroll, fps: fpsScroll, valid: scrollValid, minShare }, idleFps, images: { dpr: media.dpr, need: media.need, checked: media.checked, notLoaded: media.notLoaded, lazyPass: media.lazyPass || null, small, big, lazy, all: media.items }, lazyLoadedKb: Math.round(resLazy.reduce((a, r) => a + r.bytes, 0) / 1024), videos: { budgetBytes: videoBudget, firstBytes, list: media.videos }, cdp: { heapMb, scriptMs: ref.scriptMs, layoutCount: ref.layoutCount, styleRecalcs: ref.styleRecalcs }, samples: samples.map((s) => ({ lcp: s.m.lcp, fcp: s.m.fcp, ttfb: s.m.ttfb, cls: s.m.cls, longTotal: s.m.longTotal, fpsScroll: s.fpsScroll, idleFps: s.idleFps, heapMb: s.heapMb, loadMs: s.loadMs, scrollShare: s.scroll.share, scrollReached: s.scroll.reached, scrollPlanned: s.scroll.planned })) };
   lines.push(...Object.entries(checks).filter(([, c]) => c.status !== 'OK' && c.status !== 'n/a').map(([k, c]) => `${k} ${c.status}`));
 }
 
