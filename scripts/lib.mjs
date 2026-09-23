@@ -468,6 +468,9 @@ export async function gotoRetry(page, url, { waitUntil = 'networkidle2', timeout
       await sleep(1500 * i);
     }
   }
+  /* после нескольких упавших переходов вкладка стоит на странице ошибки Chrome, и page.close()
+     на ней может не вернуться вообще (проверено: 3 из 3 зависаний); about:blank это снимает */
+  if (attempts > 1) await Promise.race([page.goto('about:blank', { timeout: 5000 }).catch(() => {}), sleep(6000)]);
   throw last;
 }
 
