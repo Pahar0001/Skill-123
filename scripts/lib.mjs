@@ -676,10 +676,16 @@ export function segmentPositions(total, vh, { step = 0.8, maxShots = 8, skipTop 
  * шире экрана) на телефоне окно раскладки выше экрана — 2121 px при экране 390×844,
  * — прокрутка кончается на pageHeight − innerHeight, и от высоты экрана выходило
  * ложное «до низа не доехали» (и «не прокручивается» у страницы ниже окна раскладки).
- * Низ для подписей — pageHeight − viewH.
+ * Низ для подписей — pageHeight − viewH. Шаг прокрутки и позиции снимков считаются
+ * от видимой области (visualViewport — то, что попадает на снимок): при контенте шире
+ * экрана окно раскладки выше неё, и шаг от innerHeight оставлял бы пропуски между кадрами.
  */
 export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = null, tag = 'scroll', maxShots = 8, shotPause = 1200, waitMedia = true, mediaTimeout = 6000, skipTop = false, maxSteps = 150, onStep = null, sheet = false } = {}) {
-  const vh = (await page.evaluate(() => innerHeight).catch(() => 0)) || (page.viewport() || {}).height || 800; const px = Math.max(1, Math.round(vh * step));
+  const dims = await page.evaluate(() => ({ ih: innerHeight, vv: window.visualViewport ? visualViewport.height : 0 })).catch(() => ({}));
+  const dev = (page.viewport() || {}).height || 0;
+  const vh = dims.ih || dev || 800; /* окно раскладки — для «низа» */
+  const sh = Math.min(vh, dims.vv || dev || vh); /* видимая область — шаг и снимки */
+  const px = Math.max(1, Math.round(sh * step));
   const scroller = await page.evaluate(detectScrollerInPage).catch(() => ({ kind: 'document' }));
   const initialHeight = await pageHeight(page);
   let total = initialHeight; let n = 0; let maxY = 0;
@@ -697,7 +703,7 @@ export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = 
   const shots = [];
   if (shotsDir) {
     ensureDir(shotsDir);
-    const ys = segmentPositions(total, vh, { step, maxShots, skipTop });
+    const ys = segmentPositions(total, sh, { step, maxShots, skipTop });
     for (let k = 0; k < ys.length; k++) {
       const file = path.join(shotsDir, `${tag}-${String(k).padStart(2, '0')}.png`);
       const s = await screenSegment(page, ys[k], { file, pause: shotPause, waitMedia, mediaTimeout });
