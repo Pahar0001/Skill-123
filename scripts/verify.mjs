@@ -29,13 +29,13 @@ const HELP = `Сверка своей страницы со спецификац
   node verify.mjs <спецификация.json> <адрес страницы> [--strict]
 
   --strict  отсутствующие уровни шкалы и предупреждения ?? — тоже расхождения
-  --help    эта справка
+  --help, -h  эта справка
 
 Отступления — в <спецификация>.ignore, по ключу на строку (scale.h1.fontFamily).
 Код выхода 1 — есть расхождения.`;
 
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['strict', 'help'] });
-if (opt.help) { console.log(HELP); process.exit(0); }
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['strict', 'help', 'h'] });
+if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 if (pos.length < 2) { console.error('Нужно: node verify.mjs <спецификация.json> <адрес страницы> [--strict] (--help — справка)'); process.exit(1); }
 const spec = JSON.parse(fs.readFileSync(pos[0], 'utf8'));
 const ignoreFile = pos[0].replace(/\.json$/, '.ignore');

@@ -908,15 +908,15 @@ const HELP = `Съём дизайн-системы со страницы.
   --light         без состояний наведения/фокуса и без тёмной темы
   --no-pixels     не подтверждать акцент по пикселям снимков окна
   --force         перезаписать существующую <имя>.md
-  --help          эта справка
+  --help, -h      эта справка
 
 Переменные: DESIGN_REF_PROJECT / SITE_REWORK_PROJECT — папка с puppeteer-core;
 CHROME_PATH — свой браузер; DESIGN_REF_NO_SR=1 — без помощников site-rework.`;
 const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isCli) {
   try {
-    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help'] });
-    if (opt.help) { console.log(HELP); process.exit(0); }
+    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h'] });
+    if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
     if (!pos[0]) { console.error('Нужен адрес: node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots] (--help — все флаги)'); process.exit(1); }
     const url = pos[0], out = path.resolve(opt.out || 'docs/design'), slug = opt.name || slugFromUrl(url);
     const shotsDir = opt['no-shots'] ? null : path.join(out, slug + '-shots');
