@@ -217,8 +217,11 @@ function textureFallbackInPage() {
    сработали, ленивое подгрузилось. Видимость — с итоговой прозрачностью (eff) и
    положением (D10): спрятанная за экраном ссылка-пропуск и прозрачные кнопки
    «по наведению» не попадают ни в кнопки, ни в палитру, ни в паспорт. */
-function inPage() {
+function inPage(arg) {
   const vw = innerWidth, vh = innerHeight, sy = scrollY;
+  /* номера слоёв-элементов, которые прячутся целиком (вуаль, зерно поверх страницы); метки у
+     псевдоэлементов и у фона body/секции стоят на хозяине — его потомки не вуаль */
+  const veilKeys = new Set(((arg && arg.veilKeys) || []).map(String));
   const csM = new Map(); const cs = (el, p) => { if (p) return getComputedStyle(el, p); let s = csM.get(el); if (!s) { s = getComputedStyle(el); csM.set(el, s); } return s; };
   const effM = new Map(); const E = (el) => { let v = effM.get(el); if (v === undefined) { v = eff(el); effM.set(el, v); } return v; };
   const rM = new Map(); const R = (el) => { let r = rM.get(el); if (!r) { r = el.getBoundingClientRect(); rM.set(el, r); } return r; };
@@ -244,7 +247,8 @@ function inPage() {
   const veilM = new Map();
   const isVeil = (el) => {
     if (veilM.has(el)) return veilM.get(el);
-    let v = !!el.closest('[data-rw-tex],[data-rw-tex-before],[data-rw-tex-after]') && !el.closest('[data-rw-tex-bg]');
+    const host = el.closest('[data-rw-tex]');
+    let v = !!host && veilKeys.has(host.getAttribute('data-rw-tex'));
     if (!v) for (let e = el; e && e !== document.body && e.nodeType === 1; e = e.parentElement) {
       const s = cs(e);
       if ((s.position === 'fixed' || s.position === 'absolute') && s.pointerEvents === 'none') { const r = R(e); if (r.width >= vw * 0.8 && r.height >= vh * 0.8) { v = true; break; } }
@@ -682,7 +686,7 @@ async function textureModule() {
   return texMod;
 }
 
-const HIDE_CSS = '[data-rw-tex]{visibility:hidden!important}[data-rw-tex-before]::before{visibility:hidden!important}[data-rw-tex-after]::after{visibility:hidden!important}[data-rw-tex-bg]{background-image:none!important}';
+const HIDE_CSS = '[data-rw-tex]{visibility:hidden!important;opacity:0!important}[data-rw-tex-before]::before{visibility:hidden!important;opacity:0!important}[data-rw-tex-after]::after{visibility:hidden!important;opacity:0!important}[data-rw-tex-bg]{background-image:none!important}';
 
 /* Файл плитки: кадры и задержки GIF/WebP (запасной путь; с texture.mjs — его analyzeTile). */
 async function tileInfo(u, dir, label) {
@@ -772,7 +776,8 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     }
     if (!found) { found = await evaluateWith(page, textureFallbackInPage, null, DEPS); found.source = 'discover (запасной путь)'; }
 
-    const data = await evaluateWith(page, inPage, null, DEPS);
+    const veilKeys = (found.layers || []).filter((L) => !L.pseudo && L.hide === 'visibility').map((L) => L.k);
+    const data = await evaluateWith(page, inPage, { veilKeys }, DEPS);
     const canvases = await canvasList(page).catch(() => []);
     data.tech.canvases = canvases.map((c) => ({ el: c.sig, w: c.clientWidth, h: c.clientHeight, ctx: c.ctx || 'не инициализирован', buffer: `${c.width}×${c.height}`, ratioCss: c.ratioCss, ratioDevice: c.ratioDevice, visible: c.clientWidth > 0 && c.clientHeight > 0 && c.opacity > 0.05 }));
     const overflow = await findOverflow(page).catch((e) => ({ verdict: 'WARN', summary: `проверка не прошла: ${e.message}`, outer: [], wideCauses: [] }));

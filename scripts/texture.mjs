@@ -972,8 +972,8 @@ export function recipeFrom(results, { tileSd = TILE_SD } = {}) {
 export function tokensBlock(rec, results = []) {
   const list = (Array.isArray(results) ? results : [results]).filter(Boolean);
   const raw = list.map((r) => {
-    const g = r.grain; const b = (x) => (x.status === 'не измерено' ? '—' : x.sd);
-    return `   ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr}: ${r.status}; σ тёмный ${b(g.dark)} / средний ${b(g.mid)} / светлый ${b(g.light)}, lag1 ${g.all.lag1 ?? '—'}, кипение ${r.boil && r.boil.boils === true ? 'да' : r.boil && r.boil.boils === false ? 'нет' : r.boil && r.boil.boils ? r.boil.boils : '—'}${r.boil && r.boil.frames ? ` (${r.boil.frames} × ${r.boil.frameMs} мс, ${r.boil.source})` : ''}${r.lift && r.lift.dark != null ? `, подъём чёрного ${r.lift.dark}` : ''}`;
+    const b = (k) => { const x = grainBand(r, k); return x.status === 'не измерено' ? '—' : x.sd; };
+    return `   ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr}: ${r.status}; σ${r.contribution ? ' (вклад слоя)' : ''} тёмный ${b('dark')} / средний ${b('mid')} / светлый ${b('light')}, lag1 ${grainBand(r, 'all').lag1 ?? '—'}, кипение ${r.boil && r.boil.boils === true ? 'да' : r.boil && r.boil.boils === false ? 'нет' : r.boil && r.boil.boils ? r.boil.boils : '—'}${r.boil && r.boil.frames ? ` (${r.boil.frames} × ${r.boil.frameMs} мс, ${r.boil.source})` : ''}${r.lift && r.lift.dark != null ? `, подъём чёрного ${r.lift.dark}` : ''}`;
   });
   const src = list[0] ? list[0].url : '';
   return [
@@ -1030,10 +1030,14 @@ export function fillGrainCss(rec, { tile = null, template = TEMPLATE } = {}) {
 export function textureMarkdown(results, { recipe = null } = {}) {
   const list = (Array.isArray(results) ? results : [results]).filter(Boolean);
   const rec = recipe || recipeFrom(list);
-  const b = (x) => (!x ? '—' : x.status === 'не измерено' ? `не измерено (${x.tiles} плиток)` : `${x.sd}${x.status === 'есть' ? '' : ' (нет)'}`);
-  const lines = ['## Фактура (параметры для переноса)', '', 'Замер texture.mjs: снимки окна 1:1, σ на ровных плитках по полосам фона. Полностраничный снимок и уменьшенные картинки фактуру не показывают — доказательство только числом и вырезами 1:1.', '',
+  const b = (r, k) => {
+    const x = grainBand(r, k); if (!x || !x.tiles && x.status === 'не измерено') return '—';
+    if (x.status === 'не измерено') return `не измерено (${x.tiles} плиток)`;
+    return `${x.sd}${x.status === 'есть' ? '' : ' (нет)'}${notGrainNote(x) ? ` — на снимке ${x.raw.sd}, не зерно` : ''}`;
+  };
+  const lines = ['## Фактура (параметры для переноса)', '', 'Замер texture.mjs: снимки окна 1:1, σ на ровных плитках по полосам фона — вклад найденных слоёв (снимок со слоем − без), где слоя нет — σ на снимке. Полностраничный снимок и уменьшенные картинки фактуру не показывают — доказательство только числом и вырезами 1:1.', '',
     '| экран | зерно | σ тёмный | σ средний | σ светлый | lag1 | кипение | слоёв |', '|---|---|---|---|---|---|---|---|'];
-  for (const r of list) lines.push(`| ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr} | ${r.status} | ${b(r.grain.dark)} | ${b(r.grain.mid)} | ${b(r.grain.light)} | ${r.grain.all.lag1 ?? '—'} | ${r.boil && r.boil.boils != null ? (r.boil.boils === true ? 'да' : r.boil.boils === false ? 'нет' : r.boil.boils) : '—'}${r.boil && r.boil.frames ? ` ${r.boil.frames}×${r.boil.frameMs} мс (${r.boil.source})` : ''} | ${r.layers.length} |`);
+  for (const r of list) lines.push(`| ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr} | ${r.status} | ${b(r, 'dark')} | ${b(r, 'mid')} | ${b(r, 'light')} | ${grainBand(r, 'all').lag1 ?? '—'} | ${r.boil && r.boil.boils != null ? (r.boil.boils === true ? 'да' : r.boil.boils === false ? 'нет' : r.boil.boils) : '—'}${r.boil && r.boil.frames ? ` ${r.boil.frames}×${r.boil.frameMs} мс (${r.boil.source})` : ''} | ${r.layers.length} |`);
   lines.push('');
   const seen = new Set();
   for (const r of list) for (const L of r.layers) {
