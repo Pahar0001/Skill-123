@@ -5,11 +5,13 @@
  *   node perf.mjs <url> [--viewport mobile] [--out папка] [--tag имя]
  *                 [--cpu 4] [--net fast3g|slow4g|none] [--runs 3]
  *                 [--overlay [селектор]] [--rounds 5] [--overlay-only]
- *   node perf.mjs --help
+ *   node perf.mjs --help   (или -h)
  *
  * Флаги:
  *   --viewport  экран: пресет (desktop, laptop, tablet, mobile, mobile-s, android), запись ШxВ@плотность
- *               («320x568@2») или одна ширина; по умолчанию mobile.
+ *               («320x568@2») или одна ширина; по умолчанию mobile. Один экран за запуск: список
+ *               через запятую — ошибка с кодом 1 (запускать по разу на экран, итоги ложатся в разные
+ *               файлы). --viewports — то же самое (синоним).
  *   --cpu N     во сколько раз замедлить процессор (по умолчанию 4 на телефоне и планшете, 1 на десктопе).
  *   --net       сеть: fast3g, slow4g или none (по умолчанию fast3g на телефоне, none на десктопе).
  *   --runs N    прогонов (1…9), каждый в свежем браузере; в таблицу — медиана и разброс.
@@ -23,7 +25,7 @@
  *               visibility:hidden (visibility одна не прячет вывод SVG-фильтра feTurbulence).
  *   --rounds N  раундов для --overlay, не меньше 5 (по умолчанию 5).
  *   --overlay-only  только цена слоя, без замера загрузки (быстро: сеть не замедляется).
- *   --help      эта справка.
+ *   --help, -h  эта справка.
  *
  * Что измеряется: TTFB, FCP, LCP, CLS, долгие задачи, вес по типам ресурсов
  * (сжатый, как передано по сети), самые тяжёлые файлы, память JS, узлы DOM,
@@ -83,30 +85,49 @@
  * КБ и МБ — по 1024.
  *
  * Код выхода: 0 — замер сделан (вердикт в выводе и в JSON), 1 — неверные аргументы или ни один
- * прогон не удался.
+ * прогон не удался. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и
+ * запуска браузера.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  launch, preparePage, openPage, gotoRetry, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir,
+  launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'overlay-only'], values: ['viewport', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'] });
-if (opt.help) { console.log(HELP); process.exit(0); }
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'overlay-only'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'] });
+/* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
+if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
+const die = (msg) => { console.error(msg); process.exit(1); };
+for (const k of ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 /* «--overlay http://…» без селектора: адрес ушёл в значение флага */
 if (typeof opt.overlay === 'string' && /^(https?|file):/i.test(opt.overlay) && !pos[0]) { pos.unshift(opt.overlay); opt.overlay = true; }
 if (opt['overlay-only'] && !opt.overlay) opt.overlay = true;
-if (!pos[0]) { console.error('Нужен адрес: node perf.mjs <url> [--viewport mobile] [--cpu 4] [--net fast3g|slow4g|none] [--runs 3] [--overlay]  (подробно: --help)'); process.exit(1); }
+if (!pos[0]) die('Нужен адрес: node perf.mjs <url> [--viewport mobile] [--cpu 4] [--net fast3g|slow4g|none] [--runs 3] [--overlay]  (подробно: --help)');
 const url = pos[0];
-const [vpName, vp] = resolveViewport(opt.viewport || 'mobile') || [];
-if (!vp) { console.error(`Неизвестный экран ${opt.viewport}`); process.exit(1); }
+{
+  let ok = false; try { ok = /^(https?|file|data|about):$/i.test(new URL(url).protocol); } catch { /* не адрес */ }
+  if (!ok) die(`Неверный адрес «${url}»: нужен полный адрес — http://…, https://… или file:///…  (подробно: --help)`);
+}
+/* --viewport и --viewports — один флаг; экран один за запуск */
+function oneViewport(dflt) {
+  const a = opt.viewport, b = opt.viewports;
+  if (a !== undefined && b !== undefined && String(a).trim() !== String(b).trim()) die(`Заданы и --viewport ${a}, и --viewports ${b} — это один флаг, оставьте один`);
+  const raw = a ?? b; const list = String(raw ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!list.length) list.push(dflt);
+  if (list.length > 1) die(`perf меряет один экран за запуск, а задано ${list.length}: ${list.join(', ')}. Запустите по разу на экран: ${list.map((v) => `--viewport ${v}`).join(', затем ')} — итоги лягут в разные файлы (<out>/perf/<экран>-<сеть>-cpu<N>.json)`);
+  const r = resolveViewport(list[0]);
+  if (!r) die(`Неизвестный экран «${list[0]}». Есть: ${Object.keys(VIEWPORTS).join(', ')} или запись ШxВ@плотность, например 320x568@2`);
+  return r;
+}
+const [vpName, vp] = oneViewport('mobile');
+if (opt.cpu !== undefined && !(Number(opt.cpu) >= 1)) die(`--cpu ${opt.cpu}: нужно число от 1 (во сколько раз замедлить процессор)`);
 const cpu = opt.cpu === undefined ? (vp.isMobile ? 4 : 1) : Number(opt.cpu);
 const netName = opt.net || (vp.isMobile ? 'fast3g' : 'none');
 const NET = { none: null, fast3g: { latency: 150, downloadThroughput: 1.6e6 / 8, uploadThroughput: 750e3 / 8 }, slow4g: { latency: 100, downloadThroughput: 4e6 / 8, uploadThroughput: 3e6 / 8 } };
-if (!(netName in NET)) { console.error('Сеть: none, fast3g или slow4g'); process.exit(1); }
+if (!Object.prototype.hasOwnProperty.call(NET, netName)) die('Сеть: none, fast3g или slow4g');
 const runs = Math.max(1, Math.min(9, Number(opt.runs) || 1));
 const rounds = Math.max(5, Math.min(20, Number(opt.rounds) || 5));
 if (opt.rounds !== undefined && Number(opt.rounds) < 5) console.log(`--rounds ${opt.rounds}: меньше 5 раундов разброс не виден — беру 5`);

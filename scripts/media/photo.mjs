@@ -7,7 +7,7 @@
  *     license_url, attribution_required, attribution_text, credit_line,
  *     orig: {width,height}|null, variants: [{url,width,height,bytes?,mime?,heavy?,how}],
  *     template?: {url:'…{w}…', max_w, how}, hdr?: 'aic', preview_url,
- *     hotlink_only?, download_location?, raw_url?, needs_manual?, text, art?, flags:[] }
+ *     hotlink_only?, download_location?, raw_url?, unsplash_url?, needs_manual?, text, art?, flags:[] }
  *
  * Что проверено вживую 2026-09-23 и зашито здесь:
  *  - Commons: уменьшенные копии берутся с thumb.wikimedia.org (так их отдаёт и
@@ -386,10 +386,12 @@ async function unsplash(q, o) {
     items: free.map((r) => ({
       source: 'unsplash', id: r.id, title: r.alt_description || r.description || '', page_url: `${r.links?.html}?${utm}`,
       author: r.user?.name || '', author_url: `${r.user?.links?.html}?${utm}`,
-      license: 'Unsplash License', license_code: 'unsplash', license_url: 'https://unsplash.com/license', attribution_required: false,
-      attribution_text: `Photo by ${r.user?.name} on Unsplash (${r.links?.html})`,
+      license: 'Unsplash License', license_code: 'unsplash', license_url: 'https://unsplash.com/license',
+      /* правило API (не лицензии): подпись фотографа и Unsplash со ссылками и utm обязательна */
+      attribution_required: true, unsplash_url: `https://unsplash.com/?${utm}`,
+      attribution_text: `Photo by ${r.user?.name} on Unsplash (${r.user?.links?.html}?${utm}; https://unsplash.com/?${utm})`,
       orig: { width: r.width, height: r.height },
-      template: { url: `${r.urls.raw}&w={w}&q=80&fm=jpg&fit=max`, max_w: r.width, how: 'unsplash' },
+      template: { url: `${r.urls.raw}${r.urls.raw.includes('?') ? '&' : '?'}w={w}&q=80&fm=jpg&fit=max`, max_w: r.width, how: 'unsplash' },
       raw_url: r.urls.raw, hotlink_only: true, download_location: r.links?.download_location,
       preview_url: r.urls.small, text: `${r.alt_description || ''} ${r.description || ''} ${(r.tags || []).map((t) => t.title).join(' ')}`,
     })),

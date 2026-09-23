@@ -69,10 +69,13 @@
  * по коробке при загрузке (так же и в пиксельных областях). Если он только пропал, ушёл за экран или
  * стал невидим на месте (прозрачность 0, visibility:hidden) — WARN «пропал после прокрутки — проверить,
  * задумано ли», в shots.json вид области gone: подсказка «листайте ↓» прячется после первой
- * прокрутки нарочно, а остальные отличия пропавшего (класс, прозрачность) уже не видны; если в нём ссылки
- * или кнопки, это сказано. Удалённый узел, на месте которого живой компонент поставил новый (карусель,
- * которая рисует только текущий слайд; «бегущие слова» через replaceWith), — живое, не пропажа: бывший
- * родитель ещё на странице и он или предок до 5 уровней (кроме body и html) менялся при наблюдении.
+ * прокрутки нарочно, а остальные отличия пропавшего (класс, прозрачность) уже не видны. Но пропавшая
+ * подписанная ссылка или кнопка (сама или внутри пропавшего: «Оставить заявку», пункты шапки, поле
+ * формы) — FAIL «пропала ссылка или кнопка первого экрана» (вид stuck, lost: true): это потеря
+ * управления; стрелка «↓» или значок без подписи (до 3 знаков) — подсказка, WARN. Удалённый узел,
+ * на месте которого живой компонент поставил новый (карусель, которая рисует только текущий слайд;
+ * «бегущие слова» через replaceWith), — живое, не пропажа: бывший родитель ещё на странице и он или
+ * предок до 5 уровней (кроме body и html) менялся при наблюдении.
  * Только проявилось (прозрачность 0 → 1, текст первого экрана виден лишь после прокрутки) — WARN
  * с вырезкой по коробкам; если проявление включил класс у предка (.hero.in), предок назван у потомка.
  * Без живого фона оценка та же: смена класса у контейнера без видимого следа, когда все видимые
@@ -85,6 +88,10 @@
  * Пропажу при возврате движение при загрузке объясняет, только если элемент уже тогда уходил сам:
  * пропал за эти 700 мс, сдвиг уносил его за край окна или прозрачность шла к 0. Вступление (проявление,
  * сдвиг внутрь, сдвиг коробки), после которого элемент пропал при прокрутке, — не «двигалось само».
+ * Предел: сверка состояния идёт в областях, где пиксели отличаются, и поверх живого холста, видео или
+ * iframe. Без них место, которое само менялось за эти 700 мс (вступление, растущий отступ), по пикселям
+ * не сравнивается вовсе, и пропажа в нём не видна: шапка, проявившаяся при загрузке и спрятанная
+ * прокруткой, без живого фона даёт OK.
  * Сравнение числами, с допуском на невидимое: сдвиг — угол коробки ушёл на 1 CSS px и больше
  * (остаток плавного параллакса в сотые пикселя — не отличие), цвет — канал на 4 из 255 или альфа
  * на 0,04, прозрачность — на 0,1.
@@ -98,10 +105,10 @@
  * Остальное — области, в которых перечисляются элементы и что у них изменилось (класс, цвет, прозрачность):
  *   FAIL «состояние не сбрасывается» — у того, что осталось на экране, изменились класс, цвет, фон,
  *        рамка, сдвиг или появился новый элемент (подсвеченный пункт меню, раскрытая шапка, всплывшее
- *        сообщение);
- *   WARN — только пропало или ушло за экран («пропал после прокрутки — проверить, задумано ли»), только
- *        проявление (прозрачность 0 → 1), только холст и видео, только то, что меняется само (карусель),
- *        или причина по стилям не видна (смотреть вырезку).
+ *        сообщение), или пропала подписанная ссылка или кнопка;
+ *   WARN — только пропало или ушло за экран без подписанных ссылок и кнопок («пропал после прокрутки —
+ *        проверить, задумано ли»), только проявление (прозрачность 0 → 1), только холст и видео, только
+ *        то, что меняется само (карусель), или причина по стилям не видна (смотреть вырезку).
  *
  * Движение (без --no-freeze): перед снимком при загрузке конечные анимации доигрываются, бесконечные
  * ставятся в фазу 0; перед прокруткой — freezeMotion (переходы отключаются). Иначе два снимка одной
@@ -117,17 +124,18 @@ import {
 } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict', 'help'] });
-/* -h — как --help: справка без побочных действий (ни папок, ни браузера) */
-if (opt.help || pos.includes('-h')) { console.log(HELP); process.exit(0); }
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict', 'help', 'h'] });
+/* -h и --h — как --help: справка без побочных действий (ни папок, ни браузера) */
+if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(`${msg}  (подробно: --help)`); process.exit(1); };
 /* сначала все проверки аргументов, потом папки: неверный флаг не оставляет пустую <run>/<tag> */
 if (!pos[0]) die('Нужен адрес: node shots.mjs <url> [--tag before|after] [--pages /,/about] [--viewports ...] [--with-320]');
 let base = null; try { base = new URL(pos[0]); } catch { /* ниже */ }
 if (!base || !/^(https?|file):$/.test(base.protocol)) die(`Неверный адрес «${pos[0]}»: нужен полный адрес — http://…, https://… или file:///…`);
-/* флаг со значением, но без значения (--out в конце строки, --tag --strict) */
-for (const k of ['out', 'tag', 'pages', 'viewports', 'viewport', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'return']) if (opt[k] === true) die(`--${k}: нужно значение`);
-const vpSpec = [opt.viewports, opt.viewport].filter((v) => v !== undefined && v !== '').join(',');
+/* флаг со значением, но без значения (--out в конце строки, --tag --strict) или с пустым (--out= молча
+   увёл бы снимки в общую папку прогонов, --viewports= — на экраны по умолчанию) */
+for (const k of ['out', 'tag', 'pages', 'viewports', 'viewport', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'return']) if (opt[k] === true || (typeof opt[k] === 'string' && !opt[k].trim())) die(`--${k}: нужно значение`);
+const vpSpec = [opt.viewports, opt.viewport].filter((v) => v !== undefined).join(',');
 const vpSeen = new Set();
 const viewports = pickViewports(vpSpec || undefined).filter(([n]) => !vpSeen.has(n) && vpSeen.add(n));
 if (!viewports.length) die('--viewports: пустой список экранов');
@@ -376,6 +384,19 @@ function stateDiffInPage() {
   /* в пропавшем есть ссылки или кнопки — чтобы у «пропал после прокрутки» было видно, что пропало управление */
   const CTL = 'a[href], button, input, select, textarea, [role=button], [role=link]';
   const hasCtl = (el) => { try { return el.matches(CTL) || !!el.querySelector(CTL); } catch { return false; } };
+  /* пропала подписанная ссылка или кнопка (сам элемент или потомок): кнопка «Оставить заявку», пункты
+     шапки, поле формы — это потеря управления, FAIL. Стрелка «↓» или значок без подписи (до 3 знаков) —
+     подсказка, как «листайте ↓», пропажа остаётся WARN. Возвращает подпись первой такой или '' */
+  const lostCtl = (el) => {
+    try {
+      for (const c of [...(el.matches(CTL) ? [el] : []), ...el.querySelectorAll(CTL)]) {
+        if (c.matches('input[type=hidden]')) continue;
+        if (/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName)) return sig(c);
+        const t = text(c); if (t.length > 3) return `«${t.slice(0, 24)}»`;
+      }
+    } catch { /* узел без matches */ }
+    return '';
+  };
   /* пропал не «только»: на его месте при загрузке теперь стоит видимый элемент, которого при загрузке не
      было (перерисовали с другим текстом, подменили блок), — это видимая подмена, не пропажа.
      Ищется в центре бывшей коробки: новый (не из known), не холст и не видео, видимый, перекрывает
@@ -394,17 +415,20 @@ function stateDiffInPage() {
   };
   /* чем объясняется отличие (общая часть explainInPage и maskedChangesInPage): подпись в конец списка
      отличий, живое ли оно и осталось ли «только пропало» (gone) — у пропавшего, на месте которого стоит
-     новый видимый элемент, это уже подмена, а не пропажа */
+     новый видимый элемент, это уже подмена, а не пропажа; у пропавшего с подписанной ссылкой или кнопкой
+     (lost) — потеря управления, тоже не «только пропало»: такое идёт в залипшее, FAIL */
   const fate = (el, a, res, isLive, known) => {
     const { gone, load, loadPart } = res;
-    if (load) return { extra: ['двигалось само при загрузке'], live: true, gone: !!gone };
+    if (load) return { extra: ['двигалось само при загрузке'], live: true, gone: !!gone, lost: false };
     const lg = liveGone(el, a);
     const nw = gone && !lg ? replacedBy(el, a, known) : null; const nwLive = !!nw && isLive(nw);
     const extra = loadPart.length ? [`(${loadPart.join(', ')} — двигалось само при загрузке)`] : [];
+    let lost = false;
     if (lg || nwLive) extra.push('узел заменён новым — компонент меняется сам');
     else if (nw) extra.push(`на его месте новый: ${sig(nw)} «${text(nw).slice(0, 24)}»`);
-    else if (gone && hasCtl(el)) extra.push('в нём ссылки или кнопки');
-    return { extra, live: isLive(el) || lg || nwLive, gone: !!gone && !nw };
+    else if (gone && hasCtl(el)) { const l = lostCtl(el); lost = !!l; extra.push(l ? `пропала ссылка или кнопка ${l}` : 'в нём ссылка или кнопка без подписи'); }
+    const live = isLive(el) || lg || nwLive;
+    return { extra, live, gone: !!gone && !nw && !lost, lost: lost && !live };
   };
   diffOf.snap = snap; diffOf.raw = raw; diffOf.pick = pick; diffOf.fate = fate;
   return diffOf;
@@ -506,7 +530,7 @@ function explainInPage(regions) {
       if (!d.length || (gone && a.o <= 0.05)) continue;
       /* удалён, а на месте — новый узел живого компонента: живое; новый, но не живой — подмена, не пропажа */
       const f = diffOf.fate(el, a, res, isLive, first);
-      raw.push({ el, added, removed, visual, sig: sig(el), text: txt(el), diffs: d.concat(f.extra), appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, left: !!gone, load, live: f.live });
+      raw.push({ el, added, removed, visual, sig: sig(el), text: txt(el), diffs: d.concat(f.extra), appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, left: !!gone, load, live: f.live });
     }
     swaps(raw);
     /* проявление, включённое классом у контейнера (.hero.in → h1 проявился): смена класса без видимого
@@ -575,7 +599,7 @@ function maskedChangesInPage(rects) {
     /* удалён, а на месте — новый узел живого компонента: живое; новый, но не живой — подмена, не пропажа
        (поверх живого места новый элемент иначе не виден: сверяются только элементы первого снимка) */
     const f = diffOf.fate(el, a, res, isLive, first);
-    raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: d.concat(why ? [`после смены класса у предка ${why}`] : [], f.extra), cause: why, appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, load, live: f.live, rect: clip(on ? r : was) });
+    raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: d.concat(why ? [`после смены класса у предка ${why}`] : [], f.extra), cause: why, appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, load, live: f.live, rect: clip(on ? r : was) });
   }
   swaps(raw);
   /* внешние: потомок залипшего не повторяется; потомок проявившегося — если и сам только проявился */
@@ -687,15 +711,17 @@ async function checkReturn(page, ctx, { file, cropFile }) {
     const real = e.changed.filter((c) => !c.appeared);
     /* залипло — видимое отличие стилей у того, что осталось на экране (класс, цвет, фон, рамка, сдвиг) или
        новый элемент. Только пропало или ушло за экран (display:none, удалён — остальные отличия у него уже
-       не видны) — отдельный вид «пропало», WARN: подсказка «листайте ↓» прячется после первой прокрутки нарочно */
+       не видны) — отдельный вид «пропало», WARN: подсказка «листайте ↓» прячется после первой прокрутки нарочно.
+       Пропавшая подписанная ссылка или кнопка (lost) — не «только пропало», а потеря управления: в залипшее */
     const stuck = real.filter((c) => !c.live && !c.swap && !c.gone);
     const gone = real.filter((c) => c.gone && !c.live && !c.swap);
     const kind = stuck.length || e.newEls.length ? 'stuck' : gone.length ? 'gone' : real.some((c) => c.live) || e.liveHits ? 'live' : real.length ? 'carousel' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
     /* в выводе (первые 4) — сначала залипшее, потом пропавшее, проявившееся, живое и переключение карусели */
-    return { ...g, kind, changed: e.changed.slice().sort((p, q) => rankChange(p) - rankChange(q)), top: e.top, media: e.media };
+    const lost = kind === 'stuck' && !e.newEls.length && stuck.every((c) => c.lost);
+    return { ...g, kind, ...(lost ? { lost } : {}), changed: e.changed.slice().sort((p, q) => rankChange(p) - rankChange(q)), top: e.top, media: e.media };
   });
   /* залипшее поверх живого места — отдельными областями по коробке элемента */
-  for (const c of maskedStuck.slice(0, 6)) regions.push({ ...c.rect, pixels: null, kind: 'stuck', masked: true, changed: [c], top: [], media: masked.media });
+  for (const c of maskedStuck.slice(0, 6)) regions.push({ ...c.rect, pixels: null, kind: 'stuck', ...(c.lost ? { lost: true } : {}), masked: true, changed: [c], top: [], media: masked.media });
   /* проявившееся и пропавшее поверх живого места — каждое одной областью по общей рамке их коробок */
   for (const [kind, list] of [['appeared', maskedAppeared], ['gone', maskedGone]]) {
     if (!list.length) continue;
@@ -716,7 +742,7 @@ function printReturn(label, st) {
   if (st.note) { console.log(`  WARN первый экран после ${label}: ${st.note}`); return; }
   console.log(`  ${st.verdict.padEnd(4)} ${st.verdict === 'FAIL' ? `состояние не сбрасывается (после ${label})` : `первый экран после ${label} отличается`}: ${st.share}% пикселей${st.crop ? `, вырезка ${st.crop}` : ''}${maskNote}`);
   for (const g of st.regions) {
-    const what = g.kind === 'stuck' ? (g.masked ? `залипло поверх живого места (${g.media.join(', ')}): по пикселям не видно, по стилям — да` : 'залипло') : g.kind === 'gone' ? `пропал после прокрутки — проверить, задумано ли${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.kind === 'live' ? 'меняется само (карусель, часы, вступление при загрузке) — не залипание' : g.kind === 'carousel' ? 'переключение между соседями (карусель, за наблюдение не сменилась) — не залипание, проверить вырезку' : g.kind === 'appeared' ? `проявилось только после прокрутки (при загрузке пусто)${g.masked ? `, поверх живого места (${g.media.join(', ')}) — по стилям` : ''}` : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
+    const what = g.kind === 'stuck' ? (g.lost ? `пропала ссылка или кнопка первого экрана и наверху не вернулась${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.masked ? `залипло поверх живого места (${g.media.join(', ')}): по пикселям не видно, по стилям — да` : 'залипло') : g.kind === 'gone' ? `пропал после прокрутки — проверить, задумано ли${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.kind === 'live' ? 'меняется само (карусель, часы, вступление при загрузке) — не залипание' : g.kind === 'carousel' ? 'переключение между соседями (карусель, за наблюдение не сменилась) — не залипание, проверить вырезку' : g.kind === 'appeared' ? `проявилось только после прокрутки (при загрузке пусто)${g.masked ? `, поверх живого места (${g.media.join(', ')}) — по стилям` : ''}` : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
     const list = g.changed.length ? g.changed.slice(0, 4).map((c) => `${c.sig}${c.text ? ` «${c.text}»` : ''}: ${c.diffs.join(', ')}`).join(' | ') : g.top.slice(0, 3).join(' | ');
     console.log(`       x${g.x} y${g.y} ${g.w}×${g.h}: ${what} — ${list}`);
   }

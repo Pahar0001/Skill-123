@@ -17,13 +17,18 @@ description: Автономная переработка существующе�
 Команды даны полным путём `node ~/.claude/skills/site-rework/scripts/…`: в
 Git Bash `~` раскрывается сам, в PowerShell 5.1 — нет, там писать
 `$HOME/.claude/skills/site-rework/scripts/…`. У каждого скрипта `--help`
-печатает все флаги.
+печатает все флаги и ничего не запускает; `-h` — то же у всех, включая
+`extract.mjs` и `verify.mjs` скилла design-reference. Экраны: у `discover` и `shots` `--viewport` и `--viewports`
+— синонимы, списком через запятую; `runtime`, `a11y`, `perf` и `taste`
+понимают оба, но экран за запуск один (список — ошибка); `texture` и
+`cliche` — только `--viewport` (списком), `--viewports` молча пропускают.
 
 **Папка прогона** без `--out` берётся из адреса проверяемой страницы, а не
-из журнала: `~/.claude/site-rework/runs/<slug адреса>` (в версии 83e9493 у
-любого `localhost` — одна общая `runs/localhost` без порта). Поэтому каждому скрипту передавать `--out
-<папка>` (у `cliche.mjs` — `--run <папка>`, у `cliche.mjs baseline` —
-`--out <файл.json>`); у `texture.mjs` `--out` — сама
+из журнала: `~/.claude/site-rework/runs/<slug адреса>`; у `localhost` и
+`127.0.0.1` порт входит в имя (`http://localhost:4177/` →
+`runs/localhost-4177`), у доменов — только нестандартный. Поэтому каждому
+скрипту передавать `--out <папка>` (у `cliche.mjs` — `--run <папка>`, у
+`cliche.mjs baseline` — `--out <файл.json>`); у `texture.mjs` `--out` — сама
 папка замера (`<папка>/texture`, для `compare` — `<папка>/texture-compare`).
 Иначе в режимах донора и зеркала протоколы по адресу сайта лягут в чужую
 папку, и `--evidence <папка>/runtime/<tag>.json` не найдётся.
@@ -159,7 +164,7 @@ node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка> 
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-scroll --scroll --canvas --motion --video --fullpage
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-menu --viewport mobile --scroll --click "<переключатель меню>" --shot menu
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-state --css --hover-all --nav     # автопроверки состояния, reference/qa.md
-node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag base            # телефон, медленная сеть — база для сравнения
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag base --runs 3   # телефон, медленная сеть — база: медиана трёх, как и на этапе 4
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag base-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag before --pages /,<другие страницы в задаче> --with-320
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json

@@ -51,19 +51,29 @@ YouTube помечены `youtube?` и стоят в конце) → Mixkit (п�
 страница выдачи на запрос, лицензия `videoFree` проверяется в pick,
 Restricted — отказ). Coverr, Videezy, Vecteezy, Freepik — не встраиваются.
 
-Ключи — бесплатная регистрация, в `~/.claude/site-rework/.env` (имена — в
-`.env.example`): `PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY` (и по желанию
-`UNSPLASH_APP_NAME`), `PIXABAY_API_KEY`, `SI_API_KEY` (Smithsonian в профиле
+Ключи — бесплатная регистрация, в `~/.claude/site-rework/.env` (образец —
+`~/.claude/site-rework/.env.example`, если он есть на машине: в git скилла его
+нет): `PEXELS_API_KEY`, `UNSPLASH_ACCESS_KEY` (и
+`UNSPLASH_APP_NAME` — имя приложения из кабинета Unsplash, идёт в utm ссылок
+подписи), `PIXABAY_API_KEY`, `SI_API_KEY` (Smithsonian в профиле
 `art`), `MEDIA_CONTACT` (контакт для User-Agent по правилам Wikimedia и AIC;
 личные данные сами не подставляются). Без ключей работают Commons, Mixkit,
 музеи кроме Smithsonian, Openverse. У Unsplash кадр не пережимается у себя:
-pick выдаёт разметку со ссылками `images.unsplash.com` по его правилам API.
+pick выдаёт разметку со ссылками `images.unsplash.com` по его правилам API,
+сообщает Unsplash о скачивании (`download_location`) и помечает подпись
+**обязательной**: лицензия Unsplash подписи не требует, а правила API требуют —
+имя автора и «Unsplash», обе ссылки с utm, рядом с кадром (лучше) или в общем
+блоке подписей (готовая строка — `media.mjs credits`). Файл, скачанный человеком на
+unsplash.com и заведённый через `import --license unsplash`, подписи не требует.
 
 Без ключей крупный кадр первого экрана — в основном Commons, видео — Commons
 (шумная выдача, чаще CC BY) и Mixkit поштучно; Openverse — только карточки.
-Если первому экрану или видео-петле этого мало, а `media.mjs doctor` пишет,
-что `PEXELS_API_KEY` не задан, — один раз попросить у пользователя
-бесплатный ключ (pexels.com/api → Your API Key) и положить в `.env`.
+`media.mjs doctor` перечисляет незаданные ключи отдельным блоком «WARN: не
+заданы ключи (N из 5) … — чем грозит»: по строке на ключ и подсказки, откуда
+тогда брать кадры. Итог OK — только когда ответили все пробы и заданы все
+пять ключей, иначе WARN; код 1 — только без `sharp`. Если первому экрану или
+видео-петле этого мало, а в блоке есть `PEXELS_API_KEY`, — один раз попросить
+у пользователя бесплатный ключ (pexels.com/api → Your API Key) и положить в `.env`.
 
 `MEDIA_CONTACT` не задан — `media.mjs` пишет WARN, но Commons и AIC всё
 равно запрашивает, с User-Agent без контакта, а политика Wikimedia контакт
@@ -129,7 +139,7 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
 - место под текст, если текст поверх: пустая зона, затемнение через переменную, не через «на глаз»;
 - вес: WebP/AVIF, `srcset` под 1x/2x, `loading="lazy"` всему ниже первого экрана, `width/height` заданы (иначе CLS);
 - **посмотреть глазами каждый**: стоковый кадр с чужой валютой, не тем блюдом, не той страной — хуже пустого места; кадры, противоречащие подписи, снимать;
-- лицензия и подпись: `credits.json` → `media.mjs credits` → `CREDITS.md` и строка в подвале, если нужна (CC BY/BY-SA — обязательно); чужие сайты — никогда.
+- лицензия и подпись: `credits.json` → `media.mjs credits` → `CREDITS.md` и строка в подвале, если нужна (CC BY/BY-SA и Unsplash из API — обязательно); чужие сайты — никогда.
 
 Промпт для генерации собирается из дизайн-системы: язык дизайна словами,
 палитра в hex, композиция и пропорция, где пусто под текст, чего не должно
@@ -169,6 +179,15 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
    зерна нет, число сдвигов «кипения» = число кадров донора. Разметка —
    последним элементом body: `<div class="grain-overlay" aria-hidden="true"></div>`.
    Отдельный элемент, а не `body::after`: чужой `body::after` не затирается.
+   Переменные — только группа `--grain-*`: это рецепт под свою плитку, его
+   и читает шаблон. После разведки этот блок уже стоит в конце
+   `design/site.tokens.css` (discover с `--no-design` его не пишет — некуда);
+   `--tokens` пишет его в указанный файл и
+   заменяет прежний блок между `/* texture:start */` и `/* texture:end */`,
+   а не дублирует. `--texture-opacity` и `--texture-blend` от `extract.mjs` —
+   сырой CSS слоя донора, справочно: с рецептом они расходятся (на «ХОЛСТе»
+   `--texture-opacity: 0.07` multiply, а `--grain-opacity: 0` — на снимках
+   это зерно не видно).
 4. **Сверка**: `texture.mjs compare <донор или его texture.json> <сайт>` → OK
    по всем экранам. Проверено: копия «ХОЛСТа» с шаблоном против
    streetwearbrands — σ 5.04/4.81 против 5.04/5.05, кипение 4×100 мс у обоих.

@@ -16,6 +16,12 @@ node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport de
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 ```
 
+Фактура в вёрстку — блок `--grain-*`, а не `--texture-*` из
+`donor.tokens.css` (это сырой CSS слоя донора, справочно). С `--no-design`
+discover блок не дописывает — его пишет `texture.mjs
+<папка>/donor/texture/texture.json --tokens <файл токенов сайта> --css
+<папка>/site/grain.css` (`reference/engines.md` → «Фактура»).
+
 Старую разведку донора из прошлого прогона — перезапустить: скрипты
 меняются. Медленный TLS (Tilda): скрипты сами повторяют переход; гонять
 по одному скрипту за раз.

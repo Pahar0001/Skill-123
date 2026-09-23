@@ -36,7 +36,7 @@
  *   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в
  *                      stdout вместо текста.
  *   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
- *   --help             эта справка.
+ *   --help, -h, --h    эта справка.
  *
  * Как сравнивается (исправление по аудиту A12):
  *   декоративные приёмы (режим length: надзаголовок, двоеточие в заголовках, бегущая строка,
@@ -158,7 +158,7 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
   --shot             снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche-<экран>.png
   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в stdout.
   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
-  --help             эта справка.
+  --help, -h, --h    эта справка.
 
 Пометки: есть у донора · НЕТ У ДОНОРА · размножено ×N · ЗАПРЕЩЁН пользователем · ВОПРОС пользователю.
 Сравнение: декоративные приёмы (length) — частота на 10 000 px страницы, «размножено» при > ×2;
@@ -762,7 +762,7 @@ if (isMain) {
   const die = (msg, code = 2) => { console.error(`FAIL  ${msg}`); process.exit(code); };
   const cmd = pos[0];
 
-  if (opt.help || opt.h) { console.log(HELP); process.exit(0); }
+  if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
   if (cmd === 'rules') {
     if (opt.json) { console.log(JSON.stringify({ rules: RULES, modes: MODES }, null, 1)); process.exit(0); }
     console.log('id                    вес  режим   приём');

@@ -104,9 +104,19 @@ export function saveCredit(dest, rec) {
   return list;
 }
 
-/** Нужна ли подпись на сайте: обязательно (CC BY/BY-SA), вежливо (стоки, музеи) или не нужна. */
+/** Подпись обязательна: CC BY/BY-SA и кадры Unsplash из API (правило API; старые записи без attribution_required — тоже). */
+export const mustCredit = (r) => !!r.attribution_required || !!(r.hotlink && /unsplash/.test(r.source || ''));
+
+/** Ссылка на Unsplash для подписи: из записи, иначе с тем же utm, что у ссылки на автора (правило API — utm на обеих). */
+export function unsplashLink(r, app = 'site_rework') {
+  if (r.unsplash_url) return r.unsplash_url;
+  const utm = (String(r.author_url || '').match(/\?utm_[^#]*/) || [''])[0];
+  return `https://unsplash.com/${utm || `?utm_source=${String(app).replace(/[^\w-]/g, '_')}&utm_medium=referral`}`;
+}
+
+/** Нужна ли подпись на сайте: обязательно (CC BY/BY-SA, Unsplash из API), вежливо (стоки, музеи) или не нужна. */
 export function creditNeed(rec) {
-  if (rec.attribution_required) return 'обязательна';
+  if (mustCredit(rec)) return 'обязательна';
   if (/^(unsplash|pexels|mixkit-free)$/.test(rec.license_code || '') || /unsplash|pexels|mixkit/.test(rec.source || '')) return 'по желанию (вежливо)';
   if (/^(met|aic|rijks|cleveland|smk|smithsonian)$/.test(rec.source || '')) return 'по желанию (музей просит)';
   return 'не нужна';
@@ -125,12 +135,12 @@ export function renderCreditsMd(list, { title = 'Фото и видео: авт�
     const who = r.author_url && r.author ? `[${mdCell(r.author)}](${r.author_url})` : mdCell(r.author || '—');
     lines.push(`| ${mdCell(r.name)} | ${mdCell(r.seen)} | ${mdCell(r.caption)} | ${who} | ${lic} | ${src} | ${creditNeed(r)} | ${mdCell(r.changes || '—')} |`);
   }
-  const must = list.filter((r) => r.attribution_required);
-  const polite = list.filter((r) => !r.attribution_required && creditNeed(r) !== 'не нужна');
+  const must = list.filter(mustCredit);
+  const polite = list.filter((r) => !mustCredit(r) && creditNeed(r) !== 'не нужна');
   lines.push('');
   if (must.length) {
     lines.push('## Обязательная подпись (до выкладки)', '');
-    for (const r of must) lines.push(`- ${r.attribution_text}${r.changes ? ` ${r.changes}` : ''}${r.share_alike ? ` ${r.kind === 'video' ? 'Изменённый ролик' : 'Изменённый кадр'} распространяется на тех же условиях (BY-SA).` : ''}`);
+    for (const r of must) lines.push(`- ${r.attribution_text}${r.changes && !r.hotlink ? ` ${r.changes}` : ''}${r.share_alike ? ` ${r.kind === 'video' ? 'Изменённый ролик' : 'Изменённый кадр'} распространяется на тех же условиях (BY-SA).` : ''}`);
     lines.push('');
   }
   if (polite.length) {
@@ -138,13 +148,13 @@ export function renderCreditsMd(list, { title = 'Фото и видео: авт�
     for (const r of polite) lines.push(`- ${r.attribution_text}`);
     lines.push('');
   }
-  if (list.some((r) => r.hotlink)) lines.push('Кадры Unsplash на сайте показываются по их ссылкам (images.unsplash.com) — так требуют правила API.', '');
+  if (list.some((r) => r.hotlink)) lines.push('Кадры Unsplash на сайте показываются по их ссылкам (images.unsplash.com) и подписываются: имя автора и «Unsplash» со ссылками (utm) — рядом с кадром (лучше) или в общем блоке подписей; так требуют правила API.', '');
   return lines.join('\n');
 }
 
 /** Вежливая строка для подвала (Pexels, Unsplash, музеи) — по желанию; null, если некого благодарить. */
 export function politeLine(list) {
-  const polite = list.filter((r) => !r.attribution_required && creditNeed(r) !== 'не нужна');
+  const polite = list.filter((r) => !mustCredit(r) && creditNeed(r) !== 'не нужна');
   if (!polite.length) return null;
   const by = new Map();
   for (const r of polite) {
@@ -160,10 +170,12 @@ export function politeLine(list) {
 
 /** Строка для подвала: только если есть обязательная подпись; иначе null. */
 export function footerLine(list) {
-  const must = list.filter((r) => r.attribution_required);
+  const must = list.filter(mustCredit);
   if (!must.length) return null;
   /* CC BY: название, автор, источник (ссылка на страницу), лицензия, что изменено; BY-SA — ещё условие для изменённого */
   const items = must.map((r) => {
+    /* Unsplash по API: автор и Unsplash со ссылками (utm) — правило API; лицензию и «изменено» не пишем */
+    if (r.hotlink) return `${r.author_url ? `<a href="${esc(r.author_url)}">${esc(r.author)}</a>` : esc(r.author)} / <a href="${esc(unsplashLink(r))}">Unsplash</a>`;
     const who = r.author_url ? `<a href="${esc(r.author_url)}">${esc(r.author)}</a>` : esc(r.author);
     const lic = r.license_url ? `<a href="${esc(r.license_url)}">${esc(r.license)}</a>` : esc(r.license);
     const title = r.title ? (r.page_url ? `«<a href="${esc(r.page_url)}">${esc(r.title)}</a>» — ` : `«${esc(r.title)}» — `) : '';

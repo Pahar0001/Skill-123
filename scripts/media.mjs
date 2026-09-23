@@ -68,7 +68,8 @@
  *
  *   node media.mjs credits <папка картинок сайта> [--md [<файл>]]
  *     таблица авторов и лицензий (--md — записать CREDITS.md), строка для
- *     подвала: обязательная (CC BY/BY-SA) или вежливая (Pexels, Unsplash, музеи).
+ *     подвала: обязательная (CC BY/BY-SA, Unsplash из API) или вежливая (Pexels,
+ *     Unsplash через import, музеи).
  *
  *   Видео (--kind video): источники pexels → pixabay (ключи) → commons → mixkit (одна
  *     страница выдачи на запрос, лицензия videoFree проверяется в pick). По умолчанию
@@ -83,7 +84,8 @@
  *
  * Ключи: окружение или ~/.claude/site-rework/.env (образец — .env.example рядом):
  * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT
- * (UNSPLASH_APP_NAME — по желанию). Без ключа источник пропускается.
+ * (UNSPLASH_APP_NAME — имя приложения из кабинета Unsplash, идёт в utm ссылок подписи;
+ * без него — site_rework, doctor предупреждает). Без ключа источник пропускается.
  * MEDIA_CONTACT — контакт для User-Agent (Wikimedia, AIC); личные данные не подставляются.
  * Сетевые сбои — временные: «повторить позже». Кэш: MEDIA_CACHE или ~/.claude/site-rework/cache
  * (ответы API, исходники и петли роликов). Проверка сбоя имён: MEDIA_TEST_DNS_FAIL="хост,dns:хост2"
@@ -100,7 +102,7 @@ import { loadSharp, getFfmpeg, parseArgs, ensureDir } from './lib.mjs';
 import * as net from './media/net.mjs';
 import { SOURCES, PROFILES, chooseFile, flagsFor, headersFor, ORIENT } from './media/photo.mjs';
 import { ROLES, MAX_GRAIN, makePreview, makeMosaic, hamming, buildSheets, processPhoto, applyLook, unsplashMarkup, cssLook, slugify, kb, mb, parseLook, parseRatio, orientedSize, headerDims } from './media/process.mjs';
-import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit, readCredits, renderCreditsMd, footerLine, politeLine, creditNeed } from './media/manifest.mjs';
+import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit, readCredits, renderCreditsMd, footerLine, politeLine, creditNeed, unsplashLink } from './media/manifest.mjs';
 
 /* Значения флагов берутся «как у всех»: следующий аргумент, если он не похож на
    другой флаг. Поэтому `--seen --ok-flags` не съест --ok-flags как описание. */
@@ -214,6 +216,9 @@ async function cmdDoctor() {
     log(`  ${ok ? 'OK  ' : 'WARN'} ${k.padEnd(20)} ${ok ? 'задан' : net.key(k) ? 'задан, но пуст без скобок и переводов строк' : 'не задан'} — ${uses[k]}`);
   }
   log(`  User-Agent: ${net.contact() ? 'с контактом из MEDIA_CONTACT' : net.userAgent()}`);
+  /* utm_source по правилам API — имя приложения; без него подпись уходит с site_rework */
+  const noApp = !!net.key('UNSPLASH_ACCESS_KEY') && !net.key('UNSPLASH_APP_NAME');
+  if (noApp) log('  WARN UNSPLASH_APP_NAME    не задан — в ссылках подписи Unsplash utm_source=site_rework, а правила API ждут имя вашего приложения (кабинет Unsplash → Your apps)');
 
   const sharp = loadSharp();
   log(`\nsharp: ${sharp ? `OK ${sharp.versions?.sharp || ''} (libvips ${sharp.versions?.vips || '?'})` : 'FAIL не найден — npm i sharp --prefix ~/.claude/site-rework'}`);
@@ -255,7 +260,9 @@ async function cmdDoctor() {
     if (!has('PEXELS_API_KEY') && !has('UNSPLASH_ACCESS_KEY')) log('  → фото на первый экран — в основном Commons (CC0 из раннего Unsplash); Openverse — только карточки.');
     if (!has('PEXELS_API_KEY') && !has('PIXABAY_API_KEY')) log('  → видео-петли — только Commons (шумная выдача, чаще CC BY) и Mixkit поштучно; нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
     if (!has('MEDIA_CONTACT')) log('  → до поиска на Commons и в AIC спросить у пользователя контакт (адрес сайта студии или рабочую почту) и записать MEDIA_CONTACT=… в ~/.claude/site-rework/.env; почту из git или профиля самому не брать.');
-    log(`  Ключи кладутся в ${net.ENV_FILE} (образец — ${path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.env.example')}) или в окружение; без ключа источник пропускается, остальные работают.`);
+    /* Образец лежит рядом с .env (~/.claude/site-rework/.env.example), не в папке скилла; нет файла — путь не печатаем. */
+    const sample = path.join(net.HOME_DIR, '.env.example');
+    log(`  Ключи кладутся в ${net.ENV_FILE}${fs.existsSync(sample) ? ` (образец — ${sample})` : ''} или в окружение; без ключа источник пропускается, остальные работают.`);
   }
 
   const parts = [];
@@ -264,6 +271,7 @@ async function cmdDoctor() {
     const what = [missing.some((k) => k !== 'MEDIA_CONTACT') ? 'часть источников недоступна' : '', missing.includes('MEDIA_CONTACT') ? 'Commons и AIC идут без контакта в User-Agent (спросить контакт у пользователя)' : ''].filter(Boolean).join(', ');
     parts.push(`${warn ? '' : 'пробы ответили, но '}не заданы ключи: ${missing.join(', ')} — ${what}`);
   }
+  if (noApp) parts.push('UNSPLASH_APP_NAME не задан (utm_source=site_rework)');
   log(`\n${!sharp ? 'FAIL: нет sharp.' : parts.length ? `WARN: ${parts.join('; ')}.` : 'OK: все пробы ответили, все ключи заданы.'}`);
   if (!sharp) process.exit(1);
 }
@@ -568,7 +576,8 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
 function printTail(rec, markup, extraNotes = [], dest = '', warnings = []) {
   log(`\nРазметка:\n${markup}`);
   for (const nte of extraNotes) log(nte);
-  log(`\nПодпись на сайте: ${rec.credit_need}${rec.attribution_text ? `\n  ${rec.attribution_text}${rec.attribution_required ? ` ${rec.changes}` : ''}` : ''}`);
+  log(`\nПодпись на сайте: ${rec.credit_need}${rec.attribution_text ? `\n  ${rec.attribution_text}${rec.attribution_required && !rec.hotlink ? ` ${rec.changes}` : ''}` : ''}`);
+  if (rec.hotlink) log('  Правило API Unsplash: подписать кадр — имя автора и «Unsplash», обе ссылки с utm, рядом с кадром (лучше) или в общем блоке подписей; готовая строка — `media.mjs credits`.');
   if (rec.art) log(`  Произведение из общественного достояния (${rec.art.term || 'срок проверен'}): подписывать настоящими автором и названием, как иллюстрацию — не как товар и не под вымышленным именем.`);
   log(`  credits.json обновлён: ${path.join(dest, 'credits.json')}`);
   log('После вставки: открыть снимок страницы глазами (кадр на месте, текст поверх читается, подпись не противоречит кадру) и сверить с `media.mjs credits`.');
@@ -618,7 +627,8 @@ async function cmdPick() {
     const rec = {
       name: o.name, kind: 'photo', role, source: c.source, source_id: c.id, title: c.title || '', page_url: c.page_url, file_url: c.raw_url,
       author: c.author, author_url: c.author_url, license: c.license, license_code: c.license_code, license_url: c.license_url,
-      attribution_required: false, attribution_text: c.attribution_text, changes: 'Изменено: нет (показ по ссылкам images.unsplash.com с параметрами размера).',
+      attribution_required: true, attribution_text: c.attribution_text, unsplash_url: unsplashLink(c, net.key('UNSPLASH_APP_NAME') || 'site_rework'),
+      changes: 'Изменено: нет (показ по ссылкам images.unsplash.com с параметрами размера).',
       seen: o.seen, caption: o.caption, flags: c.flags || [], ok_flags: !!opt['ok-flags'], original: c.orig, files: [], urls: u.urls,
       look: { look: o.look, contrast: o.contrast, grain: o.grain }, hotlink: true, query: m.query, date: today(),
     };
@@ -770,12 +780,12 @@ function cmdCredits() {
   const md = renderCreditsMd(list);
   log(md);
   const foot = footerLine(list); const polite = politeLine(list);
-  if (foot) log(`Строка для подвала (подпись ОБЯЗАТЕЛЬНА, поставить до выкладки):\n${foot}`);
+  if (foot) log(`Строка для подвала (подпись ОБЯЗАТЕЛЬНА, поставить до выкладки):\n${foot}${polite ? `\nВежливая строка — по желанию, можно в тот же блок:\n${polite}` : ''}`);
   else log(`Обязательной подписи нет.${polite ? ` Вежливая строка — по желанию:\n${polite}` : ''}`);
   if (opt.md) {
     const f = opt.md === true ? path.join(dest, 'CREDITS.md') : path.resolve(String(opt.md));
     ensureDir(path.dirname(f));
-    const tail = foot ? `\n## Строка для подвала (обязательно)\n\n\`\`\`html\n${foot}\n\`\`\`\n` : polite ? `\n## Строка для подвала (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : '';
+    const tail = foot ? `\n## Строка для подвала (обязательно)\n\n\`\`\`html\n${foot}\n\`\`\`\n${polite ? `\n## Вежливая строка (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : ''}` : polite ? `\n## Строка для подвала (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : '';
     fs.writeFileSync(f, md + tail);
     log(`\nЗаписано: ${f}`);
   }
