@@ -30,6 +30,9 @@
  * текст, которого на экране нет: центр за краем предка с overflow ≠ visible (слайд за краем,
  * заглушка Tilda за коробкой artboard). Текст, перекрытый чужим непрозрачным блоком в момент
  * снимка или ушедший за окно, не мерится, но и не считается OK: WARN со списком («смотреть глазами»).
+ * Окно здесь — видимая область (visualViewport): снимок — это она; вырезка фона считается от её
+ * смещения и ширины (у страницы без meta viewport на телефоне 1 CSS-пиксель на снимке — 0.8 точки,
+ * а не 2, и вырезка по координатам окна раскладки уходила за снимок — «пропущено» вместо замера).
  * Проверка перекрытия идёт через elementsFromPoint, а он не видит pointer-events:none — на время
  * проверки тексту ставится pointer-events:auto (частый .hero__content{pointer-events:none}).
  * Контраст считается у всего видимого текста; при больше 5000 текстовых элементов — первые 5000 и
@@ -43,6 +46,9 @@
  * forceInstantScroll): иначе при html{scroll-behavior:smooth} страница не доезжала, блоки
  * появления оставались скрытыми (на стенде было 2 из 21) и в проверку попадала часть текста и
  * заголовков. В выводе — сколько блоков с текстом было скрыто до прокрутки и сколько показано после.
+ * Низ страницы — её высота минус innerHeight (окно раскладки), а не высота экрана: у страницы без
+ * meta viewport на телефоне окно раскладки выше экрана (2121 px при экране 390×844), и от высоты
+ * экрана выходило ложное «до низа не доехали».
  *
  * Контраст с прозрачностью. Цвет текста с альфой (rgba) и opacity самого элемента и предков
  * смешиваются с фоном так, как их складывает браузер (группы прозрачности по цепочке предков),
@@ -70,18 +76,44 @@
  * свой цвет или картинка, иначе крупная (от половины площади) картинка или блок с фоном внутри,
  * иначе «фон страницы». Секций с другим фоном нет — одна высота посередине страницы (сайт мог сменить
  * шапку после прокрутки). На каждой высоте — пауза и ожидание переходов (сайт перекрашивает шапку по
- * прокрутке), цвет текста читается заново, текст прячется, и снимок окна даёт фон под его строками
- * (коробки строк текста, а не всего элемента: значок рядом с подписью не в счёт); худшие 10 %
- * пикселей против нормы AA, зерно учитывается как выше. Провал — FAIL с высотой и секцией:
+ * прокрутке), цвет текста читается заново, весь текст страницы прячется (и текст секции, проезжающий
+ * под прозрачной шапкой: фон — это подложки и картинки, а не чужие буквы), и снимок окна даёт фон под
+ * строками (коробки строк текста, а не всего элемента: значок рядом с подписью не в счёт; часть
+ * строки за краем блока с overflow ≠ visible — многоточие — тоже). Снимок окна — это видимая область
+ * (visualViewport), а не окно раскладки: у страницы без meta viewport на телефоне видимая область
+ * 980 px шириной, а не 390, а у страницы с контентом шире экрана при initial-scale=1 окно раскладки
+ * шире и выше видимой области (354×629 против 320×568). Коробки строк сдвигаются на смещение видимой
+ * области, масштаб — от её ширины; текст, центр которого вне неё, — «вне окна» (нижняя панель у низа
+ * окна раскладки на таком экране не видна), видимый текст, под которым на снимке нет ни одного
+ * пикселя, — «вне снимка»; оба — в «не мерились». Замер текста на картинке подводит к нему
+ * scrollIntoView, и на такой странице видимая область сдвигается внутри окна раскладки, а
+ * window.scrollTo этот сдвиг не сбрасывает: шапка на всех высотах оставалась «вне окна», и FAIL
+ * прозрачной шапки становился OK (мерилась нижняя панель, которую сдвиг показал). Поэтому перед
+ * каждой высотой и перед замером закреплённого текста на верху страницы видимая область
+ * возвращается на место (scrollIntoView корня; на обычной странице сдвига нет — ничего не
+ * делается). Худшие 10 %
+ * пикселей против нормы AA, зерно учитывается как выше. Шапка с mix-blend-mode (difference —
+ * «белый текст, который над светлым становится чёрным») мерится смешанным цветом: multiply, screen,
+ * overlay, hard-light, darken, lighten, difference, exclusion, color-dodge, color-burn считаются по
+ * формулам смешения, остальные режимы не мерятся («смешение цвета»). Провал — FAIL с высотой и секцией:
  * «на 1840 px меню nav.menu над секцией section#catalog «Каталог» (фон под текстом светлый): a «Каталог» #FFFFFF 16px
- * — 1.07:1». К высотам подъезжают сверху (прокрутка вниз); если часть текста на высоте спрятана или
- * за окном, — ещё раз снизу: шапка, которая прячется при прокрутке вниз, видна при прокрутке вверх
+ * — 1.07:1». К высотам подъезжают сверху (прокрутка вниз); если часть текста на высоте спрятана, за
+ * окном или обрезана, — ещё раз снизу: шапка, которая прячется при прокрутке вниз, видна при прокрутке вверх
  * (в выводе «прокрутка вверх»). Текст, который и так спрятан, за окном (sticky уехал со своим
- * блоком) или перекрыт другим блоком, на этой высоте не мерится — в выводе сколько таких; ни
- * одного замера — WARN «смотреть глазами». Прокручивается не документ, а блок во весь экран —
- * секции ищутся в нём. Берётся до 40 элементов (больше — сначала мелкие блоки: шапка и меню раньше
- * закреплённых секций, и не больше трёх одинаковых). Закреплённый текст ищется наверху и на высоте
- * одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
+ * блоком), перекрыт другим блоком или обрезан предком (закрытое выпадающее меню: max-height 0 и
+ * overflow hidden, clip-path — в точке текста браузер его не рисует), на этой высоте не мерится — в
+ * выводе сколько таких; текст, центр которого уже при поиске за краем предка с overflow ≠ visible,
+ * в список не берётся вовсе. Ни одного замера — WARN «смотреть глазами». Прокручивается не документ,
+ * а блок во весь экран — секции ищутся в нём. Берётся до 40 элементов (больше — сначала мелкие
+ * блоки: шапка и меню раньше закреплённых секций, и не больше трёх одинаковых). Закреплённый текст
+ * ищется наверху и на высоте одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
+ *
+ * Строгий CSP. Свои стили (текст прозрачным на время снимка фона, пробы зерна) вставляются элементом
+ * <style>; если CSP страницы (style-src без 'unsafe-inline') его не применил — сконструированной
+ * таблицей стилей (document.adoptedStyleSheets), на которую CSP не распространяется. Сама страница
+ * при этом не меняется: CSP для вкладки не отключается. Не вышло и так — проверка, которой нужен
+ * стиль, получает WARN «не измерен — CSP запрещает вставку стиля», прогон доходит до конца и пишет
+ * протокол.
  *
  * Мелкий текст: видимый текст кеглем меньше 12 px — WARN, меньше 10 px — FAIL (подписи вроде
  * «не обязательно» 9 px читать трудно, особенно на телефоне). Скрытый для глаз текст
@@ -110,7 +142,7 @@ import { findTextureLayers } from './texture.mjs';
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'no-grain', 'strict'], values: ['viewport', 'viewports', 'out', 'tag'] });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
-if (opt.help || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
+if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
 for (const k of ['viewport', 'viewports', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)');
@@ -135,6 +167,44 @@ const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'a11y'));
 const tag = opt.tag || vpName;
 const sharp = loadSharp();
 const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, vis: VISIBLE_FN, hexc: HEX_FN };
+
+/* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
+
+/* <style> с ключом data-rw; если CSP страницы (style-src без 'unsafe-inline') его не применил — у
+   такого элемента нет sheet, — сконструированная таблица в document.adoptedStyleSheets: CSP на неё не
+   распространяется. Повторный вызов с тем же ключом заменяет стиль. Возвращает способ или null */
+function cssAddInPage({ key, css }) {
+  const drop = () => {
+    const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
+    const sh = window.__rwSheets && window.__rwSheets[key];
+    if (sh) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sh); delete window.__rwSheets[key]; }
+  };
+  drop();
+  const st = document.createElement('style'); st.setAttribute('data-rw', key); st.textContent = css;
+  (document.head || document.documentElement).appendChild(st);
+  if (st.sheet) return 'style';
+  st.remove();
+  try {
+    const sh = new CSSStyleSheet(); sh.replaceSync(css);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh];
+    (window.__rwSheets = window.__rwSheets || {})[key] = sh;
+    return 'adopted';
+  } catch { return null; }
+}
+function cssRemoveInPage({ key }) {
+  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
+  const sh = window.__rwSheets && window.__rwSheets[key];
+  if (sh) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sh); delete window.__rwSheets[key]; }
+}
+const CSP_NO_STYLE = 'CSP запрещает вставку стиля';
+/* не вставился ни так, ни так — ошибка с текстом CSP_NO_STYLE: проверка, которой нужен стиль, пишет
+   WARN «не измерен — CSP запрещает вставку стиля» */
+async function addCss(page, key, css) {
+  const how = await page.evaluate(cssAddInPage, { key, css });
+  if (!how) throw new Error(CSP_NO_STYLE);
+  return how;
+}
+const removeCss = (page, key) => page.evaluate(cssRemoveInPage, { key });
 
 /* ---------- функции страницы (свободные переменные sig, eff, vis, hexc — из lib.mjs) ---------- */
 
@@ -312,6 +382,16 @@ function fixedTextInPage({ limit }) {
     if (host.tagName === 'FOOTER' || /foot|bottom/i.test(c)) return 'нижняя панель';
     return 'закреплённый блок';
   };
+  /* центр за краем предка с overflow ≠ visible (закрытое выпадающее меню: max-height 0 и overflow
+     hidden) — на экране текста нет; как clipped в domInPage */
+  const clipped = (el, cx, cy) => {
+    for (let n = el.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.overflowX !== 'visible' || s.overflowY !== 'visible') { const b = n.getBoundingClientRect(); if (cx < b.left - 1 || cx > b.right + 1 || cy < b.top - 1 || cy > b.bottom + 1) return true; }
+      if (s.position === 'fixed') break;
+    }
+    return false;
+  };
   const seen = new Set(); const found = [];
   for (const h of hosts) {
     for (const el of [h, ...h.querySelectorAll('*')]) {
@@ -320,6 +400,7 @@ function fixedTextInPage({ limit }) {
       const r = el.getBoundingClientRect(); if (r.width <= 2 || r.height <= 2) continue; /* sr-only */
       const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
       if (cx < 0 || cy < 0 || cx > vw || cy > vh) continue; /* закрытое меню за краем окна */
+      if (clipped(el, cx, cy)) continue;
       const host = hostOf(el); const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
       let band = cy;
       if (hs.position === 'sticky') { if (hs.top !== 'auto') band = parseFloat(hs.top) + (cy - hr.top); else if (hs.bottom !== 'auto') band = vh - parseFloat(hs.bottom) - (hr.bottom - cy); }
@@ -391,36 +472,91 @@ function fixedStateInPage({ ids }) {
   const at = Math.round(sc ? sc.scrollTop : scrollY);
   const sg = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.classList.length ? '.' + [...n.classList].slice(0, 2).join('.') : '');
   const secs = [...document.querySelectorAll('[data-rw-sec]')];
+  /* видимая область (visualViewport): снимок окна — это она, а не окно раскладки. Коробки строк — в
+     координатах окна раскладки; у страницы без meta viewport (или с width=1000) на телефоне видимая
+     область 980–1000 px шириной, а не 390, а у страницы с контентом шире экрана при initial-scale=1
+     окно раскладки шире и выше видимой области (354×629 против 320×568) — нижняя панель у его низа
+     на снимок не попадает */
+  const vv = window.visualViewport;
+  const VX = vv ? vv.offsetLeft : 0, VY = vv ? vv.offsetTop : 0, VW = vv ? vv.width : innerWidth, VH = vv ? vv.height : innerHeight;
+  const inView = (x, y) => x >= VX && y >= VY && x <= VX + VW && y <= VY + VH;
   const out = ids.map((i) => {
     const el = document.querySelector(`[data-rw-fx="${i}"]`); if (!el) return { i, state: 'нет' };
     if (!vis(el)) return { i, state: 'скрыт' };
-    const rects = [];
+    /* коробки строк тянутся на всю длину текста, и за край блока с overflow ≠ visible (многоточие,
+       max-width) — там букв нет, на снимке под ними страница за плашкой. Коробки обрезаются по самому
+       элементу и предкам с overflow; на absolute/fixed цепочка кончается (предки выше его не режут) */
+    const cb = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity };
+    for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      if (s.display !== 'inline' && s.display !== 'contents' && (s.overflowX !== 'visible' || s.overflowY !== 'visible')) {
+        const q = n.getBoundingClientRect();
+        if (s.overflowX !== 'visible') { cb.l = Math.max(cb.l, q.left); cb.r = Math.min(cb.r, q.right); }
+        if (s.overflowY !== 'visible') { cb.t = Math.max(cb.t, q.top); cb.b = Math.min(cb.b, q.bottom); }
+      }
+      if (s.position === 'fixed' || s.position === 'absolute') break;
+    }
+    const rects = []; let raw = 0;
     for (const n of el.childNodes) {
       if (n.nodeType !== 3 || n.textContent.trim().length < 2) continue;
       const rg = document.createRange(); rg.selectNodeContents(n);
-      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) rects.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+      for (const r0 of rg.getClientRects()) {
+        if (r0.width <= 1 || r0.height <= 1) continue; raw++;
+        const x0 = Math.max(r0.left, cb.l), y0 = Math.max(r0.top, cb.t), x1 = Math.min(r0.right, cb.r), y1 = Math.min(r0.bottom, cb.b);
+        if (x1 - x0 > 1 && y1 - y0 > 1) rects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      }
     }
-    if (!rects.length) return { i, state: 'скрыт' };
+    if (!raw) return { i, state: 'скрыт' };
+    if (!rects.length) return { i, state: 'обрезан' };
     const l = Math.min(...rects.map((r) => r.x)), t = Math.min(...rects.map((r) => r.y)), rr = Math.max(...rects.map((r) => r.x + r.w)), b = Math.max(...rects.map((r) => r.y + r.h));
     const cx = (l + rr) / 2, cy = (t + b) / 2;
-    if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return { i, state: 'вне окна' };
-    el.classList.add('rw-pe-fx');
+    if (!inView(cx, cy)) return { i, state: 'вне окна' };
+    /* точка проверки — середина первой строки в видимой области (середина блока из двух строк может
+       прийтись на просвет между ними). pointer-events у текста на время проверки — auto инлайном с
+       !important (перебивает и правило сайта с !important): elementsFromPoint не видит pointer-events: none */
+    const hr = rects.find((r) => inView(r.x + r.w / 2, r.y + r.h / 2)) || rects[0];
+    const hx = hr.x + hr.w / 2, hy = hr.y + hr.h / 2;
+    const pe = [el.style.getPropertyValue('pointer-events'), el.style.getPropertyPriority('pointer-events')];
+    el.style.setProperty('pointer-events', 'auto', 'important');
+    let hit = false;
     try {
-      for (const n of document.elementsFromPoint(cx, cy)) {
-        if (n === el || el.contains(n) || n.contains(el)) break;
+      for (const n of document.elementsFromPoint(hx, hy)) {
+        if (n === el || el.contains(n)) { hit = true; break; }
+        /* предок нашёлся раньше самого текста — в этой точке текст не нарисован: обрезан предком
+           (overflow, clip-path), на снимке его нет */
+        if (n.contains(el)) break;
         const s = getComputedStyle(n); const c = hexc(s.backgroundColor); const a = c ? (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) : 0;
         if (/^(IMG|VIDEO|CANVAS|IFRAME)$/.test(n.tagName) || s.backgroundImage !== 'none' || a >= 0.99) return { i, state: 'перекрыт', by: sg(n) };
       }
-    } finally { el.classList.remove('rw-pe-fx'); }
+    } finally { if (pe[0]) el.style.setProperty('pointer-events', pe[0], pe[1]); else el.style.removeProperty('pointer-events'); }
+    if (!hit) return { i, state: 'обрезан' };
+    /* смешение с фоном (mix-blend-mode у самого текста или предка): текст рисуется смешанным цветом */
+    let blend = 'normal';
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const m = getComputedStyle(n).mixBlendMode; if (m && m !== 'normal') { blend = m; break; } }
     const s = getComputedStyle(el); const fill = s.webkitTextFillColor; const c = hexc(fill && fill !== s.color ? fill : s.color);
     if (!c) return { i, state: 'прозрачный цвет' };
     const fa = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
     let sec = null; for (const n of secs) { const r = n.getBoundingClientRect(); if (cy >= r.top && cy < r.bottom && cx >= r.left && cx <= r.right) sec = Number(n.getAttribute('data-rw-sec')); }
     const size = parseFloat(s.fontSize);
-    return { i, state: 'виден', fg: { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) }, hex: c.slice(0, 7), alpha: Math.min(1, fa * eff(el)), size, need: size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5, rects, sec };
+    return { i, state: 'виден', fg: { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) }, hex: c.slice(0, 7), alpha: Math.min(1, fa * eff(el)), size, need: size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5, rects, sec, blend };
   });
-  return { at, items: out };
+  /* iw — ширина видимой области в CSS-пикселях (масштаб снимка считается от неё), ox, oy — её смещение
+     в окне раскладки (на него сдвигаются коробки строк перед выборкой пикселей) */
+  return { at, iw: VW, ox: VX, oy: VY, items: out };
 }
+
+/* видимая область на место. scrollIntoView (замер текста на картинке) на странице с контентом шире
+   экрана сдвигает видимую область внутри окна раскладки (visualViewport.offsetLeft/offsetTop: 390,516 на
+   телефоне), а window.scrollTo — и lib.scrollToY — этот сдвиг не сбрасывают: на всех следующих высотах
+   шапка выходила «вне окна». Сбрасывает его scrollIntoView корня (заодно scrollX и scrollY — в 0).
+   Сдвига нет и вбок не прокручено (обычная страница) — ничего не делает: прокрутка прежняя */
+function resetViewInPage() {
+  const vv = window.visualViewport;
+  const need = (vv && (Math.abs(vv.offsetLeft) > 0.5 || Math.abs(vv.offsetTop) > 0.5)) || Math.abs(scrollX) > 0.5;
+  if (need) document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+  return need;
+}
+const resetView = (page) => page.evaluate(resetViewInPage).catch(() => false);
 
 /* ---------- закреплённый текст на прокрутке: высоты и замер ---------- */
 const FX_MAX_POS = 8, FX_LIMIT = 40;
@@ -469,6 +605,15 @@ async function fixedOnScroll(page, map) {
   const lumRgb = (r, g, b) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
   const f1 = (pts, c) => (c <= 128 ? pts[0] + (pts[1] - pts[0]) * c / 128 : pts[1] + (pts[2] - pts[1]) * (c - 128) / 127);
   const r2 = (v) => Math.round(v * 100) / 100;
+  /* mix-blend-mode текста (каналы 0…1: b — фон под текстом, s — цвет текста); остальные режимы не мерятся */
+  const BLEND = {
+    multiply: (b, c) => b * c, screen: (b, c) => b + c - b * c,
+    overlay: (b, c) => (b <= 0.5 ? 2 * b * c : 1 - 2 * (1 - b) * (1 - c)), 'hard-light': (b, c) => (c <= 0.5 ? 2 * b * c : 1 - 2 * (1 - b) * (1 - c)),
+    darken: (b, c) => Math.min(b, c), lighten: (b, c) => Math.max(b, c), difference: (b, c) => Math.abs(b - c), exclusion: (b, c) => b + c - 2 * b * c,
+    'color-dodge': (b, c) => (b <= 0 ? 0 : c >= 1 ? 1 : Math.min(1, b / (1 - c))), 'color-burn': (b, c) => (b >= 1 ? 1 : c <= 0 ? 0 : 1 - Math.min(1, (1 - b) / c)),
+  };
+  /* замер текста на картинке перед этим мог сдвинуть видимую область (scrollIntoView) — на место */
+  await resetView(page);
   await scrollToY(page, 0); await sleep(400);
   const scan = await evaluateWith(page, sectionsInPage, null, DEPS);
   const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT }, DEPS);
@@ -478,18 +623,22 @@ async function fixedOnScroll(page, map) {
     b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length }, DEPS);
   }
   const items = [...a.items, ...b.items];
-  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'прозрачный цвет': 0, 'нет': 0 }, measured: 0, worst: null };
+  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'обрезан': 0, 'прозрачный цвет': 0, 'смешение цвета': 0, 'вне снимка': 0, 'нет': 0 }, measured: 0, worst: null };
   if (!items.length) return { ...out, none: true };
   if (!sharp) return { ...out, error: 'нет sharp — снимки фона не разобрать' };
   const bands = [...new Set(items.map((it) => Math.round((it.band - (scan.scTop || 0)) / 8) * 8))];
   let positions = pickPositions(bands, scan.sections, scan.maxScroll, FX_MAX_POS); out.how = 'секции с другим фоном';
   if (!positions.length && scan.maxScroll >= 1) { positions = [Math.round(scan.maxScroll / 2)]; out.how = 'секций с другим фоном нет — одна высота посередине'; }
   out.positions = positions;
-  await page.addStyleTag({ content: '.rw-hide-fx,.rw-hide-fx *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;transition:none!important}\n.rw-pe-fx,.rw-pe-fx *{pointer-events:auto!important}' });
+  /* на время снимка фона прячется весь текст страницы, а не только закреплённый: текст секции,
+     проезжающий под прозрачной шапкой, — не фон (иначе худшие 10 % пикселей — чужие буквы) */
+  await addCss(page, 'hide-fx', 'html.rw-hide-fx,html.rw-hide-fx *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important;transition:none!important}');
   const byIdx = new Map(items.map((it) => [it.idx, it]));
   const ids = items.map((it) => it.idx);
   const shownN = (st) => st.items.filter((s) => s.state === 'виден').length;
   const goTo = async (y, from) => {
+    /* сдвиг видимой области scrollToY не сбрасывает — иначе шапка «вне окна» на всех высотах */
+    await resetView(page);
     if (from != null) { await scrollToY(page, from); await sleep(200); }
     await scrollToY(page, y); await sleep(450); await settleAnimations(page, 1500);
     return evaluateWith(page, fixedStateInPage, { ids }, DEPS);
@@ -497,31 +646,39 @@ async function fixedOnScroll(page, map) {
   await scrollToY(page, 0); await sleep(300);
   for (const y of positions) {
     /* высоты по возрастанию — к каждой подъезжаем сверху (прокрутка вниз). Шапка, которая прячется при
-       прокрутке вниз, видна при прокрутке вверх — если часть текста спрятана или за окном, подъехать снизу */
+       прокрутке вниз, видна при прокрутке вверх — если часть текста спрятана, за окном или обрезана
+       (шапка уезжает вверх под overflow:hidden или clip-path обёртки), подъехать снизу */
     let st = await goTo(y); let approach = 'сверху';
-    if (st.items.some((s) => s.state === 'вне окна' || s.state === 'скрыт') && scan.maxScroll > 160) {
+    if (st.items.some((s) => s.state === 'вне окна' || s.state === 'скрыт' || s.state === 'обрезан') && scan.maxScroll > 160) {
       /* низ страницы: ниже подъехать некуда — встать на 60 px выше, подъехав от низа (прокрутка вверх;
          160 px уводили полосу из нужной секции) */
       const y2 = y < scan.maxScroll ? y : Math.max(1, y - 60);
       const n1 = shownN(st); const st2 = await goTo(y2, Math.min(scan.maxScroll, y2 + 160));
       if (shownN(st2) > n1) { st = st2; approach = 'снизу'; } else if (shownN(st2) < n1 || y2 !== y) st = await goTo(y, Math.max(0, y - 160));
     }
+    for (const s of st.items) if (s.state === 'виден' && s.blend && s.blend !== 'normal' && !BLEND[s.blend]) s.state = 'смешение цвета';
     const shown = st.items.filter((s) => s.state === 'виден');
     const res = { y, scrollY: st.at, approach, measured: 0, skipped: {} };
     for (const s of st.items) if (s.state !== 'виден') { out.skipped[s.state] = (out.skipped[s.state] || 0) + 1; res.skipped[s.state] = (res.skipped[s.state] || 0) + 1; }
     out.results.push(res);
     if (!shown.length) continue;
-    await page.evaluate((list) => { for (const i of list) { const el = document.querySelector(`[data-rw-fx="${i}"]`); if (el) el.classList.add('rw-hide-fx'); } }, shown.map((s) => s.i));
+    await page.evaluate(() => document.documentElement.classList.add('rw-hide-fx'));
     let buf;
-    try { await sleep(150); buf = await page.screenshot({ type: 'png' }); } finally { await page.evaluate(() => { for (const el of document.querySelectorAll('.rw-hide-fx')) el.classList.remove('rw-hide-fx'); }); }
+    try { await sleep(150); buf = await page.screenshot({ type: 'png' }); } finally { await page.evaluate(() => document.documentElement.classList.remove('rw-hide-fx')); }
     const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-    const k = info.width / vp.width;
+    /* снимок — видимая область: масштаб от её ширины, коробки строк (в координатах окна раскладки)
+       сдвигаются на её смещение */
+    const k = info.width / (st.iw || vp.width); const ox = st.ox || 0, oy = st.oy || 0;
     for (const s of shown) {
-      const px = sampleRects(data, info, s.rects, k); if (!px.length) continue;
+      const px = sampleRects(data, info, ox || oy ? s.rects.map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })) : s.rects, k);
+      /* видимый текст, под которым на снимке нет ни одного пикселя, — не молча мимо, а в «не мерились» */
+      if (!px.length) { out.skipped['вне снимка']++; res.skipped['вне снимка'] = (res.skipped['вне снимка'] || 0) + 1; continue; }
       const it = byIdx.get(s.i); const F = map ? { r: f1(map[0], s.fg.r), g: f1(map[1], s.fg.g), b: f1(map[2], s.fg.b) } : s.fg; const al = s.alpha;
       const ratios = []; const bgL = [];
+      /* цвет текста над пикселем фона: смешение (mix-blend-mode), затем альфа и opacity */
+      const bf = s.blend && s.blend !== 'normal' ? BLEND[s.blend] : null; const mix = (b, c) => (bf ? 255 * bf(b / 255, c / 255) : c);
       for (const [R, G, B] of px) {
-        const l = lumRgb(R, G, B); const fl = lumRgb(al * F.r + (1 - al) * R, al * F.g + (1 - al) * G, al * F.b + (1 - al) * B);
+        const l = lumRgb(R, G, B); const fl = lumRgb(al * mix(R, F.r) + (1 - al) * R, al * mix(G, F.g) + (1 - al) * G, al * mix(B, F.b) + (1 - al) * B);
         ratios.push((Math.max(l, fl) + 0.05) / (Math.min(l, fl) + 0.05)); bgL.push(l);
       }
       ratios.sort((x, z) => x - z); bgL.sort((x, z) => x - z);
@@ -529,7 +686,7 @@ async function fixedOnScroll(page, map) {
       const lo = bgL[Math.floor(bgL.length * 0.1)], mid = bgL[Math.floor(bgL.length / 2)], hi = bgL[Math.floor(bgL.length * 0.9)];
       const tone = (hi + 0.05) / (lo + 0.05) > 3 ? 'пёстрый' : mid >= 0.45 ? 'светлый' : mid <= 0.12 ? 'тёмный' : 'средний по яркости';
       const sec = s.sec != null ? scan.sections[s.sec] : null;
-      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
+      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), blend: bf ? s.blend : null, size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
       res.measured++; out.measured++;
       if (!out.worst || p10 / s.need < out.worst.p10 / out.worst.need) out.worst = rec;
       if (p10 < s.need) out.failures.push(rec);
@@ -548,7 +705,9 @@ async function grainMap(page) {
   await page.evaluate((ks) => { for (const k of ks) { const el = document.querySelector(`[data-rw-tex="${k}"]`); if (el) el.setAttribute('data-rw-grain', ''); } }, over.filter((L) => !L.pseudo).map((L) => L.k));
   const css =['html,body{background:var(--rw-probe)!important;background-image:none!important}', 'body *{visibility:hidden!important}']
     .concat(over.map((L) => (L.pseudo ? `[data-rw-tex-${L.pseudo.slice(2)}="${L.k}"]${L.pseudo}{visibility:visible!important}` : `[data-rw-tex="${L.k}"],[data-rw-tex="${L.k}"] *{visibility:visible!important}`))).join('\n');
-  await page.evaluate((c) => { const st = document.createElement('style'); st.setAttribute('data-rw', 'grain-probe'); st.textContent = c; document.head.appendChild(st); }, css);
+  /* при строгом CSP <style> молча не применялся, и «действие слоя» мерилось по снимкам самой страницы —
+     отображение выходило мусорным; теперь стиль переживает CSP, а не вставился — ошибка, WARN */
+  await addCss(page, 'grain-probe', css);
   const vpx = page.viewport(); const d = vpx.deviceScaleFactor || 1;
   const means = [];
   try {
@@ -563,7 +722,8 @@ async function grainMap(page) {
       means.push(sum.map((s) => Math.round(s / n * 100) / 100));
     }
   } finally {
-    await page.evaluate(() => { const st = document.querySelector('style[data-rw="grain-probe"]'); if (st) st.remove(); document.documentElement.style.removeProperty('--rw-probe'); });
+    await removeCss(page, 'grain-probe');
+    await page.evaluate(() => document.documentElement.style.removeProperty('--rw-probe'));
     await sleep(200);
   }
   const map = [0, 1, 2].map((ch) => [means[0][ch], means[1][ch], means[2][ch]]);
@@ -625,20 +785,32 @@ try {
   /* контраст на картинках и градиентах: прячем текст, снимаем фон за ним, считаем по пикселям */
   if (sharp && dom.contrast.imgList.length) {
     const lumRgb = (r, g, b) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
-    await page.addStyleTag({ content: '.rw-hide-text,.rw-hide-text *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}\n.rw-pe,.rw-pe *{pointer-events:auto!important}' });
-    for (const it of dom.contrast.imgList) {
+    /* строгий CSP: page.addStyleTag падал «Could not load style» и ронял весь прогон (код 1, без JSON) —
+       теперь стиль переживает CSP, а не вставился — WARN «не измерен», прогон идёт дальше */
+    let cssOk = true;
+    try { await addCss(page, 'img-hide', '.rw-hide-text,.rw-hide-text *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}\n.rw-pe,.rw-pe *{pointer-events:auto!important}'); } catch (e) { cssOk = false; imgContrast.error = String(e.message || e).slice(0, 200); }
+    for (const it of cssOk ? dom.contrast.imgList : []) {
       const h = await page.$(`[data-rw-imgbg="${it.idx}"]`); if (!h) { imgContrast.skipped++; continue; }
       try {
         /* виден ли текст: сверху в его центре должен лежать он сам (или потомок), а не чужой непрозрачный
            блок — иначе на снимке будет перекрывший его блок, а не фон текста. elementsFromPoint не видит
            элементов с pointer-events:none (частый .hero__content{pointer-events:none}) — на время проверки
            им ставится pointer-events:auto (класс rw-pe). Закреплённый текст мерится на верху страницы:
-           там его подложка и определялась (scrollIntoView его не двигает, а страницу оставил предыдущий). */
+           там его подложка и определялась (scrollIntoView его не двигает, а страницу оставил предыдущий).
+           Верх — и видимая область на месте (предыдущий scrollIntoView на странице шире экрана сдвинул её,
+           scrollTo сдвиг не сбрасывает — нижняя панель выходила «вне окна»), и прокручиваемый блок во весь
+           экран в начале (scrollIntoView предыдущего прокрутил его, а scrollTo окна его не трогает). */
+        if (it.fixed) await resetView(page);
         const state = await h.evaluate((el, fixed) => {
-          if (fixed) scrollTo({ top: 0, behavior: 'instant' }); else el.scrollIntoView({ block: 'center', behavior: 'instant' });
+          if (fixed) {
+            scrollTo({ top: 0, behavior: 'instant' });
+            const sc = window.__rwScroller; if (sc && sc.isConnected) sc.scrollTo({ top: 0, behavior: 'instant' });
+          } else el.scrollIntoView({ block: 'center', behavior: 'instant' });
           const sg = (n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.classList.length ? '.' + [...n.classList].slice(0, 2).join('.') : '');
           const r = el.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
-          if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return { state: 'вне окна' };
+          /* окно — видимая область (снимок — она), а не окно раскладки */
+          const vv = window.visualViewport; const VX = vv ? vv.offsetLeft : 0, VY = vv ? vv.offsetTop : 0, VW = vv ? vv.width : innerWidth, VH = vv ? vv.height : innerHeight;
+          if (cx < VX || cy < VY || cx > VX + VW || cy > VY + VH) return { state: 'вне окна' };
           el.classList.add('rw-pe');
           try {
             for (const n of document.elementsFromPoint(cx, cy)) {
@@ -653,15 +825,22 @@ try {
         if (state.state !== 'виден') { imgContrast.covered = (imgContrast.covered || 0) + 1; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: state.state, by: state.by || null }); continue; }
         await h.evaluate((el) => el.classList.add('rw-hide-text'));
         await sleep(120);
-        const box = await h.boundingBox();
-        if (!box || box.width < 4 || box.height < 4 || box.width * box.height > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
+        /* коробка и видимая область — из страницы: boundingBox отдаёт координаты окна раскладки, а снимок —
+           видимая область (у страницы без meta viewport на телефоне 1 CSS-пиксель на снимке — 0.8 точки, а
+           не 2: вырезка уходила за снимок, элемент молча шёл в «пропущено») */
+        const g = await h.evaluate((el) => { const r = el.getBoundingClientRect(); const vv = window.visualViewport; return { x: r.left, y: r.top, w: r.width, h: r.height, VX: vv ? vv.offsetLeft : 0, VY: vv ? vv.offsetTop : 0, VW: vv ? vv.width : innerWidth, VH: vv ? vv.height : innerHeight }; });
+        if (g.w < 4 || g.h < 4 || g.w * g.h > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
         /* снимок окна и вырезка по координатам окна: снимок элемента у закреплённых (position: fixed)
            и прокрученных элементов брал не ту область */
-        const dprS = vp.deviceScaleFactor || 1; const x0 = Math.max(0, box.x), y0 = Math.max(0, box.y);
-        const cw = Math.max(1, Math.min(box.width - (x0 - box.x), vp.width - x0)), chh = Math.max(1, Math.min(box.height - (y0 - box.y), vp.height - y0));
+        const bx = g.x - g.VX, by = g.y - g.VY; const x0 = Math.max(0, bx), y0 = Math.max(0, by);
+        const cw = Math.min(g.w - (x0 - bx), g.VW - x0), chh = Math.min(g.h - (y0 - by), g.VH - y0);
         const buf = await page.screenshot({ type: 'png' });
         await h.evaluate((el) => el.classList.remove('rw-hide-text'));
-        const { data, info } = await sharp(buf).extract({ left: Math.round(x0 * dprS), top: Math.round(y0 * dprS), width: Math.round(cw * dprS), height: Math.round(chh * dprS) }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const shot = sharp(buf); const meta = await shot.metadata(); const kS = meta.width / (g.VW || vp.width);
+        const left = Math.round(x0 * kS), top = Math.round(y0 * kS);
+        const ew = Math.min(meta.width - left, Math.round(cw * kS)), eh = Math.min(meta.height - top, Math.round(chh * kS));
+        if (!(ew >= 1 && eh >= 1)) { imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'вне снимка', by: null }); continue; }
+        const { data, info } = await shot.extract({ left, top, width: ew, height: eh }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
         /* цвет текста над пикселем фона: альфа и opacity смешивают его с этим пикселем; слой зерна
            уже есть на снимке фона — к цвету текста он применяется отдельно (fgGrain) */
         const F = it.fgGrain || it.fgRgb; const a = it.alpha;
@@ -695,7 +874,7 @@ if (dom.clippedText) console.log(`Текст за краем обрезающе�
 const lines = []; let fails = 0, warns = 0;
 const L = (st, what, det) => { if (st === 'FAIL') fails++; if (st === 'WARN') warns++; lines.push({ status: st, what, details: det }); console.log(`${st.padEnd(4)} ${what}${det ? ' — ' + det : ''}`); };
 {
-  const bad = sc.stuck ? 'страница не прокручивается — появления и часть текста не проверены' : !sc.reachedBottom ? `до низа не доехали: ${sc.maxScrollY} из ${sc.pageHeight - vp.height} px` : '';
+  const bad = sc.stuck ? 'страница не прокручивается — появления и часть текста не проверены' : !sc.reachedBottom ? `до низа не доехали: ${sc.maxScrollY} из ${sc.pageHeight - (sc.viewH || vp.height)} px` : '';
   L(bad ? 'WARN' : 'OK', `прокрутка: страница пройдена целиком (${sc.pageHeight} px, ${sc.screens} шагов)`, bad || (reveal ? `блоков с текстом скрыто до прокрутки ${reveal.hidden}, показано после ${reveal.shown}${reveal.hidden - reveal.shown ? `; скрытыми остались ${reveal.hidden - reveal.shown} (меню, окна, наведение): ${reveal.still.slice(0, 4).join(', ')}` : ''}` : ''));
 }
 const C = dom.contrast;
@@ -703,8 +882,9 @@ const cf = Object.entries(C.failures).sort((a, b) => b[1].count - a[1].count);
 const cut = C.total > C.considered;
 L(cf.length ? 'FAIL' : cut ? 'WARN' : 'OK', `контраст: проверено ${C.checked} элементов${cut ? ` — взято ${C.considered} из ${C.total} текстовых (обрезано: остальные не проверялись)` : ` (текстовых на странице ${C.total})`}${C.translucent ? ` (из них ${C.translucent} полупрозрачных — смешаны с фоном)` : ''}${C.unknown ? `, ещё ${C.unknown} на картинке, градиенте или чужой подложке — см. ниже` : ''}${C.transparentText ? `, прозрачный цвет текста (градиент через background-clip) — ${C.transparentText}, не проверялись` : ''}`, cf.length ? cf.slice(0, 5).map(([k, v]) => `${k} = ${v.ratio}:1 (нужно ${v.need}:1), ${v.count} эл.: ${v.examples.join(', ')}`).join(' | ') : 'все пары проходят AA');
 /* перекрытый или ушедший за окно текст не мерился — это не «OK», а «проверить глазами» (WARN) */
-const covTxt = imgContrast.coveredList.length ? `не измерены — ${imgContrast.coveredList.slice(0, 5).map((c) => `${c.sig} «${c.text}» ${c.state === 'перекрыт' ? `перекрыт ${c.by}` : 'вне окна'}`).join(', ')}${imgContrast.coveredList.length > 5 ? ` и ещё ${imgContrast.coveredList.length - 5}` : ''} — смотреть глазами` : '';
-if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt].filter(Boolean).join('; '));
+const covTxt = imgContrast.coveredList.length ? `не измерены — ${imgContrast.coveredList.slice(0, 5).map((c) => `${c.sig} «${c.text}» ${c.state === 'перекрыт' ? `перекрыт ${c.by}` : c.state}`).join(', ')}${imgContrast.coveredList.length > 5 ? ` и ещё ${imgContrast.coveredList.length - 5}` : ''} — смотреть глазами` : '';
+if (C.unknown && imgContrast.error) L('WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): не измерен — ${imgContrast.error}`, `${C.unknown} элементов на картинке, градиенте или чужой подложке не проверены — смотреть глазами`);
+else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt].filter(Boolean).join('; '));
 if (fx && !fx.none) {
   const T = 'контраст закреплённого текста на прокрутке';
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
@@ -718,9 +898,9 @@ if (fx && !fx.none) {
       /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над секцией … (фон под текстом светлый): a «Каталог» … 1.07:1» */
       const groups = new Map();
       for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
-      const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
+      const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
       L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}`);
-    } else if (!fx.measured) L('WARN', head, 'ни одного замера: закреплённый текст на этих высотах спрятан, за окном или перекрыт — смотреть глазами');
+    } else if (!fx.measured) L('WARN', head, 'ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами');
     else { const w = fx.worst; L('OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`); }
   }
 }

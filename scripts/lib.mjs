@@ -668,12 +668,18 @@ export function segmentPositions(total, vh, { step = 0.8, maxShots = 8, skipTop 
  * В конце возврат наверх.
  *
  * Возвращает { pageHeight, screens, initialHeight, maxScrollY, reachedBottom,
- * stuck, capped, scroller, shots: [{ file, y, scrollY, media }], sheet }.
+ * stuck, capped, scroller, viewH, shots: [{ file, y, scrollY, media }], sheet }.
  * stuck — страница выше окна, но не прокрутилась (overflow:hidden на html/body,
  * заставка держит прокрутку) — тогда и снимки, и появления недостоверны.
+ * viewH — высота окна, от которой считались шаги и низ: innerHeight страницы (окно
+ * раскладки), а не высота экрана. У страницы без meta viewport (или с контентом
+ * шире экрана) на телефоне окно раскладки выше экрана — 2121 px при экране 390×844,
+ * — прокрутка кончается на pageHeight − innerHeight, и от высоты экрана выходило
+ * ложное «до низа не доехали» (и «не прокручивается» у страницы ниже окна раскладки).
+ * Низ для подписей — pageHeight − viewH.
  */
 export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = null, tag = 'scroll', maxShots = 8, shotPause = 1200, waitMedia = true, mediaTimeout = 6000, skipTop = false, maxSteps = 150, onStep = null, sheet = false } = {}) {
-  const vh = (page.viewport() || {}).height || await page.evaluate(() => innerHeight); const px = Math.max(1, Math.round(vh * step));
+  const vh = (await page.evaluate(() => innerHeight).catch(() => 0)) || (page.viewport() || {}).height || 800; const px = Math.max(1, Math.round(vh * step));
   const scroller = await page.evaluate(detectScrollerInPage).catch(() => ({ kind: 'document' }));
   const initialHeight = await pageHeight(page);
   let total = initialHeight; let n = 0; let maxY = 0;
@@ -701,7 +707,7 @@ export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = 
   let sheetFile = null;
   if (sheet && shots.length) { const r = await contactSheet(shots.map((s) => path.join(shotsDir, s.file)), path.join(shotsDir, `${tag}-sheet.png`), { labels: shots.map((s) => `${s.file} · y ${s.scrollY}`) }); sheetFile = r ? path.basename(r.file) : null; }
   await scrollToY(page, 0); await sleep(300);
-  return { pageHeight: total, screens: n, initialHeight, maxScrollY: maxY, reachedBottom: maxY >= total - vh - 2, stuck: total > vh + 50 && maxY < 5, capped: n >= maxSteps, scroller, shots, sheet: sheetFile };
+  return { pageHeight: total, screens: n, initialHeight, maxScrollY: maxY, reachedBottom: maxY >= total - vh - 2, stuck: total > vh + 50 && maxY < 5, capped: n >= maxSteps, scroller, viewH: vh, shots, sheet: sheetFile };
 }
 
 /**
