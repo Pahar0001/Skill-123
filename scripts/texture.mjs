@@ -77,7 +77,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   launch, openPage, loadSharp, parseArgs, sleep, ensureDir, writeJson, readJson, runDir, slugFromUrl,
-  scrollThrough, forceInstantScroll, screenSegment, segmentPositions, pickViewports, resolveViewport,
+  scrollThrough, forceInstantScroll, scrollToY, screenSegment, segmentPositions, pickViewports, resolveViewport,
   SIG_FN, EFFECTIVE_OPACITY_FN,
 } from './lib.mjs';
 
@@ -381,7 +381,7 @@ export async function findTextureLayers(page, { mark = false, extras = false, mi
 }
 
 /**
- * Спрятать найденные слои (после findTextureLayers с mark: true): слой — visibility:hidden;
+ * Спрятать найденные слои (после findTextureLayers с mark: true): слой — visibility:hidden и opacity:0;
  * зерно в фоне блока с содержимым — только картинка шума в background-image заменяется на none;
  * шум фильтром у блока с содержимым — filter:none. Возвращает число правил.
  */
@@ -409,7 +409,8 @@ export async function hideTextureLayers(page, layers) {
       const attr = L.pseudo ? 'data-rw-tex-' + L.pseudo.slice(2) : 'data-rw-tex';
       const sel = `[${attr}="${L.k}"]${L.pseudo || ''}`;
       const el = document.querySelector(`[${attr}="${L.k}"]`);
-      if (L.hide === 'visibility') rules.push(`${sel}{visibility:hidden!important}`);
+      /* opacity:0 обязательно: у SVG с фильтром (feTurbulence) Chrome рисует вывод фильтра и при visibility:hidden */
+      if (L.hide === 'visibility') rules.push(`${sel}{visibility:hidden!important;opacity:0!important}`);
       else if (L.hide === 'filter') {
         /* убрать только ссылку на фильтр с шумом, остальные функции filter оставить */
         if (!el) continue;
@@ -715,6 +716,7 @@ function diagnose(res) {
     if (vals.length && vals.every((b) => b.sd < 0.5)) out.push('слой есть, но не виден: вклад «со слоем − без» ≈ 0 на всех фонах (спрятан, нулевой размер, режим наложения или @media)');
   }
   if (!res.layers.length && res.status === 'есть') out.push('зерно на снимке есть, а слой не найден: оно в самих картинках или фонах — повторять не слоем');
+  if (res.status === 'не измерено' && (res.patterns || []).some((p) => /узор/.test(p.why))) out.push(`узор в фоне (${res.patterns.filter((p) => /узор/.test(p.why)).map((p) => p.el).join(', ')}) — не зерно; он же делает участки неровными, поэтому зерно поверх него не измерить`);
   const d = g.dark, l = g.light;
   if (d.status !== 'не измерено' && l.status !== 'не измерено' && Math.max(d.sd, l.sd) >= GRAIN_MIN_SD) {
     const ratio = d.sd / Math.max(0.1, l.sd);
@@ -727,6 +729,28 @@ function diagnose(res) {
 /* ======================================================================
    5. Замер на странице
    ====================================================================== */
+
+/**
+ * Вклад одного слоя: снимок окна там, где слой виден, со слоем и без него (после mark: true).
+ * σ разности на ровных плитках — зерно ли это (холст с шумом в альфе, видео с плёнкой) или гладкий
+ * фон (3D-сцена, градиент). → { sd, lag1, tiles } по полосе с наибольшим вкладом или null.
+ */
+async function soloContribution(page, L, scrollY0 = 0) {
+  if (L.position !== 'fixed' && !L.fixedBy) await scrollToY(page, Math.max(0, scrollY0 + L.rect.y - 40));
+  await sleep(300);
+  const a = await page.screenshot({ type: 'png' });
+  await hideTextureLayers(page, [L]);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
+  await sleep(120);
+  const w = await page.screenshot({ type: 'png' });
+  await showTextureLayers(page);
+  const A = await lumaOf(a), W = await lumaOf(w);
+  const c = summarize(grainTiles(A.Y, A.w, A.h, { Yw: W.Y }), { key: 'sdD', yKey: 'yw', lagKey: 'lagD' });
+  const bands = ['dark', 'mid', 'light'].map((k) => c[k]).filter((b) => b.status !== 'не измерено');
+  if (!bands.length) return null;
+  const best = bands.sort((x, y) => y.sd - x.sd)[0];
+  return { sd: best.sd, lag1: best.lag1, tiles: best.tiles };
+}
 
 /**
  * Замер фактуры на уже открытой (и прокрученной) странице. Опции:
@@ -762,7 +786,18 @@ export async function measureTexture(page, opts = {}) {
     }
     for (let i = found.layers.length - 1; i >= 0; i--) {
       const L = found.layers[i];
-      if (L.maybe && !(L.file && L.file.noiseLike)) { patterns.push({ el: L.el, urls: L.urls, why: L.file && L.file.error ? L.file.error : 'по разбору не шум (узор или картинка)' }); found.layers.splice(i, 1); }
+      if (!L.maybe) continue;
+      if (L.file && !L.file.error) {
+        if (!L.file.noiseLike) { patterns.push({ el: L.el, urls: L.urls, why: 'по разбору не шум (узор или картинка)' }); found.layers.splice(i, 1); }
+        continue;
+      }
+      /* файла нет (холст, видео) или он не получен — решает разность снимков со слоем и без него одного */
+      const solo = await soloContribution(page, L, found.scrollY || 0).catch(() => null);
+      L.solo = solo;
+      if (!solo || solo.sd < GRAIN_MIN_SD) {
+        patterns.push({ el: L.el, urls: L.urls, why: solo ? `по разности снимков со слоем и без — не зерно (σ вклада ${solo.sd} на ${solo.tiles} ровных плитках)` : `${L.file && L.file.error ? L.file.error + '; ' : ''}разность снимков не измерена (нет ровных участков)` });
+        found.layers.splice(i, 1);
+      }
     }
   }
 
@@ -888,7 +923,7 @@ export function recipeFrom(results, { tileSd = TILE_SD } = {}) {
   const rec = { present, none: !base, tileSd, size: 256, px: 1, rendering: 'auto', blend: 'normal', blendNote: '', opacity: null, sd: null, bandsSd: null, frames: 1, frameMs: 100, boil: false, boilSource: null, lift: null, minWidth: 0, minWidthNote: '', notes, base: base ? base.viewport.name : null };
   if (!base) { notes.push(list.some((r) => r.status === 'не измерено') ? 'зерно не измерено (мало ровных участков) — повторять нечего доказать; смотреть вырезы 1:1 глазами' : 'у донора зерна нет ни на одном экране — слой не нужен'); return rec; }
   const L = mainLayer(base);
-  const bandsSd = {}; for (const k of ['dark', 'mid', 'light']) { const b = base.grain[k]; bandsSd[k] = b.status === 'не измерено' ? null : b.sd; }
+  const bandsSd = {}; for (const k of ['dark', 'mid', 'light']) { const b = grainBand(base, k); bandsSd[k] = b.status === 'не измерено' ? null : b.sd; }
   rec.bandsSd = bandsSd;
   const measured = Object.values(bandsSd).filter((v) => v != null && v >= GRAIN_MIN_SD);
   rec.sd = r2(median(measured.length ? measured : Object.values(bandsSd).filter((v) => v != null)));
@@ -908,7 +943,7 @@ export function recipeFrom(results, { tileSd = TILE_SD } = {}) {
     const bs = /^([\d.]+)px/.exec(L.backgroundSize || ''); const scale = bs ? Number(bs[1]) / f.width : 1;
     rec.px = Math.max(1, Math.round(cellFile * scale));
   } else {
-    const lag = base.grain.all.lag1 || 0; const pDev = 1 / (1 - Math.max(0, Math.min(0.9, lag)));
+    const lag = grainBand(base, 'all').lag1 || 0; const pDev = 1 / (1 - Math.max(0, Math.min(0.9, lag)));
     rec.px = Math.max(1, Math.round(pDev / (base.viewport.dpr || 1)));
   }
   rec.rendering = L && L.imageRendering && L.imageRendering !== 'auto' ? L.imageRendering : 'auto';
@@ -945,8 +980,8 @@ export function tokensBlock(rec, results = []) {
     '/* texture:start */',
     `/* Фактура (texture.mjs${src ? `, ${src}` : ''}, ${new Date().toISOString().slice(0, 10)}):`,
     ...raw,
-    `   ${rec.none ? 'зерна нет — переменные ниже выключают слой (opacity 0)' : `рецепт: ${rec.blendNote}; ${rec.minWidthNote}`}`,
-    `   плитка: ${rec.tileCmd} */`,
+    `   ${!rec.none ? `рецепт: ${rec.blendNote}; ${rec.minWidthNote}` : list.some((r) => r.status === 'не измерено') ? 'зерно не измерено (мало ровных участков) — переменные ниже выключают слой; решать глазами по вырезам 1:1' : 'зерна нет — переменные ниже выключают слой (opacity 0)'}`,
+    `   ${rec.tileCmd ? `плитка: ${rec.tileCmd}` : 'плитка не нужна, пока зерна нет'} */`,
     ':root{',
     `  --grain-opacity: ${rec.none ? 0 : rec.opacity};`,
     `  --grain-size: ${rec.size}px;`,
@@ -985,7 +1020,7 @@ export function fillGrainCss(rec, { tile = null, template = TEMPLATE } = {}) {
   set('--grain-min-width', `${rec.minWidth || 0}px`);
   css = css.replace(/@media \(min-width:\s*[\d.]+px\)\s*\{\s*\/\* grain-min-width \*\//, `@media (min-width: ${rec.minWidth || 0}px) { /* grain-min-width */`);
   const sh = boilShifts(Math.max(1, rec.boil ? rec.frames : 1), rec.size);
-  const kf = `@keyframes grain-boil{\n${sh.map(([x, y], i) => `  ${String(r2(i * 100 / sh.length)).padEnd(5)}% {transform:translate(${x}px,${y}px)}`).join('\n')}\n}`;
+  const kf = `@keyframes grain-boil{\n${sh.map(([x, y], i) => `  ${`${r2(i * 100 / sh.length)}%`.padEnd(6)}{transform:translate(${x}px,${y}px)}`).join('\n')}\n}`;
   css = css.replace(/\/\* grain-keyframes:start \*\/[\s\S]*?\/\* grain-keyframes:end \*\//, `/* grain-keyframes:start */\n${kf}\n/* grain-keyframes:end */`);
   if (!rec.boil) css = css.replace(/animation:grain-boil[^;]*;/, 'animation:none;');
   return css;
@@ -1024,6 +1059,18 @@ export function textureMarkdown(results, { recipe = null } = {}) {
  * Донор против сайта на одном экране: σ по полосам ±sdTol (доля), lag1 ±lagTol, кипение да/нет.
  * Разный DPR — FAIL «сравнение недостоверно». → { viewport, dprOk, rows[], verdict, hints[] }.
  */
+/**
+ * Зерно в полосе фона для рецепта и сравнения: вклад найденных слоёв (снимок со слоем − без),
+ * если проход «без слоя» был и полоса в нём измерена, — σ на снимке дают ещё картины, градиенты
+ * и сжатие картинок; иначе σ на снимке. → Band & { via: 'вклад'|'снимок', raw }.
+ */
+export function grainBand(res, k) {
+  const c = res.contribution && res.contribution[k]; const g = res.grain[k];
+  if (c && c.status !== 'не измерено') return { ...c, via: 'вклад', raw: g };
+  return { ...g, via: 'снимок', raw: g };
+}
+const notGrainNote = (b) => (b.via === 'вклад' && b.raw && b.raw.status === 'есть' && b.sd < GRAIN_MIN_SD ? `σ ${b.raw.sd} на снимке — не зерно (вклад слоя ${b.sd})` : '');
+
 export function compareTexture(donor, site, { sdTol = 0.2, lagTol = 0.15 } = {}) {
   const rows = []; const hints = [];
   const vpn = donor.viewport.name;
@@ -1032,23 +1079,30 @@ export function compareTexture(donor, site, { sdTol = 0.2, lagTol = 0.15 } = {})
   if (!dprOk) return { viewport: vpn, dprOk, rows, verdict: 'FAIL', hints };
   const nameOf = { dark: 'σ тёмный', mid: 'σ средний', light: 'σ светлый' };
   let lagBand = null;
+  const lagOf = {};
   for (const k of ['dark', 'mid', 'light']) {
-    const d = donor.grain[k], s = site.grain[k];
+    const d = grainBand(donor, k), s = grainBand(site, k);
     const dm = d.status !== 'не измерено', sm = s.status !== 'не измерено';
     let ok = null, note = '';
     if (!dm || !sm) note = !dm && !sm ? 'нет таких фонов ни там, ни там' : !dm ? 'у донора не измерено' : 'у сайта не измерено';
     else if (d.sd < GRAIN_MIN_SD && s.sd < GRAIN_MIN_SD) { ok = true; note = 'зерна нет у обоих'; }
     else if (d.sd < GRAIN_MIN_SD) { ok = false; note = 'у донора зерна нет, у сайта есть'; }
-    else { const rel = (s.sd - d.sd) / d.sd; ok = Math.abs(rel) <= sdTol; note = `${rel >= 0 ? '+' : ''}${Math.round(rel * 100)} %`; if (!lagBand || d.tiles > donor.grain[lagBand].tiles) lagBand = k; }
-    rows.push({ what: nameOf[k], donor: dm ? `${d.sd} (${d.tiles})` : `— (${d.tiles})`, site: sm ? `${s.sd} (${s.tiles})` : `— (${s.tiles})`, tol: `±${Math.round(sdTol * 100)} %`, ok, note });
+    else { const rel = (s.sd - d.sd) / d.sd; ok = Math.abs(rel) <= sdTol; note = `${rel >= 0 ? '+' : ''}${Math.round(rel * 100)} %`; if (!lagBand || d.tiles > lagOf[lagBand].d.tiles) lagBand = k; }
+    lagOf[k] = { d, s };
+    const extra = [notGrainNote(d) && `у донора ${notGrainNote(d)}`, notGrainNote(s) && `у сайта ${notGrainNote(s)}`].filter(Boolean).join('; ');
+    if (extra) note = note ? `${note}; ${extra}` : extra;
+    rows.push({ what: nameOf[k], donor: dm ? `${d.sd} (${d.tiles})` : `— (${d.tiles})`, site: sm ? `${s.sd} (${s.tiles})` : `— (${s.tiles})`, tol: `±${Math.round(sdTol * 100)} %`, ok, note, via: { donor: d.via, site: s.via } });
     if (ok === false && dm && sm && d.sd >= GRAIN_MIN_SD) {
       const L = mainLayer(site);
-      if (s.sd < GRAIN_MIN_SD && L) hints.push(`${nameOf[k]}: у сайта зерна нет при слое ${L.el}${L.pseudo || ''} (${layerBlend(L)}) — ${blendAdvice(layerBlend(L)).text}`);
+      const adv = L ? blendAdvice(layerBlend(L)) : null;
+      const dead = adv && ((k === 'dark' && adv.deadOnDark) || (k === 'light' && adv.deadOnLight));
+      if (s.sd < GRAIN_MIN_SD && L && dead) hints.push(`${nameOf[k]}: у сайта зерна нет при слое ${L.el}${L.pseudo || ''} (${layerBlend(L)}) — ${adv.text}`);
+      else if (s.sd < GRAIN_MIN_SD && L) hints.push(`${nameOf[k]}: слой ${L.el}${L.pseudo || ''} слишком слабый (σ ${s.sd} при нужной ${d.sd}) — своя плитка и opacity по рецепту: texture.mjs <донор> --css grain.css`);
       else if (L && s.sd > 0) hints.push(`${nameOf[k]}: opacity слоя ${L.el}${L.pseudo || ''} ${L.opacity} × ${r2(d.sd / s.sd)} → ${r3(L.opacity * d.sd / s.sd)}`);
     }
   }
   if (lagBand) {
-    const dl = donor.grain[lagBand].lag1, sl = site.grain[lagBand].lag1;
+    const dl = lagOf[lagBand].d.lag1, sl = lagOf[lagBand].s.lag1;
     const ok = dl != null && sl != null ? Math.abs(dl - sl) <= lagTol : null;
     rows.push({ what: `lag1 (${lagBand === 'dark' ? 'тёмный' : lagBand === 'mid' ? 'средний' : 'светлый'})`, donor: dl, site: sl, tol: `±${lagTol}`, ok, note: ok === false ? (sl > dl ? 'у сайта зерно крупнее/мыльнее: image-rendering или --px' : 'у сайта зерно мельче') : '' });
   }
@@ -1122,8 +1176,9 @@ function printLayer(L) {
 }
 function printResult(r) {
   console.log(`\n== ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr} — ${r.url}`);
-  console.log(`слоёв фактуры ${r.layers.length}, feTurbulence в документе ${r.svgNoise.length}${r.patterns && r.patterns.length ? `, отброшено плиток-узоров ${r.patterns.length}` : ''}; body::after ${r.bodyAfterUsed ? 'занят' : 'свободен'}`);
+  console.log(`слоёв фактуры ${r.layers.length}, feTurbulence в документе ${r.svgNoise.length}${r.patterns && r.patterns.length ? `, отброшено кандидатов ${r.patterns.length}` : ''}; body::after ${r.bodyAfterUsed ? 'занят' : 'свободен'}`);
   for (const L of r.layers) printLayer(L);
+  for (const p of (r.patterns || []).slice(0, 4)) console.log(`  – ${p.el}: не слой — ${p.why}`);
   printBands(r.grain, `зерно на снимках окна (${r.screens.length} экр.)`);
   if (r.contribution) {
     const c = r.contribution; const li = r.lift || {};
@@ -1206,6 +1261,7 @@ if (isMain) {
       for (const r of sl) printResult(r);
       const cmp = compareSets(dl.length ? dl : donor, sl.length ? sl : site, { sdTol: opt['sd-tol'] != null ? Number(opt['sd-tol']) : 0.2, lagTol: opt['lag-tol'] != null ? Number(opt['lag-tol']) : 0.15 });
       console.log('\n== донор против сайта');
+      console.log('   σ по полосам — вклад найденных слоёв (снимок со слоем − без); где прохода без слоя не было — σ на снимке');
       let fail = false, warn = false;
       for (const c of cmp) {
         console.log(`\n${c.viewport}:`);
