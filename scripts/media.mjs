@@ -19,6 +19,8 @@
  *       [--orient landscape|portrait|square] [--min <px по длинной стороне>]
  *       [--sources a,b,...]              свой список и порядок источников
  *       [--n 24]                         сколько кадров на лист (до 60)
+ *       [--frames 8|all]                 видео Commons: у скольких роликов собрать кадры из
+ *                                        середины (2–4 с на кадр, строго по одному; по умолчанию 8)
  *       [--out <папка>] [--run <slug или url сайта>] [--fresh (без кэша ответов API)]
  *     → <папка>/cand/NN.jpg, sheet-1.jpg…, manifest.json (пути относительно папки).
  *       По умолчанию <папка> = ~/.claude/site-rework/runs/<slug>/media/<запрос>.
@@ -36,7 +38,8 @@
  *       [--ratio 16:9]                   обрезать основной кадр
  *       [--src-prefix img/]              префикс путей в разметке (по умолчанию имя --dest)
  *       [--avif auto|on|off]             AVIF рядом с WebP (auto — если быстро)
- *       [--start <с>] [--dur <с>]        видео: откуда и сколько резать петлю
+ *       [--start <с>] [--dur <с>]        видео: откуда и сколько резать петлю (по умолчанию 8 с)
+ *       [--fade <с>]                     видео: длина наплыва на стыке (по умолчанию 1 с)
  *     Ворота: без --seen/--caption, --seen меньше трёх разных слов (точки, повторы
  *     не проходят), кадр с пометками без --ok-flags — код 2. Никогда не
  *     растягивает; размер меряется по скачанному файлу. Пишет credits.json в
@@ -45,11 +48,14 @@
  *
  *   node media.mjs import <url страницы> [<url или путь файла>] --license <id>
  *       [--author "…"] [--author-url …] [--title "…"] [--not-editorial]
+ *       [--file-url <адрес файла у источника>]  для локального файла: откуда он (в credits.json)
  *       --seen … --caption … [и все флаги обработки pick: --ok-flags --role --name
  *       --dest --look --contrast --grain --crop-mobile --ratio --src-prefix --avif
  *       --start --dur] [--run <slug>]
  *     Кадр выбрал человек на сайте без API (Kaboompics, Burst, Picjumbo,
- *     Foodiesfeed — не /generated/, Mixkit — поштучно, Adobe Stock Free).
+ *     Foodiesfeed — только /legacy/ и /uploads/: у локального файла обязателен
+ *     --file-url, иначе не видно, не нейросеть ли это; Mixkit — поштучно, файл
+ *     должен быть того же ролика, что страница; Adobe Stock Free).
  *     Лицензии: cc0 pdm unsplash pexels pixabay kaboompics burst picjumbo
  *     foodiesfeed mixkit-free adobe-stock-free. Kaboompics — только с
  *     --not-editorial; unsplash, kaboompics, adobe-stock-free — только файл,
@@ -60,13 +66,23 @@
  *     таблица авторов и лицензий (--md — записать CREDITS.md), строка для
  *     подвала: обязательная (CC BY/BY-SA) или вежливая (Pexels, Unsplash, музеи).
  *
+ *   Видео (--kind video): источники pexels → pixabay (ключи) → commons → mixkit (одна
+ *     страница выдачи на запрос, лицензия videoFree проверяется в pick). По умолчанию
+ *     горизонтальные ролики. pick режет петлю без шва (наплыв), убирает звук, делает
+ *     1920x1080 H.264 + VP9, телефон 1280x720 и вертикальный 720x1280 (или меньше —
+ *     не растягивает), постер из кадра стыка; бюджет 2.5 МБ десктоп / 1 МБ телефон
+ *     (иначе CRF +2). Печатает шов петли числом и лист из 4 кадров для глаз
+ *     (<папка поиска>/check/<имя>-frames.jpg). 4K на сайт не отдаётся. Нужен ffmpeg.
+ *
  *   node media.mjs <команда> --help — эта справка.
  *
  * Ключи: окружение или ~/.claude/site-rework/.env (образец — .env.example рядом):
  * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT
  * (UNSPLASH_APP_NAME — по желанию). Без ключа источник пропускается.
  * MEDIA_CONTACT — контакт для User-Agent (Wikimedia, AIC); личные данные не подставляются.
- * Сетевые сбои — временные: «повторить позже». Кэш: MEDIA_CACHE или ~/.claude/site-rework/cache.
+ * Сетевые сбои — временные: «повторить позже». Кэш: MEDIA_CACHE или ~/.claude/site-rework/cache
+ * (ответы API, исходники и петли роликов). Проверка сбоя имён: MEDIA_TEST_DNS_FAIL="хост,dns:хост2"
+ * («хост» — не находится вовсе, «dns:хост» — молчит только системный DNS, выручает DoH).
  * Видео — модуль media/video.mjs (контракт MEDIA_API.md); MEDIA_VIDEO_MODULE — путь к другому модулю (тесты).
  * Итог каждой команды — строка OK / WARN / FAIL.
  */
@@ -244,9 +260,14 @@ async function cmdSearch() {
   const min = Number(opt.min) || ROLES[role].min;
   const sharp = requireSharp();
   const dir = searchDir(q, kind, profile);
-  ensureDir(path.join(dir, 'cand'));
-  for (const f of fs.readdirSync(dir)) if (/^sheet-\d+\.jpg$/.test(f)) fs.unlinkSync(path.join(dir, f));
-  for (const f of fs.readdirSync(path.join(dir, 'cand'))) fs.unlinkSync(path.join(dir, 'cand', f));
+  /* новый лист собирается во временной подпапке и заменяет прежний только при успехе:
+     повтор поиска при сбое сети не должен стирать готовый лист и отметки pick */
+  ensureDir(dir);
+  const work = path.join(dir, `.search-tmp-${process.pid}`);
+  fs.rmSync(work, { recursive: true, force: true });
+  ensureDir(path.join(work, 'cand'));
+  const dropWork = () => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* останется служебная папка */ } };
+  process.on('exit', dropWork);
   const o = { n, role, orient, min, fresh: !!opt.fresh, log, query: q };
 
   log(`Запрос «${q}» · ${kind}${kind === 'photo' ? ` · профиль ${profile}` : ''} · роль ${role} (нужно ${ROLES[role].ladder[0]} px по длинной стороне, минимум ${min})${orient ? ` · ${orient}` : ''}`);
@@ -363,24 +384,59 @@ async function cmdSearch() {
     if (L && L < min) extra.push('small');
     c.flags = [...new Set([...(c.flags || []), ...flagsFor(c.text || c.title || '', q, profile, extra)])];
     c.preview = `cand/${String(c.n).padStart(2, '0')}.jpg`;
-    fs.writeFileSync(path.join(dir, c.preview), x.p.jpeg);
-    c.previewFile = path.join(dir, c.preview);
+    fs.writeFileSync(path.join(work, c.preview), x.p.jpeg);
+    c.previewFile = path.join(work, c.preview);
     cands.push(c);
   }
 
-  const sheets = cands.length ? await buildSheets(sharp, cands, dir, { kind }) : [];
-  const manifest = {
-    version: 1, kind, profile, role, query: q, orient, min, n, created_at: new Date().toISOString(),
-    status, sheets: sheets.map((s) => path.basename(s)), candidates: cands.map(sanitizeCand), picked: [],
-  };
-  writeManifest(dir, manifest);
-
-  const temp = Object.values(status).some((s) => s.state === 'temporary');
+  /* сетевой сбой — временный и тогда, когда ответы API пришли из кэша, а не скачались превью */
+  const tempPreviews = failures.filter((f) => /временно/.test(f)).length;
+  const tempSources = Object.values(status).some((s) => s.state === 'temporary');
+  const temp = tempSources || tempPreviews > 0;
+  const old = readManifest(dir);
+  const hadSheet = !!(old && (old.candidates || []).length);
   if (!cands.length) {
-    log(`\n${temp ? 'WARN' : 'FAIL'}: ни одного кандидата.${temp ? ' Часть источников ответила временной ошибкой — повторить позже.' : ''} Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.`);
+    const keepNote = hadSheet ? ` Прежний лист (${old.candidates.length} кадров, ${old.created_at || 'дата неизвестна'}) и отметки pick не тронуты.` : '';
+    if (temp) {
+      const why = tempPreviews && !tempSources ? `превью не скачались (${tempPreviews}) из-за временной ошибки сети` : tempPreviews ? `часть источников и превью (${tempPreviews}) ответили временной ошибкой` : 'часть источников ответила временной ошибкой';
+      log(`\nWARN: ни одного кандидата — ${why}; это временно, повторить позже тем же запросом.${keepNote}`);
+    } else log(`\nFAIL: ни одного кандидата. Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.${keepNote}`);
     for (const f of failures.slice(0, 5)) log(`  ! ${f}`);
     process.exit(1);
   }
+
+  const built = await buildSheets(sharp, cands, work, { kind });
+  /* успех: прежний лист уходит, новый встаёт на его место */
+  ensureDir(path.join(dir, 'cand'));
+  for (const f of fs.readdirSync(dir)) if (/^sheet-\d+\.jpg$/.test(f)) fs.unlinkSync(path.join(dir, f));
+  for (const f of fs.readdirSync(path.join(dir, 'cand'))) fs.unlinkSync(path.join(dir, 'cand', f));
+  for (const f of fs.readdirSync(path.join(work, 'cand'))) fs.renameSync(path.join(work, 'cand', f), path.join(dir, 'cand', f));
+  const sheets = built.map((s) => { const to = path.join(dir, path.basename(s)); fs.renameSync(s, to); return to; });
+  for (const c of cands) c.previewFile = path.join(dir, c.preview);
+  dropWork();
+  /* отметки pick: тот же запрос — переносятся (номер сверяется по источнику и id); другой запрос — прежний манифест в архив */
+  let keptPicks = []; let archived = '';
+  if (old && (old.picked || []).length) {
+    const same = old.query === q && old.kind === kind && (old.profile || '') === (profile || '');
+    if (same) {
+      keptPicks = old.picked.map((p) => {
+        const oc = (old.candidates || []).find((x) => x.n === p.n) || {};
+        const src = p.source || oc.source; const id = p.id || oc.id;
+        const nc = cands.find((x) => x.source === src && String(x.id) === String(id));
+        return { ...p, source: src, id, n: nc ? nc.n : null, ...(nc && nc.n === p.n ? {} : { prev_n: p.n }) };
+      });
+    } else {
+      archived = `manifest-${String(old.created_at || Date.now()).replace(/[^\dT]/g, '').slice(0, 15)}.json`;
+      fs.writeFileSync(path.join(dir, archived), JSON.stringify(old, null, 1));
+    }
+  }
+  const manifest = {
+    version: 1, kind, profile, role, query: q, orient, min, n, created_at: new Date().toISOString(),
+    status, sheets: sheets.map((s) => path.basename(s)), candidates: cands.map(sanitizeCand), picked: keptPicks,
+  };
+  writeManifest(dir, manifest);
+  if (keptPicks.length) log(`  отметки pick перенесены из прежнего листа: ${keptPicks.length}${keptPicks.some((p) => p.n === null) ? ' (у части кадра больше нет в выдаче — n: null)' : ''}`);
+  if (archived) log(`  прежний манифест с отметками pick (другой запрос «${old.query}») сохранён: ${archived}`);
   log(`\nКандидатов: ${cands.length}${dup ? ` · дублей убрано ${dup}` : ''}${failures.length ? ` · превью не скачалось ${failures.length}` : ''}`);
   for (const f of failures.slice(0, 4)) log(`  ! ${f}`);
   for (const c of cands) {
@@ -394,7 +450,8 @@ async function cmdSearch() {
   log(`\nОТКРЫТЬ ГЛАЗАМИ (Read): ${sheets.join(' , ')}\n  вблизи — ${path.join(dir, 'cand', 'NN.jpg')}`);
   log('  Пометки — только подсказка: ценники, вывески, валюту и лица видно лишь глазами.');
   log(`\nДальше: node media.mjs pick "${dir}" <N> --seen "что на кадре" --caption "подпись на сайте" --dest <папка сайта>/img --role ${role}`);
-  log(`\n${temp ? `WARN: лист готов, ${cands.length} кадров; часть источников ответила временной ошибкой — повторить позже.` : `OK: лист готов, ${cands.length} кадров.`}`);
+  const tempWhat = [tempSources ? 'часть источников' : '', tempPreviews ? `превью (${tempPreviews})` : ''].filter(Boolean).join(' и ');
+  log(`\n${temp ? `WARN: лист готов, ${cands.length} кадров; ${tempWhat} — временная ошибка, повторить позже.` : `OK: лист готов, ${cands.length} кадров.`}`);
 }
 
 /* ---------- обработка и учёт (pick и import) ---------- */
@@ -457,7 +514,7 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
     files: res.files.map(({ file, width, height, bytes, format }) => ({ file, width, height, bytes, format })),
     look: { look: o.look, contrast: o.contrast, grain: o.grain }, hotlink: false, query: extra.query || '', date: today(),
     ...(c.credit_line ? { credit_line: c.credit_line } : {}),
-    ...(c.art ? { art: { death_year: c.art.death_year, work_year: c.art.work_year, term: c.art.term?.why } } : {}),
+    ...(c.art ? { art: { death_year: c.art.death_year, work_year: c.art.work_year, term: c.art.term?.why, ...(c.art.photographer ? { photographer: c.art.photographer } : {}) } } : {}),
     ...(extra.note ? { note: extra.note } : {}),
   };
   rec.credit_need = creditNeed(rec);
@@ -555,14 +612,14 @@ async function cmdPick() {
     if (/^openverse/.test(c.source)) notes.push('Openverse: сделано с помощью Openverse; Openverse не проверяет лицензии — страница источника в credits.json.');
     printTail(rec, res.markup, notes, o.dest, [...fallbackNotes, ...warnings]);
   }
-  m.picked = [...(m.picked || []).filter((p) => p.name !== o.name), { n: N, name: o.name, role, dest: (path.relative(dir, o.dest) || '.').split(path.sep).join('/'), seen: o.seen, caption: o.caption, at: new Date().toISOString() }];
+  m.picked = [...(m.picked || []).filter((p) => p.name !== o.name), { n: N, source: c.source, id: c.id, name: o.name, role, dest: (path.relative(dir, o.dest) || '.').split(path.sep).join('/'), seen: o.seen, caption: o.caption, at: new Date().toISOString() }];
   writeManifest(dir, m);
 }
 
 /** Запись credits.json для ролика (поля — MEDIA_API.md). */
 function videoRecord(c, resolved, enc, o, extra) {
   const rec = {
-    name: o.name, kind: 'video', role: o.role, source: c.source, source_id: c.id, title: c.title || '', page_url: c.page_url, file_url: extra.file_url || '',
+    name: o.name, kind: 'video', role: o.role, source: c.source, source_id: resolved.id ?? c.id, title: c.title || '', page_url: c.page_url, file_url: extra.file_url || '',
     author: c.author || '', author_url: c.author_url || '', license: resolved.license || c.license, license_code: resolved.license_code || c.license_code,
     license_url: resolved.license_url || c.license_url, license_evidence: resolved.license_evidence || null,
     attribution_required: !!(resolved.attribution_required ?? c.attribution_required), attribution_text: resolved.attribution_text || c.attribution_text || '',
@@ -598,8 +655,18 @@ async function cmdImport() {
   const text = `${decodeURIComponent(new URL(pageUrl).pathname).replace(/[-_/]+/g, ' ')} ${fileArg ? path.basename(fileArg).replace(/[-_.]+/g, ' ') : ''}`;
   const flags = flagsFor(text, '', 'photo');
 
+  /* исходный адрес файла: у локального пути его даёт --file-url (пишется в credits.json) */
+  const fileUrlOpt = str(opt['file-url']).trim();
+  if (fileUrlOpt && !/^https?:\/\//.test(fileUrlOpt)) fail(`--file-url ${fileUrlOpt}: нужен адрес http(s) файла у источника`, 2);
+  const originUrl = isLocal ? fileUrlOpt : fileArg;
+
   /* проверки по источнику */
-  if (lic.id === 'foodiesfeed' && /\/generated\//i.test(`${pageUrl} ${fileArg}`)) fail('Foodiesfeed: файл из /generated/ сделан нейросетью — выдуманная еда на сайте клиента недопустима. Берите кадры из /legacy/ или /uploads/.', 2);
+  if (lic.id === 'foodiesfeed') {
+    /* нейросеть видно только по пути файла у источника (/generated/); по локальному пути её не узнать */
+    if (/\/generated\//i.test(`${pageUrl} ${originUrl}`)) fail('Foodiesfeed: файл из /generated/ сделан нейросетью — выдуманная еда на сайте клиента недопустима. Берите кадры из /legacy/ или /uploads/.', 2);
+    if (!originUrl) fail('Foodiesfeed: у скачанного файла не видно, фото это или кадр нейросети. Передайте адрес файла вторым аргументом или добавьте --file-url <адрес файла на Foodiesfeed> (путь с /legacy/ или /uploads/).', 2);
+    if (!/\/(legacy|uploads)\//i.test(new URL(originUrl).pathname)) fail(`Foodiesfeed: адрес файла ${originUrl} не из /legacy/ или /uploads/ — фото там; /generated/ и прочее не берём.`, 2);
+  }
   if (lic.id === 'kaboompics' && !opt['not-editorial']) fail('Kaboompics: подтвердите, что на странице кадра НЕТ пометки «Editorial Use Only» (такие в рекламу и на сайт нельзя) — флаг --not-editorial.', 2);
   if (lic.id === 'mixkit-free' && !/(^|\.)mixkit\.co$/.test(host)) fail(`--license mixkit-free: страница должна быть на mixkit.co, а не ${host}.`, 2);
   if (lic.manual && fileArg && !isLocal) fail(`${lic.name}: файл скачивает человек в браузере (${lic.note || 'автоматика запрещена'}). Передайте путь к скачанному файлу вторым аргументом.`, 2);
@@ -630,7 +697,7 @@ async function cmdImport() {
     const cand = { ...c, kind: 'video', source: lic.id === 'mixkit-free' ? 'mixkit' : c.source, file: !fileArg ? null : isLocal ? { path: path.resolve(fileArg) } : { url: fileArg }, needs_resolve: !fileArg };
     const resolved = await videoStep(() => video.resolve(cand, { role, dest: o.dest, import: true, start: o.start, dur: o.dur }, ctx), 'ролик не взят');
     const enc = await videoStep(() => video.encode(resolved, o, ctx), 'ролик не пережат');
-    const rec = videoRecord(cand, resolved, enc, o, { file_url: isLocal ? path.basename(fileArg) : net.redact(resolved.url || fileArg || ''), note: lic.note || '' });
+    const rec = videoRecord(cand, resolved, enc, o, { file_url: isLocal ? (fileUrlOpt || path.basename(fileArg)) : net.redact(resolved.url || fileArg || ''), note: lic.note || '' });
     saveCredit(o.dest, rec);
     log(`\nРолик с ${host} → ${o.dest}`); printFiles(enc.files || []);
     printVideoFacts(enc);
@@ -650,7 +717,7 @@ async function cmdImport() {
     try { got = await fetchPhoto(c, { url: fileArg }); }
     catch (e) { fail(`Не скачался: ${net.describeError(e)}${/403/.test(String(e.message)) ? ' — сайт закрыт для скриптов: скачайте файл в браузере и передайте путь.' : ''}`); }
   }
-  const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? path.basename(fileArg) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}` });
+  const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? (fileUrlOpt || path.basename(fileArg)) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}` });
   printTail(rec, res.markup, lic.note ? [`Лицензия: ${lic.note}`] : [], o.dest, warnings);
 }
 

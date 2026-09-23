@@ -31,7 +31,7 @@
  *    publicdomain в subject_to; размер из info.json IIIF.
  *  - SMK: IIIF image_iiif_id/full/{w},/0/default.jpg отдаётся (200).
  */
-import { getJson, getRange, key, userAgent, warnNoContact, redact, contact } from './net.mjs';
+import { getJson, getRange, key, userAgent, warnNoContact, redact, contact, describeError } from './net.mjs';
 import { ROLES, headerDims } from './process.mjs';
 
 const YEAR = new Date().getFullYear();
@@ -198,20 +198,174 @@ async function commonsSearch(q, o, mode) {
       text: `${title} ${clean(md.ImageDescription?.value)}`, extraFlags: extra,
     };
     if (mode === 'art') {
-      const cats = String(md.Categories?.value || '');
-      /* годы жизни: из подсказки ссылки «… (1836-1904)» или из текста «Gerda Palm, (Sweden, 1871-1949)» */
-      const life = artistHtml.match(/title="[^"]*\((\d{3,4})\s*[-–]\s*(\d{3,4})\)/) || clean(artistHtml).match(/\((?:[^()]*?,\s*)?(\d{3,4})\s*[-–]\s*(\d{3,4})\)/);
-      const death = maxYear((life || [])[2]);
-      const oldCat = /PD-old-(?:100|auto-expired)|PD-Art \(PD-old-100|PD-anon-expired/i.test(cats);
-      const work = maxYear((String(md.DateTimeOriginal?.value || '').match(/\+(\d{4})-/) || [])[1] || clean(md.DateTimeOriginal?.value));
-      const term = oldCat && !death ? { ok: true, why: 'Commons: автор умер больше 100 лет назад (PD-old-100)' } : termCheck({ deathYear: death, workYear: work });
-      c.art = { death_year: death, work_year: work, term };
       c.title = clean(md.ObjectName?.value) || c.title;
-      c.credit_line = `${author}. ${c.title}. Wikimedia Commons`;
+      /* автор произведения, год смерти и срок — в enrichArt (описание файла и Wikidata) */
+      c._art = { cats: String(md.Categories?.value || ''), artistHtml, dto: String(md.DateTimeOriginal?.value || '') };
     }
     out.push(c);
   }
-  return { items: out, note: dropped ? `отброшено по лицензии или формату: ${dropped}` : '' };
+  const notes = dropped ? [`отброшено по лицензии или формату: ${dropped}`] : [];
+  if (mode === 'art') {
+    const r = await enrichArt(out, o);
+    notes.push(...r.notes);
+    return { items: r.items, note: notes.join('; ') };
+  }
+  return { items: out, note: notes.join('; ') };
+}
+
+/* ---------- Commons, профиль art: чьё произведение и когда умер автор ---------- */
+
+/*
+ * Категории Commons о сроке охраны:
+ *  - PD-old-100 (и «PD-Art (PD-old-100…)») — автор умер больше 100 лет назад: хватает и без года смерти;
+ *  - PD-anon-expired — анонимная работа, опубликована больше 70 лет назад;
+ *  - PD-old-auto-expired, PD-old-70* и простой PD-old — только «жизнь + 70»: для РФ (до +74 участникам
+ *    войны) этого мало, нужен год смерти (параметр deathyear= в описании файла или Wikidata) и termCheck.
+ * Фото картины в раме («Photographs of paintings», шаблон Art Photo) и поле Artist со ссылкой на
+ * страницу участника — это фотограф, а не автор произведения; его годы и дата съёмки — не про работу.
+ */
+const PD100_RE = /PD-old-100|PD-Art \(PD-old-100/i;
+const ANON_RE = /PD-anon-expired/i;
+const PHOTO_OF_ART_RE = /Photographs of (?:paintings|artworks|sculptures|drawings|prints|murals)|Photos of paintings/i;
+const BY_LICENSE_RE = /\{\{\s*(?:self\s*\|[^}]*?)?cc-by(?:-sa)?-\d|\{\{\s*(?:self\s*\|[^}]*?)?GFDL/i;
+const wdYear = (t) => { const m = String(t || '').match(/^[+]?(\d{3,4})-/); return m ? Number(m[1]) : null; };
+
+/** Разбор описания файла Commons (викитекст): год смерти из шаблона, создатель, Wikidata работы, лицензия фото. */
+export function parseArtWikitext(wt) {
+  const s = String(wt || '');
+  const field = (name) => { const m = s.match(new RegExp(`\\n\\s*\\|\\s*${name}\\s*=([^\\n]*)`, 'i')); return m ? m[1].trim() : ''; };
+  const artPhoto = /\{\{\s*Art[ _]Photo\b/i.test(s);
+  /* автор работы — только из поля artist шаблона Artwork/Art Photo: {{Creator:…}} бывает и в source (фотограф) */
+  const artistField = field('artist');
+  const creator = ((artistField.match(/\{\{\s*Creator:\s*([^}|]+?)\s*[}|]/i) || [])[1] || '').trim();
+  const artist = creator || (artistField && !/[{}[\]<>]/.test(artistField) ? artistField : '');
+  const cats = [...s.matchAll(/\[\[\s*Category:([^\]|]+?)\s*(?:\|[^\]]*)?\]\]/gi)].map((m) => m[1]);
+  /* «Paintings of odalisques by Henri Matisse», «André Derain (portrait by Henri Matisse)», «Paintings by X by title»;
+     категории снимков («Photographs/Quality images/2019 images by …»), участников и спонсоров — мимо */
+  const SHOT = /\b(images?|photographs?|photos?|pictures?|uploads?|files|media|scans?|supported)\b/i;
+  const byCat = cats.filter((c) => !SHOT.test(c))
+    .map((c) => (c.match(/ by ([^()]+?)\s*\)?\s*$/) || [])[1]).filter(Boolean)
+    .map((x) => x.split(/\s+(?:by|in|at|from)\s+/)[0].trim()).filter((x) => x && !/^User:/i.test(x))[0] || '';
+  /* кто снимал: «Photographs by X», «Images of paintings by X», поля source/photographer */
+  const shotBy = [...cats.filter((c) => SHOT.test(c)).map((c) => (c.match(/ by ([^()]+?)\s*$/) || [])[1]).filter(Boolean),
+    ...[field('source'), field('photographer')].map((v) => (v.match(/Creator:\s*([^}|]+)/i) || v.match(/\[\[[^\]|]*\|([^\]]+)\]\]/) || [])[1]).filter(Boolean)]
+    .map((x) => x.replace(/^User:/i, '').trim().toLowerCase());
+  const photoLicense = artPhoto ? field('photo license') : '';
+  return {
+    death: maxYear((s.match(/deathyear\s*=\s*(\d{3,4})/i) || [])[1]),
+    artist, byCat, artPhoto, shotBy,
+    wikidata: ((artPhoto || /\{\{\s*Artwork\b/i.test(s) ? field('wikidata') : '').match(/Q\d+/) || [])[0] || null,
+    workYear: artPhoto ? maxYear(field('date')) : null,
+    /* фото произведения под CC BY/BY-SA фотографа: в фото-профиле такое не берём */
+    photoBy: BY_LICENSE_RE.test(photoLicense) || (BY_LICENSE_RE.test(s) && (artPhoto || /Photographs of/i.test(s))),
+  };
+}
+
+/** Wikidata: создатель и год создания работ, имена и годы смерти людей. Ошибки сети — пусто (тогда term?). */
+async function wikidataFacts(artQs, personQs, o) {
+  const api = 'https://www.wikidata.org/w/api.php?format=json&formatversion=2';
+  const art = new Map(); const people = new Map();
+  const chunks = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+  for (const ids of chunks([...new Set(artQs)], 40)) {
+    const j = await getJson(`${api}&action=wbgetentities&props=claims&ids=${ids.join('|')}`, { cacheTtl: 7 * 24 * 3600e3, fresh: o.fresh });
+    for (const [q, e] of Object.entries(j.entities || {})) {
+      const p170 = (e.claims?.P170 || []).map((x) => x.mainsnak || {});
+      art.set(q, {
+        creator: p170.find((s) => s.datavalue?.value?.id)?.datavalue.value.id || null,
+        anonymous: p170.length > 0 && p170.every((s) => s.snaktype === 'somevalue' || s.datavalue?.value?.id === 'Q4233718'),
+        inception: maxYear((e.claims?.P571 || []).map((x) => wdYear(x.mainsnak?.datavalue?.value?.time)).filter(Boolean).join(' ')),
+      });
+    }
+  }
+  const who = [...new Set([...personQs, ...[...art.values()].map((a) => a.creator).filter(Boolean)])].slice(0, 15);
+  for (const ids of chunks(who, 40)) {
+    const j = await getJson(`${api}&action=wbgetentities&props=labels&languages=ru|en&ids=${ids.join('|')}`, { cacheTtl: 7 * 24 * 3600e3, fresh: o.fresh });
+    for (const [q, e] of Object.entries(j.entities || {})) people.set(q, { name: e.labels?.en?.value || e.labels?.ru?.value || '', death: null });
+  }
+  for (const q of who) {
+    const j = await getJson(`${api}&action=wbgetclaims&entity=${q}&property=P570`, { cacheTtl: 7 * 24 * 3600e3, fresh: o.fresh });
+    const d = maxYear((j.claims?.P570 || []).map((x) => wdYear(x.mainsnak?.datavalue?.value?.time)).filter(Boolean).join(' '));
+    people.set(q, { ...(people.get(q) || { name: '' }), death: d });
+  }
+  return { art, people };
+}
+
+export async function enrichArt(items, o) {
+  const notes = [];
+  /* описания файлов — пачками по 20 (длина адреса), строго по одному запросу (очередь Wikimedia) */
+  const wt = new Map(); let wtFailed = '';
+  for (let i = 0; i < items.length; i += 20) {
+    const titles = items.slice(i, i + 20).map((c) => `File:${c.id}`).join('|');
+    try {
+      const j = await getJson('https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&prop=revisions&rvprop=content&rvslots=main'
+        + `&titles=${encodeURIComponent(titles)}`, { cacheTtl: 6 * 3600e3, fresh: o.fresh });
+      for (const p of j.query?.pages || []) wt.set(String(p.title).replace(/^File:/, ''), p.revisions?.[0]?.slots?.main?.content || '');
+    } catch (e) { wtFailed = describeError(e); }
+  }
+  if (wtFailed) notes.push(`описания части файлов не получены (${wtFailed}) — без года смерти пометка term?`);
+
+  const parsed = new Map(); let photoBy = 0;
+  const keep = [];
+  for (const c of items) {
+    const w = parseArtWikitext(wt.get(c.id));
+    if (w.photoBy) { photoBy++; continue; }
+    const a = c._art;
+    const photoOfArt = w.artPhoto || PHOTO_OF_ART_RE.test(a.cats);
+    /* Artist со ссылкой на страницу участника (User:) или тот же человек, что в «Photographs by …»,
+       source/photographer — загрузивший/фотограф, не автор работы */
+    const shot = [...w.shotBy, ...a.cats.split('|').filter((x) => /\b(images?|photographs?|photos?|pictures?)\b/i.test(x))
+      .map((x) => (x.match(/ by ([^()]+?)\s*$/) || [])[1]).filter(Boolean).map((x) => x.replace(/^User:/i, '').trim().toLowerCase())];
+    const who = String(c.author || '').toLowerCase();
+    const artistShot = who.length > 2 && shot.some((x) => x === who || x.includes(who) || who.includes(x));
+    const byUploader = photoOfArt || /\/wiki\/User:/i.test(a.artistHtml) || artistShot;
+    parsed.set(c, { w, photoOfArt, byUploader, artistQ: byUploader ? null : (a.artistHtml.match(/wikidata\.org\/wiki\/(Q\d+)/) || [])[1] || null });
+    keep.push(c);
+  }
+  if (photoBy) notes.push(`отброшено фото произведений под CC BY/BY-SA фотографа: ${photoBy}`);
+
+  /* год смерти нужен тем, у кого нет PD-old-100 и годов жизни в поле автора */
+  const lifeOf = (html) => html.match(/title="[^"]*\((\d{3,4})\s*[-–]\s*(\d{3,4})\)/) || clean(html).match(/\((?:[^()]*?,\s*)?(\d{3,4})\s*[-–]\s*(\d{3,4})\)/);
+  /* Wikidata — тем, у кого нет года смерти, имени автора работы (фото картины) или года работы */
+  const need = keep.filter((c) => {
+    const p = parsed.get(c);
+    const noDeath = !p.w.death && !(p.byUploader ? null : lifeOf(c._art.artistHtml));
+    const noName = !p.w.artist && (p.byUploader || !p.w.byCat);
+    const noYear = p.photoOfArt && !p.w.workYear;
+    return (noDeath || noName || noYear) && (p.w.wikidata || p.artistQ);
+  });
+  let wd = { art: new Map(), people: new Map() };
+  if (need.length) {
+    try { wd = await wikidataFacts(need.map((c) => parsed.get(c).w.wikidata).filter(Boolean), need.map((c) => parsed.get(c).artistQ).filter(Boolean), o); }
+    catch (e) { notes.push(`Wikidata не ответила (${describeError(e)}) — без года смерти пометка term?`); }
+  }
+
+  for (const c of keep) {
+    const { w, photoOfArt, byUploader, artistQ } = parsed.get(c); const a = c._art;
+    const life = byUploader ? null : lifeOf(a.artistHtml);
+    const wa = w.wikidata ? wd.art.get(w.wikidata) : null;
+    const creatorQ = (wa && wa.creator) || artistQ;
+    const person = creatorQ ? wd.people.get(creatorQ) : null;
+    const death = maxYear((life || [])[2]) || w.death || person?.death || null;
+    const name = w.artist || person?.name || w.byCat || (byUploader ? '' : c.author !== 'неизвестен' ? c.author : '');
+    const dtoYear = maxYear((a.dto.match(/\+(\d{4})-/) || [])[1] || clean(a.dto));
+    /* дата съёмки фото картины — не год работы */
+    const work = wa?.inception || w.workYear || (photoOfArt ? null : dtoYear);
+    let term;
+    if (death) term = termCheck({ deathYear: death, workYear: work });
+    else if (PD100_RE.test(a.cats)) term = { ok: true, why: 'Commons: автор умер больше 100 лет назад (PD-old-100)' };
+    else if (ANON_RE.test(a.cats) && !(work && work > YEAR - 75)) term = { ok: true, why: 'Commons: анонимная работа, срок охраны истёк (PD-anon-expired)' };
+    else if (wa?.anonymous && work) term = termCheck({ workYear: work, anonymous: true });
+    else term = termCheck({ workYear: work });
+    if (!name && !term.ok) term = { ok: false, why: `автор произведения не установлен; ${term.why}` };
+    const photographer = byUploader ? c.author : null;
+    c.author = name || 'автор не установлен';
+    if (byUploader) c.author_url = creatorQ ? `https://www.wikidata.org/wiki/${creatorQ}` : c.page_url;
+    c.art = { death_year: death, work_year: work, term, ...(photographer ? { photographer } : {}) };
+    c.credit_line = `${c.author}. ${c.title}${work && !String(c.title).includes(String(work)) ? `, ${work}` : ''}. ${photographer ? `Фото: ${photographer}, ` : ''}Wikimedia Commons`;
+    c.attribution_text = `«${c.title}» — ${c.author}${photographer ? ` (фото: ${photographer})` : ''}, ${c.license}, Wikimedia Commons (${c.page_url})`;
+    delete c._art;
+  }
+  return { items: keep, notes };
 }
 
 /* ---------- стоки с ключом ---------- */

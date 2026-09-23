@@ -87,6 +87,7 @@ function temporaryMessage(host, reason) { return `временно: ${host} — 
 /** Текст ошибки для людей: сетевые — всегда «временно … повторить позже». */
 export function describeError(e) {
   if (e instanceof NetError) return e.message;
+  if (e?.fsWrite) return e.message;
   const code = e?.code || e?.cause?.code || '';
   if (NET_CODES.test(`${code} ${e?.message || ''}`)) return temporaryMessage(e?.host || 'сеть', `${code || e.message}`);
   return String(e?.message || e);
@@ -168,7 +169,7 @@ function smartLookup(hostname, opts, cb) {
     if (!dohStarted) { startDoh(); return; }
     if (failures >= 2) {
       settled = true; clearTimeout(timer);
-      const first = errors[0] || {};
+      const first = errors.find((x) => x.code !== 'EDOH') || {};
       const dnsWhy = first.code || first.message || 'нет ответа';
       const dohWhy = (errors.find((x) => x.code === 'EDOH') || {}).message || 'DoH не ответил';
       cb(Object.assign(new Error(`имя не найдено: системный DNS — ${dnsWhy}, запасной DoH (Cloudflare, Google) — ${dohWhy.replace(/^DoH не ответил:\s*/, '')}`), { code: 'ENOTFOUND' }));
@@ -192,7 +193,7 @@ export const lookup = smartLookup;
    AIC — не чаще 1 запроса в секунду (просьба музея); Openverse — 20 в минуту без ключа;
    Mixkit — как человек, пауза 1,5 с; Pixabay — пауза, повторные быстрые запросы к CDN ловят 403. */
 const GATES = [
-  { name: 'wikimedia', re: /(^|\.)(wikimedia|wikipedia|mediawiki)\.org$/i, interval: 350 },
+  { name: 'wikimedia', re: /(^|\.)(wikimedia|wikipedia|mediawiki|wikidata)\.org$/i, interval: 350 },
   { name: 'aic', re: /(^|\.)artic\.edu$/i, interval: 1050 },
   { name: 'openverse', re: /^api\.openverse\.org$/i, interval: 3100 },
   { name: 'met', re: /(^|\.)metmuseum\.(org|github\.io)$/i, interval: 60 },
@@ -266,8 +267,21 @@ function once(url, { method, headers, timeout, maxBytes, toFile, acceptEncoding 
       else if (enc === 'br') stream = res.pipe(zlib.createBrotliDecompress());
       const hash = crypto.createHash('sha256');
       let n = 0; const chunks = [];
-      const ws = toFile && res.statusCode >= 200 && res.statusCode < 300 ? fs.createWriteStream(toFile) : null;
+      let ws = null; let wsFailed = false;
+      if (toFile && res.statusCode >= 200 && res.statusCode < 300) {
+        /* ошибка записи (нет папки, диск полон, файл занят антивирусом) — строка FAIL, а не падение процесса;
+           и не «временная сетевая»: повтор запроса её не исправит */
+        try { fs.mkdirSync(path.dirname(toFile), { recursive: true }); } catch { /* скажет сам поток */ }
+        ws = fs.createWriteStream(toFile);
+        ws.on('error', (e) => failWrite(e));
+      }
+      function failWrite(e) {
+        if (wsFailed) return; wsFailed = true;
+        req.destroy(); stream.destroy();
+        reject(Object.assign(new Error(`не записать файл ${toFile}: ${String(e?.message || e).replace(/\s+/g, ' ')}`), { code: e?.code || 'EWRITE', fsWrite: true }));
+      }
       stream.on('data', (c) => {
+        if (wsFailed) return;
         n += c.length;
         if (maxBytes && n > maxBytes) { req.destroy(); stream.destroy(); if (ws) ws.destroy(); return reject(new NetError(`ответ больше предела ${Math.round(maxBytes / 1048576)} МБ`, { temporary: false, host: u.hostname })); }
         hash.update(c);
@@ -276,7 +290,8 @@ function once(url, { method, headers, timeout, maxBytes, toFile, acceptEncoding 
       stream.on('error', (e) => { if (ws) ws.destroy(); reject(e); });
       stream.on('end', () => {
         out.ms = Date.now() - t0; out.bytes = n; out.sha256 = hash.digest('hex');
-        if (ws) ws.end(() => { out.file = toFile; resolve(out); });
+        /* end(cb) зовёт cb и при ошибке записи, раньше события error: тогда это отказ, а не успех */
+        if (ws) ws.end((err) => { if (err || wsFailed) return failWrite(err || new Error('запись прервана')); out.file = toFile; resolve(out); });
         else { out.body = Buffer.concat(chunks); resolve(out); }
       });
     });
@@ -314,6 +329,7 @@ export async function request(url, { method = 'GET', headers = {}, timeout = 300
       r.url = current;
       return r;
     } catch (e) {
+      if (e && e.fsWrite) throw e; /* диск, а не сеть */
       if (e instanceof NetError && !e.temporary) throw e;
       if (e instanceof NetError && e.status) { lastErr = e; if (attempt === tries || e.retryAfter > 30) throw e; continue; }
       const code = e.code || '';

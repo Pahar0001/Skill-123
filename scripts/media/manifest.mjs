@@ -130,7 +130,7 @@ export function renderCreditsMd(list, { title = 'Фото и видео: авт�
   lines.push('');
   if (must.length) {
     lines.push('## Обязательная подпись (до выкладки)', '');
-    for (const r of must) lines.push(`- ${r.attribution_text}${r.changes ? ` ${r.changes}` : ''}${r.share_alike ? ' Изменённый кадр распространяется на тех же условиях (BY-SA).' : ''}`);
+    for (const r of must) lines.push(`- ${r.attribution_text}${r.changes ? ` ${r.changes}` : ''}${r.share_alike ? ` ${r.kind === 'video' ? 'Изменённый ролик' : 'Изменённый кадр'} распространяется на тех же условиях (BY-SA).` : ''}`);
     lines.push('');
   }
   if (polite.length) {
@@ -162,12 +162,17 @@ export function politeLine(list) {
 export function footerLine(list) {
   const must = list.filter((r) => r.attribution_required);
   if (!must.length) return null;
+  /* CC BY: название, автор, источник (ссылка на страницу), лицензия, что изменено; BY-SA — ещё условие для изменённого */
   const items = must.map((r) => {
     const who = r.author_url ? `<a href="${esc(r.author_url)}">${esc(r.author)}</a>` : esc(r.author);
     const lic = r.license_url ? `<a href="${esc(r.license_url)}">${esc(r.license)}</a>` : esc(r.license);
+    const title = r.title ? (r.page_url ? `«<a href="${esc(r.page_url)}">${esc(r.title)}</a>» — ` : `«${esc(r.title)}» — `) : '';
+    const src = !r.title && r.page_url ? `, <a href="${esc(r.page_url)}">источник</a>` : '';
     /* у ролика в подвал — коротко; подробный список изменений остаётся в CREDITS.md */
     const ch = r.kind === 'video' ? 'изменено: вырезан фрагмент, перекодировано' : r.changes ? r.changes.replace(/^Изменено:\s*/i, 'изменено: ').replace(/\.$/, '') : '';
-    return `${r.title ? `«${esc(r.title)}» — ` : ''}${who}, ${lic}${ch ? ` (${esc(ch)})` : ''}`;
+    const sa = r.share_alike ? `изменённ${r.kind === 'video' ? 'ый ролик' : 'ый кадр'} — на тех же условиях, ${lic}` : '';
+    const tail = [ch ? esc(ch) : '', sa].filter(Boolean).join('; ');
+    return `${title}${who}${src}, ${lic}${tail ? ` (${tail})` : ''}`;
   });
   const what = must.some((r) => r.kind === 'video') ? (must.some((r) => r.kind !== 'video') ? 'Фото и видео' : 'Видео') : 'Фото';
   return `<p class="credits">${what}: ${items.join('; ')}.</p>`;

@@ -75,7 +75,7 @@ const refuse = (msg) => { throw Object.assign(new Error(msg), { refuse: true });
  * такого нет — самый крупный (с честной пометкой «исходник даёт только…»).
  * Частота до 30 кадров/с предпочтительнее. 4K ради 1080 не берём.
  */
-export function chooseVideoFile(files, { w = DESK.w, h = DESK.h, vh = VERT_H } = {}) {
+export function chooseVideoFile(files, { w = DESK.w, h = DESK.h, vh = VERT_H, wholeMax = null } = {}) {
   const ok = (files || []).filter((f) => f && f.url && f.width && f.height);
   if (!ok.length) return (files || []).find((f) => f && f.url) || null;
   const px = (f) => f.width * f.height;
@@ -83,7 +83,18 @@ export function chooseVideoFile(files, { w = DESK.w, h = DESK.h, vh = VERT_H } =
   const desk = (f) => f.width >= w && f.height >= h;
   const vert = (f) => Math.min(f.height, Math.floor(f.width * 16 / 9)) >= vh;
   const fpsOk = (f) => !f.fps || f.fps <= 30.5;
-  return { ...(sorted.find((f) => desk(f) && vert(f) && fpsOk(f)) || sorted.find((f) => desk(f) && fpsOk(f)) || sorted.find(desk) || sorted[sorted.length - 1]) };
+  /* ради вертикального кадра 4K берётся, только если его не надо качать целиком (Mixkit режется по ссылке);
+     Pixabay качается целиком — 4K на 180 МБ ради 1080 не брать */
+  const heavy = (f) => wholeMax != null && f.bytes > wholeMax;
+  const covering = sorted.find((f) => desk(f) && vert(f) && fpsOk(f) && !heavy(f)) || sorted.find((f) => desk(f) && fpsOk(f) && !heavy(f))
+    || sorted.find((f) => desk(f) && !heavy(f)) || sorted.find(desk);
+  if (covering) return { ...covering };
+  /* 1920x1080 не закрывает никто: самый крупный кадр, а среди равных по площади — меньший ранг
+     (оригинал ≤60 МБ, потом производная 1080p, потом тяжёлый оригинал), затем меньший вес */
+  const top = Math.max(...ok.map(px));
+  const best = ok.filter((f) => px(f) === top)
+    .sort((a, b) => (fpsOk(b) - fpsOk(a)) || (a.rank || 0) - (b.rank || 0) || (a.bytes || 9e15) - (b.bytes || 9e15))[0];
+  return { ...best };
 }
 
 /* ---------- MP4: длительность и размер по заголовку ---------- */
@@ -183,7 +194,7 @@ async function pixabay(q, o) {
     const vs = h.videos || {};
     const files = ['large', 'medium', 'small'].map((kq) => ({ kq, v: vs[kq] })).filter(({ v }) => v && v.url && v.size > 0)
       .map(({ kq, v }) => ({ url: v.url, width: v.width, height: v.height, bytes: v.size, mime: 'video/mp4', how: `pixabay-${kq}-${v.width}x${v.height}` }));
-    const file = chooseVideoFile(files);
+    const file = chooseVideoFile(files, { wholeMax: WHOLE_MAX });
     if (!file) continue;
     const big = files.reduce((a, f) => (f.width * f.height > (a ? a.width * a.height : 0) ? f : a), null);
     items.push({
@@ -358,6 +369,17 @@ export async function search(query, opts, ctx) {
 
 const VIDEO_LICENSES = new Set(['pexels', 'pixabay', 'cc0', 'pdm', 'cc-by', 'cc-by-sa', 'mixkit-free', 'adobe-stock-free']);
 
+/** id ролика Mixkit из адреса страницы: …/free-stock-video/<слова>-<id>/ */
+export function mixkitPageId(u) {
+  return (String(u || '').split(/[?#]/)[0].match(/\/free-stock-video\/(?:[^/]*-)?(\d+)\/?$/) || [])[1] || null;
+}
+/** id ролика Mixkit из адреса файла: assets.mixkit.co/videos/<id>/… или /video_items/<id>/… (запасной путь — имя <id>-1080.mp4) */
+export function mixkitFileId(u) {
+  /* через new URL: «..» в пути разрешается так же, как при скачивании, — сверку id не обойти */
+  let s; try { s = new URL(String(u || '')).pathname; } catch { s = String(u || '').split(/[?#]/)[0]; }
+  return (s.match(/\/(?:videos|video_items)\/(?:preview\/)?(\d+)\//) || s.match(/[/-](\d+)-(?:\d{3,4}|large|medium|small)\.mp4$/i) || [])[1] || null;
+}
+
 async function resolveMixkit(c, opts) {
   const page = c.page_url;
   if (!/^https:\/\/(www\.)?mixkit\.co\/free-stock-video\//.test(page || '')) refuse(`страница Mixkit должна быть вида https://mixkit.co/free-stock-video/<ролик>-<id>/, а не ${page}`);
@@ -382,13 +404,27 @@ async function resolveMixkit(c, opts) {
   if (opt.type === '720p') warnings.push('у ролика только 720p — на первый экран мало, исходник даёт только 720 px по высоте');
   const dur = (html.match(/item-attribute-duration-value">\s*(\d+):(\d{2})/) || []).slice(1).map(Number);
   const fps = Number((html.match(/item-attribute-frame_rate-value">\s*([\d.]+)\s*fps/) || [])[1]) || null;
-  const id = (opt.value.match(/download\/(\d+)\//) || [])[1] || c.id;
-  let url = c.file?.url && /^https:\/\/assets\.mixkit\.co\/.+\.mp4$/.test(c.file.url) && opts.import ? c.file.url : null;
+  /* id ролика: из адреса страницы («…-<id>/») и из ссылки скачивания (download/<id>/) — должны совпасть */
+  const pageId = mixkitPageId(page);
+  const dlId = (opt.value.match(/download\/(\d+)\//) || [])[1] || null;
+  if (pageId && dlId && pageId !== dlId) refuse(`на странице ${page} блок скачивания другого ролика (${dlId}, а в адресе ${pageId}) — лицензию не к чему привязать`);
+  const id = dlId || pageId || c.id;
+  let url = null;
+  if (c.file?.url && opts.import) {
+    /* файл, который дал человек, обязан быть ЭТИМ роликом: иначе в credits.json легло бы доказательство лицензии чужой страницы */
+    if (!/^https:\/\/assets\.mixkit\.co\/[^?#]+\.mp4(\?.*)?$/.test(c.file.url)) refuse(`адрес файла Mixkit должен быть вида https://assets.mixkit.co/videos/<id>/<id>-1080.mp4, а не ${net.redact(c.file.url)}; без файла ролик берётся со страницы сам`);
+    const fileId = mixkitFileId(c.file.url);
+    if (!fileId) refuse(`в адресе файла ${c.file.url} нет id ролика (/videos/<id>/) — не проверить, что файл с этой страницы`);
+    if (fileId !== id) refuse(`файл ${c.file.url} — ролик ${fileId}, а страница ${page} — ролик ${id}: лицензию проверяли на другой странице. Возьмите страницу этого ролика (https://mixkit.co/free-stock-video/…-${fileId}/) или import без адреса файла`);
+    url = c.file.url;
+  }
+  if (c.file?.path) warnings.push(`локальный файл: соответствие файла странице ${page} не проверено — убедитесь, что скачан именно этот ролик (id ${id})`);
   if (!url && !c.file?.path) {
     /* страница скачивания — как у человека, одна; прямая ссылка из неё */
     try {
       const d = await net.getText(`https://mixkit.co${opt.value}`, { headers: { accept: 'text/html' } });
-      url = (d.text.match(/https:\/\/assets\.mixkit\.co\/[^"'\s<>]+\.mp4/) || [])[0] || null;
+      /* только ссылка на файл ЭТОГО ролика (на странице бывают и соседние) */
+      url = (d.text.match(/https:\/\/assets\.mixkit\.co\/[^"'\s<>]+\.mp4/g) || []).find((u) => mixkitFileId(u) === String(id)) || null;
     } catch { /* ниже — ссылка по образцу CDN */ }
     if (!url) url = `https://assets.mixkit.co/videos/${id}/${id}-${opt.type.replace('p', '')}.mp4`;
   }
@@ -400,7 +436,9 @@ async function resolveMixkit(c, opts) {
   }
   return {
     source: 'mixkit', id, url, path: c.file?.path || null, headers: {},
+    /* длительность со страницы — только для плана нарезки и сверки; в отчёт идёт длительность файла (encode) */
     width: opt.res[0] || null, height: opt.res[1] || null, fps, duration: dur.length ? dur[0] * 60 + dur[1] : c.duration || null,
+    page_duration: dur.length ? dur[0] * 60 + dur[1] : null,
     bytes: bytes || (opt.mb ? Math.round(opt.mb * 1048576) : null), mime: 'video/mp4', codec: null,
     license: 'Mixkit Stock Video Free License', license_code: 'mixkit-free', license_url: 'https://mixkit.co/license/#videoFree',
     license_evidence: `data-license="videoFree" в блоке скачивания на ${page} (проверено ${today()})`,
@@ -487,7 +525,9 @@ function cacheName(dir, resolved, url, suffix = '') {
   const h = crypto.createHash('sha1').update(String(url)).digest('hex').slice(0, 10);
   const ext = (String(url).split('?')[0].match(/\.(mp4|webm|ogv|ogg|mov|mkv|m4v)$/i) || [])[1] || 'bin';
   const id = String(resolved.id || 'video').replace(/[^\w.-]+/g, '_').slice(0, 40);
-  return path.join(dir, `${resolved.source || 'src'}-${id}-${h}${suffix}.${suffix ? 'mkv' : ext.toLowerCase()}`);
+  /* source у import — «import/pdm»: слеш дал бы несуществующую подпапку cache/video/import/ */
+  const src = String(resolved.source || 'src').replace(/[^\w.-]+/g, '_').slice(0, 40);
+  return path.join(dir, `${src}-${id}-${h}${suffix}.${suffix ? 'mkv' : ext.toLowerCase()}`);
 }
 
 /** Скачать файл целиком через net.mjs (DoH, повторы, retry-after) в кэш; проверить сигнатуру. */
@@ -525,9 +565,11 @@ async function obtainSource(ctx, resolved, start, len) {
   }
   /* большой файл (4K Mixkit ~150 МБ): отрезок по ссылке, поток без перекодирования */
   const seg = cacheName(dir, resolved, `${url}#${start}+${len}`, `-seg`);
-  if (fs.existsSync(seg) && fs.statSync(seg).size > 0) { notes.push('отрезок из кэша'); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
-  const r = await ffmpeg(ctx.ffmpeg, ['-y', '-user_agent', net.userAgent(), '-rw_timeout', '30000000', '-ss', String(start), '-t', String(len), '-i', url, '-map', '0:v:0', '-an', '-c', 'copy', '-avoid_negative_ts', 'make_zero', seg], { timeout: 15 * 60e3 });
-  if (r.code === 0 && fs.existsSync(seg) && fs.statSync(seg).size > 0) { notes.push(`вырезан отрезок по ссылке ${mbs(fs.statSync(seg).size)} (весь файл ${mbs(resolved.bytes)} не качался)`); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
+  /* пустой отрезок (ffmpeg пишет «Output file is empty» и выходит с кодом 0) — не исходник */
+  const segOk = (f, rr = null) => fs.existsSync(f) && fs.statSync(f).size > 16384 && !(rr && /Output file is empty/i.test(rr.stderr || ''));
+  if (segOk(seg)) { notes.push('отрезок из кэша'); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
+  const r = await ffmpeg(ctx.ffmpeg, ['-y', '-user_agent', net.userAgent(), '-rw_timeout', '30000000', '-ss', String(start), '-t', String(len), '-i', url, '-map', '0:v:0', '-an', '-map_metadata', '-1', '-map_chapters', '-1', '-c', 'copy', '-avoid_negative_ts', 'make_zero', seg], { timeout: 15 * 60e3 });
+  if (r.code === 0 && segOk(seg, r)) { notes.push(`вырезан отрезок по ссылке ${mbs(fs.statSync(seg).size)} (весь файл ${mbs(resolved.bytes)} не качался)`); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
   try { fs.unlinkSync(seg); } catch { /* нет */ }
   /* ffmpeg ходит в сеть мимо DoH: при сбое — тот же файл через net.mjs */
   const e = ffError(r, 'вырезать отрезок', url);
@@ -605,8 +647,10 @@ function videoMarkup({ prefix, desk, webm, mob, vert, poster, cssLines, eager })
 
 /* ---------- encode ---------- */
 
-const x264 = (crf, fps) => ['-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-profile:v', 'high', '-level:v', '4.1', '-pix_fmt', 'yuv420p', '-g', String(Math.round(fps * 2)), '-keyint_min', String(Math.round(fps)), '-movflags', '+faststart', '-tag:v', 'avc1', '-an'];
-const vp9 = (crf, fps) => ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', String(crf), '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4', '-g', String(Math.round(fps * 2)), '-pix_fmt', 'yuv420p', '-an'];
+/* -map_metadata -1: название, автор, комментарий и координаты (location) исходника в ролики сайта не переносим */
+const NO_META = ['-map_metadata', '-1', '-map_chapters', '-1', '-fflags', '+bitexact'];
+const x264 = (crf, fps) => [...NO_META, '-c:v', 'libx264', '-preset', 'slow', '-crf', String(crf), '-profile:v', 'high', '-level:v', '4.1', '-pix_fmt', 'yuv420p', '-g', String(Math.round(fps * 2)), '-keyint_min', String(Math.round(fps)), '-movflags', '+faststart', '-tag:v', 'avc1', '-an'];
+const vp9 = (crf, fps) => [...NO_META, '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', String(crf), '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4', '-g', String(Math.round(fps * 2)), '-pix_fmt', 'yuv420p', '-an'];
 
 /** Кодировать с бюджетом: если файл тяжелее — CRF +2, не выше crfMax. */
 async function encodeBudget(ctx, input, vf, codecArgs, crf0, crfMax, budget, out, fps, what) {
@@ -640,6 +684,9 @@ export async function encode(resolved, o, ctx) {
   }
   const src = await obtainSource(ctx, resolved, start, dur + fade + 2);
   const meta = await probe(ctx.ffmpeg, src.input, false);
+  /* длительность — по самому файлу (целиком или локальный путь); у отрезка по ссылке файл целиком не виден */
+  const fileDur = src.whole && meta.duration ? +meta.duration.toFixed(2) : null;
+  if (fileDur && resolved.page_duration && Math.abs(fileDur - resolved.page_duration) > 1.5) warnings.push(`длительность файла ${fileDur} с, а на странице ролика ${resolved.page_duration} с — проверьте, что файл от этой страницы`);
   const off = src.offset;
   if (meta.duration && off + dur + fade > meta.duration + 0.05) {
     dur = Math.max(2, +(meta.duration - off - fade - 0.1).toFixed(2));
@@ -664,12 +711,12 @@ export async function encode(resolved, o, ctx) {
   const f = Math.min(1, Math.max(outW / cropW, vOutH / vCropH));
   const MW = Math.min(W, evenUp(W * f)); const MH = Math.min(H, evenUp(H * f));
   const loopDir = path.join(ctx.cacheDir, 'video'); fs.mkdirSync(loopDir, { recursive: true });
-  const key = crypto.createHash('sha1').update(`${src.input}|${off}|${dur}|${fade}|${fps}|${MW}x${MH}|v2`).digest('hex').slice(0, 12);
+  const key = crypto.createHash('sha1').update(`${src.input}|${off}|${dur}|${fade}|${fps}|${MW}x${MH}|v3`).digest('hex').slice(0, 12);
   const master = path.join(loopDir, `loop-${key}.mp4`);
   if (!fs.existsSync(master)) {
     const base = `fps=${fps},scale=${MW}:${MH}:flags=lanczos,setsar=1`;
     const fc = `[0:v]trim=0:${dur + fade},setpts=PTS-STARTPTS,${base},split[a][b];[a]trim=${fade}:${dur + fade},setpts=PTS-STARTPTS[m];[b]trim=0:${fade},setpts=PTS-STARTPTS[h];[m][h]xfade=transition=fade:duration=${fade}:offset=${dur - fade},format=yuv420p[v]`;
-    const r = await ffmpeg(ctx.ffmpeg, ['-y', '-ss', String(off), '-t', String(dur + fade + 0.5), '-i', src.input, '-filter_complex', fc, '-map', '[v]', '-an', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p', master]);
+    const r = await ffmpeg(ctx.ffmpeg, ['-y', '-ss', String(off), '-t', String(dur + fade + 0.5), '-i', src.input, '-filter_complex', fc, '-map', '[v]', '-an', ...NO_META, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '12', '-pix_fmt', 'yuv420p', master]);
     if (r.code !== 0) { try { fs.unlinkSync(master); } catch { /* нет */ } throw ffError(r, 'петля (xfade)'); }
   }
   changes.push(`вырезано ${dur} с с ${mmss(start)}`, `петля без шва, наплыв ${fade} с`);
@@ -766,7 +813,7 @@ export async function encode(resolved, o, ctx) {
   const markup = videoMarkup({ prefix: o.srcPrefix || '', desk: files[0], webm: files[1], mob: mob ? files.find((x) => x.group === 'mobile') : null, vert: files.find((x) => x.group === 'mobile-portrait'), poster, cssLines, eager });
   return {
     files, poster, markup, changes, warnings: [...src.notes.filter((n) => /запасной|не прочитал/.test(n)), ...warnings],
-    original: { width: meta.width, height: meta.height, fps: meta.fps, duration: resolved.duration || meta.duration, bytes: src.bytes || resolved.bytes || null, codec: meta.codec, sha256: src.sha256 || null, audio: meta.audio },
+    original: { width: meta.width, height: meta.height, fps: meta.fps, duration: fileDur || resolved.duration || meta.duration, bytes: src.bytes || resolved.bytes || null, codec: meta.codec, sha256: src.sha256 || null, audio: meta.audio },
     cut: { start, dur, fade, loop: `xfade-${fade}s`, fps: +Number(fps).toFixed(3) },
     budget: { desktop_bytes: deskMax, mobile_bytes: mobMax, desktop_ok: deskMax <= BUDGET.desktop, mobile_ok: mobMax <= BUDGET.mobile, notes: budgetNotes },
     checks, source_notes: src.notes,
