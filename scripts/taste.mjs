@@ -11,6 +11,7 @@
  *   node taste.mjs brief [--blocks form,faq,hero] [--last 10] [--baseline <json донора>]
  *   node taste.mjs bans [--baseline <json донора>] [--json]
  *   node taste.mjs check
+ *   node taste.mjs --help
  *
  * Флаги:
  *   --dir <папка>      журнал; иначе SITE_REWORK_TASTE, иначе ~/.claude/site-rework/taste
@@ -26,8 +27,12 @@
  *   --source "<текст>" где сказано (сообщение, отзыв на снимок)
  *   --blocks a,b       brief: записи по этим блокам — открыть их картинки перед эскизом
  *   --last N           brief: сколько последних записей показать (10)
- *   --baseline <json>  brief/bans: cliche-json нового донора — какие запреты спорят с его чертами
+ *   --baseline <json>  brief/bans: база нового донора (cliche.mjs baseline) — какие запреты спорят с его чертами
+ *   --viewport <имя>   brief/bans: экран базы (desktop по умолчанию)
  *   --json             bans: вывести запреты JSON-ом
+ *   --help             справка
+ *
+ * Коды выхода: 0 — готово; 1 — FAIL (запись отклонена, check нашёл битые строки); 2 — нет команды.
  *
  * Правила журнала (исправление по аудиту A11):
  *   · by user — только с дословной цитатой пользователя в --quote. Свой вывод
@@ -40,8 +45,10 @@
  *     не блокирует молча: brief --baseline и cliche.mjs --taste выводят его
  *     вопросом пользователю.
  *
- * Файлы: journal.jsonl (одна запись — одна строка), img/, README.md.
- * Модуль: activeBans(), readJournal(), tasteDir(), conflictsWith() — их берёт cliche.mjs.
+ * Файлы: journal.jsonl (одна запись — одна строка), img/, README.md. Отдельного bans.json нет:
+ * запреты каждый раз считаются из журнала (последняя запись по правилу решает).
+ * Модуль: activeBans(), readJournal(), tasteDir(), conflictsWith(), baselineResult(), isUserWord()
+ * — их берёт cliche.mjs.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -98,10 +105,22 @@ export function activeBans(dirOrEntries) {
   return bans;
 }
 
-/** Результат cliche.mjs для нужного экрана (файл baseline может хранить несколько). */
-export function baselineResult(json, vpName = 'desktop') {
+/**
+ * Результат cliche.mjs для нужного экрана. Файл базы (cliche.mjs baseline) и итог прогона
+ * (cliche.json) хранят несколько экранов в viewports; старый формат — один результат с rules.
+ * Нет такого экрана — берётся экран того же класса (широкий ≥1024 px или узкий), иначе первый;
+ * у результата остаётся свой .viewport, по нему видно, что экран другой.
+ */
+export function baselineResult(json, vpName = 'desktop', vp = null) {
   if (!json) return null;
-  if (json.kind === 'cliche-baseline' && json.viewports) return json.viewports[vpName] || Object.values(json.viewports)[0] || null;
+  if (json.viewports && typeof json.viewports === 'object') {
+    const list = Object.entries(json.viewports).filter(([, r]) => r && r.rules);
+    if (!list.length) return null;
+    const exact = list.find(([n]) => n === vpName); if (exact) return exact[1];
+    const wide = vp && vp.width ? vp.width >= 1024 : ['desktop', 'laptop'].includes(vpName);
+    const same = list.find(([, r]) => (((r.page && r.page.vw) || 0) >= 1024) === wide);
+    return (same || list[0])[1];
+  }
   return json.rules ? json : null;
 }
 
@@ -116,7 +135,8 @@ export function conflictsWith(bans, donorResult) {
 function knownRules() {
   try {
     const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'cliche.mjs'), 'utf8');
-    return new Set([...src.matchAll(/^\s*'([a-z0-9-]+)':\s*\{\s*w:/gm)].map((m) => m[1]));
+    const ids = new Set([...src.matchAll(/^\s*'?([a-z0-9-]+)'?\s*:\s*\{\s*w:\s*\d/gm)].map((m) => m[1]));
+    return ids.size ? ids : null;
   } catch { return null; }
 }
 
@@ -124,14 +144,22 @@ function knownRules() {
 const looksLikeOwnConclusion = (q) => /σ|×\s*\d|\bx\d|у донора|у нас у|пиксел|\d+(\.\d+)?\s*%/i.test(q);
 
 /* ---------- командная строка ---------- */
-function readBaseline(file) {
+function readBaseline(file, vpName) {
   if (!file || file === true) return null;
-  try { return baselineResult(JSON.parse(fs.readFileSync(String(file), 'utf8'))); } catch (e) { console.error(`WARN  не прочитать базу ${file}: ${e.message}`); return null; }
+  try { return baselineResult(JSON.parse(fs.readFileSync(String(file), 'utf8')), vpName || 'desktop'); } catch (e) { console.error(`WARN  не прочитать базу ${file}: ${e.message}`); return null; }
+}
+
+/* справка = шапка этого файла */
+function help() {
+  const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
+  const m = /\/\*\*([\s\S]*?)\*\//.exec(src);
+  console.log(m ? m[1].split(/\r?\n/).map((l) => l.replace(/^ \* ?/, '')).join('\n').trim() : 'taste.mjs add|brief|bans|check');
 }
 
 function cli() {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks', 'viewport'], flags: ['json', 'help', 'h'] });
   const cmd = pos[0];
+  if (opt.help || opt.h || cmd === 'help') { help(); return; }
   const dir = tasteDir(opt.dir);
   const J = path.join(dir, 'journal.jsonl'); const IMG = path.join(dir, 'img');
   const str = (k) => (opt[k] === undefined || opt[k] === true ? '' : String(opt[k]));
@@ -167,7 +195,7 @@ function cli() {
 
   if (cmd === 'brief' || cmd === 'bans') {
     const all = readJournal(dir); const bans = activeBans(all);
-    const donor = readBaseline(opt.baseline);
+    const donor = readBaseline(opt.baseline, str('viewport'));
     const conflicts = conflictsWith(bans, donor);
     if (cmd === 'bans' && opt.json) { console.log(JSON.stringify({ dir, bans, conflicts: conflicts.map((c) => ({ rule: c.rule, donorCount: c.donorCount })) }, null, 1)); return; }
     console.log(`Журнал вкуса: ${dir} · записей ${all.length}${all.bad.length ? ` · битых строк ${all.bad.length}` : ''}`);
@@ -215,7 +243,7 @@ function cli() {
     return;
   }
 
-  console.error('node taste.mjs add|brief|bans|check … (см. шапку файла)'); process.exit(1);
+  console.error(cmd ? `FAIL  неизвестная команда «${cmd}»: add | brief | bans | check | --help` : 'node taste.mjs add|brief|bans|check … (node taste.mjs --help)'); process.exit(2);
 }
 
 /* CLI — только когда файл запущен сам, а не импортирован cliche.mjs */
