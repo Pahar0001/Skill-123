@@ -87,12 +87,25 @@ export function requireChrome() {
   throw new Error('Не найден Chrome, Chromium или Edge. Укажите путь в переменной CHROME_PATH.');
 }
 
+/* protocolTimeout: зависшая вкладка (нехватка памяти) даёт ошибку через 90 с, а не держит съём двадцать минут */
 export async function launch() {
   const puppeteer = loadPuppeteer();
-  return puppeteer.launch({ executablePath: requireChrome(), headless: true, args: ['--no-sandbox', '--hide-scrollbars'] });
+  return puppeteer.launch({ executablePath: requireChrome(), headless: true, protocolTimeout: 90000, args: ['--no-sandbox', '--hide-scrollbars'] });
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Сторож вкладки: упала — page.rwCrashed, и следующий шаг бросает понятную ошибку (с site-rework — его guardPage). */
+export function guardPage(page) {
+  if (SR && SR.guardPage) return SR.guardPage(page);
+  if (!page || page.__rwGuard) return page;
+  Object.defineProperty(page, '__rwGuard', { value: true });
+  page.on('error', (e) => { page.rwCrashed = String((e && e.message) || e || 'вкладка упала').slice(0, 200); });
+  return page;
+}
+export function assertAlive(page) {
+  if (page && page.rwCrashed) throw new Error(`вкладка браузера упала (${page.rwCrashed}) — обычно не хватает памяти: закройте лишнее и повторите`);
+}
 
 /** Для запуска из командной строки: сообщение об ошибке без трассировки и код 1. */
 export function die(e) { console.error(String((e && e.message) || e)); process.exit(1); }
@@ -233,6 +246,7 @@ export function segmentPositions(total, vh, { step = 0.8, maxShots = 8, skipTop 
 
 /** Снимок окна на высоте y: { y, scrollY, offset, buffer }. С site-rework — с ожиданием картинок и переходов. */
 export async function screenAt(page, y, { pause = 700, mediaTimeout = 4000, settle = 1200 } = {}) {
+  assertAlive(page);
   if (SR && SR.screenSegment) return SR.screenSegment(page, y, { pause, mediaTimeout, settle });
   await page.evaluate((yy) => scrollTo({ top: yy, behavior: 'instant' }), y); await sleep(pause);
   const scrollY = await page.evaluate(() => Math.round(scrollY));

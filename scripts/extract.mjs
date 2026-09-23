@@ -43,7 +43,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SR, launch, sleep, parseArgs, slugFromUrl, die, loadSharp, evaluateWith, gotoRetry,
-  scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC,
+  scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
 export const VERSION = 'extract 2026-09-23';
@@ -471,7 +471,7 @@ export function darkSource(cs) {
 }
 
 async function measure(browser, url, viewport, { shotsDir, tag, withStates, scheme = 'light', pixels = false, readCss = false }) {
-  const page = await browser.newPage();
+  const page = guardPage(await browser.newPage());
   /* таблицы стилей с чужого домена CSSOM не читает — тёмную тему в них ищем по тексту ответа */
   const cssTexts = [];
   const onResp = (resp) => { try { if (resp.request().resourceType() === 'stylesheet') cssTexts.push({ url: resp.url(), text: resp.text().catch(() => '') }); } catch { /* ответ без тела */ } };
@@ -485,7 +485,8 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
     await page.evaluate(() => document.fonts.ready).catch(() => {}); await sleep(600);
     const revealBefore = await evaluateWith(page, beforeScroll, null, DEPS);
     /* проход 1: подгрузить ленивое, дать сработать появлениям, на каждом шаге — видимость и фон под текстом */
-    const pass = await scrollPass(page, { pause: 450, onStep: () => evaluateWith(page, stepProbe, null, DEPS) });
+    const pass = await scrollPass(page, { pause: 450, onStep: () => { assertAlive(page); return evaluateWith(page, stepProbe, null, DEPS); } });
+    assertAlive(page);
     await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await sleep(400);
     const after = await revealAfter(page);
     const data = await evaluateWith(page, inPage, null, DEPS);
@@ -761,6 +762,14 @@ export function passportLines(d) {
     `- есть: ${has.join(', ') || 'ничего из списка'}`,
     `- нет: ${not.join(', ') || '—'} — проектировать из языка образца, а не по умолчанию`,
   ];
+}
+
+/** Строка про тёмную тему системы для спецификации и сводки. */
+function darkLine(data) {
+  const dk = data.dark;
+  if (!dk) return data.darkReason || 'не снималась';
+  const t = dk.themes && mainTheme(dk.themes, (dk.page.background || '#FFFFFF').slice(0, 7));
+  return `${dk.differs ? 'есть' : 'объявлена, но фон и текст страницы не меняются'} (${dk.source}): фон ${dk.page.background}, текст ${dk.page.color}${t && t.muted ? ', приглушённый ' + t.muted : ''}`;
 }
 
 const chg = (o) => Object.entries(o).map(([k, v]) => `${k} ${String(v.from).slice(0, 40)} → ${String(v.to).slice(0, 40)}`).join(', ') || 'без изменений';
