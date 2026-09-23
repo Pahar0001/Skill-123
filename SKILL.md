@@ -140,7 +140,7 @@ node scripts/runtime.mjs <url> --viewport mobile --scroll --click "<перекл
 node scripts/runtime.mjs <url> --css --hover-all --nav     # автопроверки состояния, reference/qa.md
 node scripts/perf.mjs <url>                          # телефон, медленная сеть — база для сравнения
 node scripts/a11y.mjs <url> --viewport mobile
-node scripts/shots.mjs <url> --tag before --pages /,<другие страницы в задаче>
+node scripts/shots.mjs <url> --tag before --pages /,<другие страницы в задаче> --with-320
 node scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
 ```
 Если у сайта или донора есть зерно, шум, плёнка — `node scripts/texture.mjs
@@ -206,12 +206,12 @@ node scripts/state.mjs <папка> set <id> visual=VERIFIED --evidence <пап�
 ### 4. Проверка — по `reference/qa.md`
 
 ```
-node scripts/shots.mjs <url> --tag after --pages <те же>
+node scripts/shots.mjs <url> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
 node scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
 node scripts/runtime.mjs <url> --scroll --canvas --motion --video --click ... --edit ... --select ...   # desktop и mobile
 node scripts/runtime.mjs <url> --css --hover-all --nav
 node scripts/runtime.mjs <url> --viewport mobile-s --scroll
-node scripts/perf.mjs <url> --runs 3                     # медиана трёх прогонов против базы
+node scripts/perf.mjs <url> --runs 3                     # медиана трёх прогонов против базы; --overlay — цена слоя зерна
 node scripts/a11y.mjs <url> --viewport mobile
 node scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 ```
