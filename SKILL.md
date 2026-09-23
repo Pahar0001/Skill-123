@@ -156,11 +156,11 @@ node ~/.claude/skills/site-rework/scripts/taste.mjs brief --blocks <блоки �
 
 ```
 node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка>        # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --scroll --canvas --motion --video --fullpage
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --viewport mobile --scroll --click "<переключатель меню>" --shot menu
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --css --hover-all --nav     # автопроверки состояния, reference/qa.md
-node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка>            # телефон, медленная сеть — база для сравнения
-node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --viewport mobile
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-scroll --scroll --canvas --motion --video --fullpage
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-menu --viewport mobile --scroll --click "<переключатель меню>" --shot menu
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-state --css --hover-all --nav     # автопроверки состояния, reference/qa.md
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag base            # телефон, медленная сеть — база для сравнения
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag base-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag before --pages /,<другие страницы в задаче> --with-320
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
 ```
@@ -232,9 +232,9 @@ node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --t
 node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click ... --edit ... --select ...   # и то же с --viewport mobile --tag controls-mobile
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag state --css --hover-all --nav
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --viewport mobile-s --scroll
-node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --runs 3       # медиана трёх прогонов против базы; --overlay — цена слоя зерна
-node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --viewport mobile
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-320 --viewport mobile-s --scroll
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 ```
 У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),

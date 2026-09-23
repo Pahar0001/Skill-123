@@ -73,7 +73,7 @@
  * прокрутке), цвет текста читается заново, текст прячется, и снимок окна даёт фон под его строками
  * (коробки строк текста, а не всего элемента: значок рядом с подписью не в счёт); худшие 10 %
  * пикселей против нормы AA, зерно учитывается как выше. Провал — FAIL с высотой и секцией:
- * «на 1840 px меню nav.menu над светлой секцией section#catalog «Каталог»: a «Каталог» #FFFFFF 16px
+ * «на 1840 px меню nav.menu над секцией section#catalog «Каталог» (фон под текстом светлый): a «Каталог» #FFFFFF 16px
  * — 1.07:1». К высотам подъезжают сверху (прокрутка вниз); если часть текста на высоте спрятана или
  * за окном, — ещё раз снизу: шапка, которая прячется при прокрутке вниз, видна при прокрутке вверх
  * (в выводе «прокрутка вверх»). Текст, который и так спрятан, за окном (sticky уехал со своим
@@ -500,8 +500,9 @@ async function fixedOnScroll(page, map) {
        прокрутке вниз, видна при прокрутке вверх — если часть текста спрятана или за окном, подъехать снизу */
     let st = await goTo(y); let approach = 'сверху';
     if (st.items.some((s) => s.state === 'вне окна' || s.state === 'скрыт') && scan.maxScroll > 160) {
-      /* низ страницы: ниже подъехать некуда — встать на 160 px выше, подъехав от низа */
-      const y2 = y < scan.maxScroll ? y : Math.max(1, y - 160);
+      /* низ страницы: ниже подъехать некуда — встать на 60 px выше, подъехав от низа (прокрутка вверх;
+         160 px уводили полосу из нужной секции) */
+      const y2 = y < scan.maxScroll ? y : Math.max(1, y - 60);
       const n1 = shownN(st); const st2 = await goTo(y2, Math.min(scan.maxScroll, y2 + 160));
       if (shownN(st2) > n1) { st = st2; approach = 'снизу'; } else if (shownN(st2) < n1 || y2 !== y) st = await goTo(y, Math.max(0, y - 160));
     }
@@ -526,7 +527,7 @@ async function fixedOnScroll(page, map) {
       ratios.sort((x, z) => x - z); bgL.sort((x, z) => x - z);
       const p10 = ratios[Math.floor(ratios.length * 0.1)], median = ratios[Math.floor(ratios.length / 2)];
       const lo = bgL[Math.floor(bgL.length * 0.1)], mid = bgL[Math.floor(bgL.length / 2)], hi = bgL[Math.floor(bgL.length * 0.9)];
-      const tone = (hi + 0.05) / (lo + 0.05) > 3 ? 'пёстрой' : mid >= 0.45 ? 'светлой' : mid <= 0.12 ? 'тёмной' : 'средней по яркости';
+      const tone = (hi + 0.05) / (lo + 0.05) > 3 ? 'пёстрый' : mid >= 0.45 ? 'светлый' : mid <= 0.12 ? 'тёмный' : 'средний по яркости';
       const sec = s.sec != null ? scan.sections[s.sec] : null;
       const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
       res.measured++; out.measured++;
@@ -714,13 +715,13 @@ if (fx && !fx.none) {
     const up = fx.results.filter((r) => r.approach === 'снизу').length;
     const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
     if (fx.failures.length) {
-      /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над светлой секцией …: a «Каталог» … 1.07:1» */
+      /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над секцией … (фон под текстом светлый): a «Каталог» … 1.07:1» */
       const groups = new Map();
-      for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.tone} секцией ${f.section || '(вне секций)'}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
+      for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
       const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
       L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}`);
     } else if (!fx.measured) L('WARN', head, 'ни одного замера: закреплённый текст на этих высотах спрятан, за окном или перекрыт — смотреть глазами');
-    else { const w = fx.worst; L('OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.tone} секцией ${w.section || '(вне секций)'}`); }
+    else { const w = fx.worst; L('OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`); }
   }
 }
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);

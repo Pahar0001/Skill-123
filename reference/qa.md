@@ -224,7 +224,7 @@ node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --overlay           # �
 
 `--tag`, `--out`, `--cpu`, `--net fast3g|slow4g|none` — как раньше.
 
-Сравнивать с базой из разведки: `perf/*.json`. Ухудшение любого бюджета
+Сравнивать `perf/after.json` с базой разведки `perf/base.json` (этап 1 — `--tag base`, этап 4 — `--tag after`; без своего тега оба прогона пишут в один файл, и база пропадает). Ухудшение любого бюджета
 после правок — задача, а не примечание. Когда виноват конкретный скрипт
 или картинка и `perf.mjs` не показывает, кто, — `performance_start_trace`
 в chrome-devtools и `performance_analyze_insight`. Скорость проверять
