@@ -24,7 +24,10 @@
  *   --baseline <json>  база: файл `cliche.mjs baseline` донора (или результат прогона сайта «до»).
  *                      Без базы — только список черт страницы, вердикт по запретам и весу 3.
  *   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
- *                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste.
+ *                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste. Действуют общие запреты
+ *                      (область general и старые записи без области) и запреты с областью site
+ *                      этого прогона: имя папки --run (или найденной от базы) сверяется с полем run
+ *                      записи. Запреты других прогонов не действуют — печатается только их число.
  *   --viewport <list>  экраны через запятую (пресеты lib.mjs или ШxВ@плотность). По умолчанию —
  *                      экраны из базы, без базы — desktop (в режиме baseline — desktop,mobile).
  *                      Сравнивать можно только одинаковые экраны. --viewports — то же самое (как в
@@ -53,6 +56,17 @@
  *     или нет; роль зашита в правило (фото-карточки ≠ карточки с иконками);
  *   base — только с базой: гарнитуры, которых у донора нет (font-swapped); акцент
  *     сравнивается по оттенку (accent-added).
+ *
+ * Кнопка — a, button, [role=button], input[type=submit|button] высотой 24–90 px с заливкой или рамкой:
+ *   своей или у вложенного блока на всю коробку (Framer: <a> без фона, внутри div с заливкой). Текст
+ *   кнопки — цвет видимого текста внутри, а не самого <a> (у Framer он синий по умолчанию).
+ * Акцент (одно правило с extract и discover) — цвет действий: заливка залитых кнопок и ссылок-кнопок,
+ *   кнопки первого экрана — первыми; насыщенной заливки нет — цвет ссылок при наведении (мышь наводится на
+ *   до 8 текстовых ссылок разного вида); фоны секций, шапки и подвала — не акцент. Рамка и текст кнопки и
+ *   насыщенные плашки-метки тоже идут в счёт приёма. Пиксели не сверяются — только стили тех же коробок.
+ * Фото-карточки — сетка, где у ≥75% карточек картинка занимает ≥35% площади: плитка «ещё» того же размера
+ *   без картинки — часть сетки. Перед замером страница проходится до низа, картинки, которые прокрутка
+ *   запустила, догружаются (до 4 с); ещё не загруженная <img> считается по атрибутам width/height.
  *
  * Вердикт экрана:
  *   FAIL — есть ЗАПРЕЩЁН; правило веса 3 «НЕТ У ДОНОРА» без записи в authorship-decisions.json;
@@ -83,10 +97,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, evaluateWith,
+  launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, scrollToY, evaluateWith, hexColors,
   EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
 } from './lib.mjs';
-import { tasteDir, activeBans, readJournal, baselineResult, conflictsWith } from './taste.mjs';
+import { tasteDir, activeBans, bansElsewhere, readJournal, baselineResult, conflictsWith, runKey } from './taste.mjs';
 
 /* ---------- каталог: вес 3 — сильный признак, 2 — средний, 1 — слабый; id совпадают с reference/authorship.md ---------- */
 export const RULES = {
@@ -151,7 +165,9 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
   --baseline <json>  база: файл «cliche.mjs baseline» донора (или результат прогона сайта «до»).
                      Без базы — только список черт страницы; вердикт по запретам и весу 3.
   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
-                     SITE_REWORK_TASTE или ~/.claude/site-rework/taste.
+                     SITE_REWORK_TASTE или ~/.claude/site-rework/taste. Действуют общие запреты и
+                     запреты с областью site этого прогона (имя папки --run сверяется с полем run
+                     записи); запреты других прогонов не действуют.
   --viewport <list>  экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android или
                      ШxВ@плотность). По умолчанию — экраны из базы, без базы — desktop
                      (baseline — desktop,mobile). --viewports — то же самое; оба сразу
@@ -171,6 +187,11 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
 Сравнение: декоративные приёмы (length) — частота на 10 000 px страницы, «размножено» при > ×2;
 функциональные (share) — доля внутри своего класса (пилюли среди кнопок); остальные (role) — есть
 у донора или нет; font-swapped и accent-added сверяются с базой по гарнитурам и оттенку.
+Кнопка — с заливкой или рамкой своей или у вложенного блока на всю коробку (<a> Framer).
+Акцент — цвет действий: заливка кнопок (первый экран первым); заливок нет — цвет ссылок при
+наведении; фоны секций, шапки и подвала — не акцент. Фото-сетка — картинка у ≥75% карточек
+(плитка «ещё» без картинки — часть сетки); картинки, запущенные прокруткой, догружаются до замера.
+База версии ниже 3 снята до этих правил — пересобрать (cliche.mjs baseline).
 
 Вердикт: FAIL — ЗАПРЕЩЁН; вес 3 «НЕТ У ДОНОРА» без обоснования; «размножено» > ×2 (вес 2–3).
          WARN — «НЕТ У ДОНОРА» веса 1–2 без обоснования; «размножено» веса 1; ВОПРОС; нет базы.
@@ -240,11 +261,31 @@ function inPage(RULE_IDS) {
   const inDoc = (r) => r.y >= -2 && r.y + r.h <= docH + 2 && r.x + r.w > 0 && r.x < vw;
   const all = [...document.querySelectorAll('body *')].filter((e) => !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'OPTION'].includes(e.tagName) && !(e instanceof SVGElement));
   const vis = all.filter(visible);
-  const buttonLike = vis.filter((e) => {
-    if (!e.matches('a, button, [role=button], input[type=submit], input[type=button]')) return false;
-    const s = cs(e); const r = e.getBoundingClientRect(); if (r.height < 24 || r.height > 90 || r.width < 40) return false;
-    const bg = col(s.backgroundColor); return (bg && bg.a > 0.3) || hasBorderAll(s);
-  });
+  /* кнопка — элемент действия с заливкой или рамкой: своей или у вложенного блока на всю его коробку
+     (Framer: <a> без фона, внутри div с заливкой и скруглением — так сделана главная кнопка shapefest.com) */
+  const painted = (el) => { const s = cs(el); const bg = col(s.backgroundColor); return (bg && bg.a > 0.3) || hasBorderAll(s); };
+  const paintBox = (e) => {
+    if (painted(e)) return e;
+    const r = e.getBoundingClientRect(); const A = r.width * r.height;
+    for (const d of e.querySelectorAll('*')) {
+      if (d instanceof SVGElement) continue;
+      const q = d.getBoundingClientRect(); const a = q.width * q.height;
+      if (a < 0.8 * A || a > 1.25 * A || Math.abs(q.left - r.left) > r.width * 0.2 || Math.abs(q.top - r.top) > r.height * 0.2) continue;
+      if (painted(d) && eff(d) > 0.05) return d;
+    }
+    return null;
+  };
+  const btnBox = new Map();
+  for (const e of vis) {
+    if (!e.matches('a, button, [role=button], input[type=submit], input[type=button]')) continue;
+    const r = e.getBoundingClientRect(); if (r.height < 24 || r.height > 90 || r.width < 40) continue;
+    const pb = paintBox(e); if (pb) btnBox.set(e, pb);
+  }
+  /* <a> вокруг <button> с той же коробкой — одна кнопка: считается внутренний элемент */
+  const cands = [...btnBox.keys()];
+  const buttonLike = cands.filter((e) => btnBox.get(e) === e || !cands.some((o) => o !== e && e.contains(o) && btnBox.get(o) === btnBox.get(e)));
+  const boxOf = (b) => btnBox.get(b) || b;
+  const paintBoxes = new Set(buttonLike.map(boxOf));
   const isPill = (e) => { const r = e.getBoundingClientRect(); return radius(e) >= Math.min(r.height, r.width) / 2 - 1.5; };
 
   /* ===== типографика ===== */
@@ -322,18 +363,18 @@ function inPage(RULE_IDS) {
     const widths = fields.map((f) => Math.round(f.getBoundingClientRect().width)); const xs = fields.map((f) => Math.round(f.getBoundingClientRect().left));
     if (new Set(widths).size === 1 && new Set(xs).size === 1 && fields.length >= 3) signs.push(`${fields.length} поля столбиком одной ширины ${widths[0]}px`);
     const submit = [...form.querySelectorAll('button, input[type=submit]')].filter(visible).pop();
-    if (submit && isPill(submit)) { const sb = col(cs(submit).backgroundColor); signs.push(`отправка — пилюля ${Math.round(submit.getBoundingClientRect().height)}px «${textOf(submit).slice(0, 24)}»` + (sb && sb.a > 0.5 && chroma(sb) >= 90 ? `, акцент ${hexOf(sb)}` : '')); }
+    if (submit && isPill(boxOf(submit))) { const sb = col(cs(boxOf(submit)).backgroundColor); signs.push(`отправка — пилюля ${Math.round(submit.getBoundingClientRect().height)}px «${textOf(submit).slice(0, 24)}»` + (sb && sb.a > 0.5 && chroma(sb) >= 90 ? `, акцент ${hexOf(sb)}` : '')); }
     const opt = [...form.querySelectorAll('*')].find((e) => /не\s*обязательн|необязательн|optional/i.test(ownText(e)) && px(cs(e).fontSize) <= 13);
     if (opt) signs.push(`«${ownText(opt)}» ${px(cs(opt).fontSize)}px`);
     if (signs.length >= 3) add('form-kit', form, `${signs.length} из 5: ` + signs.join('; '));
   }
 
   /* ===== кнопки, коробки, тени, стекло ===== */
-  const pills = buttonLike.filter(isPill);
+  const pills = buttonLike.filter((b) => isPill(boxOf(b)));
   found['pill-everywhere'].info = { pills: pills.length, buttons: buttonLike.length, share: buttonLike.length ? +(pills.length / buttonLike.length).toFixed(2) : 0 };
-  if (buttonLike.length >= 4 && pills.length >= 5 && pills.length / buttonLike.length >= 0.6) pills.forEach((e) => add('pill-everywhere', e, `r${Math.round(radius(e))}, h${Math.round(e.getBoundingClientRect().height)}`));
+  if (buttonLike.length >= 4 && pills.length >= 5 && pills.length / buttonLike.length >= 0.6) pills.forEach((e) => add('pill-everywhere', e, `r${Math.round(radius(boxOf(e)))}, h${Math.round(e.getBoundingClientRect().height)}`));
   const boxes = vis.filter((e) => {
-    const r = e.getBoundingClientRect(); if (r.width * r.height < 4000 || buttonLike.includes(e)) return false;
+    const r = e.getBoundingClientRect(); if (r.width * r.height < 4000 || buttonLike.includes(e) || paintBoxes.has(e)) return false;
     const s = cs(e); const bg = col(s.backgroundColor);
     return ((bg && bg.a > 0.3) || hasBorderAll(s) || s.boxShadow !== 'none' || e.matches('input, textarea, select, canvas, img')) && radius(e) > 0 && !isPill(e);
   });
@@ -381,25 +422,42 @@ function inPage(RULE_IDS) {
   scrollTo({ top: sy0, behavior: 'instant' });
   found['ai-palette'].info = { candidates: gradCands.length, skipped: skipped.slice(0, 6) };
 
-  /* ===== акцент: насыщенный цвет на кнопках и метках (у донора его может не быть вовсе) ===== */
+  /* ===== акцент — цвет действий (одно правило с extract и discover): заливка залитых кнопок и ссылок-кнопок,
+     в т. ч. фон вложенного блока на всю коробку <a>, кнопки первого экрана — первыми; насыщенной заливки нет —
+     цвет ссылок при наведении (досчитывает measureViewport наведением мыши); фоны секций, шапки и подвала — не
+     акцент. Рамка и текст кнопки, насыщенные плашки-метки ≤ 420×64 — тоже в счёт приёма, но акцентом донора
+     первыми идут заливки. Группы по оттенку собирает groupAccents. ===== */
   const accents = [];
   const satOk = (c, o) => c && c.a * o >= 0.5 && chroma(c) >= 90 && Math.max(c.r, c.g, c.b) >= 90;
+  /* цвет видимого текста кнопки: у <a> Framer свой цвет — синий по умолчанию (#0000EE), а текст внутри другой */
+  const textColor = (b) => { if (b.matches('input')) return col(cs(b).color); const t = [b, ...b.querySelectorAll('*')].find((x) => ownText(x).length > 0 && visible(x)); return t ? col(cs(t).color) : null; };
   for (const b of buttonLike) {
     const r = rectOf(b); if (!inDoc(r)) continue;
-    const s = cs(b); const o = eff(b);
-    const pick = [[col(s.backgroundColor), 'фон'], [hasBorderAll(s) ? col(s.borderTopColor) : null, 'рамка'], [col(s.color), 'текст']].find(([c]) => satOk(c, o));
-    if (pick) accents.push({ e: b, c: pick[0], how: `кнопка, ${pick[1]}` });
+    const pb = boxOf(b); const s = cs(pb); const o = eff(pb); const first = r.y < vh;
+    const pick = [[col(s.backgroundColor), 'фон'], [hasBorderAll(s) ? col(s.borderTopColor) : null, 'рамка'], [textColor(b), 'текст']].find(([c]) => satOk(c, o));
+    if (pick) accents.push({ e: b, c: pick[0], how: `кнопка, ${pick[1]}${first ? ', первый экран' : ''}`, fill: pick[1] === 'фон', first });
   }
   for (const e of vis) {
     if (buttonLike.includes(e) || e.closest('a, button')) continue;
     const t = ownText(e) || textOf(e); if (t.length < 1 || t.length > 30) continue;
     const r = rectOf(e); if (r.h > 64 || r.w > 420 || !inDoc(r)) continue;
-    const c = col(cs(e).backgroundColor); if (satOk(c, eff(e))) accents.push({ e, c, how: 'метка' });
+    const c = col(cs(e).backgroundColor); if (satOk(c, eff(e))) accents.push({ e, c, how: 'метка', fill: false, first: r.y < vh });
   }
-  const hueGroups = {};
-  for (const a of accents) { const h = hue(a.c); const k = h === null ? 'x' : Math.round(h / 30) % 12; const g = hueGroups[k] || (hueGroups[k] = { hexes: {}, hue: h, count: 0 }); g.count++; const hx = hexOf(a.c); g.hexes[hx] = (g.hexes[hx] || 0) + 1; }
-  found['accent-added'].info = { accents: Object.values(hueGroups).map((g) => ({ hex: Object.entries(g.hexes).sort((a, b) => b[1] - a[1])[0][0], hue: g.hue === null ? null : Math.round(g.hue), count: g.count })).sort((a, b) => b.count - a.count) };
-  accents.forEach((a) => add('accent-added', a.e, `${hexOf(a.c)} ${a.how}, «${textOf(a.e).slice(0, 24)}»`, { hue: hue(a.c) === null ? null : Math.round(hue(a.c)) }));
+  const hueR = (c) => (hue(c) === null ? null : Math.round(hue(c)));
+  found['accent-added'].info = { raw: accents.map((a) => ({ hex: hexOf(a.c), hue: hueR(a.c), fill: a.fill, first: a.first, how: a.how })) };
+  accents.forEach((a) => add('accent-added', a.e, `${hexOf(a.c)} ${a.how}, «${textOf(a.e).slice(0, 24)}»`, { hue: hueR(a.c) }));
+  /* ссылки для наведения (шаг 2 правила акцента; наводит measureViewport, только если насыщенной заливки нет):
+     текстовые, не кнопки, сверху вниз, не больше двух одного вида (цвет, кегль, насыщенность, подчёркивание), всего 8.
+     Индексы — в document.querySelectorAll('a[href]') */
+  const linkAll = [...document.querySelectorAll('a[href]')]; const perStyle = {}; const hoverLinks = [];
+  for (const a of vis.filter((x) => x.tagName === 'A' && x.hasAttribute('href') && !btnBox.has(x)).sort((p, q) => rectOf(p).y - rectOf(q).y)) {
+    const r = a.getBoundingClientRect(); if (r.height > 60 || r.width < 16) continue;
+    const t = textOf(a); if (t.length < 2 || t.length > 60) continue;
+    const te = [a, ...a.querySelectorAll('*')].find((x) => ownText(x).length > 0 && visible(x)); if (!te) continue;
+    const s = cs(te); const key = [s.color, s.fontSize, s.fontWeight, s.textDecorationLine].join('|');
+    if ((perStyle[key] = (perStyle[key] || 0) + 1) > 2) continue;
+    hoverLinks.push(linkAll.indexOf(a)); if (hoverLinks.length >= 8) break;
+  }
 
   /* ===== сетки и повторы ===== */
   const parents = new Set(vis.map((e) => e.parentElement).filter(Boolean));
@@ -418,14 +476,28 @@ function inPage(RULE_IDS) {
   }
   const inside = (a, b) => b !== a && b.contains(a);
   const topGroups = cardGroups.filter((g) => !cardGroups.some((o) => o !== g && o.cards.some((c) => inside(g.p, c))));
+  /* площадь картинки: ленивая, ещё не загруженная <img> — по атрибутам width/height (пропорции), иначе
+     пустая коробка без размеров даёт 0 px, и фото-карточка выглядит текстовой */
+  const mediaArea = (m, kr) => {
+    const r = m.getBoundingClientRect(); let a = r.width * r.height;
+    if (m.tagName === 'IMG' && (!m.complete || m.naturalWidth <= 2)) {
+      const aw = parseFloat(m.getAttribute('width')), ah = parseFloat(m.getAttribute('height'));
+      if (aw > 0 && ah > 0) { const w = Math.min(r.width >= 2 ? r.width : aw, kr.width); a = Math.max(a, w * Math.min(kr.height, w * ah / aw)); }
+    }
+    return a;
+  };
   for (const g of topGroups) {
     const r0 = g.cards[0].getBoundingClientRect();
-    const media = (k) => [...k.querySelectorAll('img, canvas, video, picture, [style*="background-image"], .t-bgimg')].concat([k]).some((m) => { const mr = m.getBoundingClientRect(); const bi = cs(m).backgroundImage; const isMedia = /IMG|CANVAS|VIDEO|PICTURE/.test(m.tagName) || /url\(/.test(bi); return isMedia && mr.width * mr.height >= 0.35 * k.getBoundingClientRect().width * k.getBoundingClientRect().height; });
+    const media = (k) => { const kr = k.getBoundingClientRect(); return [...k.querySelectorAll('img, canvas, video, picture, [style*="background-image"], .t-bgimg')].concat([k]).some((m) => { const bi = cs(m).backgroundImage; const isMedia = /IMG|CANVAS|VIDEO|PICTURE/.test(m.tagName) || /url\(/.test(bi); return isMedia && mediaArea(m, kr) >= 0.35 * kr.width * kr.height; }); };
     const icon = (k) => [...k.querySelectorAll('svg, img, i[class*=icon], span[class*=icon]')].some((m) => { const mr = m.getBoundingClientRect(); return mr.width >= 12 && mr.width <= 80 && mr.height <= 80 && mr.top - k.getBoundingClientRect().top < 120; });
     const deco = (k) => { const s = cs(k); const bg = col(s.backgroundColor); return (bg && bg.a > 0.3) || hasBorderAll(s) || s.boxShadow !== 'none' || radius(k) >= 6; };
     const texty = (k) => k.querySelector('h2, h3, h4, b, strong') && textOf(k).length > 30;
     const n = g.cards.length;
-    if (g.cards.every(media)) g.cards.forEach((k) => add('photo-cards', k, `${n} шт ${Math.round(r0.width)}×${Math.round(r0.height)}`));
+    /* фото-сетка — по большинству: у ≥75% карточек картинка. Плитка «ещё / нет нужной?» того же размера
+       без картинки (у shapefest.com 9-я в каждой сетке, у VN3D 8-я) — часть той же сетки, а не повод
+       назвать всю сетку текстовыми карточками */
+    const withMedia = g.cards.filter(media);
+    if (withMedia.length >= Math.max(3, Math.ceil(n * 0.75))) g.cards.forEach((k) => add('photo-cards', k, `${n} шт ${Math.round(r0.width)}×${Math.round(r0.height)}` + (withMedia.includes(k) ? '' : ' · плитка без картинки')));
     else if (g.cards.filter(icon).length >= n * 0.75 && g.cards.every(texty)) g.cards.forEach((k) => add('icon-cards', k, `${n} шт ${Math.round(r0.width)}×${Math.round(r0.height)}`));
     else if (g.cards.every(deco) && g.cards.every(texty)) g.cards.forEach((k) => add('equal-cards', k, `${n} шт ${Math.round(r0.width)}×${Math.round(r0.height)}`));
   }
@@ -458,7 +530,7 @@ function inPage(RULE_IDS) {
   if (h1) { const r = h1.getBoundingClientRect(); if (r.top + scrollY < vh && cs(h1).textAlign === 'center' && Math.abs(r.left + r.width / 2 - vw / 2) < vw * 0.05) add('centered-hero', h1, `h1 по центру, ${px(cs(h1).fontSize)}px`); }
   const heroBtns = buttonLike.filter((b) => b.getBoundingClientRect().top + scrollY < vh && b.getBoundingClientRect().height >= 36 && !b.closest('nav, header, [class*=nav], [class*=menu], [class*=floating]'));
   const byParent = new Map(); heroBtns.forEach((b) => { const p = b.parentElement; if (!byParent.has(p)) byParent.set(p, []); byParent.get(p).push(b); });
-  for (const [p, list] of byParent) if (list.length >= 2) { const fills = list.map((b) => { const bg = col(cs(b).backgroundColor); return bg && bg.a > 0.5 ? 'залитая' : 'контурная'; }); add('hero-two-ctas', p, list.map((b, i) => `«${textOf(b).slice(0, 22)}» ${fills[i]}`).join(' + ')); }
+  for (const [p, list] of byParent) if (list.length >= 2) { const fills = list.map((b) => { const bg = col(cs(boxOf(b)).backgroundColor); return bg && bg.a > 0.5 ? 'залитая' : 'контурная'; }); add('hero-two-ctas', p, list.map((b, i) => `«${textOf(b).slice(0, 22)}» ${fills[i]}`).join(' + ')); }
   /* секции */
   const full = vis.filter((e) => e.getBoundingClientRect().width >= vw * 0.9 && e.getBoundingClientRect().height >= 150);
   const pc = new Map(); full.forEach((e) => { const p = e.parentElement; if (!p) return; pc.set(p, (pc.get(p) || 0) + 1); });
@@ -527,7 +599,7 @@ function inPage(RULE_IDS) {
   (bodyText.match(BUZZ) || []).slice(0, 20).forEach((w) => found['copy-buzz'].items.push({ sel: 'текст', note: w }));
   vis.filter((e) => /^([^\s.!]+\.\s){2,}[^\s.!]+\.$/.test(ownText(e))).forEach((e) => add('copy-triad', e, `«${ownText(e)}»`));
 
-  found.page = { vw, vh, docH, sections: seq.length, buttons: buttonLike.length, pills: pills.length, boxes: boxes.length, capsTotal: caps.length, spacedAll, headings: hs3.length, fonts, fine: fine.length };
+  found.page = { vw, vh, docH, sections: seq.length, buttons: buttonLike.length, pills: pills.length, boxes: boxes.length, capsTotal: caps.length, spacedAll, headings: hs3.length, fonts, fine: fine.length, hoverLinks };
   return found;
 }
 
@@ -555,6 +627,87 @@ function cssRules(cssText) {
   return hits;
 }
 
+/* ленивые картинки: прокрутка запустила загрузку — ждём, пока догрузятся (не дольше ms), иначе фото-карточка
+   с пустой <img> без размеров считается текстовой. → { images, lazy, pending } (pending — не догрузились) */
+function waitImagesInPage(ms) {
+  return new Promise((res) => {
+    const shown = [...document.images].filter((i) => i.getClientRects().length > 0 && (i.currentSrc || i.getAttribute('src')));
+    const done = () => res({ images: shown.length, lazy: shown.filter((i) => i.loading === 'lazy').length, pending: shown.filter((i) => !i.complete).length });
+    const wait = shown.filter((i) => !i.complete);
+    if (!wait.length) { done(); return; }
+    let left = wait.length; const one = () => { if (--left <= 0) done(); };
+    wait.forEach((i) => { i.addEventListener('load', one, { once: true }); i.addEventListener('error', one, { once: true }); });
+    setTimeout(done, ms);
+  });
+}
+
+/* цвета в Node: '#RRGGBB[AA]' → оттенок и насыщенность — те же пороги, что в странице */
+const rgbOf = (hx) => ({ r: parseInt(hx.slice(1, 3), 16), g: parseInt(hx.slice(3, 5), 16), b: parseInt(hx.slice(5, 7), 16), a: hx.length > 7 ? parseInt(hx.slice(7, 9), 16) / 255 : 1 });
+const hueOfHex = (hx) => { const c = rgbOf(hx); const r = c.r / 255, g = c.g / 255, b = c.b / 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); const d = mx - mn; if (d < 0.12) return null; const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return Math.round((h * 60 + 360) % 360); };
+const saturatedHex = (hx) => { const c = rgbOf(hx); const mx = Math.max(c.r, c.g, c.b); return c.a >= 0.5 && mx - Math.min(c.r, c.g, c.b) >= 90 && mx >= 90; };
+
+/**
+ * Шаг 2 правила акцента: насыщенной заливки у кнопок нет — цвет ссылок при наведении. Мышь наводится по очереди
+ * на ссылки, отобранные в странице (indices в querySelectorAll('a[href]'), до 8 разного вида); сравниваются цвет
+ * видимого текста, подчёркивания и фона ссылки до и после. → { tried, items: [{ hex, how, sel, text, x, y, w, h }] }
+ */
+async function hoverAccents(page, indices) {
+  if (!indices || !indices.length) return { tried: 0, items: [] };
+  const read = (a) => {
+    const own = (el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
+    const t = [a, ...a.querySelectorAll('*')].find((x) => own(x).length > 0) || a; const s = getComputedStyle(t); const r = a.getBoundingClientRect();
+    const cls = [...a.classList].slice(0, 2).map((c) => '.' + c).join('');
+    return { color: s.color, deco: s.textDecorationLine !== 'none' ? s.textDecorationColor : '', bg: getComputedStyle(a).backgroundColor, x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height, text: (a.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 24), sel: (a.parentElement ? a.parentElement.tagName.toLowerCase() + ' > ' : '') + 'a' + cls };
+  };
+  /* ручки только на отобранные ссылки (до 8), а не на все a[href] страницы */
+  const arr = await page.evaluateHandle((idx) => { const all = document.querySelectorAll('a[href]'); return idx.map((i) => all[i]).filter(Boolean); }, indices);
+  const links = [...(await arr.getProperties()).values()].map((h) => h.asElement()).filter(Boolean);
+  await arr.dispose().catch(() => {});
+  const raw = []; let tried = 0;
+  try {
+    for (const h of links) {
+      const before = await h.evaluate(read).catch(() => null); if (!before) continue;
+      try { await h.hover(); } catch { continue; }
+      tried++; await sleep(350); /* переход цвета у ссылок обычно 150–300 мс */
+      const after = await h.evaluate(read).catch(() => null); if (!after) continue;
+      for (const [k, how] of [['color', 'текст'], ['deco', 'подчёркивание'], ['bg', 'фон']]) if (after[k] && after[k] !== before[k]) raw.push({ css: after[k], how, sel: after.sel, text: after.text, x: before.x, y: before.y, w: before.w, h: before.h });
+    }
+  } finally {
+    await page.mouse.move(0, 0).catch(() => {});
+    await Promise.all(links.map((h) => h.dispose().catch(() => {})));
+    await scrollToY(page, 0).catch(() => {});
+  }
+  const hexes = raw.length ? await hexColors(page, raw.map((x) => x.css)).catch(() => []) : [];
+  /* одна запись на ссылку и цвет: текст и подчёркивание одного цвета — «текст, подчёркивание» */
+  const items = [];
+  raw.forEach((x, k) => {
+    const hx = hexes[k]; if (!hx || !saturatedHex(hx)) return;
+    const hex = hx.slice(0, 7); const same = items.find((o) => o.hex === hex && o.x === x.x && o.y === x.y && o.sel === x.sel);
+    if (same) same.how += `, ${x.how}`; else items.push({ ...x, hex });
+  });
+  return { tried, items };
+}
+
+/**
+ * Акценты страницы по оттенку (корзины по 30°): [{ hex, hue, count, fill, first, hover }]. Первыми — заливки кнопок
+ * первого экрана, затем заливки, затем по числу; hex группы — тоже с заливки первого экрана, если она есть.
+ */
+function groupAccents(raw) {
+  const groups = {};
+  for (const a of raw || []) {
+    const k = a.hue === null ? 'x' : Math.round(a.hue / 30) % 12;
+    const g = groups[k] || (groups[k] = { hexes: {}, hue: a.hue, count: 0, fill: false, first: false, hover: false });
+    g.count++; g.hexes[a.hex] = (g.hexes[a.hex] || 0) + (a.fill && a.first ? 1000 : a.fill ? 100 : 1);
+    if (a.fill) g.fill = true; if (a.fill && a.first) g.first = true; if (a.hover) g.hover = true;
+  }
+  return Object.values(groups).map((g) => ({ hex: Object.entries(g.hexes).sort((a, b) => b[1] - a[1])[0][0], hue: g.hue, count: g.count, fill: g.fill, first: g.first, hover: g.hover }))
+    .sort((a, b) => (b.first - a.first) || (b.fill - a.fill) || (b.count - a.count));
+}
+/** Акцент строкой: «#6A4EE1×1 (заливка, первый экран)». */
+const accentText = (a) => `${a.hex}×${a.count}${a.first ? ' (заливка, первый экран)' : a.fill ? ' (заливка)' : a.hover ? ' (ссылки при наведении)' : ''}`;
+/** Пометка к акценту, когда заливок не было и наводилась мышь. */
+const hoverNote = (h) => (h ? ` [насыщенной заливки у кнопок нет — наведение на ссылки: ${h.tried} из ${h.links}, цветов ${h.colors}${h.error ? `, ошибка: ${h.error}` : ''}]` : '');
+
 /* ======================================================================
    Замер одного экрана: открыть, прокрутить, посчитать. Возвращает результат без сравнения.
    ====================================================================== */
@@ -571,15 +724,31 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
     const reveal = await page.evaluate(revealCandidates);
     const sc = await scrollThrough(page, { pause: 300 });
     await sleep(700);
+    /* картинки, которые прокрутка запустила (ленивые), — догрузить до замера сеток */
+    const images = await page.evaluate(waitImagesInPage, 4000).catch(() => null);
     const inline = await page.evaluate(() => [...document.querySelectorAll('style:not([data-rw])')].map((s) => s.textContent).join('\n'));
     const found = await evaluateWith(page, inPage, Object.keys(RULES), { eff: EFFECTIVE_OPACITY_FN, hex: HEX_FN });
     const css = cssRules(cssTexts.join('\n') + '\n' + inline);
     const P = found.page; delete found.page;
+    const hoverLinks = P.hoverLinks || []; delete P.hoverLinks;
+    /* акцент: насыщенной заливки у кнопок нет — цвет ссылок при наведении (правило акцента, шаг 2) */
+    const A = found['accent-added']; const rawAcc = (A.info && A.info.raw) || [];
+    let hover = null;
+    if (!rawAcc.some((a) => a.fill)) {
+      const hv = await hoverAccents(page, hoverLinks).catch((e) => ({ tried: 0, items: [], error: String(e && e.message || e).slice(0, 120) }));
+      hover = { links: hoverLinks.length, tried: hv.tried, colors: hv.items.length, ...(hv.error ? { error: hv.error } : {}) };
+      for (const x of hv.items) {
+        const hu = hueOfHex(x.hex);
+        rawAcc.push({ hex: x.hex, hue: hu, fill: false, first: x.y < P.vh, hover: true, how: `ссылка при наведении, ${x.how}` });
+        A.items.push({ sel: x.sel, note: `${x.hex} ссылка при наведении (${x.how}), «${x.text}»`, x: Math.round(x.x), y: Math.round(x.y), w: Math.round(x.w), h: Math.round(x.h), hue: hu });
+      }
+    }
+    A.info = { accents: groupAccents(rawAcc), ...(hover ? { hover } : {}) };
     found['fade-up-reveal'] = { items: reveal.map((r) => ({ sel: r.sel, note: `сдвиг ${r.ty}px`, y: r.y, h: r.h, w: r.w, x: r.x })), info: { cssRules: css['fade-up-css'].length, blocks: reveal.length } };
     if (reveal.length < 6 && css['fade-up-css'].length < 3) found['fade-up-reveal'].items = [];
     for (const k of ['hover-lift', 'transition-all', 'bounce-ease']) found[k] = { items: css[k].slice(0, 30).map((s) => ({ sel: s, note: 'правило CSS' })), info: { rules: css[k].length } };
     const docArea = P.vw * P.docH;
-    const result = { url, viewport: vpName, date: new Date().toISOString(), page: P, open: { attempt: (page.gotoInfo || {}).attempt || 1, waitUntil: (page.gotoInfo || {}).waitUntil || 'networkidle2', overlay: overlay.overlay || null, stuck: !!sc.stuck, reachedBottom: !!sc.reachedBottom }, rules: {} };
+    const result = { url, viewport: vpName, date: new Date().toISOString(), page: P, open: { attempt: (page.gotoInfo || {}).attempt || 1, waitUntil: (page.gotoInfo || {}).waitUntil || 'networkidle2', overlay: overlay.overlay || null, stuck: !!sc.stuck, reachedBottom: !!sc.reachedBottom, images }, rules: {} };
     for (const [id, meta] of Object.entries(RULES)) {
       const f = found[id] || { items: [], info: {} };
       const items = f.items || [];
@@ -665,8 +834,9 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
       const dh = ((d.info && d.info.accents) || []).filter((a) => a.hue !== null).map((a) => a.hue);
       const mine = (e.info.accents || []);
       const alien = mine.filter((a) => a.hue === null || !dh.some((h) => hueDist(h, a.hue) <= 30));
-      if (!alien.length) e.mark = 'есть у донора';
-      else { e.mark = 'НЕТ У ДОНОРА'; e.donorNote = dh.length ? `у донора акцент другого цвета: ${(d.info.accents || []).map((a) => a.hex).join(', ')}` : 'у донора насыщенного цвета на кнопках и метках нет'; }
+      const donorAcc = ((d.info && d.info.accents) || []).map(accentText).join(', ');
+      if (!alien.length) { e.mark = 'есть у донора'; e.donorNote = `у донора: ${donorAcc}`; }
+      else { e.mark = 'НЕТ У ДОНОРА'; e.donorNote = dh.length ? `у донора акцент другого цвета: ${donorAcc}` : 'у донора нет насыщенного цвета действий: ни заливки кнопок, ни ссылок при наведении, ни меток'; }
     } else if (!d.count) e.mark = 'НЕТ У ДОНОРА';
     else if (e.mode === 'length') {
       const ratio = d.per10kpx ? e.per10kpx / d.per10kpx : Infinity;
@@ -686,8 +856,8 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
     if (ban) {
       const donorUrl = base && base.url;
       if (donorUrl && ban.allowedFor && ban.allowedFor.includes(donorUrl)) e.allowed = `запрет «${ban.quote}» снят пользователем для этого донора`;
-      else if (banConflicts.has(id)) { e.question = `запрет пользователя (${ban.date}) «${ban.quote}» спорит с чертой донора (у донора ${d.count}) — спросить: держится ли запрет для этого донора`; warn.push(`${id}: ВОПРОС пользователю — запрет спорит с донором`); }
-      else { e.banned = `ЗАПРЕЩЁН пользователем (${ban.date}${ban.block ? ', ' + ban.block : ''}): «${ban.quote}»`; fail.push(`${id}: ЗАПРЕЩЁН пользователем`); }
+      else if (banConflicts.has(id)) { e.question = `запрет пользователя (${ban.date}${ban.scope === 'site' ? ', только этот сайт' : ''}) «${ban.quote}» спорит с чертой донора (у донора ${d.count}) — спросить: держится ли запрет для этого донора`; warn.push(`${id}: ВОПРОС пользователю — запрет спорит с донором`); }
+      else { e.banned = `ЗАПРЕЩЁН пользователем (${ban.date}${ban.block ? ', ' + ban.block : ''}${ban.scope === 'site' ? `, только прогон ${ban.run}` : ''}): «${ban.quote}»`; fail.push(`${id}: ЗАПРЕЩЁН пользователем${ban.scope === 'site' ? ` (для этого сайта)` : ''}`); }
     }
     /* обоснование */
     const dec = decisions && decisions.map[id];
@@ -714,7 +884,10 @@ const ORDER = (e) => (e.banned ? 0 : e.mark === 'НЕТ У ДОНОРА' && e.we
 export function printResult(r, { log = console.log } = {}) {
   const P = r.page;
   log(`\nШаблонность: ${r.url} · ${r.viewport} ${P.vw}×${P.vh} · страница ${P.docH} px · секций ${P.sections}` + (r.open && r.open.attempt > 1 ? ` · открылась с ${r.open.attempt}-й попытки (${r.open.waitUntil})` : ''));
-  log(`база: ${r.baseline ? `${r.baseline.url} (${r.baseline.viewport}${r.baseline.exact ? '' : ', ДРУГОЙ ЭКРАН'})` : 'нет'} · журнал вкуса: ${r.taste ? `${r.taste.bans.length} запрет(ов)${r.taste.bans.length ? ' — ' + r.taste.bans.join(', ') : ''}` : 'не подключён'} · обоснования: ${r.decisions ? `${r.decisions.file}${r.decisions.exists ? ` (${r.decisions.rules} правил)` : ' (файла нет)'}` : '—'}`);
+  const T = r.taste;
+  const tasteLine = T ? `${T.bans.length} запрет(ов)${T.bans.length ? ' — ' + T.bans.map((id) => `${id}${T.scopes && T.scopes[id] === 'site' ? ' (только этот сайт)' : ''}`).join(', ') : ''}${T.elsewhere && T.elsewhere.length ? `; запретов других сайтов ${T.elsewhere.length} — здесь не действуют` : ''}; прогон ${T.run || '—'}` : 'не подключён';
+  log(`база: ${r.baseline ? `${r.baseline.url} (${r.baseline.viewport}${r.baseline.exact ? '' : ', ДРУГОЙ ЭКРАН'})` : 'нет'} · журнал вкуса: ${tasteLine} · обоснования: ${r.decisions ? `${r.decisions.file}${r.decisions.exists ? ` (${r.decisions.rules} правил)` : ' (файла нет)'}` : '—'}`);
+  if (r.baseline && (r.baseline.version || 0) < 3) log('      база снята версией до правки акцента и фото-сеток (кнопки Framer, наведение ссылок, плитка «ещё» в сетке) — пересобрать: cliche.mjs baseline <донор> --out <файл>');
   const hit = Object.entries(r.rules).filter(([, e]) => e.count).sort((a, b) => ORDER(a[1]) - ORDER(b[1]) || b[1].weight - a[1].weight || b[1].share - a[1].share);
   log(`индекс ${r.index ?? '—'} · сработало правил ${hit.length}, в счёт ${hit.filter(([, e]) => e.counts).length}\n`);
   for (const [id, e] of hit) {
@@ -731,7 +904,9 @@ export function printResult(r, { log = console.log } = {}) {
   const info = (id) => (r.rules[id] || {}).info || {};
   const pe = info('pill-everywhere'); const ac = info('accent-added').accents || [];
   const fontsLine = Object.entries(P.fonts || {}).filter(([, m]) => Object.keys(m).length).map(([k, m]) => `${ROLE_RU[k]}: ${topFam(m)}`).join('; ');
-  log(`\nсправка: кнопок ${pe.buttons}, пилюль ${pe.pills} (${Math.round((pe.share || 0) * 100)}%); скругления ${JSON.stringify(info('uniform-radius').hist)}; разрядка ≥0.05em у ${P.spacedAll} элементов; мелкий текст <12px: ${P.fine}; акцент: ${ac.length ? ac.map((a) => `${a.hex}×${a.count}`).join(', ') : 'нет'}`);
+  log(`\nсправка: кнопок ${pe.buttons}, пилюль ${pe.pills} (${Math.round((pe.share || 0) * 100)}%); скругления ${JSON.stringify(info('uniform-radius').hist)}; разрядка ≥0.05em у ${P.spacedAll} элементов; мелкий текст <12px: ${P.fine}; акцент: ${ac.length ? ac.map(accentText).join(', ') : 'нет'}${hoverNote(info('accent-added').hover)}`);
+  const im = r.open && r.open.images;
+  if (im && im.pending) log(`         картинок не догрузилось к замеру: ${im.pending} из ${im.images} (ленивых ${im.lazy}) — сетки с ними считались по атрибутам width/height`);
   const seq = info('alternating-bands').sequence || [];
   log(`         фоны секций ${seq.length > 12 ? `${seq.length}: ${JSON.stringify(seq.slice(0, 12))} …` : JSON.stringify(seq)}; гарнитуры — ${fontsLine}`);
   if ((info('ai-palette').skipped || []).length) log(`         ai-palette не засчитан: ${info('ai-palette').skipped.join('; ')}`);
@@ -806,15 +981,6 @@ if (isMain) {
   const vps = pickViewports(vpList).filter(([n]) => !vpSeen.has(n) && vpSeen.add(n));
   if (!vps.length) die('пустой список экранов');
 
-  /* журнал вкуса и обоснования */
-  let bans = null; let tdir = null;
-  if (!baselineMode && opt.taste) {
-    tdir = tasteDir(opt.taste === true ? null : opt.taste);
-    if (opt.taste !== true && !fs.existsSync(tdir)) die(`нет папки журнала ${tdir}`);
-    const j = readJournal(tdir);
-    if (j.bad.length) console.error(`WARN  журнал ${tdir}: битых строк ${j.bad.length} — пропущены`);
-    bans = activeBans(j);
-  }
   /* папка прогона без --run: от файла базы вверх (до 3 уровней) — где лежит state.json или
      authorship-decisions.json; SKILL.md кладёт базу в <папка>/ или <папка>/donor/ */
   const inferRun = () => {
@@ -827,6 +993,17 @@ if (isMain) {
     return null;
   };
   const run = baselineMode ? null : path.resolve(String(opt.run && opt.run !== true ? opt.run : opt.out && opt.out !== true ? opt.out : inferRun() || runDir({}, url)));
+  /* журнал вкуса: общие запреты и запреты с областью site этого прогона (по имени папки прогона) */
+  let bans = null; let tdir = null; let away = [];
+  const runId = baselineMode ? '' : runKey(run);
+  if (!baselineMode && opt.taste) {
+    tdir = tasteDir(opt.taste === true ? null : opt.taste);
+    if (opt.taste !== true && !fs.existsSync(tdir)) die(`нет папки журнала ${tdir}`);
+    const j = readJournal(tdir);
+    if (j.bad.length) console.error(`WARN  журнал ${tdir}: битых строк ${j.bad.length} — пропущены`);
+    bans = activeBans(j, { run: runId });
+    away = bansElsewhere(j, runId);
+  }
   const decFile = baselineMode ? null : path.resolve(String(opt.decisions && opt.decisions !== true ? opt.decisions : path.join(run, 'authorship-decisions.json')));
   if (opt.decisions && opt.decisions !== true && !fs.existsSync(decFile)) die(`нет файла обоснований ${decFile}`);
   const decisions = baselineMode ? null : loadDecisions(decFile);
@@ -849,8 +1026,8 @@ if (isMain) {
         const base = baseJson ? baselineResult(baseJson, vpName, vp) : null;
         const exact = !base || base.viewport === vpName;
         compareResult(r, base, { bans, decisions, baseExact: exact });
-        r.baseline = base ? { file: baseFile, url: base.url, viewport: base.viewport, exact } : null;
-        r.taste = bans ? { dir: tdir, bans: Object.keys(bans) } : null;
+        r.baseline = base ? { file: baseFile, url: base.url, viewport: base.viewport, exact, version: baseJson.version || 1 } : null;
+        r.taste = bans ? { dir: tdir, run: runId, bans: Object.keys(bans), scopes: Object.fromEntries(Object.entries(bans).map(([k, b]) => [k, b.scope])), elsewhere: away.map((x) => `${x.rule} (${x.run})`) } : null;
         r.decisions = { file: decFile, exists: decisions.exists, rules: Object.keys(decisions.map).length };
         if (opt.shot && page) {
           const sf = path.join(run, 'cliche', `cliche-${vpName}.png`); ensureDir(path.dirname(sf));
@@ -861,10 +1038,12 @@ if (isMain) {
         if (r.shot) log(r.shot.file ? `снимок: ${r.shot.file} (обводок ${r.shot.marks}${r.shot.cut ? `, обрезан на ${r.shot.height} px` : ''})` : `WARN снимок не сделан: ${r.shot.error}`);
       } else {
         const hit = Object.entries(r.rules).filter(([, e]) => e.count);
-        const pe = r.rules['pill-everywhere'].info; const ac = r.rules['accent-added'].info.accents || [];
+        const pe = r.rules['pill-everywhere'].info; const ai = r.rules['accent-added'].info; const ac = ai.accents || [];
         log(`${vpName} ${r.page.vw}×${r.page.vh}, страница ${r.page.docH} px: черт донора ${hit.length} — ${hit.map(([id, e]) => `${id}×${e.count}`).join(', ') || 'нет'}`);
-        log(`  кнопок ${pe.buttons}, пилюль ${pe.pills}; скругления ${JSON.stringify(r.rules['uniform-radius'].info.hist)}; разрядка у ${r.page.spacedAll}; мелкий текст <12px: ${r.page.fine}; акцент: ${ac.length ? ac.map((a) => `${a.hex}×${a.count}`).join(', ') : 'нет'}`);
+        log(`  кнопок ${pe.buttons}, пилюль ${pe.pills}; скругления ${JSON.stringify(r.rules['uniform-radius'].info.hist)}; разрядка у ${r.page.spacedAll}; мелкий текст <12px: ${r.page.fine}; акцент: ${ac.length ? ac.map(accentText).join(', ') : 'нет'}${hoverNote(ai.hover)}`);
         log(`  гарнитуры — ${Object.entries(r.page.fonts).filter(([, m]) => Object.keys(m).length).map(([k, m]) => `${ROLE_RU[k]}: ${topFam(m)}`).join('; ')}`);
+        const im = r.open.images;
+        if (im) log(`  картинок ${im.images}, ленивых ${im.lazy}${im.pending ? `, не догрузились к замеру ${im.pending} — сетки с ними считались по атрибутам width/height` : ', все догружены'}`);
       }
       results[vpName] = r;
     }
@@ -874,12 +1053,13 @@ if (isMain) {
   if (baselineMode) {
     let out = opt.out && opt.out !== true ? path.resolve(String(opt.out)) : path.join(runDir({}, url), 'cliche', 'cliche-baseline.json');
     if (!/\.json$/i.test(out)) out = path.join(out, 'cliche-baseline.json');
-    writeJson(out, { kind: 'cliche-baseline', version: 2, url, date: new Date().toISOString(), viewports: results });
+    /* версия 3: кнопки с заливкой у вложенного блока, акцент по правилу «заливка → наведение», фото-сетка по большинству */
+    writeJson(out, { kind: 'cliche-baseline', version: 3, url, date: new Date().toISOString(), viewports: results });
     log(`\nOK   база донора → ${out}\n     дальше: node cliche.mjs <сайт> --baseline "${out}" --taste`);
   } else {
     const verdicts = Object.values(results).map((r) => r.verdict);
     const total = verdicts.includes('FAIL') ? 'FAIL' : verdicts.includes('WARN') ? 'WARN' : 'OK';
-    const doc = { kind: 'cliche', version: 2, url, date: new Date().toISOString(), baseline: baseFile, verdict: total, viewports: results };
+    const doc = { kind: 'cliche', version: 3, url, date: new Date().toISOString(), baseline: baseFile, verdict: total, viewports: results };
     if (toStdout) process.stdout.write(JSON.stringify(doc, null, 1) + '\n');
     else {
       const jf = opt.json && opt.json !== true ? path.resolve(String(opt.json)) : path.join(run, 'cliche', 'cliche.json');

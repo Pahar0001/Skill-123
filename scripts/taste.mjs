@@ -6,10 +6,11 @@
  *
  *   node taste.mjs add --block form --verdict rejected --by user --rule form-kit \
  *        --quote "<дословные слова пользователя>" --why "<что на картинке, своими словами>" \
- *        --img <кроп.png> [--run art] [--donor <url>] [--date 2026-09-22] [--source "<где сказано>"]
- *   node taste.mjs add --block form --verdict rejected --by self --rule form-kit --why "<почему отсеял>"
- *   node taste.mjs brief [--blocks form,faq,hero] [--last 10] [--baseline <json донора>]
- *   node taste.mjs bans [--baseline <json донора>] [--json]
+ *        --img <кроп.png> --run <прогон> [--scope site|general] [--donor <url>] [--date 2026-09-22] [--source "<где сказано>"]
+ *   node taste.mjs add --block form --verdict rejected --by self --rule form-kit --run <прогон> --why "<почему отсеял>"
+ *   node taste.mjs brief [--run <прогон>] [--blocks form,faq,hero] [--last 10] [--baseline <json донора>]
+ *   node taste.mjs bans [--run <прогон>] [--baseline <json донора>] [--json]
+ *   node taste.mjs list [--run <прогон>]
  *   node taste.mjs check
  *   node taste.mjs --help
  *
@@ -22,7 +23,13 @@
  *   --why "<текст>"    что на картинке и в чём дело, своими словами; обязательно всегда
  *   --rule <id[,id]>   правила каталога cliche.mjs (node cliche.mjs rules), к которым относится запись
  *   --img <файл>       кроп; копируется в <журнал>/img/ (папка img/ создаётся только тогда)
- *   --run, --donor     прогон и адрес донора, при котором это сказано
+ *   --run <прогон>     add: прогон, при котором это сказано (имя папки прогона; путь сокращается до имени).
+ *                      brief, bans, list: прогон, для которого считать запреты — запреты с областью
+ *                      site из других прогонов здесь не действуют (печатаются отдельно)
+ *   --scope <область>  add: site — только этот сайт, запись действует лишь в прогоне --run (по умолчанию,
+ *                      если задан --run); general — все сайты: только явно и только если пользователь сам
+ *                      сказал, что это общее. Без --run и без --scope general запись не пишется
+ *   --donor <url>      адрес донора, при котором это сказано
  *   --date <ГГГГ-ММ-ДД> дата, когда сказано (по умолчанию сегодня)
  *   --source "<текст>" где сказано (сообщение, отзыв на снимок)
  *   --blocks a,b       brief: записи по этим блокам — открыть их картинки перед эскизом
@@ -43,17 +50,26 @@
  *     by self запретом не бывает: это подсказка на шаге авторства, не блок выхода.
  *   · Запрет снимается записью by user с verdict accepted/preferred по тому же
  *     правилу; с --donor — только для этого донора.
+ *   · Область (поле scope). site — запись действует только в своём прогоне:
+ *     cliche.mjs --taste сверяет имя папки --run с полем run записи, brief/bans/list —
+ *     со своим --run. general — на всех сайтах. Снятие запрета — тоже со своей
+ *     областью: accepted с site снимает запрет только в своём прогоне, с general —
+ *     везде. Среди записей, действующих в прогоне, последняя по правилу решает.
+ *   · Старые записи без поля scope читаются как general — как до появления области.
  *   · Запрет, который спорит с чертой нового донора (у донора этот приём есть),
  *     не блокирует молча: brief --baseline и cliche.mjs --taste выводят его
  *     вопросом пользователю.
  *
+ * Запись журнала (одна строка JSON): { date, run, scope: "site"|"general", donor, block, verdict,
+ * by, rules: [...], quote, why, source?, img }.
+ *
  * Файлы: journal.jsonl (одна запись — одна строка), img/ (только если был --img), README.md
  * (пишет add, если его нет: что за журнал, кто что пишет, как читать; свой README не
- * перезаписывается). brief, bans и check ничего не пишут. Все проверки аргументов add —
+ * перезаписывается). brief, bans, list и check ничего не пишут. Все проверки аргументов add —
  * до создания папок и файлов. Отдельного bans.json нет:
  * запреты каждый раз считаются из журнала (последняя запись по правилу решает).
- * Модуль: activeBans(), readJournal(), tasteDir(), conflictsWith(), baselineResult(), isUserWord()
- * — их берёт cliche.mjs.
+ * Модуль: activeBans(), bansElsewhere(), readJournal(), tasteDir(), conflictsWith(), baselineResult(),
+ * isUserWord(), runKey(), scopeOf(), appliesTo(), scopeLabel() — их берёт cliche.mjs.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -86,21 +102,36 @@ export function readJournal(dir) {
 /** Засчитывается ли запись как слово пользователя: by user и непустая цитата. */
 export const isUserWord = (e) => e.by === 'user' && typeof e.quote === 'string' && e.quote.trim().length > 0;
 
+/* ---------- область записи: site — только свой прогон, general — все сайты ---------- */
+export const SCOPES = ['site', 'general'];
+/** Имя прогона для записи в журнал: из пути — имя папки («…/runs/figurki/» → figurki). */
+export const runName = (s) => String(s || '').trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+/** Ключ прогона для сравнения: имя папки без регистра; «figurki» и «C:\…\runs\figurki» совпадают. */
+export const runKey = (s) => runName(s).toLowerCase();
+/** Область записи; старая запись без поля scope — general, как до появления области. */
+export const scopeOf = (e) => (e && e.scope === 'site' ? 'site' : 'general');
+/** Действует ли запись в прогоне run: general — везде, site — только в своём прогоне. */
+export const appliesTo = (e, run) => scopeOf(e) === 'general' || (!!runKey(run) && runKey(e.run) === runKey(run));
+/** Подпись области для вывода: запись журнала или запрет из activeBans (у него implicit — старая запись без scope). */
+export const scopeLabel = (e) => (scopeOf(e) === 'site' ? `только прогон ${runName(e.run) || '(не указан)'}` : e && e.scope === 'general' && !e.implicit ? 'все сайты' : 'все сайты (запись без области)');
+
 /**
- * Действующие запреты: { rule: { quote, why, date, run, donor, block, img, count, allowedFor: [донор…] } }.
- * Считаются только слова пользователя (isUserWord). Последняя по порядку запись
- * решает: rejected — запрет, accepted/preferred без донора — запрет снят,
- * с донором — снят только для этого донора (allowedFor).
+ * Действующие запреты: { rule: { quote, why, date, run, scope, implicit, donor, block, img, count, allowedFor: [донор…] } }.
+ * Считаются только слова пользователя (isUserWord) и только записи, действующие в прогоне run
+ * (appliesTo: general — везде, site — в своём прогоне; без run — только general). Последняя
+ * по порядку из них решает: rejected — запрет, accepted/preferred без донора — запрет снят,
+ * с донором — снят только для этого донора (allowedFor). scope — область решающей записи
+ * rejected, implicit — у неё не было поля scope (старая запись).
  */
-export function activeBans(dirOrEntries) {
+export function activeBans(dirOrEntries, { run = null } = {}) {
   const list = Array.isArray(dirOrEntries) ? dirOrEntries : readJournal(dirOrEntries);
   const bans = {};
   for (const e of list) {
-    if (!isUserWord(e)) continue;
+    if (!isUserWord(e) || !appliesTo(e, run)) continue;
     for (const r of rulesOf(e)) {
       if (e.verdict === 'rejected') {
         const b = bans[r] || { count: 0, allowedFor: [] };
-        Object.assign(b, { quote: e.quote, why: e.why || '', date: e.date || '', run: e.run || '', donor: e.donor || '', block: e.block || '', img: e.img || '' });
+        Object.assign(b, { quote: e.quote, why: e.why || '', date: e.date || '', run: e.run || '', scope: scopeOf(e), implicit: !e.scope, donor: e.donor || '', block: e.block || '', img: e.img || '' });
         b.count++; bans[r] = b;
       } else if (bans[r]) {
         if (e.donor) { if (!bans[r].allowedFor.includes(e.donor)) bans[r].allowedFor.push(e.donor); } else delete bans[r];
@@ -108,6 +139,18 @@ export function activeBans(dirOrEntries) {
     }
   }
   return bans;
+}
+
+/**
+ * Запреты с областью site из других прогонов — в прогоне run не действуют; для вывода
+ * «есть, но не здесь». → [{ run, rule, ban }].
+ */
+export function bansElsewhere(dirOrEntries, run = null) {
+  const list = Array.isArray(dirOrEntries) ? dirOrEntries : readJournal(dirOrEntries);
+  const here = runKey(run); const out = [];
+  const runs = [...new Set(list.filter((e) => scopeOf(e) === 'site' && runKey(e.run) && runKey(e.run) !== here).map((e) => runKey(e.run)))];
+  for (const k of runs) for (const [rule, ban] of Object.entries(activeBans(list, { run: k }))) if (ban.scope === 'site' && runKey(ban.run) === k) out.push({ run: runName(ban.run), rule, ban });
+  return out;
 }
 
 /**
@@ -166,7 +209,7 @@ const JOURNAL_README = [
   '',
   '| файл | что в нём |',
   '|---|---|',
-  '| `journal.jsonl` | одна запись — одна строка JSON: дата, прогон, донор, блок, вердикт, кто решил, правила, цитата, пояснение, картинка |',
+  '| `journal.jsonl` | одна запись — одна строка JSON: дата, прогон, область, донор, блок, вердикт, кто решил, правила, цитата, пояснение, картинка |',
   '| `img/` | кропы: что отвергли и что приняли (копирует `taste.mjs add --img`) |',
   '| `README.md` | этот файл |',
   '',
@@ -184,6 +227,11 @@ const JOURNAL_README = [
   '  (`node cliche.mjs rules`).',
   '- Снять запрет может только пользователь: запись `by user` с `accepted` или',
   '  `preferred` по тому же правилу; с `--donor` — только для этого донора.',
+  '- Область записи (`scope`): `site` — только этот сайт, запись действует лишь',
+  '  в своём прогоне (`--run`; по умолчанию, если `--run` задан); `general` — все',
+  '  сайты, только явно (`--scope general`) и только если пользователь сам сказал,',
+  '  что это общее. Замечание по одному сайту общим не делать. Старые записи без',
+  '  `scope` читаются как `general`.',
   '- Запрет, который спорит с явной чертой нового донора (у донора этот приём',
   '  есть), не блокирует молча: `cliche.mjs --taste` и `taste.mjs brief --baseline`',
   '  выводят его как ВОПРОС пользователю.',
@@ -191,10 +239,12 @@ const JOURNAL_README = [
   '## Команды',
   '',
   '```',
-  'node scripts/taste.mjs brief --blocks form,hero,faq [--baseline <база донора>]   # этап 0 прогона',
+  'node scripts/taste.mjs brief --run <прогон> --blocks form,hero,faq [--baseline <база донора>]   # этап 0 прогона',
   'node scripts/taste.mjs add --block form --verdict rejected --by user --rule form-kit \\',
-  '     --quote "<дословно>" --why "<что на картинке>" --img <кроп.png> --run <прогон> --donor <url>',
-  'node scripts/taste.mjs bans [--baseline <база донора>] [--json]',
+  '     --quote "<дословно>" --why "<что на картинке>" --img <кроп.png> --run <прогон> --donor <url>   # область site',
+  'node scripts/taste.mjs add … --scope general   # только если пользователь сказал, что это для всех сайтов',
+  'node scripts/taste.mjs bans --run <прогон> [--baseline <база донора>] [--json]',
+  'node scripts/taste.mjs list [--run <прогон>]',
   'node scripts/taste.mjs check',
   '```',
   '',
@@ -209,11 +259,11 @@ const JOURNAL_README = [
 function help() {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   const m = /\/\*\*([\s\S]*?)\*\//.exec(src);
-  console.log(m ? m[1].split(/\r?\n/).map((l) => l.replace(/^ \* ?/, '')).join('\n').trim() : 'taste.mjs add|brief|bans|check');
+  console.log(m ? m[1].split(/\r?\n/).map((l) => l.replace(/^ \* ?/, '')).join('\n').trim() : 'taste.mjs add|brief|bans|list|check');
 }
 
 function cli() {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json', 'help', 'h'], optional: ['by', 'verdict', 'date', 'last', 'viewport', 'viewports'], commands: ['add', 'brief', 'bans', 'check'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json', 'help', 'h'], optional: ['by', 'verdict', 'date', 'last', 'viewport', 'viewports', 'scope'], commands: ['add', 'brief', 'bans', 'list', 'check'] });
   const cmd = pos[0];
   /* -h, --h, --help и «help» — справка у любой команды, код 0, ничего не пишется */
   if (opt.help || opt.h || pos.includes('-h') || cmd === 'help') { help(); return; }
@@ -224,7 +274,13 @@ function cli() {
   if (cmd === 'add') {
     const quote = str('quote').trim();
     const by = str('by') || (quote ? 'user' : 'self');
-    const e = { date: str('date') || new Date().toLocaleDateString('sv-SE'), run: str('run'), donor: str('donor'), block: str('block') || 'page', verdict: str('verdict') || 'rejected', by, rules: rulesOf({ rule: str('rule') }), quote, why: str('why').trim(), source: str('source'), img: '' };
+    /* область: site — по умолчанию при --run; general — только явно */
+    const run = runName(str('run'));
+    const scope = str('scope').trim() || (opt.scope === undefined && run ? 'site' : '');
+    const e = { date: str('date') || new Date().toLocaleDateString('sv-SE'), run, scope, donor: str('donor'), block: str('block') || 'page', verdict: str('verdict') || 'rejected', by, rules: rulesOf({ rule: str('rule') }), quote, why: str('why').trim(), source: str('source'), img: '' };
+    if (opt.scope !== undefined && !SCOPES.includes(scope)) { console.error(`FAIL  --scope: site (только этот сайт, нужен --run) | general (все сайты — только если пользователь сам сказал, что это общее)`); process.exit(1); }
+    if (!scope) { console.error('FAIL  у записи нет области: --run <прогон> — только этот сайт (обычный случай), или --scope general — для всех сайтов, если пользователь сам сказал, что это общее'); process.exit(1); }
+    if (scope === 'site' && !run) { console.error('FAIL  --scope site без --run: к какому прогону относится запись? --run <прогон> (имя папки прогона)'); process.exit(1); }
     if (!VERDICTS.includes(e.verdict)) { console.error(`FAIL  --verdict: ${VERDICTS.join(' | ')}`); process.exit(1); }
     if (!['user', 'self'].includes(e.by)) { console.error('FAIL  --by: user | self'); process.exit(1); }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date)) { console.error('FAIL  --date в виде ГГГГ-ММ-ДД'); process.exit(1); }
@@ -257,7 +313,8 @@ function cli() {
       catch (err) { if (err.code !== 'EEXIST') console.error(`WARN  не записать ${README}: ${err.message}`); }
     }
     const ban = e.by === 'user' && e.verdict === 'rejected' && e.rules.length;
-    console.log(`OK    записано: ${e.verdict} · ${e.block} · ${e.by} · ${e.rules.join(', ') || 'без правила'}${e.img ? ' · ' + e.img : ''}${ban ? ' — действует как запрет для cliche.mjs --taste' : e.by === 'self' ? ' — подсказка, не запрет' : ''}`);
+    const where = e.scope === 'site' ? `только в прогоне ${e.run}` : 'на всех сайтах';
+    console.log(`OK    записано: ${e.verdict} · ${e.block} · ${e.by} · ${e.rules.join(', ') || 'без правила'} · ${scopeLabel(e)}${e.img ? ' · ' + e.img : ''}${ban ? ` — действует как запрет для cliche.mjs --taste ${where}` : e.by === 'self' ? ' — подсказка, не запрет' : e.rules.length && e.by === 'user' ? ` — снимает запрет по ${e.rules.join(', ')} ${e.donor ? `для донора ${e.donor} ` : ''}${where}` : ''}`);
     return;
   }
 
@@ -269,23 +326,28 @@ function cli() {
     const vpList = vpRaw.split(',').map((s) => s.trim()).filter(Boolean);
     if (vpGiven.length && !vpList.length) { console.error(`FAIL  --${vpFlag}: нужно имя экрана (desktop, mobile…)`); process.exit(2); }
     if (vpList.length > 1) { console.error(`FAIL  --${vpFlag} ${vpRaw}: экран базы один — запустите по разу на каждый (${vpList.map((x) => `--viewport ${x}`).join(', затем ')})`); process.exit(2); }
-    const all = readJournal(dir); const bans = activeBans(all);
+    const all = readJournal(dir); const run = runName(str('run')); const bans = activeBans(all, { run });
+    const elsewhere = bansElsewhere(all, run);
     const donor = readBaseline(opt.baseline, vpList[0] || 'desktop');
     const conflicts = conflictsWith(bans, donor);
-    if (cmd === 'bans' && opt.json) { console.log(JSON.stringify({ dir, bans, conflicts: conflicts.map((c) => ({ rule: c.rule, donorCount: c.donorCount })) }, null, 1)); return; }
-    console.log(`Журнал вкуса: ${dir} · записей ${all.length}${all.bad.length ? ` · битых строк ${all.bad.length}` : ''}`);
-    console.log('\nЗапреты пользователя (cliche.mjs --taste: FAIL, если приёма нет у донора; вопрос, если есть):');
+    if (cmd === 'bans' && opt.json) { console.log(JSON.stringify({ dir, run: run || null, bans, elsewhere: elsewhere.map((x) => ({ run: x.run, rule: x.rule, quote: x.ban.quote, date: x.ban.date })), conflicts: conflicts.map((c) => ({ rule: c.rule, donorCount: c.donorCount })) }, null, 1)); return; }
+    console.log(`Журнал вкуса: ${dir} · записей ${all.length}${all.bad.length ? ` · битых строк ${all.bad.length}` : ''} · прогон: ${run || 'не задан (--run) — действуют только общие запреты'}`);
+    console.log(`\nЗапреты пользователя${run ? ` в прогоне ${run}` : ''} (cliche.mjs --taste: FAIL, если приёма нет у донора; вопрос, если есть):`);
     if (!Object.keys(bans).length) console.log('  нет');
-    for (const [rule, b] of Object.entries(bans)) console.log(`  ✗ ${rule} — ${b.date} ${b.block}${b.run ? ` (прогон ${b.run})` : ''}: «${b.quote}»${b.why ? `\n      о чём: ${b.why}` : ''}${b.img ? `\n      картинка: ${path.join(dir, b.img)}` : ''}${b.allowedFor.length ? `\n      разрешён для доноров: ${b.allowedFor.join(', ')}` : ''}`);
+    for (const [rule, b] of Object.entries(bans)) console.log(`  ✗ ${rule} — ${b.date} ${b.block}${b.run && b.scope !== 'site' ? ` (прогон ${b.run})` : ''} · ${scopeLabel(b)}: «${b.quote}»${b.why ? `\n      о чём: ${b.why}` : ''}${b.img ? `\n      картинка: ${path.join(dir, b.img)}` : ''}${b.allowedFor.length ? `\n      разрешён для доноров: ${b.allowedFor.join(', ')}` : ''}`);
+    if (elsewhere.length) {
+      console.log(`\nЗапреты одного сайта из других прогонов — ${run ? 'здесь' : 'без --run'} не действуют:`);
+      for (const x of elsewhere) console.log(`  · ${x.rule} — только прогон ${x.run}, ${x.ban.date} ${x.ban.block}: «${x.ban.quote}»`);
+    }
     const noQuote = all.filter((e) => e.by === 'user' && !isUserWord(e));
     if (noQuote.length) console.log(`\n  WARN  записей by user без цитаты: ${noQuote.length} (строки ${noQuote.map((e) => e.line).join(', ')}) — запретами не считаются`);
     if (donor) {
       console.log(`\nСпор с новым донором ${donor.url || opt.baseline}:`);
       if (!conflicts.length) console.log('  нет: ни один запрет не касается приёмов, которые у донора есть');
-      for (const c of conflicts) console.log(`  ? ${c.rule}: у донора этот приём есть (${c.donorCount} шт). Спросить пользователя: держится ли запрет «${c.ban.quote}» для этого донора? Ответ записать: taste.mjs add --by user --verdict accepted|rejected --rule ${c.rule} --donor ${donor.url || '<url>'} --quote "…" --why "…"`);
+      for (const c of conflicts) console.log(`  ? ${c.rule}: у донора этот приём есть (${c.donorCount} шт). Спросить пользователя: держится ли запрет «${c.ban.quote}» для этого донора? Ответ записать: taste.mjs add --by user --verdict accepted|rejected --rule ${c.rule} --donor ${donor.url || '<url>'} --run ${run || '<прогон>'} --quote "…" --why "…" (для всех сайтов — ещё --scope general)`);
     }
     if (cmd === 'bans') return;
-    const show = (e) => `  ${e.verdict === 'rejected' ? '✗' : '✓'} ${e.date} ${e.block} [${e.by}] ${e.rules.length ? e.rules.join(',') + ': ' : ''}${isUserWord(e) ? `«${e.quote}» — ` : ''}${e.why}${e.img ? `\n      картинка: ${path.join(dir, e.img)}` : ''}`;
+    const show = (e) => `  ${e.verdict === 'rejected' ? '✗' : '✓'} ${e.date} ${e.block} [${e.by} · ${scopeLabel(e)}] ${e.rules.length ? e.rules.join(',') + ': ' : ''}${isUserWord(e) ? `«${e.quote}» — ` : ''}${e.why}${e.img ? `\n      картинка: ${path.join(dir, e.img)}` : ''}`;
     const blocks = str('blocks').split(',').map((s) => s.trim()).filter(Boolean);
     if (blocks.length) {
       const pick = all.filter((e) => blocks.includes(e.block));
@@ -299,6 +361,18 @@ function cli() {
     return;
   }
 
+  if (cmd === 'list') {
+    /* все записи по порядку с областью; с --run — отметка, действует ли запись в этом прогоне */
+    const all = readJournal(dir); const run = runName(str('run'));
+    console.log(`Журнал вкуса: ${dir} · записей ${all.length}${all.bad.length ? ` · битых строк ${all.bad.length}` : ''}${run ? ` · прогон ${run}: ✓ действует здесь, · не действует` : ''}`);
+    if (!all.length) console.log('  нет записей');
+    for (const e of all) {
+      const mark = run ? (appliesTo(e, run) ? '✓' : '·') : ' ';
+      console.log(`${mark} ${String(e.line).padStart(3)}. ${e.verdict === 'rejected' ? '✗' : '✓'} ${e.date} ${e.block} ${e.verdict} [${e.by}] · ${scopeLabel(e)}${e.run && scopeOf(e) !== 'site' ? ` · сказано в прогоне ${e.run}` : ''}${e.donor ? ` · донор ${e.donor}` : ''}${e.rules.length ? ` · ${e.rules.join(',')}` : ''}\n        ${isUserWord(e) ? `«${e.quote}» — ` : ''}${e.why || ''}`);
+    }
+    return;
+  }
+
   if (cmd === 'check') {
     const all = readJournal(dir); const known = knownRules(); let fails = 0, warns = 0;
     const line = (st, t) => { if (st === 'FAIL') fails++; if (st === 'WARN') warns++; console.log(`${st.padEnd(5)} ${t}`); };
@@ -307,18 +381,21 @@ function cli() {
     for (const e of all) {
       const at = `строка ${e.line} (${e.date} ${e.block} ${e.verdict} ${e.by})`;
       if (!VERDICTS.includes(e.verdict)) line('FAIL', `${at}: verdict «${e.verdict}»`);
+      if (e.scope !== undefined && !SCOPES.includes(e.scope)) line('FAIL', `${at}: область «${e.scope}» — есть site | general; читается как общая`);
+      if (e.scope === 'site' && !runKey(e.run)) line('WARN', `${at}: область site без прогона — запись не действует нигде; укажите run`);
       if (e.by === 'user' && !isUserWord(e)) line('WARN', `${at}: by user без цитаты — запретом не считается; перепишите как by self или добавьте дословные слова`);
       if (isUserWord(e) && looksLikeOwnConclusion(e.quote)) line('WARN', `${at}: цитата похожа на вывод из замеров`);
       if (e.img && !fs.existsSync(path.join(dir, e.img))) line('WARN', `${at}: нет картинки ${e.img}`);
       const unknown = known ? e.rules.filter((r) => !known.has(r)) : [];
       if (unknown.length) line('WARN', `${at}: неизвестные правила ${unknown.join(', ')}`);
     }
-    line(fails ? 'FAIL' : warns ? 'WARN' : 'OK', `записей ${all.length}, запретов ${Object.keys(activeBans(all)).length}`);
+    const noScope = all.filter((e) => e.scope === undefined).length;
+    line(fails ? 'FAIL' : warns ? 'WARN' : 'OK', `записей ${all.length}${noScope ? ` (без области — читаются как общие: ${noScope})` : ''}, запретов на всех сайтах ${Object.keys(activeBans(all)).length}, только одного сайта ${bansElsewhere(all).length}`);
     if (fails) process.exit(1);
     return;
   }
 
-  console.error(cmd ? `FAIL  неизвестная команда «${cmd}»: add | brief | bans | check | --help` : 'node taste.mjs add|brief|bans|check … (node taste.mjs --help)'); process.exit(2);
+  console.error(cmd ? `FAIL  неизвестная команда «${cmd}»: add | brief | bans | list | check | --help` : 'node taste.mjs add|brief|bans|list|check … (node taste.mjs --help)'); process.exit(2);
 }
 
 /* CLI — только когда файл запущен сам, а не импортирован cliche.mjs */
