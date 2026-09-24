@@ -19,7 +19,7 @@
 ```
 node scripts/motion.mjs <адрес> [--viewport desktop] [--out <прогон>] [--tag donor-home]   # инвентарь
 node scripts/motion.mjs compare <прогон>/motion/donor-home.json <наш адрес> --out <прогон>  # сверка
-node scripts/motion.mjs selftest                                                          # 18 видов на стенде
+node scripts/motion.mjs selftest                                                          # 19 видов на стенде
 ```
 
 Выход: `<прогон>/motion/<tag>.md` — таблица «вид · где · запуск · что меняется · параметры · рецепт»
@@ -86,6 +86,24 @@ if (els.length && 'IntersectionObserver' in window && !matchMedia('(prefers-redu
 [data-reveal]:nth-child(2) { transition-delay: .1s; }            /* по очереди +100 мс */
 ```
 Шторка: `clip-path: inset(0 100% 0 0)` → `inset(0)`; размытие: `filter: blur(12px)` → `none`.
+
+**«Появление (при прокрутке вверх)»** — закреплённая кнопка или панель видна, когда листают вверх, и уходит при
+прокрутке вниз (shapefest «Back to top»: внизу по центру, уход на 80 px с угасанием). `motion.mjs` отличает это от
+«исчезает» по шагам вверх в конце прохода; замер прыжками `scrollTo` направление не ловит — спорное проверять колесом.
+```js
+let lastY = scrollY, up = false;
+const upd = () => { const y = scrollY; if (Math.abs(y - lastY) > 4) { up = y < lastY; lastY = y; }
+  btn.classList.toggle('is-on', up && y > innerHeight * 1.5); };      // в первых экранах «наверх» не нужна
+addEventListener('scroll', upd, { passive: true });
+```
+```css
+.to-top { position: fixed; left: 50%; bottom: 20px; opacity: 0; transform: translate(-50%, 80px); visibility: hidden;
+  transition: opacity .3s, transform .3s, visibility 0s .3s; }                       /* скрытая — вне обхода Tab */
+.to-top.is-on { opacity: 1; transform: translate(-50%, 0); visibility: visible; transition: opacity .3s, transform .3s; }
+```
+Своё поверх донора, если мешает: прятать, пока на экране подвал (IntersectionObserver), — на телефоне кнопка иначе
+ложится на ссылки подвала. Проверка — `runtime.mjs` цепочкой `--eval scrollTo(вниз)` → `--assert !is-on` → `--eval
+scrollTo(выше)` → `--assert is-on` (VN3D `tools/checks.sh`, шаг 17).
 
 ### `scroll-scrub` — свойство привязано к прокрутке
 Из протокола: из → в по каждому свойству, `scroll.startPct` → `scroll.endPct` (верх блока в % высоты

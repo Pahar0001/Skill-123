@@ -13,6 +13,7 @@
  * Что распознаётся (вид → рецепт в reference/motion.md):
  *   entrance        вход при загрузке (CSS-анимация, переход, element.animate) — из чего, сколько, задержки
  *   reveal          появление при прокрутке: прозрачность, сдвиг, масштаб, размытие, шторка (clip-path);
+ *                   у закреплённого — «при прокрутке вверх» (кнопка «Наверх»: видна, когда листают вверх);
  *                   где срабатывает (верх блока на N% экрана), длительность, по очереди (+N мс), чем
  *                   запускается (класс «in» от IntersectionObserver, Framer, AOS…)
  *   scroll-linked   свойство привязано к прокрутке: из → в на отрезке «верх блока на A% → B% экрана»
@@ -231,9 +232,11 @@ function sampleInPage(tag) {
 }
 
 /* Где за окно «время» текст листа менялся хотя бы дважды — кандидаты на печать/смену слов. */
+/* Кандидаты на частое наблюдение текста: текст сменился хоть раз за окно «время». Печать с паузой на слове
+   (shapefest: слово стоит несколько секунд) за 6 с меняется и один раз — при пороге «две смены» её теряли. */
 function textCandidatesInPage() {
   const S = window.__moS; const out = [];
-  for (const [i, h] of S.series) { let n = 0; for (let k = 1; k < h.rows.length; k++) if (h.rows[k][1][10] !== h.rows[k - 1][1][10]) n++; if (n >= 2) out.push(i); }
+  for (const [i, h] of S.series) { let n = 0; for (let k = 1; k < h.rows.length; k++) if (h.rows[k][1][10] !== h.rows[k - 1][1][10]) n++; if (n >= 1) out.push(i); }
   return out.slice(0, 6);
 }
 /* Частая выборка текста у этих элементов (печать: знак за 30–80 мс, пауза на слове — секунды). */
@@ -470,7 +473,7 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
         const med = (a) => (a.length ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
         /* ни одно слово не допечаталось до стирания за окно — показать самые длинные из увиденных */
         const seen = words.length ? words : [...new Set(seq)].filter((w) => w.length > 2 && !seq.some((o) => o !== w && o.startsWith(w))).sort((a, b) => b.length - a.length).slice(0, 3);
-        items.push({ kind: 'typewriter', trigger: 'time', props: [{ prop: 'текст', from: '', to: seen.slice(0, 5).join(' / ') + (words.length ? '' : ' (видели не целиком)') }], timing: { speed: `набор ≈${round(med(add))} знаков/с${del.length ? `, стирание ≈${round(med(del))}/с` : ''}` } });
+        items.push({ kind: 'typewriter', trigger: 'time', props: [{ prop: 'текст', from: '', to: seen.slice(0, 5).join(' / ') + (words.length ? '' : ' (видели не целиком)') }], timing: { speed: `${add.length ? `набор ≈${round(med(add))} знаков/с` : 'набор за окно не пойман'}${del.length ? `, стирание ≈${round(med(del))}/с` : ''}` } });
       } else items.push({ kind: 'rotating-words', trigger: 'time', props: [{ prop: 'текст', from: distinct[0], to: distinct.slice(1, 4).join(' / ') }], timing: {} });
     }
   }
@@ -554,6 +557,9 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
   /* верх блока для отрезков прокрутки: у слоя с transform — верх родителя (масштаб и сдвиг искажают свой) */
   const btop = (x) => ((x.p.moved && Number.isFinite(x.p.ptop)) ? x.p.ptop : x.p.docTop) - x.sy;
   const fixedLike = el.position === 'fixed' || el.position === 'sticky';
+  /* стоит на месте экрана, пока страница едет: сам fixed или внутри закреплённой обёртки (Framer: fixed — у обёртки,
+     у ссылки внутри — relative); сдвиг transform не в счёт — он и есть движение */
+  const onScreen = el.position === 'fixed' || (P[P.length - 1].sy - P[0].sy > vh && P.every((x) => Math.abs((top(x) - x.p.ty) - (top(P[0]) - P[0].p.ty)) <= 2));
   /* закреплённый: верх в окне стоит, пока прокрутка идёт */
   if (el.position === 'sticky' && P.every((x) => x.p.w > 0 && x.p.h > 0)) {
     let run = 0, best = 0, b0 = -1, bStart = -1;
@@ -574,6 +580,22 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
     if (bgs.length > 1 || hid) {
       items.push({ kind: 'header', trigger: 'scroll', props: [...(bgs.length > 1 ? [{ prop: 'фон', from: bgs[0], to: bgs[bgs.length - 1] }] : []), ...(hid ? [{ prop: 'прячется при прокрутке вниз', from: '0', to: `${round(Math.min(...tys))} px` }] : [])],
         timing: { note: hid ? (back ? 'возвращается при прокрутке вверх' : 'при прокрутке вверх не вернулась') : '' } });
+      return items;
+    }
+  }
+  /* закреплённое, которое показывается при прокрутке ВВЕРХ и прячется при прокрутке вниз (кнопка «Наверх»,
+     плавающая кнопка, нижняя панель; у шапки — ветка выше): у конца прохода вниз скрыто, на шагах вверх видно.
+     Прыжками вниз этого не отличить от «исчезает» — shapefest «Back to top» так и снимался 24.09 */
+  if (onScreen && ctx.upIdx && ctx.upIdx.length) {
+    const shown = (q) => !!q && !q.hid && q.op >= 0.5 && q.w > 0 && q.h > 0;
+    const U = ctx.upIdx.map((s) => propsOf(el.u[s])).filter(Boolean);
+    const last = P[P.length - 1].p; const q = U.find(shown);
+    if (q && !shown(last)) {
+      const props = [{ prop: NAMES.op, from: fmtV('op', last.op), to: fmtV('op', q.op) }];
+      for (const k of ['ty', 'tx', 'sc']) if (Math.abs(q[k] - last[k]) > EPS[k] * 2) props.push({ prop: NAMES[k], from: fmtV(k, last[k]), to: fmtV(k, q[k]) });
+      const visStart = shown(P[0].p);
+      items.push({ kind: 'reveal', sub: 'при прокрутке вверх', trigger: 'scroll', prop: 'op', from: last.op, to: q.op, props, visAtStart: visStart, timing: {},
+        scroll: { at: `закреплён на экране; показывается, когда листают вверх, прячется, когда листают вниз (в начале страницы ${visStart ? 'виден' : 'скрыт'})`, fixed: true, direction: 'up' } });
       return items;
     }
   }
@@ -602,11 +624,11 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
       /* закреплённое на экране (кнопка «Наверх», плавающая кнопка) стоит на одном месте окна — важна не его высота
          в окне, а где на странице оно меняется: у начала, у конца (подвал) или после N px прокрутки */
       const syMax = Math.max(...P.map((x) => x.sy)); const sy0 = P[first - 1].sy, sy1 = P[first].sy;
-      const where = el.position === 'fixed'
+      const where = onScreen
         ? `закреплён на экране; меняется при прокрутке ${Math.round(sy0)}–${Math.round(sy1)} px из ${Math.round(syMax)} (${syMax - sy1 < vh * 0.6 ? 'у конца страницы' : sy1 <= vh * 1.2 ? 'сразу после начала' : `${Math.round((sy1 / Math.max(1, syMax)) * 100)}% страницы`}${vis(0) ? ', виден с начала' : ', в начале скрыт'})`
         : `верх блока между ${pct(Math.max(-0.2, Math.min(1.2, tPrev)))} и ${pct(Math.max(-0.2, Math.min(1.2, tNow)))} высоты экрана`;
       items.push({ kind: 'reveal', trigger: 'scroll', prop: k, from, to, props: [{ prop: NAMES[k], from: fmtV(k, from), to: fmtV(k, to) }],
-        scroll: { at: where, atPct: Math.round(((tPrev + tNow) / 2) * 100), ...(el.position === 'fixed' ? { fixed: true, atPx: Math.round(sy1), ofPx: Math.round(syMax) } : {}) }, step: P[first].s, visAtStart: vis(0) });
+        scroll: { at: where, atPct: Math.round(((tPrev + tNow) / 2) * 100), ...(onScreen ? { fixed: true, atPx: Math.round(sy1), ofPx: Math.round(syMax) } : {}) }, step: P[first].s, visAtStart: vis(0) });
       continue;
     }
     /* привязка к прокрутке: меняется несколько шагов подряд, почти линейно */
@@ -965,7 +987,7 @@ function mdTable(res) {
 const FAMILY = (it) => {
   if (it.kind === 'rotating-words' || it.kind === 'typewriter') return 'typewriter';
   if (it.kind === 'loop') return `loop:${it.sub || ''}`;
-  if (it.kind === 'reveal') return it.sub === 'исчезает' ? 'reveal:out' : 'reveal:in';
+  if (it.kind === 'reveal') return it.sub === 'исчезает' ? 'reveal:out' : it.sub === 'при прокрутке вверх' ? 'reveal:up' : 'reveal:in';
   if (it.kind === 'hover') return `hover:${it.component || ''}`;
   if (it.kind === 'counter') return 'counter';
   return it.kind;
@@ -1048,7 +1070,7 @@ if (cmd === 'selftest') {
   const html = fs.readFileSync(path.join(HERE, 'fixtures', 'motion', 'index.html'), 'utf8');
   const expected = [...html.matchAll(/data-expect="([\w-]+)"/g)].map((m) => m[1]);
   const need = [...new Set(expected)];
-  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind);
+  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind);
   const found = new Set(res.items.map(key));
   const byExpect = new Set(res.items.map((i) => i.expect).filter(Boolean));
   let bad = 0;

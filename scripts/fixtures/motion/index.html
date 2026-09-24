@@ -19,6 +19,10 @@
   .head.is-solid { background: #fff; }
   .head.is-hidden { transform: translateY(-100%); }
   .head a { color: inherit; }
+  /* кнопка «Наверх»: видна, только когда листают вверх (как «Back to top» shapefest) */
+  .upbtn { position: fixed; left: 24px; bottom: 20px; z-index: 40; padding: 10px 16px; border-radius: 10px; background: #232530; color: #fff; text-decoration: none;
+    opacity: 0; transform: translateY(80px); transition: opacity .3s, transform .3s; }
+  .upbtn.is-on { opacity: 1; transform: none; }
   /* 2. полоса прогресса прокрутки (JS) */
   .progress { position: fixed; top: 0; left: 0; height: 4px; width: 0; background: #6a4ee1; z-index: 60; }
 
@@ -98,6 +102,7 @@
 </head>
 <body>
 <div class="progress" data-expect="progress"></div>
+<a class="upbtn" href="#" data-expect="reveal-up">↑ Наверх</a>
 <header class="head" data-expect="header"><b>MOTION</b><a href="#cards">Карточки</a></header>
 <div class="cursor" data-expect="cursor"></div>
 
@@ -184,7 +189,7 @@
   for (const el of document.querySelectorAll('.card, .clip, .blur, .counter')) io.observe(el);
   function count(el) { const to = +el.dataset.to, t0 = performance.now(); const step = (t) => { const k = Math.min(1, (t - t0) / 1500); el.textContent = Math.round(to * k).toLocaleString('ru-RU'); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
   /* прокрутка: шапка, прогресс, параллакс, фон-баннер, горизонтальный раздел */
-  const head = document.querySelector('.head'), prog = document.querySelector('.progress');
+  const head = document.querySelector('.head'), prog = document.querySelector('.progress'), upbtn = document.querySelector('.upbtn');
   const layers = [...document.querySelectorAll('.layer')], bg = document.querySelector('.banner__bg'), banner = document.querySelector('.banner');
   const pin = document.querySelector('.pin'), track = document.querySelector('.pin__track');
   let lastY = 0;
@@ -192,6 +197,7 @@
     const y = scrollY, vh = innerHeight, H = document.documentElement.scrollHeight - vh;
     head.classList.toggle('is-solid', y > 100);
     head.classList.toggle('is-hidden', y > lastY && y > 300);
+    upbtn.classList.toggle('is-on', y < lastY && y > 300);
     lastY = y;
     prog.style.width = `${(y / H) * 100}%`;
     if (reduce) return;
