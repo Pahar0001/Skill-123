@@ -120,6 +120,40 @@ function instrument() {
     }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'], attributeOldValue: true });
   };
   if (document.documentElement) start(); else document.addEventListener('readystatechange', start, { once: true });
+  /* смены текста с загрузки: печать заголовка один раз при загрузке заканчивается до окна «время» (shapefest:
+     «UI design.» за 1.1 с, дальше стоит) — частое наблюдение её уже не видит. Элемент → [[время, текст]] */
+  mo.text = new Map();
+  const textStart = () => {
+    new MutationObserver((list) => {
+      const t = now();
+      for (const m of list) {
+        const el = m.type === 'characterData' ? m.target.parentElement : m.target;
+        if (!el || el.nodeType !== 1) continue;
+        if (m.type === 'childList' && ![...m.addedNodes, ...m.removedNodes].some((n) => n.nodeType === 3)) continue;
+        let log = mo.text.get(el);
+        if (!log) { if (mo.text.size >= 1500) continue; log = []; mo.text.set(el, log); }
+        if (log.length >= 240) continue;
+        const txt = (el.textContent || '').trim().slice(0, 80);
+        if (!log.length || log[log.length - 1][1] !== txt) log.push([t, txt]);
+      }
+    }).observe(document.documentElement, { subtree: true, characterData: true, childList: true });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', textStart, { once: true }); else textStart();
+}
+
+/* Текст, который допечатывался по знаку с загрузки (журнал instrument): кандидаты в печать. */
+function textLogInPage() {
+  const mo = window.__mo; if (!mo || !mo.text) return [];
+  const els = window.__moEls || []; const out = [];
+  for (const [el, log] of mo.text) {
+    if (log.length < 4 || !el.isConnected) continue;
+    let grow = 0; for (let k = 1; k < log.length; k++) { const a = log[k - 1][1], b = log[k][1]; if (b.startsWith(a) || a.startsWith(b)) grow++; }
+    if (grow / (log.length - 1) < 0.7) continue;
+    const ex = el.closest('[data-expect]');
+    out.push({ sig: sig(el), i: els.indexOf(el), log, text: (el.textContent || '').trim().slice(0, 40), expect: ex ? ex.dataset.expect : '' });
+    if (out.length >= 10) break;
+  }
+  return out;
 }
 
 /* Библиотеки движения, CSS scroll-driven, плавная прокрутка, правило «меньше движения». */
@@ -714,6 +748,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     /* текст, который менялся: наблюдать чаще и дольше — слово печатается, держится секунды и стирается */
     const txtIdx = await evaluateWith(page, textCandidatesInPage, null, deps);
     const textWatch = txtIdx.length ? await evaluateWith(page, textWatchInPage, { idx: txtIdx, ms: 9000 }, deps) : {};
+    const textLog = await evaluateWith(page, textLogInPage, null, deps).catch(() => []);
 
     /* 2. прокрутка */
     const scrollSteps = []; const upSteps = [];
@@ -768,7 +803,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     const kfNames = [...new Set([...animsTop, ...animsEnd].filter((a) => a.kind === 'CSSAnimation').map((a) => a.name).concat(ev.ev.filter((e) => e.type === 'anim').map((e) => e.name)))].slice(0, 80);
     const kf = await evaluateWith(page, keyframesInPage, kfNames, deps);
 
-    if (debug) writeJson(path.join(out, "motion", `${tag}.series.json`), { steps: data.steps, series: data.series.map((x) => ({ ...x, u: undefined })), timeIdx: timeSteps, scrollIdx: scrollSteps, upIdx: upSteps, anims: animsTop, textWatch });
+    if (debug) writeJson(path.join(out, "motion", `${tag}.series.json`), { steps: data.steps, series: data.series.map((x) => ({ ...x, u: undefined })), timeIdx: timeSteps, scrollIdx: scrollSteps, upIdx: upSteps, anims: animsTop, textWatch, textLog });
     /* ---------- разбор ---------- */
     const steps = data.steps; const nSteps = steps.length;
     const timeIdx = timeSteps; const scrollIdx = scrollSteps;
@@ -789,6 +824,24 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
       for (const it of analyzeTime(el, steps, timeIdx, animsTop, finiteEls.has(el.i), textWatch[el.i])) items.push({ ...it, i: el.i, el });
       if (loopTargets.has(el.i)) { for (const k of ['tx', 'ty', 'sc', 'rot', 'op']) timeChanged.add(k); }
       for (const it of analyzeScroll(el, steps, scrollIdx, vh, { vw, upIdx: upSteps, timeChanged })) items.push({ ...it, i: el.i, el });
+    }
+    /* печать с загрузки (журнал смен текста), которую окна «время» и частое наблюдение не поймали */
+    for (const lg of textLog) {
+      if (items.some((x) => (x.kind === 'typewriter' || x.kind === 'rotating-words') && ((lg.i >= 0 && x.i === lg.i) || (x.el && x.el.sig === lg.sig)))) continue;
+      const L = lg.log; const add = [], del = [];
+      for (let k = 1; k < L.length; k++) { const dl = L[k][1].length - L[k - 1][1].length, dt = (L[k][0] - L[k - 1][0]) / 1000; if (dt > 0 && dt < 1 && dl) (dl > 0 ? add : del).push(Math.abs(dl) / dt); }
+      if (add.length < 3) continue;
+      const med = (a) => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
+      const once = !del.length && L[L.length - 1][0] < tTime0 + 1500;
+      const series = lg.i >= 0 ? data.series.find((s) => s.i === lg.i) : null;
+      /* слова — допечатанные до стирания (пики длины); ни одного — самое длинное из увиденного */
+      const seq = L.map((x) => x[1]); const words = [...new Set(seq.filter((w, q) => q + 1 < seq.length && seq[q + 1].length < w.length && (q === 0 || seq[q - 1].length < w.length) && w.length > 1))];
+      /* допечатанное стоит на странице (последняя запись = текущий текст) — слово целое, даже если стирания не видели */
+      const settled = seq[seq.length - 1] === lg.text && seq[seq.length - 1].length > 1;
+      const shown = once || (!words.length && settled) ? [seq[seq.length - 1]] : words.length ? words.slice(0, 5) : [[...seq].sort((a, b) => b.length - a.length)[0] + ' (видели не целиком)'];
+      items.push({ kind: 'typewriter', trigger: once ? 'load' : 'time', props: [{ prop: 'текст', from: '', to: shown.join(' / ').slice(0, 90) }],
+        timing: { speed: `набор ≈${round(med(add))} знаков/с${del.length ? `, стирание ≈${round(med(del))}/с` : ''}`, note: once ? `печатается один раз при загрузке (за ${round((L[L.length - 1][0] - L[0][0]) / 1000, 1)} с), дальше стоит` : 'по журналу смен текста с загрузки' },
+        ...(lg.i >= 0 ? { i: lg.i } : {}), el: series || { sig: lg.sig, text: lg.text, expect: lg.expect ? { kind: lg.expect } : null } });
     }
     /* бесконечные анимации (CSS/WAAPI): по ключевым кадрам */
     const seenLoop = new Set();
@@ -1070,7 +1123,7 @@ if (cmd === 'selftest') {
   const html = fs.readFileSync(path.join(HERE, 'fixtures', 'motion', 'index.html'), 'utf8');
   const expected = [...html.matchAll(/data-expect="([\w-]+)"/g)].map((m) => m[1]);
   const need = [...new Set(expected)];
-  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind);
+  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind);
   const found = new Set(res.items.map(key));
   const byExpect = new Set(res.items.map((i) => i.expect).filter(Boolean));
   let bad = 0;

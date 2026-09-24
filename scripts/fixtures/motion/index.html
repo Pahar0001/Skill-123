@@ -103,6 +103,7 @@
 <body>
 <div class="progress" data-expect="progress"></div>
 <a class="upbtn" href="#" data-expect="reveal-up">↑ Наверх</a>
+<p class="typeonce" data-expect="typewriter-load" style="position:absolute;top:70px;left:6vw;margin:0;font:600 18px/1.2 sans-serif"></p>
 <header class="head" data-expect="header"><b>MOTION</b><a href="#cards">Карточки</a></header>
 <div class="cursor" data-expect="cursor"></div>
 
@@ -166,6 +167,9 @@
 <section style="height:60vh"></section>
 
 <script>
+  /* печать один раз при загрузке (как у shapefest): по знаку каждые 60 мс, дальше стоит */
+  document.addEventListener('DOMContentLoaded', () => { const p = document.querySelector('.typeonce'), w = 'Печать при загрузке.'; let n = 0;
+    const tick = () => { if (n < w.length) { p.appendChild(document.createTextNode(w[n++])); setTimeout(tick, 60); } }; setTimeout(tick, 150); });
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   /* печатающийся текст: слово стирается и набирается заново */
   const words = ['миниатюры', 'героев', 'террейн']; const type = document.querySelector('.type');
