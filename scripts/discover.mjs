@@ -6,7 +6,8 @@
  *
  *   node discover.mjs <url> [--out <папка прогона>] [--viewports desktop,tablet,mobile]
  *                     [--no-design] [--light] [--scheme dark] [--tag discover]
- *                     [--no-320] [--no-hover] [--no-texture] [--strict] [--help | -h]
+ *                     [--no-320] [--no-hover] [--no-texture] [--keep-consent] [--no-clicks]
+ *                     [--no-pages] [--pages-shots N] [--strict] [--help | -h]
  *
  * Флаги:
  *   --out <папка>      папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>)
@@ -24,14 +25,35 @@
  *   --no-texture       не снимать фактуру по пикселям (слои всё равно перечисляются)
  *   --no-texture-module  не подключать texture.mjs, даже если он рядом: запасной путь discover
  *                      (для проверки и на случай, если texture.mjs сломан)
+ *   --keep-consent     не закрывать окно согласия cookie. По умолчанию оно закрывается до первого
+ *                      снимка, как заставка: кнопкой «Accept all» / «Accept» / «Принять» / «Согласен» /
+ *                      «OK», если её нет — «Reject» / «Отклонить», затем крестиком. Окно — закреплённый
+ *                      блок или диалог с текстом про cookie / consent / куки. Что закрыто — в
+ *                      discovery.md («Техника»); кнопки окна не считаются кнопками сайта. Согласие
+ *                      остаётся в браузере: на следующих экранах окно обычно уже не появляется
+ *   --no-clicks        не нажимать на найденные аккордеоны и переключатели меню. По умолчанию в конце
+ *                      прохода каждого экрана discover наводит мышь на вопрос (показался ответ — это
+ *                      наведение, не аккордеон), нажимает на него (раскрылся ли ответ, закрывается ли
+ *                      повторным кликом) и нажимает на переключатель меню (открылись ли ссылки) —
+ *                      до 2 пунктов на группу и до 2 переключателей; ссылки на другие адреса не нажимаются
+ *   --no-pages         без раздела «Страницы сайта по типам». По умолчанию он строится без захода на
+ *                      страницы: ссылки этой страницы (все экраны) и /sitemap.xml (один запрос; у
+ *                      индекса — до 3 вложенных карт), по шаблону адреса: первый сегмент пути и «*»
+ *                      на месте остальных (/expansions/*); языковой префикс (/en/) — со вторым сегментом
+ *   --pages-shots <N>  снять по одной странице каждого из N типов: сначала те, на которые ссылается
+ *                      страница (шаблоны с большим числом адресов, потом отдельные страницы по числу
+ *                      ссылок), затем найденные только в sitemap.xml. Снимок всей страницы после
+ *                      прокрутки и видимые заголовки h1–h3 — на первом экране из --viewports, в
+ *                      <папка>/pages/<тип>.png. По умолчанию 0: чужие страницы не открываются
  *   --strict           код выхода 1, если в итоговых вердиктах есть FAIL (переполнение по ширине,
  *                      экран или проход 320 px не снялся); без него FAIL только печатается, код 0
  *   --help, -h         эта справка (ничего не создаёт и не запускает браузер)
  *
  * Коды выхода: 0 — готово (без --strict — даже если в выводе есть FAIL); 1 — нет адреса или
  * он не http(s):// и не file://, неизвестные экраны, флаг без значения, неверная --scheme,
- * не снялся ни один экран, а с --strict — ещё и любой FAIL в итоге. Аргументы проверяются
- * до того, как создаётся папка прогона: с ошибкой в них на диске ничего не появляется.
+ * --pages-shots не целое от 0 до 50 или вместе с --no-pages, не снялся ни один экран, а с
+ * --strict — ещё и любой FAIL в итоге. Аргументы проверяются до того, как создаётся папка
+ * прогона: с ошибкой в них на диске ничего не появляется.
  *
  * В папке прогона появляются:
  *   discovery.json   сырые данные по каждому экрану
@@ -46,6 +68,33 @@
  *                    «нет». Если зерно не измерено ни на одном экране, фактура снята запасным
  *                    путём или не снималась (--no-texture), блока нет, причина — в discovery.md
  *                    (раздел «Дизайн-система») и в discovery.json (textureTokens)
+ *   pages/           с --pages-shots: по снимку на тип страницы (<тип>.png, например expansions.png)
+ *
+ * Кнопки и карточки-ссылки. Кнопка — компактный элемент действия с заливкой, контуром или
+ * градиентом у самого элемента или у вложенного блока на всю его площадь (Framer: у <a> фона
+ * нет, он у div внутри); стиль текста — от видимого текста внутри. Ссылка с картинкой (от 20%
+ * площади) или коробка от 120 px в высоту — карточка-ссылка: отдельный список «Карточки-ссылки»
+ * и своя роль в паспорте, не кнопка.
+ *
+ * Цвета. Доля пикселей на снимках — у каждого пикселя один, ближайший цвет палитры (±20 на канал):
+ * почти белый фон больше не засчитывается светло-серой кнопке. Оттенки ближе ΔE 3 — одной строкой.
+ * Доля заливки кнопок — в коробках самих кнопок (снимок коробки, до 3 кнопок на цвет). Акцент —
+ * цвет действий: цветная заливка кнопок (в том числе у вложенного блока), сначала на первом
+ * экране; нет таких — цвет ссылок при наведении; фоны секций, шапки и подвала — не акцент.
+ *
+ * Аккордеоны и FAQ. Аккордеон — details, [aria-expanded] и «свои» пункты (Framer, Tilda): видимый
+ * вопрос, значок (шеврон «›», «+», svg до 44 px, имя Icon/Chevron/Arrow) и спрятанный внутри ответ
+ * от 30 знаков (обрезан overflow, прозрачен, нулевой высоты, display:none); подтверждается кликом
+ * (см. --no-clicks). FAQ — по заголовку «FAQ / Frequently asked questions / Вопросы / Частые
+ * вопросы / Вопросы и ответы» или по группе пунктов, которые кончаются «?».
+ *
+ * Переключатель меню — [aria-expanded], имя burger / hamburger / menu-toggle, а без них небольшой
+ * нажимаемый элемент в шапке с 2–4 полосками (в том числе ::before/::after), svg с именем menu или
+ * знаком ☰ / «Меню». В discovery.md — селектор для runtime.mjs --click и итог клика.
+ *
+ * Картинки донора: хостинг (домены) и найденные ссылки на лицензию и условия (license, terms,
+ * лицензия, условия, оферта, соглашение) — с напоминанием, что материалы донора без законного
+ * получения не берутся.
  *
  * Снимки разведки — для взгляда. Набор «до» для сравнения с «после» снимает только
  * `shots.mjs --tag before`: у него свои имена, и diff.mjs складывает пары по именам.
@@ -56,7 +105,9 @@
  * если design-reference упадёт, разведка уже на диске.
  *
  * В конце печатаются строки «FAIL|WARN <что>» и строка «Итог: FAIL N · WARN M» (или «Итог: OK»).
- * FAIL — переполнение по ширине и экран (или проход 320 px), который не снялся.
+ * FAIL — переполнение по ширине и экран (или проход 320 px), который не снялся. Среди WARN —
+ * окно cookie, которое не закрылось, заливка кнопок, которой не видно в их коробках (меньше 20%),
+ * и страница типа, которая не снялась (--pages-shots).
  *
  * Фактура (зерно, вуали) — через scripts/texture.mjs, если он рядом; без него —
  * запасной путь внутри этого файла (поиск слоёв и замер «со слоем / без»).
@@ -70,11 +121,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   launch, openPage, scrollThrough, fullPageShot, pickViewports, parseArgs, runDir, writeJson, summarizeRequests, ensureDir, kb, sleep,
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
-  SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE,
+  waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE,
 } from './lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const DEPS = { sig: SIG_FN, hex: HEX_FN, eff: EFFECTIVE_OPACITY_FN };
+/* Видимый текст внутри элемента: потомок с самым длинным собственным текстом (у <a> Framer
+   вычисленный стиль — браузерный, #0000EE 12px, а текст набран в p внутри). Нужен eff. */
+const TEXT_EL_FN = `(el) => {
+  if (!el || el.tagName === 'INPUT') return el;
+  const own = (e) => { let t = ''; for (const n of e.childNodes) if (n.nodeType === 3) t += ' ' + n.textContent; return t.replace(/\\s+/g, ' ').trim(); };
+  let best = null, n = 0;
+  const walk = (e, d) => { const t = own(e); if (t.length > n && eff(e) > 0.3 && parseFloat(getComputedStyle(e).fontSize) >= 6) { best = e; n = t.length; } if (d < 8) for (const k of e.children) walk(k, d + 1); };
+  walk(el, 0); return best || el;
+}`;
+const DEPS = { sig: SIG_FN, hex: HEX_FN, eff: EFFECTIVE_OPACITY_FN, textEl: TEXT_EL_FN };
 
 /* =====================================================================
    Код, который выполняется внутри страницы (через evaluateWith: sig, hex, eff —
@@ -254,12 +314,28 @@ function inPage(arg) {
   const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min; };
   const bump = (map, key, w = 1) => { if (key == null || key === '') return; map[key] = (map[key] || 0) + w; };
   const top = (map, n = 8) => Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, n).map(([value, weight]) => ({ value, weight: Math.round(weight) }));
+  /* цвета: оттенки ближе ΔE 3 (на глаз не различить: #F8F8FF и #F7F7FF) — одной строкой, вес
+     суммируется у самого весомого, остальные — в alias */
+  const lab = (h) => { const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }; const [cr, cg, cb] = [1, 3, 5].map((i) => f(parseInt(h.slice(i, i + 2), 16))); const t = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116); const X = t((cr * 0.4124 + cg * 0.3576 + cb * 0.1805) / 0.95047), Y = t(cr * 0.2126 + cg * 0.7152 + cb * 0.0722), Z = t((cr * 0.0193 + cg * 0.1192 + cb * 0.9505) / 1.08883); return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)]; };
+  const dE = (a, b) => { const A = lab(a), B = lab(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
+  const HEX6 = /^#[0-9A-F]{6}$/i;
+  const topColors = (map, n = 8) => {
+    const out = [];
+    for (const [value, weight] of Object.entries(map).sort((a, b) => b[1] - a[1])) {
+      const near = HEX6.test(value) && out.find((o) => HEX6.test(o.value) && dE(o.value, value) < 3);
+      if (near) { near.weight += Math.round(weight); (near.alias = near.alias || []).push(value); } else out.push({ value, weight: Math.round(weight) });
+    }
+    return out.slice(0, n);
+  };
   const alphaOf = (h) => (h && h.length === 9 ? parseInt(h.slice(7), 16) / 255 : 1);
   const base = (h) => (h ? h.slice(0, 7) : h);
   const clipW = (r) => Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
   const has = (sel) => !!document.querySelector(sel);
   const g = window;
   const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR|HEAD|TITLE)$/;
+  /* сбои новых разделов (аккордеоны, меню, ссылки) не роняют весь экран — идут в заметки */
+  const inPageErrors = [];
+  const TAIL_GLYPH = /[\s›»>+＋−–—×✕✚▾▼▿▸▶⌄˅∨⌃^❯⟩〉⏷↓-]+$/;
   /* полноэкранная вуаль (зерно, затемнение): fixed/absolute ≥ 80% экрана с pointer-events:none
      или слой, помеченный поиском фактуры — это фактура, а не цвет палитры (C2) */
   const veilM = new Map();
@@ -337,38 +413,104 @@ function inPage(arg) {
   const fontOf = (el) => { const s = cs(el); return { family: fam1(s.fontFamily), size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, transform: s.textTransform, letterSpacing: s.letterSpacing, style: s.fontStyle, text: txt(el).slice(0, 50) }; };
   const levels = {}; for (const lv of ['h1', 'h2', 'h3']) { const el = [...document.querySelectorAll(lv)].find((e) => onScreen(e)); if (el) levels[lv] = fontOf(el); }
 
-  /* --- кнопки и призывы (D11): все, схлопнутые по стилю; образцы и иконки отдельно --- */
+  /* --- кнопки и призывы (D11): все, схлопнутые по стилю; образцы и иконки отдельно.
+     Заливка, контур, градиент, радиус и тень — у самого элемента, у вложенного блока на 80%+
+     его площади (Framer: у <a> фона нет, он у div внутри) или у ::before/::after на всю коробку.
+     Стиль текста — от видимого текста внутри (textEl), а не от самого <a>. Ссылка с картинкой
+     (от 20% площади) или коробка от 120 px в высоту — карточка-ссылка: не кнопка, свой список.
+     Кнопки окна согласия cookie (data-rw-consent-box ставит closeConsent) — не кнопки сайта. --- */
   const radiusOf = (s, r) => { const v = s.borderTopLeftRadius; const n = parseFloat(v) || 0; const pill = /%/.test(v) ? n >= 50 : n >= Math.min(r.width, r.height) / 2 - 1; return { v, pill: n > 0 && pill }; };
+  const inConsent = (el) => !!el.closest('[data-rw-consent-box]');
+  const paintOf = (e, pe) => { const s = cs(e, pe); const bgc = hex(s.backgroundColor); const bw = parseFloat(s.borderTopWidth) || 0; const bst = s.borderTopStyle; return { s, bg: bgc && alphaOf(bgc) > 0.1 ? bgc : null, bc: bw > 0 && bst !== 'none' && bst !== 'hidden' ? hex(s.borderTopColor) : null, bw, grad: /gradient/.test(s.backgroundImage) }; };
+  const painted = (p) => !!(p.bg || p.bc || p.grad);
+  const surfaceOf = (el) => {
+    const own = paintOf(el); if (painted(own)) return { el, ...own, nested: null };
+    const area = R(el).width * R(el).height; let cur = el;
+    for (let d = 0; d < 4 && area > 0; d++) {
+      const cover = [...cur.children].filter((k) => { const kr = R(k); return kr.width * kr.height >= area * 0.8 && E(k) > 0.05; });
+      if (!cover.length) break;
+      for (const k of cover) { const p = paintOf(k); if (painted(p)) return { el: k, ...p, nested: sigNoId(k) }; }
+      cur = cover[0];
+    }
+    for (const pe of ['::before', '::after']) {
+      const ps = cs(el, pe); if (ps.content === 'none' || ps.content === 'normal' || !/absolute|fixed/.test(ps.position)) continue;
+      if ((parseFloat(ps.width) || 0) * (parseFloat(ps.height) || 0) < area * 0.8) continue;
+      const p = paintOf(el, pe); if (painted(p)) return { el, ...p, nested: pe, pseudo: pe };
+    }
+    return { el, ...own, nested: null };
+  };
+  /* площадь картинок внутри (img, video, canvas, iframe, svg от 48×48, фоновые картинки), в пределах коробки */
+  const mediaIn = (el) => {
+    const r = R(el); let a = 0;
+    const cut = (m) => { const mr = R(m); if (mr.width < 48 || mr.height < 48 || E(m) <= 0.05) return 0; return Math.max(0, Math.min(mr.right, r.right) - Math.max(mr.left, r.left)) * Math.max(0, Math.min(mr.bottom, r.bottom) - Math.max(mr.top, r.top)); };
+    for (const m of el.querySelectorAll('img,video,canvas,iframe,svg')) a += cut(m);
+    for (const b of bgUrlEls) if (b !== el && el.contains(b)) a += cut(b);
+    return Math.min(a, r.width * r.height);
+  };
   const ctaEls = [];
-  const ctaRaw = [...document.querySelectorAll('a,button,[role="button"],input[type="submit"],input[type="button"]')].filter((el) => onScreen(el)).map((el) => {
-    const s = cs(el), r = R(el);
-    const bg = hex(s.backgroundColor); const bw = parseFloat(s.borderTopWidth) || 0; const bc = bw > 0 ? hex(s.borderTopColor) : null;
+  const ctaRaw = [...document.querySelectorAll('a,button,[role="button"],input[type="submit"],input[type="button"]')].filter((el) => onScreen(el)).map((el) => { try {
+    const r = R(el); const sf = surfaceOf(el); const s = sf.s;
+    const te = textEl(el); const ts = cs(te);
     const text = (txt(el) || el.value || '').slice(0, 50); const aria = (el.getAttribute('aria-label') || el.getAttribute('title') || '').slice(0, 50);
-    const fs = parseFloat(s.fontSize) || 0; const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0;
+    const fs = parseFloat(ts.fontSize) || 0; const ls = ts.letterSpacing === 'normal' ? 0 : parseFloat(ts.letterSpacing) || 0;
     const submit = (el.tagName === 'BUTTON' && el.type === 'submit' && !!el.form) || (el.tagName === 'INPUT' && el.type === 'submit');
-    const rad = radiusOf(s, r);
+    const rad = radiusOf(s, sf.pseudo ? r : R(sf.el));
+    const area = r.width * r.height; const media = el.tagName === 'INPUT' ? 0 : mediaIn(el);
     return {
-      el, text: text || aria, ariaOnly: !text && !!aria, tag: el.tagName.toLowerCase(), href: el.getAttribute('href'),
-      filled: !!bg && alphaOf(bg) > 0.1, bordered: !!bc, gradient: /gradient/.test(s.backgroundImage), bg, color: hex(s.color), border: bc ? `${Math.round(bw * 10) / 10}px ${bc}` : null,
-      radius: rad.v, pill: rad.pill, w: px(r.width), h: px(r.height), fs: Math.round(fs * 10) / 10, fw: s.fontWeight, family: fam1(s.fontFamily),
-      upper: s.textTransform === 'uppercase' || (!!text && text === text.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(text)), ls: fs ? r2(ls / fs) : 0,
+      el, sfEl: sf.pseudo ? el : sf.el, text: text || aria, ariaOnly: !text && !!aria, tag: el.tagName.toLowerCase(), href: el.getAttribute('href'),
+      filled: !!sf.bg, bordered: !!sf.bc, gradient: sf.grad, bg: sf.bg, color: hex(ts.color), border: sf.bc ? `${Math.round(sf.bw * 10) / 10}px ${sf.bc}` : null, surface: sf.nested,
+      radius: rad.v, pill: rad.pill, w: px(r.width), h: px(r.height), fs: Math.round(fs * 10) / 10, fw: ts.fontWeight, family: fam1(ts.fontFamily),
+      upper: ts.textTransform === 'uppercase' || (!!text && text === text.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(text)), ls: fs ? r2(ls / fs) : 0,
       aboveFold: r.top < vh && r.bottom > 0, submit, inForm: !!el.closest('form'), shadow: s.boxShadow !== 'none',
       skip: /^#/.test(el.getAttribute('href') || '') && /^(к|перейти к|skip)\b.*(содерж|контент|main|каталог|основн)/i.test(text),
+      media: area ? Math.round(media / area * 100) : 0, card: el.tagName !== 'INPUT' && (r.height >= 120 || (media > 0 && media >= area * 0.2)), consent: inConsent(el),
     };
-  }).filter((c) => c.text && (c.filled || c.bordered || c.gradient || c.tag === 'button' || c.submit));
-  const icons = ctaRaw.filter((c) => c.ariaOnly && c.w < 48 && c.h < 48);
-  const buttons = ctaRaw.filter((c) => !(c.ariaOnly && c.w < 48 && c.h < 48) && !c.skip);
-  for (const c of buttons) ctaEls.push(c.el);
+  } catch (e) { if (inPageErrors.length < 3) inPageErrors.push(`кнопка ${sig(el)}: ${String(e.message || e).slice(0, 100)}`); return null; } }).filter(Boolean);
+  /* <button> без заливки и контура — кнопка, если это не раскрывашка (aria-expanded: вопрос FAQ, меню) */
+  const isCta = (c) => c.text && (c.filled || c.bordered || c.gradient || c.submit || (c.tag === 'button' && !c.el.hasAttribute('aria-expanded')));
+  const consentCtas = ctaRaw.filter((c) => c.consent && isCta(c));
+  const cardRaw = ctaRaw.filter((c) => !c.consent && c.card);
+  const btnRaw = ctaRaw.filter((c) => !c.consent && !c.card && isCta(c));
+  const icons = btnRaw.filter((c) => c.ariaOnly && c.w < 48 && c.h < 48);
+  const buttons = btnRaw.filter((c) => !(c.ariaOnly && c.w < 48 && c.h < 48) && !c.skip);
+  for (const c of buttons) { ctaEls.push(c.el); c.el.setAttribute('data-rw-cta', 'b'); }
+  for (const c of cardRaw) c.el.setAttribute('data-rw-cta', 'c');
   const uniq = new Map();
-  for (const c of buttons) { const k = [c.text, c.bg, c.radius, c.w, c.h].join('|'); const u = uniq.get(k); if (u) { u.count++; u.aboveFold = u.aboveFold || c.aboveFold; } else uniq.set(k, { ...c, el: undefined, count: 1 }); }
+  for (const c of buttons) { const k = [c.text, c.bg, c.radius, c.w, c.h].join('|'); const u = uniq.get(k); if (u) { u.count++; u.aboveFold = u.aboveFold || c.aboveFold; } else uniq.set(k, { ...c, el: undefined, sfEl: undefined, count: 1 }); }
   const ctas = [...uniq.values()].sort((a, b) => (b.submit - a.submit) || (b.aboveFold - a.aboveFold) || (b.filled - a.filled) || (b.count - a.count));
   const styleKey = (c) => [c.filled ? c.bg : c.gradient ? 'градиент' : '—', c.color, c.border || '—', c.radius, c.h, c.fs, c.fw, c.upper ? 'КАПС' : 'строчные', c.ls].join('|');
   const sg = new Map();
-  for (const c of buttons) { const k = styleKey(c); const u = sg.get(k); if (u) { u.count++; if (u.examples.length < 3 && !u.examples.includes(c.text)) u.examples.push(c.text); } else sg.set(k, { bg: c.filled ? c.bg : null, gradient: c.gradient, color: c.color, border: c.border, radius: c.radius, pill: c.pill, h: c.h, fs: c.fs, fw: c.fw, family: c.family, upper: c.upper, ls: c.ls, shadow: c.shadow, count: 1, examples: [c.text], submit: c.submit }); }
+  for (const c of buttons) { const k = styleKey(c); const u = sg.get(k); if (u) { u.count++; if (u.examples.length < 3 && !u.examples.includes(c.text)) u.examples.push(c.text); } else sg.set(k, { bg: c.filled ? c.bg : null, gradient: c.gradient, color: c.color, border: c.border, radius: c.radius, pill: c.pill, h: c.h, fs: c.fs, fw: c.fw, family: c.family, upper: c.upper, ls: c.ls, shadow: c.shadow, surface: c.surface, count: 1, examples: [c.text], submit: c.submit }); }
   const buttonStyles = [...sg.values()].sort((a, b) => (b.submit - a.submit) || (b.count - a.count));
+  /* карточки-ссылки: по виду коробки и подписи; размеры — разброс */
+  const cardKey = (c) => [c.bg || (c.gradient ? 'градиент' : '—'), c.border || '—', c.radius, c.shadow ? 'тень' : '', c.color, c.fs, c.fw].join('|');
+  const cgm = new Map();
+  for (const c of cardRaw) {
+    const k = cardKey(c); const u = cgm.get(k);
+    if (u) { u.count++; u.wMin = Math.min(u.wMin, c.w); u.wMax = Math.max(u.wMax, c.w); u.hMin = Math.min(u.hMin, c.h); u.hMax = Math.max(u.hMax, c.h); u.aboveFold = u.aboveFold || c.aboveFold; u.mediaMax = Math.max(u.mediaMax, c.media); if (c.text && u.examples.length < 3 && !u.examples.includes(c.text)) u.examples.push(c.text); if (c.href && u.hrefs.length < 2 && !u.hrefs.includes(c.href)) u.hrefs.push(c.href); }
+    else cgm.set(k, { bg: c.bg, gradient: c.gradient, border: c.border, radius: c.radius, shadow: c.shadow, surface: c.surface, color: c.color, fs: c.fs, fw: c.fw, family: c.family, upper: c.upper, count: 1, wMin: c.w, wMax: c.w, hMin: c.h, hMax: c.h, aboveFold: c.aboveFold, mediaMax: c.media, examples: c.text ? [c.text] : [], hrefs: c.href ? [c.href] : [] });
+  }
+  const cardLinks = { total: cardRaw.length, styles: [...cgm.values()].sort((a, b) => b.count - a.count).slice(0, 8) };
+  /* коробки залитых кнопок — Node снимет каждую и посчитает долю заливки внутри (data-rw-btn) */
+  const btnBoxes = [];
+  for (const c of buttons) { if (!c.filled || !c.sfEl || btnBoxes.length >= 40) continue; c.sfEl.setAttribute('data-rw-btn', String(btnBoxes.length)); btnBoxes.push({ i: btnBoxes.length, bg: base(c.bg), aboveFold: c.aboveFold, w: c.w, h: c.h, text: c.text }); }
+  /* акцент — цвет действий: цветная заливка кнопок (и у вложенного блока), сначала первый экран;
+     нейтральные (серые, чёрные, белые) — отдельно; фоны секций, шапки и подвала сюда не входят */
+  const hsl = (h) => { const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); const mx = Math.max(...v), mn = Math.min(...v), l = (mx + mn) / 2, dd = mx - mn; return { s: dd === 0 ? 0 : dd / (1 - Math.abs(2 * l - 1)), l }; };
+  const chromatic = (h) => { if (!/^#[0-9A-F]{6}/i.test(h || '')) return false; const q = hsl(h); return q.s >= 0.25 && q.l >= 0.12 && q.l <= 0.92; };
+  const fillM = {};
+  for (const c of buttons) {
+    if (!c.filled) continue; const k = base(c.bg);
+    const a = fillM[k] || (fillM[k] = { color: k, chromatic: chromatic(k), count: 0, firstScreen: 0, area: 0, nested: 0, examples: [] });
+    a.count++; if (c.aboveFold) a.firstScreen++; a.area += c.w * c.h; if (c.surface) a.nested++; if (a.examples.length < 2 && !a.examples.includes(c.text)) a.examples.push(c.text);
+  }
+  const fills = Object.values(fillM).sort((a, b) => ((b.firstScreen > 0) - (a.firstScreen > 0)) || (b.area - a.area));
+  const accentBtn = fills.find((a) => a.chromatic) || null;
+  const accent = accentBtn ? { from: 'кнопки', ...accentBtn } : null;
+  const neutralFills = fills.filter((a) => !a.chromatic).slice(0, 3);
 
   /* --- содержимое --- */
-  const headings = [...document.querySelectorAll('h1,h2,h3')].filter((h) => onScreen(h)).map((h) => ({ level: h.tagName.toLowerCase(), text: txt(h).slice(0, 120), aboveFold: R(h).top < vh && R(h).bottom > 0 })).slice(0, 60);
+  const headings = [...document.querySelectorAll('h1,h2,h3')].filter((h) => onScreen(h) && !inConsent(h)).map((h) => ({ level: h.tagName.toLowerCase(), text: txt(h).slice(0, 120), aboveFold: R(h).top < vh && R(h).bottom > 0 })).slice(0, 60);
   const nav = [...document.querySelectorAll('nav a, header a')].filter((a) => onScreen(a)).map((a) => ({ text: txt(a).slice(0, 40), href: a.getAttribute('href') })).filter((a) => a.text).slice(0, 30);
   const forms = [...document.querySelectorAll('form')].map((f) => ({
     action: f.getAttribute('action'), method: f.method, visible: onScreen(f),
@@ -403,7 +545,6 @@ function inPage(arg) {
     firstScreen: textBlocks.filter((b) => b.top < vh).slice(0, 3).map((b) => b.text.slice(0, 220)),
     longest: [...textBlocks].sort((a, b) => b.text.length - a.text.length).slice(0, 3).map((b) => b.text.slice(0, 220)),
   };
-  const faq = document.querySelectorAll('details').length + headings.filter((h) => /faq|вопрос/i.test(h.text)).length;
   const social = [...new Set([...document.querySelectorAll('a[href]')].map((a) => a.href).filter((h) => /t\.me|vk\.com|instagram|wa\.me|whatsapp|youtube|max\.ru|dzen|ok\.ru/i.test(h)))].slice(0, 8);
   const heroText = (() => {
     const cands = all.filter((e) => R(e).top < vh && R(e).bottom > 0 && ownText(e).length > 3);
@@ -590,10 +731,211 @@ function inPage(arg) {
   const firstArea = (list) => list.reduce((a, s) => { const r = R(s.el); const h = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0)); return a + clipW(r) * h; }, 0);
   const mediaShare = { photoPage: r2(photoLike.reduce((a, s) => a + s.area, 0) / docArea * 100), photoFirstScreen: r2(firstArea(photoLike) / (vw * vh) * 100), slots: rawSlots.length, byKind: rawSlots.reduce((m, s) => { m[s.kind] = (m[s.kind] || 0) + 1; return m; }, {}) };
 
+  /* --- аккордеоны и FAQ: details, [aria-expanded] и «свои» (Framer, Tilda, Webflow). Пункт —
+     видимый вопрос, значок (шеврон «›», «+», svg до 44 px, имя Icon/Chevron/Arrow, уголок из рамки)
+     и спрятанный внутри ответ от 30 знаков: обрезан overflow, прозрачен, нулевой высоты или
+     display:none. Пункты одного вида — группа; клик по вопросу проверяет Node в конце прохода
+     (data-rw-acc). Меню, шапка, диалоги, вкладки, закреплённое и ссылки на другие адреса — не
+     аккордеоны; ответ, который почти весь из ссылок, — подменю, не ответ. --- */
+  const hidM = new Map();
+  const hiddenHow = (el) => {
+    if (hidM.has(el)) return hidM.get(el);
+    let how = null; const r = R(el);
+    if (cs(el).display === 'contents') how = null; /* обёртка без коробки (Framer ssr-variant) — видимость решают дети */
+    else if (!(r.width > 0 && r.height > 1)) how = el.getClientRects().length ? 'нулевая высота' : 'display:none';
+    else if (E(el) <= 0.05) how = 'прозрачен';
+    else {
+      let l = r.left, t = r.top, rt = r.right, b = r.bottom;
+      for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+        const s = cs(p); if (s.overflowX === 'visible' && s.overflowY === 'visible' && s.clipPath === 'none') continue;
+        const pr = R(p); l = Math.max(l, pr.left); t = Math.max(t, pr.top); rt = Math.min(rt, pr.right); b = Math.min(b, pr.bottom);
+        if (rt <= l || b <= t) { how = 'обрезан overflow'; break; }
+      }
+      if (!how && (rt - l) * (b - t) < r.width * r.height * 0.1) how = 'обрезан overflow';
+    }
+    hidM.set(el, how); return how;
+  };
+  const fixM = new Map();
+  const fixedAnc = (el) => { for (let e = el; e && e !== document.body; e = e.parentElement) { let f = fixM.get(e); if (f === undefined) { f = cs(e).position === 'fixed'; fixM.set(e, f); } if (f) return true; } return false; };
+  const ACC_EXCL = 'nav, header, [role="navigation"], [role="menu"], [role="menubar"], [role="dialog"], [role="alertdialog"], dialog, [aria-modal="true"], [role="tabpanel"], [role="tablist"], [data-rw-consent-box], select, template';
+  const GLYPH = /^[›»>+＋−–—×✕✚▾▼▿▸▶⌄˅∨⌃^❯⟩〉⏷↓-]$/;
+  const ICON_NAME = /chevron|arrow|caret|plus|toggle|icon|expand|collapse|стрелк|плюс/i;
+  const nameOf = (e) => [e.getAttribute('data-framer-name'), e.getAttribute('aria-label'), typeof e.className === 'string' ? e.className : '', e.id].filter(Boolean).join(' ');
+  const chevronIn = (item, hid) => {
+    for (const e of item.querySelectorAll('*')) {
+      if (hid.contains(e)) continue; const r = R(e);
+      if (!(r.width >= 2 && r.height >= 6 && r.width <= 44 && r.height <= 44) || E(e) <= 0.3) continue;
+      const t = ownText(e); if (t && GLYPH.test(t)) return `знак «${t}»`; /* «›» в 16 px — 5 px шириной */
+      if (r.width < 6) continue;
+      const tag = e.tagName.toLowerCase();
+      if (tag === 'svg' || tag === 'img') return tag === 'svg' ? 'svg-значок' : 'картинка-значок';
+      const nm = nameOf(e); if (ICON_NAME.test(nm)) return `значок ${(e.getAttribute('data-framer-name') || nm).slice(0, 24)}`;
+      const s = cs(e); if (!t && r.width <= 24 && r.height <= 24 && s.transform !== 'none' && (parseFloat(s.borderRightWidth) > 0 || parseFloat(s.borderBottomWidth) > 0)) return 'уголок из рамки';
+    }
+    for (const e of [item, ...item.querySelectorAll('*')]) {
+      if (hid.contains(e)) continue;
+      for (const pe of ['::before', '::after']) { const c = String(cs(e, pe).content || '').replace(/^["']|["']$/g, '').trim(); if (c && c !== 'none' && c !== 'normal' && GLYPH.test(c)) return `знак «${c}» (${pe})`; }
+    }
+    return null;
+  };
+  const questionIn = (item, hid) => {
+    for (const e of [item, ...item.querySelectorAll('*')]) {
+      if (hid.contains(e)) continue;
+      const o = ownText(e); if (o.length < 2 || E(e) <= 0.3 || hiddenHow(e)) continue;
+      const t = (e.contains(hid) ? o : txt(e)).replace(TAIL_GLYPH, ''); /* без шеврона в конце */
+      if (t.length >= 3) return t.slice(0, 160);
+    }
+    return null;
+  };
+  /* пункт: спрятанный ответ → ближайший предок с видимым вопросом вне ответа. Несколько ответов в одном
+     предке — плоский аккордеон (h3 + div подряд, jQuery UI): пункт — «вопрос перед ответом + ответ»,
+     высота предка меряется на пункт. Ответ внутри слайдера — это слайд, не ответ. */
+  const SLIDER = '.swiper, .splide, .slick-slider, .glide, .flickity-enabled, .t-slds, [class*="carousel"], [class*="slider"], [aria-roledescription="carousel"]';
+  const prevQuestion = (h, item) => {
+    for (let x = h; x && x !== item; x = x.parentElement) {
+      for (let p = x.previousElementSibling; p; p = p.previousElementSibling) {
+        if (hiddenHow(p) || E(p) <= 0.3) continue;
+        const t = txt(p).replace(TAIL_GLYPH, ''); if (t.length >= 3 && t.length <= 300) return t.slice(0, 160);
+      }
+    }
+    return null;
+  };
+  const FAQ_RE = /(^|[^a-zа-яё])(faq|f\.a\.q\.?)([^a-zа-яё]|$)|frequently\s+asked|частые\s+вопросы|часто\s+задаваемые|вопросы\s+и\s+ответы|ответы\s+на\s+(частые\s+)?вопросы|^\s*вопросы\s*[:.!?]?\s*$|^\s*questions\s*[:.!?]?\s*$|q\s*&\s*a/i;
+  let accGroups = [], accordions = { details: 0, groups: [], byClass: 0, detailsNearFaq: 0 }, faqPage = { heading: null, top: null };
+  try {
+    const faqHeadEl = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],[class*="title"],[class*="heading"]')].find((h) => { if (!onScreen(h) || inConsent(h)) return false; const t = txt(h); return t.length <= 80 && FAQ_RE.test(t); });
+    const faqTop = faqHeadEl ? Math.round(R(faqHeadEl).top + sy) : null;
+    const byItem = new Map();
+    for (const el of everything) {
+      if (!hiddenHow(el)) continue;
+      const par = el.parentElement; if (!par || par === document.body || hiddenHow(par)) continue; /* самый внешний спрятанный */
+      const tc = (el.textContent || '').replace(/\s+/g, ' ').trim(); if (tc.length < 30) continue;
+      if (el.closest(ACC_EXCL) || el.closest('details') || el.closest(SLIDER) || fixedAnc(par)) continue;
+      const linkChars = [...el.querySelectorAll('a')].reduce((a, x) => a + (x.textContent || '').trim().length, 0);
+      if (linkChars > tc.length * 0.5) continue;
+      if (el.querySelector('img,video,iframe,canvas') && tc.length < 80) continue;
+      let item = par, q = null;
+      for (let d = 0; d < 6 && item && item !== document.body; d++) { if (cs(item).display !== 'contents') { q = questionIn(item, el); if (q) break; } item = item.parentElement; }
+      if (!q || !item || item === document.body || tc.startsWith(q)) continue;
+      let rec = byItem.get(item); if (!rec) byItem.set(item, rec = { item, q, hids: [] });
+      rec.hids.push({ el, tc });
+    }
+    const accItems = [];
+    for (const rec of byItem.values()) {
+      const n = rec.hids.length; const ir = R(rec.item);
+      if (ir.height < 16 || ir.height > 240 * n || ir.width < 140) continue;
+      const link = rec.item.closest('a[href]'); if (link && !/^(#|javascript:)/i.test(link.getAttribute('href') || '')) continue;
+      const kind = rec.item.querySelector('[aria-expanded]') || rec.item.matches('[aria-expanded]') ? 'aria-expanded' : 'свой';
+      for (const h of rec.hids) accItems.push({ item: rec.item, how: hiddenHow(h.el), q: (n > 1 && prevQuestion(h.el, rec.item)) || rec.q, answer: h.tc.slice(0, 60), chevron: chevronIn(rec.item, h.el), kind });
+    }
+    const gmap = new Map();
+    for (const rec of accItems) { const key = [sigNoId(rec.item), rec.kind, rec.chevron ? 'значок' : '', rec.how].join('|'); if (!gmap.has(key)) gmap.set(key, { sig: sigNoId(rec.item), kind: rec.kind, how: rec.how, chevron: rec.chevron, items: [] }); gmap.get(key).items.push(rec); }
+    let accId = 0;
+    for (const gr of gmap.values()) {
+      const n = gr.items.length; const qm = gr.items.filter((x) => /\?\s*$/.test(x.q)).length;
+      if (!((gr.chevron && (n >= 2 || faqHeadEl || qm)) || (n >= 3 && (faqHeadEl || qm >= n / 2)))) continue;
+      /* в плоском аккордеоне пункты делят один предок — у них один data-rw-acc */
+      const probe = gr.items.slice(0, 2).map((x) => { const id = x.item.getAttribute('data-rw-acc') || 'a' + (accId++); x.item.setAttribute('data-rw-acc', id); return { id, q: x.q.slice(0, 80), answer: x.answer }; });
+      accGroups.push({ sig: gr.sig, kind: gr.kind, how: gr.how, chevron: gr.chevron, count: n, flat: new Set(gr.items.map((x) => x.item)).size < n, qMarks: qm, top: Math.round(R(gr.items[0].item).top + sy), questions: gr.items.slice(0, 4).map((x) => x.q.slice(0, 80)), probe });
+    }
+    const detailsVis = [...document.querySelectorAll('details')].filter((d) => onScreen(d));
+    accordions = {
+      details: detailsVis.length, groups: accGroups, byClass: [...document.querySelectorAll('[class*="accordion"]')].filter((e) => onScreen(e)).length,
+      detailsNearFaq: faqTop == null ? 0 : detailsVis.filter((d) => { const y = R(d).top + sy; return y >= faqTop - 50 && y <= faqTop + 4000; }).length,
+    };
+    faqPage = { heading: faqHeadEl ? txt(faqHeadEl).slice(0, 60) : null, top: faqTop };
+  } catch (e) { inPageErrors.push(`аккордеоны и FAQ: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* --- переключатель меню: [aria-expanded]/[aria-controls] и имена burger/hamburger/menu-toggle, а
+     без них — небольшой нажимаемый элемент в шапке (верх страницы, header/nav, закреплённая панель
+     сверху) с 2–4 полосками (div/span или ::before/::after до 4 px высотой, не повёрнутые — повёрнутые
+     дают крестик), svg с именем menu/меню, знак ☰ / ≡ / «Меню». Селектор — для runtime.mjs --click;
+     клик проверяет Node (data-rw-toggle) --- */
+  const cssPath = (el) => {
+    const esc = (x) => (window.CSS && CSS.escape ? CSS.escape(x) : x);
+    const uniqSel = (x) => { try { const l = document.querySelectorAll(x); return l.length === 1 && l[0] === el; } catch (e) { return false; } };
+    if (el.id && uniqSel('#' + esc(el.id))) return '#' + esc(el.id);
+    for (const at of ['aria-label', 'data-framer-name', 'title', 'data-testid']) { const v = el.getAttribute(at); if (v) { const x = `${el.tagName.toLowerCase()}[${at}="${v.replace(/"/g, '\\"')}"]`; if (uniqSel(x)) return x; } }
+    const cls = [...el.classList].filter((c) => !/^(is-|has-)|active|open|hover|focus/.test(c)).slice(0, 3).map(esc);
+    if (cls.length && uniqSel(el.tagName.toLowerCase() + '.' + cls.join('.'))) return el.tagName.toLowerCase() + '.' + cls.join('.');
+    const parts = [];
+    for (let e = el; e && e !== document.body && parts.length < 10; e = e.parentElement) {
+      if (e.id && e !== el) { parts.unshift('#' + esc(e.id)); if (uniqSel(parts.join(' > '))) return parts.join(' > '); break; }
+      let p = e.tagName.toLowerCase(); const c = [...e.classList].filter((x) => !/^(is-|has-)|active|open|hover|focus/.test(x)).slice(0, 2).map(esc); if (c.length) p += '.' + c.join('.');
+      const sib = e.parentElement ? [...e.parentElement.children].filter((k) => k.tagName === e.tagName) : [];
+      if (sib.length > 1) p += `:nth-of-type(${sib.indexOf(e) + 1})`;
+      parts.unshift(p); if (uniqSel(parts.join(' > '))) return parts.join(' > ');
+    }
+    return parts.join(' > ');
+  };
+  const clickable = (e) => { for (let x = e, d = 0; x && d < 3; x = x.parentElement, d++) { if (x.matches('button,[role="button"],a,label,summary,[onclick],[tabindex]') || cs(x).cursor === 'pointer') return true; } return false; };
+  const rotated = (s) => { const m = /matrix\(([^)]+)\)/.exec(s.transform || ''); return !!m && Math.abs(parseFloat(m[1].split(',')[1]) || 0) > 0.05; };
+  const barsIn = (e) => {
+    let n = 0;
+    for (const k of [e, ...e.querySelectorAll('*')]) {
+      if (k !== e) { const r = R(k); const s = cs(k); if (r.height > 0 && r.height <= 4 && r.width >= 10 && r.width <= 48 && E(k) > 0.3 && !rotated(s) && (hex(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0)) n++; }
+      for (const pe of ['::before', '::after']) { const ps = cs(k, pe); if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue; const h = parseFloat(ps.height) || 0, w = parseFloat(ps.width) || 0; if (h > 0 && h <= 4 && w >= 10 && w <= 48 && !rotated(ps) && (hex(ps.backgroundColor) || parseFloat(ps.borderTopWidth) > 0)) n++; }
+    }
+    return n;
+  };
+  const headZone = (e) => {
+    if (e.closest('header, nav, [role="banner"], [role="navigation"]')) return true;
+    for (let x = e; x && x !== document.body; x = x.parentElement) { const p = cs(x).position; if (p === 'fixed' || p === 'sticky') { const r = R(x); return r.top < vh * 0.3 && r.height < vh * 0.5; } }
+    return R(e).top + sy < Math.min(160, vh * 0.3);
+  };
+  let toggles = [];
+  try {
+    const togM = new Map();
+    for (const e of all) {
+      const r = R(e); if (r.height < 16 || r.height > 72 || r.width < 16 || r.width > 160) continue;
+      if (inConsent(e) || !headZone(e) || !clickable(e)) continue;
+      const t = txt(e); const label = nameOf(e) + ' ' + (e.getAttribute('title') || '');
+      let how = null;
+      if ((e.hasAttribute('aria-expanded') || e.hasAttribute('aria-controls')) && r.width <= 72) how = 'aria-expanded';
+      else if (/burger|hamburger|menu-?toggle|nav-?toggle|navbar-toggler|menu-?(button|btn|icon|trigger)|mobile-?menu|меню/i.test(label) && t.length <= 12) how = `имя «${label.trim().slice(0, 30)}»`;
+      else if (/^(☰|≡|menu|меню)$/i.test(t)) how = `знак «${t}»`;
+      else if (r.width <= 72 && t.length <= 1) { const bars = barsIn(e); if (bars >= 2 && bars <= 4) how = `${bars} полоски`; else if (e.querySelector('svg') && /menu|nav|burger|toggle|меню|навигац/i.test(label)) how = 'svg-значок'; }
+      if (!how) continue;
+      const link = e.closest('a[href]'); if (link && !/^(#|javascript:)/i.test(link.getAttribute('href') || '')) continue;
+      togM.set(e, how);
+    }
+    const toggleEls = [...togM.keys()].filter((e) => ![...togM.keys()].some((o) => o !== e && o.contains(e)));
+    toggles = toggleEls.slice(0, 6).map((e, i) => { e.setAttribute('data-rw-toggle', String(i)); const r = R(e); return { i, sig: sig(e), selector: cssPath(e), how: togM.get(e), w: px(r.width), h: px(r.height), text: txt(e).slice(0, 20) }; });
+  } catch (e) { inPageErrors.push(`переключатели меню: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* --- ссылки (для «Страниц сайта по типам») и картинки донора: хостинг, лицензия и условия --- */
+  const linkMap = new Map(); let rights = { hosts: [], legal: [], copyright: null };
+  try {
+    const linkCtx = (a) => (a.closest('header, [role="banner"]') ? 'шапка' : a.closest('footer, [role="contentinfo"]') ? 'подвал' : a.closest('nav, [role="navigation"]') ? 'меню' : 'тело');
+    for (const a of document.querySelectorAll('a[href]')) {
+      const href = a.href; if (!/^(https?|file):/i.test(href) || linkMap.size >= 3000 && !linkMap.has(href)) continue;
+      let e = linkMap.get(href); if (!e) linkMap.set(href, e = { href, n: 0, text: '', ctx: {} });
+      e.n++; const t = (txt(a) || (a.textContent || '').replace(/\s+/g, ' ').trim() || a.getAttribute('aria-label') || '').slice(0, 50); if (!e.text && t) e.text = t; bump(e.ctx, linkCtx(a));
+    }
+    const LEGAL_RE = /licen[cs]|terms|conditions|legal|copyright|eula|usage[- ]rights|лиценз|услови|оферт|соглашени|правообладат|авторск/i;
+    const legal = []; const seenL = new Set();
+    const licLink = document.querySelector('link[rel="license"]'); if (licLink && licLink.href) { legal.push({ text: 'link rel=license', href: licLink.href }); seenL.add(licLink.href); }
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (legal.length >= 8) break;
+      const t = (txt(a) || (a.textContent || '').replace(/\s+/g, ' ').trim()).slice(0, 50);
+      if (!/^(https?|file):/i.test(a.href) || seenL.has(a.href) || inConsent(a) || !LEGAL_RE.test(t + ' ' + (a.getAttribute('href') || ''))) continue;
+      seenL.add(a.href); legal.push({ text: t, href: a.href });
+    }
+    const hostOf = (u) => { if (/^data:/i.test(u)) return 'встроены в страницу (data:)'; if (/^blob:/i.test(u)) return 'blob:'; try { const x = new URL(u, location.href); return x.protocol === 'file:' ? 'локальные файлы' : x.hostname; } catch (e) { return null; } };
+    const imgHosts = {};
+    for (const i of imgs) { const u = i.currentSrc || i.src; if (u) bump(imgHosts, hostOf(u)); }
+    for (const el of bgUrlEls) { const m = /url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/.exec(cs(el).backgroundImage); const u = m && (m[1] || m[2] || m[3]); if (u) bump(imgHosts, hostOf(u)); }
+    for (const v of document.querySelectorAll('video')) { const u = v.currentSrc || v.src || v.poster; if (u) bump(imgHosts, hostOf(u)); }
+    const footEl = document.querySelector('footer, [role="contentinfo"]');
+    const copyM = footEl && /©[^\n]{0,80}/.exec(footEl.innerText || '');
+    rights = { hosts: top(imgHosts, 6), legal, copyright: (document.querySelector('meta[name="copyright"], meta[name="dcterms.rights"]') || {}).content || (copyM ? copyM[0].trim() : null) };
+  } catch (e) { inPageErrors.push(`ссылки и лицензия: ${String(e.message || e).slice(0, 120)}`); }
+
   /* --- паспорт донора (D7, A5): что у него есть — и чего нет --- */
-  const ctaSet = new Set(ctaEls);
+  const ctaSet = new Set(ctaEls); const cardSet = new Set(cardRaw.map((c) => c.el));
   const roleOf = (el) => {
     const b = el.closest('a,button,[role="button"]'); if (b && ctaSet.has(b)) return 'кнопки';
+    if (b && cardSet.has(b)) return 'карточки-ссылки';
     if (el.closest('nav, header')) return 'навигация';
     const fs = parseFloat(cs(el).fontSize);
     if (el.closest('h1,h2,h3,h4,h5,h6') || fs >= bodyPx * 1.5) return 'заголовки';
@@ -602,7 +944,7 @@ function inPage(arg) {
   };
   const typeRoles = {};
   for (const el of all) {
-    const t = ownText(el); if (t.length < 2 || !/[A-Za-zА-Яа-яЁё0-9]/.test(t)) continue;
+    const t = ownText(el); if (t.length < 2 || !/[A-Za-zА-Яа-яЁё0-9]/.test(t) || inConsent(el)) continue;
     const s = cs(el); const fs = parseFloat(s.fontSize); if (fs < 6) continue;
     const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0; const em = r2(ls / fs);
     const caps = s.textTransform === 'uppercase' || (t === t.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(t));
@@ -619,7 +961,8 @@ function inPage(arg) {
     'поля ввода': inputsAll.length,
     'выпадающий список': visCount('select'),
     'флажки и переключатели': [...document.querySelectorAll('input[type="checkbox"], input[type="radio"]')].filter((i) => cs(i).display !== 'none' && (onScreen(i) || (i.labels && [...i.labels].some((l) => onScreen(l))))).length,
-    'аккордеон': visCount('details') + visCount('[class*="accordion"]'),
+    /* свои аккордеоны (без details) — кандидаты; Node оставит подтверждённые кликом (или все при --no-clicks) */
+    'аккордеон': accordions.details + accGroups.reduce((a, x) => a + x.count, 0) || accordions.byClass,
     'вкладки': visCount('[role="tab"]'),
     'слайдер / карусель': visCount('.swiper, .splide, [class*="slider"], [class*="carousel"], .t-slds'),
     'всплывающее окно': document.querySelectorAll('dialog, [role="dialog"], [class*="modal"], [class*="popup"]').length,
@@ -672,9 +1015,8 @@ function inPage(arg) {
     sticky: stickyAll.slice(0, 8), stickyTotal: stickyAll.length,
   };
   const interactive = {
-    toggles: [...document.querySelectorAll('[aria-expanded], [aria-controls], .burger, [class*="burger"], [class*="menu-toggle"], [class*="hamburger"]')].filter((e) => onScreen(e)).slice(0, 10).map(sig),
-    dialogs: components['всплывающее окно'], sliders: document.querySelectorAll('.swiper, .splide, [class*="slider"], [class*="carousel"]').length,
-    tabs: document.querySelectorAll('[role="tab"]').length, accordions: document.querySelectorAll('details, [class*="accordion"]').length,
+    toggles, dialogs: components['всплывающее окно'], sliders: document.querySelectorAll('.swiper, .splide, [class*="slider"], [class*="carousel"]').length,
+    tabs: document.querySelectorAll('[role="tab"]').length, accordions: components['аккордеон'],
     inputs: document.querySelectorAll('input:not([type="hidden"]), textarea, select').length, links: document.querySelectorAll('a[href]').length, buttons: document.querySelectorAll('button, [role="button"]').length,
     hashLinks: document.querySelectorAll('a[href^="#"]').length, telLinks: document.querySelectorAll('a[href^="tel:"]').length,
   };
@@ -682,13 +1024,19 @@ function inPage(arg) {
   return {
     viewport: { width: vw, height: vh, dpr: devicePixelRatio },
     tech: { frameworks, generator, libs, scriptHints, scripts: scriptSrcs.length, inlineScripts: [...document.scripts].filter((s) => !s.src).length, thirdParty, styles, images, media, dom, meta },
-    content: { headings, nav, ctas: ctas.slice(0, 60), ctasTotal: buttons.length, buttonStyles: buttonStyles.slice(0, 12), icons: { count: icons.length, sample: icons.slice(0, 4).map((c) => c.text) }, forms, words, paragraphs: paragraphs.length, longestParagraphs: voice.longest, voice, phones, emails, telLinks, mailLinks, prices, faq, social },
+    content: {
+      headings, nav, ctas: ctas.slice(0, 60), ctasTotal: buttons.length, buttonStyles: buttonStyles.slice(0, 12), icons: { count: icons.length, sample: icons.slice(0, 4).map((c) => c.text) },
+      cardLinks, consentButtons: [...new Set(consentCtas.map((c) => c.text))].slice(0, 6),
+      forms, words, paragraphs: paragraphs.length, longestParagraphs: voice.longest, voice, phones, emails, telLinks, mailLinks, prices, faq: faqPage, accordions, social,
+      links: [...linkMap.values()], rights,
+    },
     visual: {
-      palette: { backgrounds: top(bg, 8), text: top(fg, 6), ctaBackgrounds: top(buttons.reduce((m, c) => { if (c.filled) bump(m, base(c.bg), c.w * c.h); return m; }, {}), 4) },
+      palette: { backgrounds: topColors(bg, 8), text: topColors(fg, 6), ctaBackgrounds: topColors(buttons.reduce((m, c) => { if (c.filled) bump(m, base(c.bg), c.w * c.h); return m; }, {}), 4) },
+      accent, neutralFills, btnBoxes,
       fonts: { used: top(fam, 5), heading: headingFont, body: bodyFont, bodySize: bodySizes.length ? bodySizes[0].size : cs(document.body).fontSize, bodySizes, levels, h1: h1s ? { size: h1s.fontSize, weight: h1s.fontWeight, lineHeight: h1s.lineHeight, transform: h1s.textTransform, family: fam1(h1s.fontFamily) } : null, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length, failed: [...document.fonts].filter((f) => f.status === 'error').length },
       radius: top(radius, 6), shadows: Object.keys(shadows).length, sections, firstScreen, panels,
     },
-    surface, techniques, slots, mediaShare, passport, motion, interactive,
+    surface, techniques, slots, mediaShare, passport, motion, interactive, inPageErrors,
   };
 }
 
@@ -799,6 +1147,284 @@ async function textureDeltaFallback(page, found, dir, name) {
 }
 
 /* =====================================================================
+   Окно согласия cookie, доля заливки кнопок, клики по аккордеонам и меню,
+   цвет ссылок при наведении
+   ===================================================================== */
+
+/* В странице (или во фрейме согласия). Окно согласия — закреплённый блок, диалог или блок с именем
+   cookie/consent/…, видимый, с текстом про cookie / consent / куки / персональные данные до 3000
+   знаков, не шапка и не меню (ссылок не больше 8). Кнопка: принять → отклонить → закрыть; ссылка
+   на другой адрес — никогда. Окно помечается data-rw-consent-box (его кнопки inPage не считает
+   кнопками сайта), ссылки на окно и кнопку — window.__rwConsentBox / __rwConsentBtn. */
+function consentInPage() {
+  const TEXT = /cookie|consent|gdpr|куки|персональн\S* данн/i;
+  const NAME = /cookie|consent|gdpr|onetrust|cookiebot|didomi|usercentrics|cky-|cc-window|cc-banner|termly|iubenda|klaro|osano/i;
+  const ACCEPT = /^(accept( all)?( cookies)?|accept (and|&) close|allow( all)?( cookies)?|i accept|agree( and (close|continue))?|i agree|got it!?|ok(ay)?!?|understood|continue|принять( все| всё)?( cookie| куки)?|принимаю|согласен|согласна|согласиться|соглашаюсь|я согласен|хорошо|понятно|ок|окей|разрешить( все)?)[.!]?$/i;
+  const REJECT = /^(reject( all)?( cookies)?|decline( all)?|deny( all)?|refuse|(use )?(only )?(necessary|essential)( cookies)?( only)?|отклонить( все)?|отказаться|запретить|только необходимые)[.!]?$/i;
+  const CLOSE = /^(close|dismiss|×|✕|✖|x|закрыть)$/i;
+  const cls = (el) => `${el.id || ''} ${typeof el.className === 'string' ? el.className : ''}`;
+  const text = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && eff(el) > 0.05; };
+  const els = []; const walk = (root, d) => { for (const el of root.querySelectorAll('*')) { els.push(el); if (el.shadowRoot && d < 4) walk(el.shadowRoot, d + 1); } }; walk(document, 0);
+  const boxes = els.filter((el) => {
+    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|HEADER|NAV)$/.test(el.tagName)) return false;
+    const s = getComputedStyle(el);
+    const fixedish = s.position === 'fixed' || s.position === 'sticky' || el.matches('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
+    if ((!fixedish && !NAME.test(cls(el))) || !vis(el)) return false;
+    const t = text(el); return t.length > 0 && t.length <= 3000 && TEXT.test(t);
+  });
+  const outer = boxes.filter((b) => !boxes.some((o) => o !== b && o.contains(b)));
+  const label = (b) => String((b.tagName === 'INPUT' ? b.value : text(b)) || b.getAttribute('aria-label') || b.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+  for (const box of outer) {
+    if (box.querySelectorAll('a[href]').length > 8 || box.querySelector('nav')) continue;
+    const btns = []; const collect = (root, d) => { for (const b of root.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]')) btns.push(b); if (d < 3) for (const e of root.querySelectorAll('*')) if (e.shadowRoot) collect(e.shadowRoot, d + 1); };
+    collect(box, 0); if (box.shadowRoot) collect(box.shadowRoot, 1);
+    const ok = btns.filter((b) => vis(b) && !b.disabled && !(b.tagName === 'A' && b.getAttribute('href') && !/^(#|javascript:)/i.test(b.getAttribute('href'))));
+    const pick = ok.find((b) => ACCEPT.test(label(b))) || ok.find((b) => REJECT.test(label(b))) || ok.find((b) => CLOSE.test(label(b)) || /close|dismiss|закрыть/i.test(b.getAttribute('aria-label') || ''));
+    const r = box.getBoundingClientRect(); const cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+    const place = `${cy < innerHeight / 3 ? 'сверху' : cy > innerHeight * 2 / 3 ? 'снизу' : 'по центру'}${r.width >= innerWidth * 0.9 ? ' во всю ширину' : cx < innerWidth / 3 ? ' слева' : cx > innerWidth * 2 / 3 ? ' справа' : ''}`;
+    box.setAttribute('data-rw-consent-box', '1'); window.__rwConsentBox = box; window.__rwConsentBtn = pick || null;
+    const vw = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)), vh = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+    return {
+      box: sig(box), text: text(box).slice(0, 90), w: Math.round(r.width), h: Math.round(r.height), place, share: Math.round(vw * vh / (innerWidth * innerHeight) * 100),
+      buttons: ok.map(label).filter(Boolean).slice(0, 6), pick: pick ? label(pick) : null,
+      pickKind: pick ? (ACCEPT.test(label(pick)) ? 'принять' : REJECT.test(label(pick)) ? 'отклонить' : 'закрыть') : null,
+    };
+  }
+  return null;
+}
+async function consentGone(fr, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const shown = await evaluateWith(fr, () => { const b = window.__rwConsentBox; if (!b || !b.isConnected) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && eff(b) > 0.05; }, null, DEPS).catch(() => false);
+    if (!shown) return true;
+    await sleep(150);
+  }
+  return false;
+}
+/* Найти и закрыть окно согласия: основной документ, потом фреймы CMP. click: false — только найти и
+   пометить (--keep-consent). → { found, closed, box, place, w, h, share, buttons, pick, pickKind,
+   frame, why, waitedMs } или { found: false } */
+const CONSENT_FRAME = /consent|cookie|cmp|privacy|sourcepoint|quantcast|onetrust|didomi|trustarc|usercentrics|cookiebot|iubenda/i;
+async function closeConsent(page, { click = true } = {}) {
+  const main = page.mainFrame();
+  const frames = [main, ...page.frames().filter((f) => f !== main && CONSENT_FRAME.test(f.url()))];
+  for (const fr of frames) {
+    const f = await withDeadline(evaluateWith(fr, consentInPage, null, DEPS), 10000, 'поиск окна согласия').catch(() => null);
+    if (!f) continue;
+    let frame = null; if (fr !== main) { try { frame = new URL(fr.url()).hostname; } catch { frame = 'фрейм'; } }
+    const res = { found: true, closed: false, ...f, frame };
+    if (!click) return { ...res, why: 'не закрывалось (--keep-consent)' };
+    if (!f.pick) return { ...res, why: 'в окне нет кнопки «принять», «отклонить» или «закрыть»' };
+    const t0 = Date.now();
+    await fr.evaluate(() => { const b = window.__rwConsentBtn; if (b && b.isConnected) b.click(); }).catch(() => {});
+    let gone = await consentGone(fr, 2500);
+    if (!gone && fr === main) { /* настоящий клик мышью: часть окон не слушает click() из скрипта */
+      const pt = await fr.evaluate(() => { const b = window.__rwConsentBtn; if (!b || !b.isConnected) return null; const r = b.getBoundingClientRect(); return r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; }).catch(() => null);
+      if (pt) { await page.mouse.click(pt.x, pt.y).catch(() => {}); gone = await consentGone(fr, 2500); }
+    }
+    await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
+    return { ...res, closed: gone, waitedMs: Date.now() - t0, why: gone ? null : `нажали «${f.pick}», окно осталось на экране` };
+  }
+  return { found: false };
+}
+function consentNote(c) {
+  if (!c || !c.found) return c && c.error ? `проверка не прошла: ${c.error}` : 'не появлялось';
+  const where = `${c.box}, ${c.place}, ${c.w}×${c.h}${c.frame ? `, во фрейме ${c.frame}` : ''}`;
+  if (c.closed) return `закрыто кнопкой «${c.pick}» (${where})${c.late ? ' — появилось позже, после прокрутки: на снимках прокрутки оно есть, замеры сняты без него' : ''}`;
+  return `**не закрыто** — ${c.why || 'причина неизвестна'} (${where}${c.buttons && c.buttons.length ? `; кнопки в окне: ${c.buttons.map((b) => `«${b}»`).join(', ')}` : ''}) — закрывает ${c.share}% экрана на снимках`;
+}
+
+/* Доля заливки кнопок в их коробках (C2 для кнопок): снимок коробки каждой кнопки (data-rw-btn
+   ставит inPage), до 3 кнопок на цвет, сначала с первого экрана; доля пикселей ±PIX_TOL от цвета
+   заливки. Доля по всему снимку для кнопок не годится: почти белый фон страницы попадал в ±20
+   светло-серой кнопки. → { '#RRGGBB': { share %, buttons, of, examples } } */
+async function buttonBoxShares(page, boxes, colors) {
+  const sharp = loadSharp(); if (!sharp || !boxes.length) return null;
+  const out = {};
+  for (const color of colors) {
+    const list = boxes.filter((b) => b.bg === color); if (!list.length || !/^#[0-9A-F]{6}$/i.test(color)) continue;
+    const pick = [...list].sort((a, b) => b.aboveFold - a.aboveFold).slice(0, 3);
+    const t = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+    let hit = 0, total = 0, shots = 0;
+    for (const b of pick) {
+      const h = await page.$(`[data-rw-btn="${b.i}"]`); if (!h) continue;
+      try {
+        const buf = await h.screenshot({ type: 'png' });
+        const { data } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        for (let p = 0; p < data.length; p += 3) { total++; if (Math.abs(data[p] - t[0]) <= PIX_TOL && Math.abs(data[p + 1] - t[1]) <= PIX_TOL && Math.abs(data[p + 2] - t[2]) <= PIX_TOL) hit++; }
+        shots++;
+      } catch { /* кнопка ушла из DOM или нулевого размера */ } finally { await h.dispose().catch(() => {}); }
+    }
+    out[color] = { share: total ? Math.round(hit / total * 1000) / 10 : null, buttons: shots, of: list.length, examples: pick.map((b) => b.text).filter(Boolean).slice(0, 2) };
+  }
+  return out;
+}
+
+const sameDoc = (a, b) => String(a).split('#')[0] === String(b).split('#')[0];
+
+/* Аккордеон, точка нажатия: пункт data-rw-acc в середину окна, центр текста вопроса; в точке —
+   сам пункт (не шапка поверх) и не ссылка на другой адрес. */
+function accPointInPage(p) {
+  const item = document.querySelector(`[data-rw-acc="${p.id}"]`); if (!item) return { skip: 'пункт пропал из DOM' };
+  item.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const want = String(p.q || '').slice(0, 30); let target = null;
+  for (const e of item.querySelectorAll('*')) { const t = (e.innerText || '').replace(/\s+/g, ' ').trim(); if (t && t.startsWith(want)) target = e; }
+  const r = (target || item).getBoundingClientRect();
+  const x = Math.round(r.left + Math.min(r.width / 2, 160)), y = Math.round(r.top + Math.min(r.height / 2, 30));
+  const hit = document.elementFromPoint(x, y);
+  if (!hit || !(item.contains(hit) || hit.contains(item))) return { skip: 'точку нажатия закрывает другой элемент' };
+  const a = hit.closest('a[href]'); if (a && !/^(#|javascript:)/i.test(a.getAttribute('href') || '')) return { skip: 'в точке нажатия ссылка на другой адрес' };
+  return { x, y };
+}
+/* Состояние ответа: видимая доля (не обрезана overflow, не прозрачна) у самого глубокого видимого
+   элемента, чей текст начинается с ответа. Ищется по тексту, а не по ссылке на узел: Framer при
+   смене варианта пересоздаёт узлы. h — высота пункта, пока он в DOM. */
+function accStateInPage(p) {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const want = norm(p.answer).slice(0, 40); const item = document.querySelector(`[data-rw-acc="${p.id}"]`);
+  let best = null;
+  for (const e of document.body.querySelectorAll('*')) {
+    if (/^(SCRIPT|STYLE|TEMPLATE)$/.test(e.tagName) || (e.textContent || '').length < want.length || !e.getClientRects().length) continue;
+    if (!norm(e.textContent).startsWith(want)) continue;
+    if (!best || best.contains(e) || (item && item.contains(e) && !item.contains(best))) best = e;
+  }
+  const frac = (el) => {
+    const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || eff(el) <= 0.05) return 0;
+    let l = r.left, t = r.top, rt = r.right, b = r.bottom;
+    for (let q = el.parentElement; q && q !== document.body && q !== document.documentElement; q = q.parentElement) {
+      const s = getComputedStyle(q); if (s.overflowX === 'visible' && s.overflowY === 'visible' && s.clipPath === 'none') continue;
+      const qr = q.getBoundingClientRect(); l = Math.max(l, qr.left); t = Math.max(t, qr.top); rt = Math.min(rt, qr.right); b = Math.min(b, qr.bottom);
+      if (rt <= l || b <= t) return 0;
+    }
+    return Math.round((rt - l) * (b - t) / (r.width * r.height) * 100) / 100;
+  };
+  const ir = item && item.isConnected ? item.getBoundingClientRect() : null;
+  return { found: !!best, frac: best ? frac(best) : 0, h: ir ? Math.round(ir.height) : null };
+}
+/* До 2 пунктов на группу: навести (ответ показался — это наведение, не аккордеон), нажать (ответ
+   стал виден наполовину или пункт вырос на 20+ px), нажать ещё раз (закрылся ли). На сенсорном
+   экране, если клик мышью ничего не дал, — касание. Пишет в группу tried/opened/closed/status. */
+async function probeAccordions(page, groups, touch) {
+  const t0 = Date.now(); let probed = 0;
+  /* до 4 самых больших групп и не дольше 40 с; остальные — «не проверен» */
+  for (const g of [...groups].sort((a, b) => b.count - a.count)) {
+    if (probed >= 4 || Date.now() - t0 > 40000) { g.status = 'не проверен'; g.tried = 0; continue; }
+    probed++;
+    const tries = [];
+    for (const p of g.probe || []) {
+      const st = () => evaluateWith(page, accStateInPage, p, DEPS).catch(() => ({ found: false, frac: 0, h: null }));
+      const pt = await evaluateWith(page, accPointInPage, p, DEPS).catch(() => null);
+      if (!pt || pt.skip) { tries.push({ q: p.q, skip: pt ? pt.skip : 'пункт не найден' }); continue; }
+      await sleep(150);
+      const s0 = await st();
+      await page.mouse.move(pt.x, pt.y, { steps: 3 }).catch(() => {}); await sleep(450);
+      const s1 = await st();
+      if (s0.frac < 0.5 && s1.frac >= 0.5) { tries.push({ q: p.q, hover: true }); await page.mouse.move(1, 1).catch(() => {}); await sleep(250); continue; }
+      const opened = (x) => (x.frac >= 0.5 && s0.frac < 0.5) || (x.h != null && s0.h != null && x.h - s0.h >= 20);
+      const url0 = page.url();
+      await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+      let s2 = await st();
+      if (!opened(s2) && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(800); s2 = await st(); }
+      if (!sameDoc(page.url(), url0)) { tries.push({ q: p.q, navigated: page.url() }); g.navigated = page.url(); break; }
+      const t = { q: p.q, opened: opened(s2), before: { frac: s0.frac, h: s0.h }, after: { frac: s2.frac, h: s2.h } };
+      if (t.opened) {
+        const pt2 = await evaluateWith(page, accPointInPage, p, DEPS).catch(() => null); const cp = pt2 && !pt2.skip ? pt2 : pt;
+        await page.mouse.click(cp.x, cp.y).catch(() => {}); await sleep(800);
+        const s3 = await st(); t.closed = s3.frac < 0.5 || (s3.h != null && s2.h != null && s2.h - s3.h >= 20);
+      }
+      tries.push(t); await page.mouse.move(1, 1).catch(() => {});
+    }
+    g.tries = tries; g.tried = tries.filter((t) => !t.skip).length; g.opened = tries.filter((t) => t.opened).length;
+    g.closed = tries.filter((t) => t.closed).length; g.hoverOnly = tries.filter((t) => t.hover).length;
+    g.status = g.opened ? 'подтверждён' : g.hoverOnly ? 'наведение, не аккордеон' : g.tried ? 'клик не раскрыл' : 'не проверен';
+    if (g.navigated) break;
+  }
+}
+
+/* Ссылки, видимые в окне и не закрытые другим элементом: «href|текст». */
+function linksInViewInPage() {
+  const out = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    const r = a.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth || eff(a) <= 0.3) continue;
+    const x = Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 2), y = Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 2);
+    const hit = document.elementFromPoint(x, y); if (!hit || !(a === hit || a.contains(hit) || hit.contains(a))) continue;
+    out.add(`${a.getAttribute('href') || ''}|${(a.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30)}`);
+  }
+  return [...out];
+}
+/* Переключатель меню: наверху страницы нажать (data-rw-toggle), открылись ли ссылки (2+ новых видимых
+   и не закрытых), закрыть повторным кликом или Escape. Пишет в переключатель probe. */
+async function probeToggles(page, toggles, touch) {
+  const links = () => evaluateWith(page, linksInViewInPage, null, DEPS).catch(() => []);
+  for (const t of toggles.slice(0, 2)) {
+    await scrollToY(page, 0); await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
+    const pt = await evaluateWith(page, (i) => { const e = document.querySelector(`[data-rw-toggle="${i}"]`); if (!e) return null; const r = e.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return null; const x = r.left + r.width / 2, y = r.top + r.height / 2; const hit = document.elementFromPoint(x, y); return { x: Math.round(x), y: Math.round(y), ok: !!hit && (e.contains(hit) || hit.contains(e)) }; }, t.i, DEPS).catch(() => null);
+    if (!pt || !pt.ok) { t.probe = { skip: pt ? 'закрыт другим элементом' : 'пропал из DOM или не виден' }; continue; }
+    const before = await links(); const url0 = page.url();
+    await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+    let added = (await links()).filter((x) => !before.includes(x));
+    if (added.length < 2 && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(800); added = (await links()).filter((x) => !before.includes(x)); }
+    if (!sameDoc(page.url(), url0)) { t.probe = { navigated: page.url() }; break; }
+    t.probe = { opens: added.length >= 2, added: added.length, sample: added.slice(0, 4).map((x) => x.slice(x.indexOf('|') + 1) || x.split('|')[0]) };
+    if (t.probe.opens) {
+      const still = async () => (await links()).filter((x) => added.includes(x)).length;
+      await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+      if ((await still()) <= added.length / 2) t.probe.closedBy = 'повторный клик';
+      else { await page.keyboard.press('Escape').catch(() => {}); await sleep(500); t.probe.closedBy = (await still()) <= added.length / 2 ? 'Escape' : null; }
+    }
+  }
+}
+
+/* Цвет ссылок при наведении — запасной источник акцента, если цветных кнопок нет: до 6 видимых
+   текстовых ссылок (не кнопки и не карточки — data-rw-cta), цвет видимого текста до и после. */
+function hoverPickInPage() {
+  const list = [];
+  for (const a of document.querySelectorAll('a[href]')) {
+    if (list.length >= 6) break;
+    if (a.closest('[data-rw-cta], [data-rw-consent-box]') || a.querySelector('[data-rw-cta]')) continue;
+    const r = a.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.height > 60 || eff(a) <= 0.3) continue;
+    const t = (a.innerText || '').replace(/\s+/g, ' ').trim(); if (t.length < 2 || t.length > 40) continue;
+    a.setAttribute('data-rw-hl', String(list.length)); list.push({ i: list.length, text: t.slice(0, 30) });
+  }
+  return list;
+}
+function hoverStateInPage(i) {
+  const a = document.querySelector(`[data-rw-hl="${i}"]`); if (!a) return null;
+  a.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const r = a.getBoundingClientRect(); const x = r.left + Math.min(r.width / 2, 40), y = r.top + r.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return { color: (hex(getComputedStyle(textEl(a)).color) || '').slice(0, 7), x: Math.round(x), y: Math.round(y), ok: !!hit && (a === hit || a.contains(hit)) };
+}
+async function probeLinkHover(page) {
+  const list = await evaluateWith(page, hoverPickInPage, null, DEPS).catch(() => []);
+  const out = [];
+  for (const l of list) {
+    await page.mouse.move(1, 1).catch(() => {}); await sleep(150);
+    const s0 = await evaluateWith(page, hoverStateInPage, l.i, DEPS).catch(() => null); if (!s0 || !s0.ok) continue;
+    await page.mouse.move(s0.x, s0.y, { steps: 2 }).catch(() => {}); await sleep(450);
+    const s1 = await evaluateWith(page, hoverStateInPage, l.i, DEPS).catch(() => null); if (!s1) continue;
+    out.push({ text: l.text, from: s0.color, to: s1.color, changed: !!s1.color && s0.color !== s1.color });
+  }
+  await page.mouse.move(1, 1).catch(() => {});
+  return out;
+}
+const hslOf = (h) => { const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); const mx = Math.max(...v), mn = Math.min(...v), l = (mx + mn) / 2, d = mx - mn; return { s: d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1)), l }; };
+const chromaticHex = (h) => { if (!/^#[0-9A-F]{6}/i.test(h || '')) return false; const q = hslOf(h); return q.s >= 0.25 && q.l >= 0.12 && q.l <= 0.92; };
+
+/* FAQ по заголовку и группам аккордеонов (после клика): подтверждённые кликом группы у заголовка
+   (до 4000 px ниже) и любые группы, где у половины пунктов вопрос кончается «?»; «наведение» и «клик
+   не раскрыл» — не FAQ-пункты; не проверенные кликом (--no-clicks) — только с вопросами «…?». */
+const accOk = (g) => !g.status || g.status === 'подтверждён' || g.status === 'не проверен';
+function faqSummary(d) {
+  const f = d.content.faq || {}; const acc = d.content.accordions || { details: 0, groups: [], detailsNearFaq: 0 };
+  const near = (g) => f.top != null && g.top >= f.top - 100 && g.top <= f.top + 4000;
+  const fg = (acc.groups || []).filter((g) => accOk(g) && ((near(g) && g.status === 'подтверждён') || g.qMarks >= g.count / 2));
+  const items = fg.reduce((a, g) => a + g.count, 0) + (acc.detailsNearFaq || 0);
+  return { found: !!f.heading || fg.length > 0, heading: f.heading || null, top: f.top, items, details: acc.detailsNearFaq || 0, groups: fg.map((g) => ({ sig: g.sig, kind: g.kind, count: g.count, chevron: g.chevron, how: g.how, status: g.status || 'не проверен', opened: g.opened, tried: g.tried, closed: g.closed })) };
+}
+
+/* =====================================================================
    Прогон одного экрана
    ===================================================================== */
 async function inspect(browser, url, name, vp, shotsDir, opt) {
@@ -806,6 +1432,9 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
   const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
   try {
     const t0 = Date.now();
+    /* окно согласия cookie — до первого снимка, как заставка (--keep-consent: только найти) */
+    let consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 120) }));
+    if (consent.closed && page.overlay && page.overlay.hadOverlay && !page.overlay.gone) page.overlay = { ...(await waitForOverlay(page, 1500)), afterConsent: true };
     await page.screenshot({ path: path.join(shotsDir, `${name}-first.png`) });
     const early = await evaluateWith(page, earlyInPage, null, DEPS);
     await forceInstantScroll(page);
@@ -814,6 +1443,8 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
       onStep: () => evaluateWith(page, stepInPage, null, DEPS).catch(() => 0),
     });
     const reveal = await evaluateWith(page, revealInPage, null, DEPS).catch((e) => ({ error: e.message }));
+    /* окно, которое появилось позже (по таймеру, при прокрутке), — закрыть до замеров */
+    if (!consent.found) { const late = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => null); if (late && late.found) consent = { ...late, late: true }; }
 
     /* слои фактуры — после прокрутки (ленивые фоны Tilda грузятся при прокрутке); с пометкой,
        чтобы палитра не взяла их цвет, а замер мог их спрятать */
@@ -826,11 +1457,17 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
 
     const veilKeys = (found.layers || []).filter((L) => !L.pseudo && L.hide === 'visibility').map((L) => L.k);
     const data = await evaluateWith(page, inPage, { veilKeys }, DEPS);
+    for (const e of data.inPageErrors || []) notes.push(e);
     const canvases = await canvasList(page).catch(() => []);
     data.tech.canvases = canvases.map((c) => ({ el: c.sig, w: c.clientWidth, h: c.clientHeight, ctx: c.ctx || 'не инициализирован', buffer: `${c.width}×${c.height}`, ratioCss: c.ratioCss, ratioDevice: c.ratioDevice, visible: c.clientWidth > 0 && c.clientHeight > 0 && c.opacity > 0.05 }));
     const overflow = await findOverflow(page).catch((e) => ({ verdict: 'WARN', summary: `проверка не прошла: ${e.message}`, outer: [], wideCauses: [] }));
 
     const fullMode = await fullPageShot(page, path.join(shotsDir, `${name}-full.png`));
+
+    /* доля заливки кнопок — в коробках самих кнопок (снимок коробки), не по всей странице */
+    const fillColors = (data.visual.palette.ctaBackgrounds || []).flatMap((x) => [x.value, ...(x.alias || [])]);
+    data.visual.btnShares = await buttonBoxShares(page, data.visual.btnBoxes || [], fillColors).catch((e) => { notes.push(`доля заливки кнопок: ${e.message}`); return null; });
+    await scrollToY(page, 0);
 
     /* невидимые после прокрутки (D14, A14): появлялись ли в окне; если нет — навести на карточку */
     const hidden = await evaluateWith(page, hiddenInPage, null, DEPS).catch((e) => { notes.push(`разбор невидимых: ${e.message}`); return []; });
@@ -879,11 +1516,30 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
       for (const L of found.layers) for (const u of (L.urls || []).slice(0, 1)) { if (seen.has(u) || !/^https?:/.test(u)) continue; seen.add(u); tiles.push({ k: L.k, ...(await tileInfo(u, texDir, name)) }); }
     }
 
+    /* наведение и клики — последними, после всех снимков: раскрывают аккордеоны и меню.
+       Цветных кнопок нет — акцент ищется в цвете ссылок при наведении (--no-hover — не ищется) */
+    const touch = !!vp.hasTouch;
+    if (!data.visual.accent && !opt['no-hover']) {
+      const lh = await probeLinkHover(page).catch((e) => { notes.push(`наведение на ссылки: ${e.message}`); return []; });
+      data.visual.linkHover = lh;
+      const cnt = {}; for (const x of lh) if (x.changed && chromaticHex(x.to)) cnt[x.to] = (cnt[x.to] || 0) + 1;
+      const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+      if (best) data.visual.accent = { from: 'ссылки при наведении', color: best[0], count: best[1], tried: lh.length, examples: lh.filter((x) => x.to === best[0]).map((x) => x.text).slice(0, 2) };
+    }
+    const acc = data.content.accordions;
+    if (!opt['no-clicks']) {
+      if (acc.groups.length) { await probeAccordions(page, acc.groups, touch).catch((e) => notes.push(`проверка аккордеонов кликом: ${e.message}`)); await page.mouse.move(1, 1).catch(() => {}); }
+      if (data.interactive.toggles.length) await probeToggles(page, data.interactive.toggles, touch).catch((e) => notes.push(`проверка переключателя меню кликом: ${e.message}`));
+    }
+    const accN = acc.details + acc.groups.filter(accOk).reduce((a, x) => a + x.count, 0);
+    data.passport.components['аккордеон'] = accN || acc.byClass; data.interactive.accordions = data.passport.components['аккордеон'];
+    data.content.faq = faqSummary(data);
+
     const timing = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0]; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)])); return n ? { ttfb: Math.round(n.responseStart), domContentLoaded: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd), fcp: p['first-contentful-paint'] || null, transferKb: Math.round((n.transferSize || 0) / 1024) } : null; });
     const afterScroll = { stillHidden: hidden.reduce((a, g) => a + g.count, 0), pageHeight: scroll.pageHeight, animationsNow: data.motion.total, horizontalOverflow: overflow.verdict !== 'OK' };
     const fullShot = { file: `${name}-full.png`, mode: fullMode };
     return {
-      ...data, early, reveal, hidden, overflow, found, texture, tiles, fullShot, notes,
+      ...data, early, reveal, hidden, overflow, found, texture, tiles, fullShot, notes, consent,
       nav: page.gotoInfo || { attempt: 1, waitUntil: 'networkidle2' }, overlay: page.overlay, afterScroll, timing,
       log: { consoleErrors: page.log.console.filter((c) => c.type === 'error'), consoleWarnings: page.log.console.filter((c) => c.type === 'warning').length, pageErrors: page.log.errors, failedRequests: page.log.failed.slice(0, 20) },
       resources: summarizeRequests(page.log.requests), took: Date.now() - t0,
@@ -897,22 +1553,27 @@ async function overflowPass(browser, url, name, vp, opt) {
   const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
   try {
     const t0 = Date.now();
+    const consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => ({ found: false }));
     await forceInstantScroll(page);
     const scroll = await scrollThrough(page, { pause: 250 });
     const overflow = await findOverflow(page);
     const panels = await evaluateWith(page, () => [...document.body.querySelectorAll('*')].filter((el) => { const s = getComputedStyle(el); if (s.position !== 'fixed' && s.position !== 'sticky') return false; const r = el.getBoundingClientRect(); return r.width >= innerWidth * 0.3 && r.height >= 20 && r.height < innerHeight * 0.6 && eff(el) > 0.05; }).slice(0, 6).map((el) => { const r = el.getBoundingClientRect(); return { el: sig(el), place: r.top + r.height / 2 < innerHeight / 2 ? 'сверху' : 'снизу', height: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; }), null, DEPS).catch(() => []);
-    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, viewH: scroll.viewH, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
+    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, consent, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, viewH: scroll.viewH, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
   } finally { await page.close().catch(() => {}); }
 }
 
 /* =====================================================================
-   Палитра по пикселям (C2): каждый цвет подтверждается долей пикселей на снимках
+   Палитра по пикселям (C2): каждый цвет подтверждается долей пикселей на снимках.
+   Каждый пиксель засчитывается одному цвету — ближайшему (наибольшая разница по каналу) в пределах
+   ±PIX_TOL. Раньше пиксель шёл всем цветам в пределах ±20 сразу: почти белый фон страницы
+   (#F8F8FF) давал светло-серой кнопке (#EEEEEE) 41%, а соседние оттенки — одинаковую долю.
    ===================================================================== */
 const PIX_TOL = 20; /* ±20 уровней на канал: зерно 7% сдвигает цвет до ±18 */
 async function pixelShares(files, colors) {
   const sharp = loadSharp(); if (!sharp || !colors.length) return null;
   const T = colors.map((h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
   const hits = new Float64Array(colors.length); let total = 0; const used = [];
+  const memo = new Map(); /* цвет пикселя → номер ближайшего цвета палитры (−1 — ни одного) */
   for (const f of files) {
     if (!fs.existsSync(f)) continue;
     try {
@@ -920,13 +1581,148 @@ async function pixelShares(files, colors) {
       const { data, info } = await sharp(f, { limitInputPixels: false }).resize({ width: Math.min(meta.width, 720), kernel: 'nearest' }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
       total += info.width * info.height; used.push(path.basename(f));
       for (let i = 0; i < data.length; i += 3) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        for (let k = 0; k < T.length; k++) { const t = T[k]; if (Math.abs(r - t[0]) <= PIX_TOL && Math.abs(g - t[1]) <= PIX_TOL && Math.abs(b - t[2]) <= PIX_TOL) hits[k]++; }
+        const r = data[i], g = data[i + 1], b = data[i + 2]; const key = (r << 16) | (g << 8) | b;
+        let k = memo.get(key);
+        if (k === undefined) {
+          k = -1; let bestD = PIX_TOL + 1;
+          for (let j = 0; j < T.length; j++) { const t = T[j]; const dd = Math.max(Math.abs(r - t[0]), Math.abs(g - t[1]), Math.abs(b - t[2])); if (dd < bestD) { bestD = dd; k = j; } }
+          if (memo.size < 1e6) memo.set(key, k);
+        }
+        if (k >= 0) hits[k]++;
       }
     } catch { /* файл не читается — пропуск */ }
   }
   if (!total) return null;
   return { files: used, shares: Object.fromEntries(colors.map((c, k) => [c, Math.round(hits[k] / total * 10000) / 100])) };
+}
+
+/* =====================================================================
+   Страницы сайта по типам: ссылки этой страницы (все экраны) и /sitemap.xml,
+   сгруппированные по шаблону адреса; с --pages-shots — по снимку на тип
+   ===================================================================== */
+const UA_DESKTOP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const LANG_SEG = /^[a-z]{2}(-[a-z]{2})?$/i;
+const FILE_EXT = /\.(pdf|jpe?g|png|gif|webp|avif|svg|ico|zip|rar|7z|gz|mp4|webm|mov|mp3|wav|ogg|docx?|xlsx?|pptx?|txt|xml|json|csv|rss|atom)$/i;
+/* подсказка по имени — догадка для чтения таблицы, не вывод */
+const PAGE_HINTS = [
+  [/^\/$/, 'главная'],
+  [/log-?in|sign-?in|sign-?up|register|account|cabinet|profile|auth|password|вход|регистрац|кабинет|профиль/i, 'вход и кабинет'],
+  [/licen[cs]|privacy|terms|polic|cookie|legal|gdpr|agreement|oferta|оферт|политик|соглашени|конфиденц|услови|правила/i, 'юридическая'],
+  [/pric|plans?(\/|$)|tariff|all-access|subscri|membership|тариф|цены|прайс|стоимост|подписк/i, 'тарифы и цены'],
+  [/cart|checkout|basket|корзин|оформлен/i, 'корзина и оформление'],
+  [/contact|support|help|feedback|контакт|поддержк|помощ/i, 'контакты и помощь'],
+  [/about|team|story|company|о-нас|о-компании|команда|история/i, 'о нас'],
+  [/blog|news|articles?|journal|posts?|статьи|новост|блог|журнал/i, 'блог и новости'],
+  [/catalog|shop|store|products?|collections?|categor|goods|каталог|товар|магазин|коллекци|категори/i, 'каталог и товары'],
+  [/portfolio|works?(\/|$)|projects?|cases?|портфолио|работы|проекты|кейсы/i, 'работы и кейсы'],
+  [/services?|услуг/i, 'услуги'],
+];
+const hintOf = (key) => (PAGE_HINTS.find(([re]) => re.test(key)) || [])[1] || null;
+/* путь адреса внутри сайта или null (другой сайт); www и без www — один сайт; у file:// — от папки страницы */
+function sitePath(u, base) {
+  if (base.protocol === 'file:') { if (u.protocol !== 'file:') return null; const dir = base.pathname.replace(/[^/]*$/, ''); return u.pathname.startsWith(dir) ? '/' + u.pathname.slice(dir.length) : null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  const h = (x) => x.hostname.replace(/^www\./, '').toLowerCase();
+  return h(u) === h(base) && (u.port || '') === (base.port || '') ? u.pathname : null;
+}
+function normPath(p) { let x = String(p || '/').replace(/\/index\.html?$/i, '/'); if (x.length > 1) x = x.replace(/\/+$/, ''); return x || '/'; }
+/* шаблон адреса: /expansions/clay-1 → /expansions/*; /en/blog/x → /en/blog/*; /about → /about */
+function typeKey(p) {
+  const segs = p.split('/').filter(Boolean).map((s) => { try { return decodeURIComponent(s); } catch { return s; } });
+  if (!segs.length) return '/';
+  const lead = LANG_SEG.test(segs[0]) && segs.length > 1 ? 2 : 1;
+  const head = segs.slice(0, lead).join('/');
+  return segs.length > lead ? `/${head}/${segs.slice(lead).map(() => '*').join('/')}` : `/${head}`;
+}
+/* /sitemap.xml: один запрос (10 с, до 5 МБ); у индекса — до 3 вложенных карт того же сайта */
+async function fetchSitemap(base) {
+  if (!/^https?:$/.test(base.protocol)) return null;
+  const root = new URL('/sitemap.xml', base.origin).href;
+  const get = async (u) => {
+    const res = await fetch(u, { signal: AbortSignal.timeout(10000), headers: { 'user-agent': UA_DESKTOP, accept: 'application/xml,text/xml;q=0.9,*/*;q=0.5' }, redirect: 'follow' });
+    if (!res.ok) return { error: `HTTP ${res.status}` };
+    if (Number(res.headers.get('content-length') || 0) > 5e6) return { error: 'больше 5 МБ' };
+    return { text: (await res.text()).slice(0, 5e6) };
+  };
+  const locs = (t) => [...t.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\s\]]+)\s*(?:\]\]>)?\s*<\/loc>/gi)].map((m) => m[1].replace(/&amp;/g, '&'));
+  const r = await get(root).catch((e) => ({ error: String(e.message || e).slice(0, 80) }));
+  if (r.error) return { url: root, error: r.error, urls: [] };
+  if (!/<(urlset|sitemapindex)\b/i.test(r.text)) return { url: root, error: 'это не карта сайта (нет <urlset>)', urls: [] };
+  if (!/<sitemapindex\b/i.test(r.text)) return { url: root, urls: locs(r.text).slice(0, 50000) };
+  const kids = locs(r.text); const urls = []; let read = 0;
+  for (const k of kids.filter((x) => { try { return new URL(x).hostname.replace(/^www\./, '') === base.hostname.replace(/^www\./, ''); } catch { return false; } }).slice(0, 3)) {
+    const c = await get(k).catch(() => null); if (c && c.text) { read++; urls.push(...locs(c.text)); }
+  }
+  return { url: root, urls: urls.slice(0, 50000), index: { maps: kids.length, read } };
+}
+/* Типы страниц. Порядок (он же порядок снимков --pages-shots): сначала типы, на которые ссылается
+   страница, — шаблоны с большим числом адресов, потом отдельные страницы по числу ссылок; затем
+   найденные только в sitemap.xml. Якоря этой же страницы и файлы — не типы. */
+function pageTypes(url, per, order, sm) {
+  const base = new URL(url); const self = normPath(sitePath(base, base) || '/');
+  const types = new Map(); const ext = {}; const files = new Set(); let anchors = 0;
+  const merged = new Map();
+  for (const v of order) {
+    for (const l of (per[v].content && per[v].content.links) || []) {
+      const m = merged.get(l.href);
+      if (!m) merged.set(l.href, { ...l, ctx: { ...l.ctx } });
+      else { m.n = Math.max(m.n, l.n); for (const [k, n] of Object.entries(l.ctx)) m.ctx[k] = Math.max(m.ctx[k] || 0, n); if (!m.text && l.text) m.text = l.text; }
+    }
+  }
+  const typeOf = (key) => { let t = types.get(key); if (!t) types.set(key, t = { key, pages: new Set(), links: 0, sitemap: new Set(), ctx: {}, example: null, fromBody: false, texts: [] }); return t; };
+  for (const l of merged.values()) {
+    let u; try { u = new URL(l.href); } catch { continue; }
+    const p = sitePath(u, base);
+    if (p == null) { if (/^https?:$/.test(u.protocol)) { const h = u.hostname.replace(/^www\./, ''); ext[h] = (ext[h] || 0) + l.n; } continue; }
+    const np = normPath(p);
+    if (np === self) { anchors += l.n; continue; }
+    if (FILE_EXT.test(np)) { files.add(np); continue; }
+    const t = typeOf(typeKey(np)); t.pages.add(np); t.links += l.n;
+    for (const [k, n] of Object.entries(l.ctx)) t.ctx[k] = (t.ctx[k] || 0) + n;
+    if (!t.example || (!t.fromBody && l.ctx['тело'])) { t.example = l.href.split('#')[0]; t.fromBody = !!l.ctx['тело']; }
+    if (l.text && t.texts.length < 2 && !t.texts.includes(l.text)) t.texts.push(l.text);
+  }
+  for (const s of (sm && sm.urls) || []) {
+    let u; try { u = new URL(s); } catch { continue; }
+    const p = sitePath(u, base); if (p == null) continue;
+    const np = normPath(p); if (np === self || FILE_EXT.test(np)) continue;
+    const t = typeOf(typeKey(np)); t.sitemap.add(np); if (!t.example) t.example = s.split('#')[0];
+  }
+  const list = [...types.values()].map((t) => ({ key: t.key, pages: t.pages.size, links: t.links, sitemap: t.sitemap.size, ctx: t.ctx, example: t.example, texts: t.texts, hint: hintOf(t.key), template: t.key.includes('*') }));
+  list.sort((a, b) => ((b.pages > 0) - (a.pages > 0)) || (b.template - a.template) || (Math.max(b.pages, b.sitemap) - Math.max(a.pages, a.sitemap)) || (b.links - a.links) || a.key.localeCompare(b.key));
+  return {
+    self, types: list, anchors, files: [...files].slice(0, 8), filesTotal: files.size,
+    external: Object.entries(ext).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([host, n]) => ({ host, n })),
+    sitemap: sm ? { url: sm.url, count: (sm.urls || []).length, error: sm.error || null, index: sm.index || null } : null,
+  };
+}
+/* По одной странице каждого типа: открыть, закрыть окно согласия, прокрутить (ленивое и появления),
+   снимок всей страницы и видимые h1–h3. */
+async function shootPages(browser, types, n, vpName, vp, dir, opt) {
+  const out = [];
+  for (const t of types.filter((x) => x.example).slice(0, n)) {
+    const slug = t.key.replace(/\*/g, '').replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 60) || 'home';
+    const file = `${slug}.png`; const t0 = Date.now(); let page = null;
+    process.stdout.write(`· страница типа ${t.key} (${vpName}) … `);
+    try {
+      page = await openPage(browser, t.example, vp, { scheme: opt.scheme || 'light' });
+      const consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => ({ found: false }));
+      await forceInstantScroll(page);
+      await scrollThrough(page, { pause: 250 });
+      const mode = await fullPageShot(page, path.join(dir, file));
+      const info = await evaluateWith(page, () => ({
+        title: document.title, url: location.href, height: document.documentElement.scrollHeight,
+        heads: [...document.querySelectorAll('h1,h2,h3')].filter((h) => { const r = h.getBoundingClientRect(); return r.width > 0 && r.height > 0 && eff(h) > 0.05; }).map((h) => ({ level: h.tagName.toLowerCase(), text: (h.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90) })).filter((h) => h.text).slice(0, 40),
+      }), null, DEPS);
+      const doc = page.log.requests.find((r) => r.type === 'document');
+      out.push({ key: t.key, example: t.example, file, mode, status: doc ? doc.status : null, ...info, consent: consent.found ? consentNote(consent) : null, took: Date.now() - t0 });
+      console.log(`ок (${((Date.now() - t0) / 1000).toFixed(1)} с${doc && doc.status >= 400 ? `, HTTP ${doc.status}` : ''})`);
+    } catch (e) {
+      out.push({ key: t.key, example: t.example, error: String(e.message || e).replace(/\n/g, ' ').slice(0, 200) });
+      console.log(`сбой: ${String(e.message || e).split('\n')[0].slice(0, 120)}`);
+    } finally { if (page) await page.close().catch(() => {}); }
+  }
+  return out;
 }
 
 /* =====================================================================
@@ -936,14 +1732,34 @@ const pctS = (v) => (v == null ? '?' : v < 0.01 && v > 0 ? '<0.01%' : `${v}%`);
 function shortName(u) {
   try { const x = new URL(u); const seg = x.pathname.split('/').filter(Boolean).pop(); return (seg ? decodeURIComponent(seg) : `${x.host}${x.pathname} (документ)`).slice(0, 48); } catch { return String(u).slice(0, 48); }
 }
-function colorNote(c, shares, min) {
-  if (!shares || shares[c] == null) return c;
+/* цвет палитры: x — строка или { value, alias } (близкие оттенки одной строкой) */
+function colorNote(x, shares, min) {
+  const c = typeof x === 'string' ? x : x.value; const alias = (x && x.alias) || [];
+  const name = alias.length ? `${c} ≈ ${alias.slice(0, 3).join(', ')}` : c;
+  if (!shares || shares[c] == null) return name;
   const v = shares[c];
-  return v < min ? `${c} (**в CSS есть, на экране нет** — ${pctS(v)} пикселей)` : `${c} (${pctS(v)})`;
+  return v < min ? `${name} (**в CSS есть, на экране нет** — ${pctS(v)} пикселей)` : `${name} (${pctS(v)})`;
+}
+/* заливка кнопок: доля — в коробках самих кнопок (buttonBoxShares), а не по всему снимку */
+const FILL_MIN = 20;
+function fillShare(x, box) { return box ? [x.value, ...(x.alias || [])].map((k) => box[k]).find((y) => y && y.share != null) || null : null; }
+function fillNote(x, box) {
+  const name = x.alias && x.alias.length ? `${x.value} ≈ ${x.alias.slice(0, 3).join(', ')}` : x.value;
+  const b = fillShare(x, box);
+  if (!b) return `${name} (в коробках кнопок не измерено)`;
+  return b.share < FILL_MIN ? `${name} (**в CSS есть, в коробках кнопок почти не видна** — ${b.share}% пикселей, снято ${b.buttons} из ${b.of})` : `${name} (в коробках кнопок ${b.share}%, снято ${b.buttons} из ${b.of})`;
+}
+function accentLine(vis, box) {
+  const a = vis.accent;
+  const neutral = (vis.neutralFills || []).map((f) => `${f.color}${f.firstScreen ? ' (первый экран)' : ''}`).join(', ');
+  if (a && a.from === 'кнопки') { const b = fillShare({ value: a.color }, box); return `- акцент (цвет действий): **${a.color}** — заливка кнопок ${a.examples.map((e) => `«${e}»`).join(', ')}${a.count > a.examples.length ? ` и ещё ${a.count - a.examples.length}` : ''}${a.firstScreen ? ', первый экран' : ''}${a.nested ? `, фон у вложенного блока (${a.nested} из ${a.count})` : ''}${b ? ` · в коробках ${b.share}%` : ''}${neutral ? ` · нейтральные заливки: ${neutral}` : ''}`; }
+  if (a) return `- акцент (цвет действий): **${a.color}** — цветных кнопок нет${neutral ? ` (заливки нейтральные: ${neutral})` : ''}, цвет ссылок при наведении: ${a.count} из ${a.tried} (${a.examples.map((e) => `«${e}»`).join(', ')})`;
+  const lh = vis.linkHover;
+  return `- акцент (цвет действий): не найден — ${neutral ? `у кнопок нейтральная заливка ${neutral}` : 'залитых кнопок нет'}${lh ? `; ссылки при наведении ${lh.some((x) => x.changed) ? `меняют цвет только на нейтральный (${[...new Set(lh.filter((x) => x.changed).map((x) => x.to))].join(', ')})` : `цвет не меняют (проверено ${lh.length})`}` : ''}. Фоны секций, шапки и подвала — не акцент`;
 }
 function passportLines(d, m) {
   const P = d.passport; const L = [];
-  const roles = ['кнопки', 'навигация', 'подписи', 'заголовки', 'текст'];
+  const roles = ['кнопки', 'карточки-ссылки', 'навигация', 'подписи', 'заголовки', 'текст'];
   const lsLine = (row) => row.ls.map((x) => `${x.value === '0' ? '0' : `${x.value}em`} ×${x.weight}`).join(', ');
   L.push('Что у донора есть — только эти значения и брать. Чего нет — проектировать из его языка (его радиусы, шрифт, регистр, разрядка), а не по умолчанию.', '');
   L.push('**Есть**', '');
@@ -955,7 +1771,9 @@ function passportLines(d, m) {
     L.push(`- ${r} (${row.total}): кегль ${row.sizes.map((x) => `${x.value}px ×${x.weight}`).join(', ')} · начертание ${row.weights.map((x) => x.value).join('/')} · капс ${row.caps} из ${row.total} · letter-spacing ${lsLine(row)}${wide}`);
   }
   const bs = d.content.buttonStyles.slice(0, 5);
-  if (bs.length) L.push(`- кнопки по стилям: ${bs.map((b) => `${b.bg ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.border ? `контур ${b.border}` : 'без заливки'}, ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}, высота ${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''} ×${b.count} («${b.examples[0]}»)`).join('; ')}`);
+  if (bs.length) L.push(`- кнопки по стилям: ${bs.map((b) => `${b.bg ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.border ? `контур ${b.border}` : 'без заливки'}${b.surface ? ` (у ${b.surface})` : ''}, ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}, высота ${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''} ×${b.count} («${b.examples[0]}»)`).join('; ')}`);
+  const cl = d.content.cardLinks;
+  if (cl && cl.total) L.push(`- карточки-ссылки (${cl.total}, не кнопки): ${cl.styles.slice(0, 3).map((x) => `${x.bg ? `фон ${x.bg}` : x.gradient ? 'градиент' : 'без фона'}${x.border ? `, контур ${x.border}` : ''}, радиус ${x.radius}${x.shadow ? ', тень' : ''}, ${x.wMin === x.wMax ? x.wMin : `${x.wMin}–${x.wMax}`}×${x.hMin === x.hMax ? x.hMin : `${x.hMin}–${x.hMax}`} ×${x.count}`).join('; ')}`);
   if (P.fieldStyle) L.push(`- поля ввода: радиус ${P.fieldStyle.radius}, высота ${P.fieldStyle.h}, фон ${P.fieldStyle.bg || 'прозрачный'}, рамка ${P.fieldStyle.border}, кегль ${P.fieldStyle.fs}`);
   const have = Object.entries(P.components).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`);
   if (have.length) L.push(`- компоненты: ${have.join(', ')}`);
@@ -1021,6 +1839,75 @@ function textureLines(per, order, texResults) {
   return L;
 }
 
+function consentLine(per, order) {
+  const found = order.filter((v) => per[v].consent && per[v].consent.found);
+  if (!found.length) return `- окно согласия cookie: не появлялось${order.some((v) => per[v].consent && per[v].consent.error) ? ` (проверка не прошла: ${order.map((v) => per[v].consent && per[v].consent.error).filter(Boolean)[0]})` : ''}`;
+  const rest = order.filter((v) => !found.includes(v));
+  const closed = found.some((v) => per[v].consent.closed);
+  return `- окно согласия cookie: ${found.map((v) => `${v} — ${consentNote(per[v].consent)}`).join('; ')}${rest.length ? `; ${rest.join(', ')} — не появлялось${closed ? ' (согласие уже дано в этом браузере)' : ''}` : ''}${closed ? '. Кнопки окна в кнопки сайта не входят' : ''}`;
+}
+function faqLine(fq) {
+  if (!fq || typeof fq !== 'object') return fq ? 'есть' : 'нет';
+  if (!fq.found) return 'нет (ни заголовка «FAQ / Frequently asked questions / Вопросы / Частые вопросы», ни пунктов-аккордеонов с вопросами «…?»)';
+  const parts = [];
+  if (fq.details) parts.push(`details ×${fq.details}`);
+  for (const g of fq.groups || []) parts.push(`${g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}${g.status === 'подтверждён' ? `, клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.status === 'не проверен' ? ', кликом не проверялся' : `, ${g.status}`}`);
+  return `есть — ${fq.heading ? `«${fq.heading}»` : 'без заголовка (по вопросам «…?»)'}${fq.items ? `, ${fq.items} вопросов (${parts.join('; ')})` : ' — пунктов-аккордеонов под заголовком не нашлось (ответы открыты текстом?)'}`;
+}
+function accordionNote(acc) {
+  if (!acc) return '';
+  const parts = [];
+  if (acc.details) parts.push(`details ${acc.details}`);
+  for (const g of acc.groups || []) parts.push(`\`${g.sig}\` ×${g.count} — ${g.chevron || 'без значка'} + ответ ${g.how}; ${g.status === 'подтверждён' ? `клик раскрывает ${g.opened} из ${g.tried}` : g.status || 'кликом не проверялся'}`);
+  return parts.length ? ` (${parts.join('; ')})` : '';
+}
+function toggleProbeNote(p) {
+  if (!p) return 'кликом не проверялся';
+  if (p.skip) return `клик не проверен: ${p.skip}`;
+  if (p.navigated) return `клик увёл на ${p.navigated}`;
+  return p.opens ? `клик открывает навигацию (+${p.added} ссылок: ${p.sample.map((x) => `«${x}»`).join(', ')}), ${p.closedBy ? `закрывается: ${p.closedBy}` : 'не закрылось ни повторным кликом, ни Escape'}` : 'клик ссылок не открыл';
+}
+function togglesLine(toggles, url, vpName) {
+  if (!toggles || !toggles.length) return 'не найдены (ни [aria-expanded], ни имени burger/menu, ни 2–4 полосок, svg или «☰» в шапке)';
+  return toggles.slice(0, 3).map((t) => { const q = t.selector.includes('"') ? `'${t.selector}'` : `"${t.selector}"`; return `\`${t.selector}\` (${t.how}, ${t.w}×${t.h}; ${toggleProbeNote(t.probe)}) → проверить: \`runtime.mjs ${url} --viewport ${vpName} --click ${q} --shot menu\``; }).join('; ');
+}
+function rightsLines(per, order) {
+  const hosts = {}; const legal = new Map(); let copy = null;
+  for (const v of order) {
+    const r = per[v].content && per[v].content.rights; if (!r) continue;
+    for (const h of r.hosts || []) hosts[h.value] = Math.max(hosts[h.value] || 0, h.weight);
+    for (const l of r.legal || []) if (!legal.has(l.href)) legal.set(l.href, l);
+    copy = copy || r.copyright;
+  }
+  const hs = Object.entries(hosts).sort((a, b) => b[1] - a[1]).map(([h, n]) => `${h} ×${n}`).join(', ');
+  return [
+    `- картинки донора: ${hs ? `хостинг ${hs}` : 'картинок нет'}${legal.size ? ` · у донора есть лицензия/условия: ${[...legal.values()].map((l) => `«${l.text}» ${l.href}`).join('; ')}` : ' · ссылок на лицензию или условия (license, terms, лицензия, условия, оферта) на странице нет — права на картинки неизвестны, считать чужими'}${copy ? ` · ${copy}` : ''}`,
+    '- материалы донора (фото, иллюстрации, тексты, логотипы, файлы) не берём без законного получения — покупка лицензии или письменное разрешение правообладателя; свои кадры — законные бесплатные источники (media.mjs)',
+  ];
+}
+function pagesLines(pg, shots, n) {
+  const L = ['## Страницы сайта по типам', ''];
+  const sm = pg.sitemap;
+  L.push(`Ссылки этой страницы (все экраны)${sm ? ` и ${sm.error ? `/sitemap.xml — не прочитан: ${sm.error}` : `/sitemap.xml — ${sm.count} адресов${sm.index ? ` (индекс: прочитано ${sm.index.read} из ${sm.index.maps} карт)` : ''}`}` : ''}, сгруппированные по шаблону адреса: первый сегмент пути и «*» на месте остальных. Якоря этой страницы (${pg.anchors}) и файлы — не типы. «По имени» — догадка по адресу, не вывод.`, '');
+  const others = pg.types.filter((t) => t.key !== pg.self);
+  if (!others.length) { L.push('- других страниц нет: сайт одностраничный (только якоря этой страницы)'); return L; }
+  const ctx = (c) => Object.entries(c || {}).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${x}`).join(', ') || '—';
+  L.push('| тип страницы | адресов по ссылкам (ссылок) | в sitemap.xml | где ссылки | по имени | пример |', '|---|---|---|---|---|---|',
+    ...others.slice(0, 30).map((t) => `| \`${t.key}\` | ${t.pages ? `${t.pages} (${t.links})` : '—'} | ${sm && !sm.error ? t.sitemap || '—' : '?'} | ${ctx(t.ctx)} | ${t.hint || '—'} | ${t.example || '—'}${t.texts.length ? ` «${t.texts[0]}»` : ''} |`));
+  if (others.length > 30) L.push(`| … | ещё ${others.length - 30} типов — в discovery.json (pages) | | | | |`);
+  if (pg.external.length) L.push('', `- внешние ссылки: ${pg.external.map((e) => `${e.host} ×${e.n}`).join(', ')}`);
+  if (pg.filesTotal) L.push(`- файлы: ${pg.filesTotal} (${pg.files.join(', ')})`);
+  if (shots && shots.length) {
+    L.push('', `### Снято по странице каждого типа (\`pages/\`, ${shots.length} из ${others.length})`, '');
+    for (const s of shots) {
+      if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
+      const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
+      L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.consent ? ` · окно согласия: ${s.consent}` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}${s.heads.length > 10 ? ` · ещё ${s.heads.length - 10}` : ''}`);
+    }
+  } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
+  return L;
+}
+
 function writeSummary(url, run, per, design, order, extra) {
   const { tag, extra320, shares, tokenCheck, designNote } = extra;
   const d = per.desktop || per[order[0]]; const m = per.mobile || per[order.find((v) => per[v].viewport.width < 600)];
@@ -1039,7 +1926,8 @@ function writeSummary(url, run, per, design, order, extra) {
     `- скрипты: ${t.scripts} внешних, ${t.inlineScripts} встроенных · стили: ${t.styles.external.length} файлов, ${t.styles.inlineBlocks} блоков · сторонние домены: ${t.thirdParty.join(', ') || 'нет'}`,
     `- DOM: ${t.dom.nodes} узлов · высота ${t.dom.pageHeight}px (${t.dom.screens} экранов) · HTML ${kb(t.dom.htmlBytes)}`,
     `- переход: ${navNote.length ? `**${navNote.join('; ')}**` : 'с первой попытки на всех экранах'}`,
-    `- заставка при загрузке: ${d.overlay && d.overlay.hadOverlay ? `${d.overlay.overlay}, ${d.overlay.gone ? `ушла через ${d.overlay.waitedMs} мс` : `НЕ ушла за ${d.overlay.waitedMs} мс — закрывает страницу`}` : 'нет'}`,
+    `- заставка при загрузке: ${d.overlay && d.overlay.hadOverlay ? `${d.overlay.overlay}, ${d.overlay.gone ? `ушла через ${d.overlay.waitedMs} мс${d.overlay.afterConsent ? ' (после закрытия окна согласия)' : ''}` : `НЕ ушла за ${d.overlay.waitedMs} мс — закрывает страницу`}` : 'нет'}`,
+    consentLine(per, order),
     `- холсты: ${t.canvases.length ? t.canvases.slice(0, 6).map((c) => `${c.el} ${c.w}×${c.h} ${c.ctx}${c.ratioCss != null && c.ratioCss < 0.85 ? ` (буфер ${c.buffer} — размыт, ×${c.ratioCss})` : ''}`).join('; ') + (t.canvases.length > 6 ? `; ещё ${t.canvases.length - 6}` : '') : 'нет'} · видео: ${t.media.video} (автоплей ${t.media.autoplayVideo}) · iframe: ${t.media.iframes.length} · Lottie: ${t.media.lottie} · встроенных SVG: ${t.media.svgInline}`,
     `- картинки: ${im.count}, ленивых ${im.lazy}, без alt ${im.noAlt}, битых ${im.broken}, фоновых ${im.bgImages} · форматы: ${Object.entries(im.formats).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}${im.oversized.length ? ` · грузятся крупнее, чем показаны: ${im.oversized.map((o) => `${o.src} ${o.natural}→${o.shown}`).join('; ')}` : ''}`,
     `- meta: title «${t.meta.title}» · description ${t.meta.description ? 'есть' : 'НЕТ'} · viewport ${t.meta.viewport || 'НЕТ'} · lang ${t.meta.lang || 'НЕТ'} · h1 на странице: ${t.meta.h1Count} · og:image ${t.meta.ogImage ? 'есть' : 'нет'} · favicon ${t.meta.favicon ? 'есть' : 'нет'}`,
@@ -1064,25 +1952,34 @@ function writeSummary(url, run, per, design, order, extra) {
   }
   L.push('');
 
-  const c = d.content;
-  L.push('## Содержимое', '', `- слов на странице: ${c.words} · текстовых блоков: ${c.paragraphs} · цен: ${c.prices.length ? c.prices.slice(0, 6).join(', ') : 'не найдено'} · FAQ: ${c.faq ? 'есть' : 'нет'}`,
+  const c = d.content; const cl = c.cardLinks || { total: 0, styles: [] };
+  L.push('## Содержимое', '', `- слов на странице: ${c.words} · текстовых блоков: ${c.paragraphs} · цен: ${c.prices.length ? c.prices.slice(0, 6).join(', ') : 'не найдено'}`,
+    `- FAQ: ${faqLine(c.faq)}`,
     `- контакты: ${[...c.phones, ...c.emails].join(', ') || 'не найдены'}${c.telLinks.length || c.mailLinks.length ? ` (ссылками tel:/mailto: ${c.telLinks.length + c.mailLinks.length})` : ''} · соцсети: ${c.social.map((s) => s.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]).join(', ') || 'нет'}`, '',
     '### Заголовки', '', ...c.headings.map((h) => `${h.level === 'h1' ? '' : h.level === 'h2' ? '  ' : '    '}- ${h.level}: ${h.text}${h.aboveFold ? ' (первый экран)' : ''}`), '',
     '### Навигация', '', c.nav.map((n) => `${n.text} → ${n.href}`).join(' · ') || '— нет', '',
     `### Кнопки и призывы (${c.ctasTotal} на странице, ${c.ctas.length} разных; сначала отправка формы и первый экран)`, '',
-    ...c.ctas.slice(0, 14).map((b) => `- «${b.text}» ${b.tag}${b.href ? ` → ${b.href}` : ''}${b.count > 1 ? ` ×${b.count}` : ''} · ${b.filled ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.bordered ? `контур ${b.border}` : 'без заливки'}, ${b.w}×${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''}, ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}${b.submit ? ' · **отправка формы**' : ''}${b.aboveFold ? ' · первый экран' : ''}`),
+    'Кнопка — компактный элемент с заливкой, контуром или градиентом (у самого элемента или у вложенного блока на всю площадь); стиль текста — от видимого текста внутри. Ссылки с картинкой и коробки от 120 px — ниже, в «Карточках-ссылках».', '',
+    ...c.ctas.slice(0, 14).map((b) => `- «${b.text}» ${b.tag}${b.href ? ` → ${b.href}` : ''}${b.count > 1 ? ` ×${b.count}` : ''} · ${b.filled ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.bordered ? `контур ${b.border}` : 'без заливки'}${b.surface ? ` (у ${b.surface})` : ''}, ${b.w}×${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''}, текст ${b.color} ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}${b.submit ? ' · **отправка формы**' : ''}${b.aboveFold ? ' · первый экран' : ''}`),
     ...(c.ctas.length > 14 ? [`- …и ещё ${c.ctas.length - 14} разных (все — в discovery.json)`] : []),
-    ...(c.icons.count ? [`- образцы и значки без подписи (меньше 48×48, только aria-label): ${c.icons.count} — ${c.icons.sample.join(' | ')}`] : []), '',
-    '### Стили кнопок', '', ...(c.buttonStyles.length ? c.buttonStyles.slice(0, 8).map((b) => `- ${b.bg ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.border ? `контур ${b.border}` : 'без заливки'} · текст ${b.color} ${b.fs}px/${b.fw} ${b.family}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''} · высота ${b.h} · радиус ${b.radius}${b.pill ? ' (пилюля)' : ''}${b.shadow ? ' · тень' : ''} — ×${b.count}: ${b.examples.map((x) => `«${x}»`).join(', ')}`) : ['— нет']), '',
+    ...(!c.ctas.length ? ['— нет'] : []),
+    ...(c.icons.count ? [`- образцы и значки без подписи (меньше 48×48, только aria-label): ${c.icons.count} — ${c.icons.sample.join(' | ')}`] : []),
+    ...(c.consentButtons && c.consentButtons.length ? [`- кнопки окна согласия cookie — не кнопки сайта, в списки выше не входят: ${c.consentButtons.map((x) => `«${x}»`).join(', ')}`] : []), '',
+    '### Стили кнопок', '', ...(c.buttonStyles.length ? c.buttonStyles.slice(0, 8).map((b) => `- ${b.bg ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.border ? `контур ${b.border}` : 'без заливки'}${b.surface ? ` (у ${b.surface})` : ''} · текст ${b.color} ${b.fs}px/${b.fw} ${b.family}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''} · высота ${b.h} · радиус ${b.radius}${b.pill ? ' (пилюля)' : ''}${b.shadow ? ' · тень' : ''} — ×${b.count}: ${b.examples.map((x) => `«${x}»`).join(', ')}`) : ['— нет']), '',
+    `### Карточки-ссылки (${cl.total} на странице; не кнопки)`, '',
+    ...(cl.total ? ['Ссылка с картинкой (от 20% площади) или коробка от 120 px в высоту. Подпись — самый длинный видимый текст внутри.', '', ...cl.styles.map((x) => `- ×${x.count} · ${x.bg ? `фон ${x.bg}` : x.gradient ? 'градиент' : 'без фона'}${x.surface ? ` (у ${x.surface})` : ''}${x.border ? `, контур ${x.border}` : ''}, радиус ${x.radius}${x.shadow ? ', тень' : ''} · ${x.wMin === x.wMax ? x.wMin : `${x.wMin}–${x.wMax}`}×${x.hMin === x.hMax ? x.hMin : `${x.hMin}–${x.hMax}`} · картинка до ${x.mediaMax}% площади${x.examples.length ? ` · подпись ${x.color} ${x.fs}px/${x.fw} ${x.family}${x.upper ? ' КАПС' : ''}` : ''}${x.aboveFold ? ' · первый экран' : ''} — ${x.examples.map((e) => `«${e}»`).join(', ') || 'без подписи (только картинка)'}${x.hrefs.length ? ` → ${x.hrefs.join(', ')}` : ''}`)] : ['— нет']), '',
     '### Формы', '', ...(c.forms.length ? c.forms.map((f) => `- ${f.fields.map((x) => `${x.type}${x.name ? `:${x.name}` : ''}${x.required ? '*' : ''}${x.labelled ? '' : ' (без подписи)'}`).join(', ')} → «${f.submit || '?'}» · action ${f.action || '—'} · согласие ${f.consent ? 'есть' : 'нет'}${f.visible ? '' : ' · скрыта'}`) : ['— нет']), '',
     '### Тон голоса', '', ...(c.voice.firstScreen.length ? ['Первый экран:', ...c.voice.firstScreen.map((p) => `> ${p}`), ''] : []), 'Самые длинные блоки:', ...(c.voice.longest.length ? c.voice.longest.map((p) => `> ${p}`) : ['— текстовых блоков от 40 знаков нет']), '');
 
+  if (extra.pages) L.push(...pagesLines(extra.pages, extra.pageShots, extra.pagesShotsN), '');
+
   const vis = d.visual; const sh = shares && shares.shares;
   L.push('## Визуал (замеры, не мнение)', '',
-    `Вес цвета = видимая площадь × итоговая прозрачность; полноэкранные вуали и зерно — в разделе «Фактура», не здесь. В скобках — доля пикселей этого цвета (±${PIX_TOL}) на снимках${shares ? ` (${shares.files.length}: first и full всех экранов)` : ''}; меньше 0.1% — цвет есть в CSS, но на экране его нет: в дизайн-систему не брать.`, '',
-    `- фоны по площади: ${vis.palette.backgrounds.map((x) => colorNote(x.value, sh, 0.1)).join(', ')}`,
-    `- цвета текста: ${vis.palette.text.map((x) => colorNote(x.value, sh, 0.02)).join(', ')}`,
-    `- заливки кнопок: ${vis.palette.ctaBackgrounds.map((x) => colorNote(x.value, sh, 0.1)).join(', ') || 'нет'}`,
+    `Вес цвета = видимая площадь × итоговая прозрачность; полноэкранные вуали и зерно — в разделе «Фактура», не здесь. В скобках — доля пикселей этого цвета на снимках${shares ? ` (${shares.files.length}: first и full всех экранов)` : ''}: каждый пиксель засчитан одному, ближайшему цвету палитры (±${PIX_TOL} на канал); меньше 0.1% — цвет есть в CSS, но на экране его нет: в дизайн-систему не брать. «≈» — оттенки ближе ΔE 3, одной строкой. У заливок кнопок доля — в коробках самих кнопок.`, '',
+    `- фоны по площади: ${vis.palette.backgrounds.map((x) => colorNote(x, sh, 0.1)).join(', ')}`,
+    `- цвета текста: ${vis.palette.text.map((x) => colorNote(x, sh, 0.02)).join(', ')}`,
+    `- заливки кнопок: ${vis.palette.ctaBackgrounds.map((x) => fillNote(x, vis.btnShares)).join(', ') || 'нет'}`,
+    accentLine(vis, vis.btnShares),
     `- шрифты: заголовки «${vis.fonts.heading}», текст «${vis.fonts.body}» ${vis.fonts.bodySize}${vis.fonts.bodySizes.length > 1 ? ` (по объёму текста: ${vis.fonts.bodySizes.map((x) => `${x.size} ${x.chars} зн.`).join(', ')})` : ''} · загружено начертаний ${vis.fonts.loaded}, не загрузилось ${vis.fonts.failed}`,
     ...['h1', 'h2', 'h3'].filter((k) => vis.fonts.levels[k]).map((k) => { const f = vis.fonts.levels[k]; return `- ${k}: «${f.family}» ${f.size}/${f.weight}, строка ${f.lineHeight}, ${f.transform}${f.letterSpacing !== 'normal' ? `, ls ${f.letterSpacing}` : ''}${f.style !== 'normal' ? `, ${f.style}` : ''} — «${f.text}»`; }),
     `- радиусы: ${vis.radius.map((x) => `${x.value} ×${x.weight}`).join(', ') || 'нет'} · теней: ${vis.shadows}`,
@@ -1094,7 +1991,7 @@ function writeSummary(url, run, per, design, order, extra) {
     const mf = m.visual.firstScreen;
     L.push('### Мобильный экран', '', `- высота ${m.tech.dom.pageHeight}px (${m.tech.dom.screens} экранов) · секций ${m.visual.sections.length} · шапка ${mf.header ? `${mf.header.el} ${mf.header.height}px, ${mf.header.shareOfScreen}%, ${mf.header.place}` : '—'} · h1 ${mf.h1AboveFold ? 'виден' : 'НЕ виден'} · кнопок на первом экране ${mf.ctasAboveFold}`,
       `- закреплённые панели: ${m.visual.panels.length ? m.visual.panels.map((p) => `${p.el} ${p.place}, высота ${p.height}px (${p.shareOfScreen}% экрана), ${p.position}${p.bg ? `, фон ${p.bg}` : ''}${p.backdrop ? `, ${p.backdrop}` : ''}${p.radius ? `, радиус ${p.radius}` : ''}, ссылок ${p.links}`).join('; ') : 'нет'}`,
-      `- переключатели меню: ${m.interactive.toggles.join(', ') || 'не найдены'} · кнопка позвонить: ${m.interactive.telLinks ? 'есть' : 'нет'}`, '');
+      `- переключатели меню: ${togglesLine(m.interactive.toggles, url, order.find((v) => per[v] === m) || 'mobile')} · кнопка позвонить: ${m.interactive.telLinks ? 'есть' : 'нет'}`, '');
   }
 
   L.push('## Паспорт донора: есть / нет', '', ...passportLines(d, m && m !== d ? m : null), '');
@@ -1123,6 +2020,7 @@ function writeSummary(url, run, per, design, order, extra) {
     ...(d.slots.length ? d.slots.map((x) => `| ${x.role} | \`${x.key}\` ${x.tag} | ${x.count} | ${x.w}×${x.h} | ${x.ratio} | ${x.fit} | ${x.films.join('; ') || '—'} | ${x.filter || '—'}${x.blend ? `, ${x.blend}` : ''} | ${x.kind}${x.video ? `, ${x.video}` : ''} | ${x.src || '—'}${x.natural ? ` (${x.natural})` : ''} |`) : ['| — | крупных картинок нет | | | | | | | | |']),
     '', 'Для подбора фото: пропорции и вписывание из таблицы, плёнки и фильтр повторить поверх, зерно — из «Фактуры».', '');
   if (m && m !== d && m.slots.length) L.push(`На телефоне: ${m.slots.slice(0, 5).map((x) => `${x.role} ${x.w}×${x.h} (${x.ratio}) ×${x.count}`).join('; ')} · фото ${pctS(m.mediaShare.photoPage)} страницы, ${pctS(m.mediaShare.photoFirstScreen)} первого экрана.`, '');
+  L.push(...rightsLines(per, order), '');
 
   const mo = d.motion, it = d.interactive, ea = d.early || {}, rv = d.reveal || {};
   L.push('## Движение и интерактив (наличие, не качество)', '',
@@ -1133,7 +2031,7 @@ function writeSummary(url, run, per, design, order, extra) {
     ...(d.hidden.length ? [`- невидимы после прокрутки: ${d.hidden.slice(0, 6).map((g) => `${g.count} × ${g.sig}${g.text ? ` «${g.text}»` : ''} — ${g.kind}`).join('; ')}${d.hidden.length > 6 ? `; ещё ${d.hidden.length - 6} групп` : ''}`] : ['- невидимых после прокрутки блоков нет']),
     `- элементов с переходами: ${mo.withTransitions} · закреплённые (${mo.stickyTotal}): ${mo.sticky.map((s) => `${s.el} (${s.position}${s.veil ? ', вуаль' : ''})`).join(', ') || 'нет'}${mo.stickyTotal > mo.sticky.length ? `, ещё ${mo.stickyTotal - mo.sticky.length}` : ''}`,
     `- уважает «меньше движения»: ${mo.reducedMotionRule ? 'правило есть' : 'НЕТ'} · плавная прокрутка: ${ea.smoothScroll ? 'да (html{scroll-behavior:smooth})' : 'нет'}`,
-    `- меню/переключатели: ${it.toggles.length} · диалоги: ${it.dialogs} · слайдеры: ${it.sliders} · вкладки: ${it.tabs} · аккордеоны: ${it.accordions} · полей ввода: ${it.inputs} · ссылок ${it.links}, кнопок ${it.buttons}, якорей ${it.hashLinks}`, '');
+    `- меню/переключатели: ${it.toggles.length}${it.toggles.length ? ` (${it.toggles.map((x) => `\`${x.selector}\` ${x.how}`).join('; ')})` : ''} · диалоги: ${it.dialogs} · слайдеры: ${it.sliders} · вкладки: ${it.tabs} · аккордеоны: ${it.accordions}${accordionNote(d.content.accordions)} · полей ввода: ${it.inputs} · ссылок ${it.links}, кнопок ${it.buttons}, якорей ${it.hashLinks}`, '');
 
   L.push('## Дизайн-система', '', design ? `Снята скиллом design-reference: \`${design}\` — переменные в \`.tokens.css\`, замеры в \`.json\`.` : designNote || 'Не снималась (нет скилла design-reference рядом или указан --no-design). Палитра и шрифты выше — только по замерам этой страницы.');
   if (tokenCheck && tokenCheck.length) {
@@ -1147,14 +2045,16 @@ function writeSummary(url, run, per, design, order, extra) {
     : `Фактура: блок \`--grain-*\` в \`design/${tt.file}\` не дописан — ${tt.why}.`);
   else if (!design && extra.texResults && extra.texResults.length) L.push('', 'Фактура: блок `--grain-*` — в разделе «Фактура» выше (дизайн-системы нет, дописывать некуда).');
   L.push('');
-  L.push('## Что дальше', '', '1. Открыть снимки и заполнить визуальный разбор по `reference/discovery.md` (язык дизайна, иерархия, приём, что сохранить). «Паспорт донора» и «Подписные приёмы» — рамка для своих решений.', '2. Прогнать `runtime.mjs` по всему, что зависит от JS: меню, формы, слайдеры, холсты, появления.', '3. Составить матрицу «менять / не трогать» и план по приоритетам P0–P5 (`reference/analysis.md`).', '');
+  const pg = extra.pages; const moreTypes = pg ? pg.types.filter((x) => x.key !== '/').length : 0;
+  L.push('## Что дальше', '', '1. Открыть снимки и заполнить визуальный разбор по `reference/discovery.md` (язык дизайна, иерархия, приём, что сохранить). «Паспорт донора» и «Подписные приёмы» — рамка для своих решений.', '2. Прогнать `runtime.mjs` по всему, что зависит от JS: меню (селектор — в «Мобильном экране»), формы, слайдеры, холсты, появления.', '3. Составить матрицу «менять / не трогать» и план по приоритетам P0–P5 (`reference/analysis.md`).',
+    ...(moreTypes ? [`4. Режим донора: у сайта ${moreTypes} других типов страниц (раздел «Страницы сайта по типам»)${extra.pageShots && extra.pageShots.length ? ' — открыть снимки из pages/' : ' — снять по одной странице каждого типа: тот же запуск с `--pages-shots N`'}, в analysis.md составить «тип страницы донора → что там → аналог у нас → совет» и спросить пользователя, какие страницы нужны, до плана.`] : []), '');
   return L.join('\n');
 }
 
 /* =====================================================================
    Запуск
    ===================================================================== */
-const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'viewport', 'scheme', 'tag'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'strict', 'help', 'h'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'viewport', 'scheme', 'tag', 'pages-shots'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'keep-consent', 'no-clicks', 'no-pages', 'strict', 'help', 'h'] });
 /* справка — первой, до любых проверок и побочных эффектов; короткий -h parseArgs отдаёт позиционным */
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
@@ -1167,7 +2067,10 @@ if (!pos[0]) argFail('Нужен адрес: node discover.mjs <url> [--out па
 const url = String(pos[0]);
 let urlObj = null; try { urlObj = new URL(url); } catch { /* ниже — понятная ошибка */ }
 if (!urlObj || !/^(https?|file):$/.test(urlObj.protocol)) argFail(`Неверный адрес «${url}»: нужен полный адрес с http://, https:// или file:// (например http://localhost:4177/)`);
-for (const k of ['out', 'tag', 'scheme', 'viewports', 'viewport']) if (opt[k] === true) argFail(`У --${k} нет значения`);
+for (const k of ['out', 'tag', 'scheme', 'viewports', 'viewport', 'pages-shots']) if (opt[k] === true) argFail(`У --${k} нет значения`);
+const pagesShotsN = opt['pages-shots'] == null ? 0 : Number(opt['pages-shots']);
+if (!Number.isInteger(pagesShotsN) || pagesShotsN < 0 || pagesShotsN > 50) argFail(`--pages-shots: «${opt['pages-shots']}» — нужно целое число типов страниц от 0 до 50`);
+if (opt['no-pages'] && pagesShotsN > 0) argFail('--no-pages и --pages-shots вместе: снимки страниц строятся по таблице типов — оставьте один флаг');
 if (opt.scheme != null && !/^(light|dark)$/.test(String(opt.scheme))) argFail(`--scheme: «${opt.scheme}» — можно light или dark`);
 if (opt.viewports != null && opt.viewport != null && String(opt.viewports) !== String(opt.viewport)) argFail(`Указаны --viewports «${opt.viewports}» и --viewport «${opt.viewport}» — это один флаг, оставьте один`);
 const vpSpec = opt.viewports != null ? opt.viewports : opt.viewport;
@@ -1180,10 +2083,21 @@ const shotsDir = ensureDir(path.join(run, tag));
 
 const browser = await launch();
 const per = {}; const extra320 = {};
+let pages = null; let pageShots = null;
+/* что сделано на экране: окно cookie, аккордеоны и меню по клику — в строку прогресса */
+const doneNote = (p) => {
+  const x = [];
+  if (p.consent && p.consent.found) x.push(p.consent.closed ? `cookie: закрыто «${p.consent.pick}»` : `cookie: НЕ закрыто${p.consent.why ? ` (${p.consent.why})` : ''}`);
+  const gs = (p.content.accordions && p.content.accordions.groups) || [];
+  if (gs.length) x.push(`аккордеонов: ${gs.map((g) => `${g.count} (${g.status || 'не проверен'})`).join(', ')}`);
+  const tg = p.interactive.toggles || [];
+  if (tg.length) x.push(`меню: ${tg[0].probe && tg[0].probe.opens ? 'открывается кликом' : tg[0].probe ? toggleProbeNote(tg[0].probe) : 'найдено'}`);
+  return x.length ? `, ${x.join(', ')}` : '';
+};
 try {
   for (const [name, vp] of viewports) {
     process.stdout.write(`· ${name} ${vp.width}×${vp.height} … `);
-    try { per[name] = await inspect(browser, url, name, vp, shotsDir, opt); console.log(`ок (${(per[name].took / 1000).toFixed(1)} с, ошибок в консоли ${per[name].log.consoleErrors.length}, исключений ${per[name].log.pageErrors.length})`); }
+    try { per[name] = await inspect(browser, url, name, vp, shotsDir, opt); console.log(`ок (${(per[name].took / 1000).toFixed(1)} с, ошибок в консоли ${per[name].log.consoleErrors.length}, исключений ${per[name].log.pageErrors.length}${doneNote(per[name])})`); }
     catch (e) { console.log(`сбой: ${e.message}`); per[name] = { error: e.message }; }
   }
   if (!opt['no-320'] && !has320) {
@@ -1191,6 +2105,18 @@ try {
     process.stdout.write(`· ${name} ${vp.width}×${vp.height}, только переполнение … `);
     try { extra320[name] = await overflowPass(browser, url, name, vp, opt); console.log(`ок (${(extra320[name].took / 1000).toFixed(1)} с)`); }
     catch (e) { console.log(`сбой: ${e.message}`); extra320[name] = { error: e.message, width: vp.width }; }
+  }
+  /* страницы сайта по типам: ссылки всех экранов + /sitemap.xml; с --pages-shots — по снимку на тип */
+  const goodNow = Object.fromEntries(Object.entries(per).filter(([, v]) => !v.error));
+  if (!opt['no-pages'] && Object.keys(goodNow).length) {
+    process.stdout.write('· страницы по типам (ссылки и sitemap.xml) … ');
+    const sm = await fetchSitemap(urlObj).catch((e) => ({ url: null, error: String(e.message || e).slice(0, 80), urls: [] }));
+    pages = pageTypes(url, goodNow, Object.keys(goodNow), sm);
+    console.log(`${pages.types.filter((t) => t.key !== pages.self).length} типов${sm ? (sm.error ? `, sitemap.xml: ${sm.error}` : `, sitemap.xml: ${sm.urls.length} адресов`) : ''}`);
+    if (pagesShotsN > 0) {
+      const [vpName, vp] = viewports[0];
+      pageShots = await shootPages(browser, pages.types.filter((t) => t.key !== pages.self), pagesShotsN, vpName, vp, ensureDir(path.join(run, 'pages')), opt);
+    }
   }
 } finally { await browser.close().catch(() => {}); }
 
@@ -1206,10 +2132,10 @@ const paletteColors = [...new Set(order.flatMap((v) => { const p = good[v].visua
 const shares = await pixelShares(shotFiles, paletteColors).catch(() => null);
 const texResults = order.map((v) => good[v].texture).filter((t) => t && t.source === 'texture.mjs');
 
-const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null };
+const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN };
 const textureSource = opt['no-texture-module'] ? 'discover (запасной путь, --no-texture-module)' : texNote || 'texture.mjs';
 const save = (design) => {
-  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens });
+  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null });
   fs.writeFileSync(path.join(run, 'discovery.md'), writeSummary(url, run, good, design, order, extra));
 };
 
@@ -1263,10 +2189,22 @@ for (const [v, p] of Object.entries(extra320)) {
   if (p.error) verdicts.push(['FAIL', `проход ${v} (${p.width || 320}px) не снялся: ${p.error} — переполнение на этой ширине не проверено`]);
   else if (p.overflow.verdict !== 'OK') verdicts.push([p.overflow.verdict, `переполнение ${v}: ${p.overflow.summary}`]);
 }
-if (shares) { const ghost = paletteColors.filter((c) => shares.shares[c] < 0.1 && order.some((v) => good[v].visual.palette.backgrounds.concat(good[v].visual.palette.ctaBackgrounds).some((x) => x.value === c))); if (ghost.length) verdicts.push(['WARN', `в CSS есть, на экране нет (<0.1% пикселей): ${ghost.join(', ')}`]); }
+/* фоны — по доле на снимках; заливки кнопок — по доле в коробках самих кнопок */
+if (shares) { const ghost = paletteColors.filter((c) => shares.shares[c] < 0.1 && order.some((v) => good[v].visual.palette.backgrounds.some((x) => x.value === c))); if (ghost.length) verdicts.push(['WARN', `в CSS есть, на экране нет (<0.1% пикселей): ${ghost.join(', ')}`]); }
+for (const v of order) {
+  const vis = good[v].visual;
+  const bad = vis.palette.ctaBackgrounds.map((x) => [x.value, fillShare(x, vis.btnShares)]).filter(([, b]) => b && b.share < FILL_MIN);
+  if (bad.length) verdicts.push(['WARN', `${v}: заливка кнопок в CSS есть, в коробках кнопок почти не видна: ${bad.map(([c, b]) => `${c} ${b.share}%`).join(', ')}`]);
+  const cn = good[v].consent;
+  if (cn && cn.found && !cn.closed && !opt['keep-consent']) verdicts.push(['WARN', `${v}: окно согласия cookie не закрылось — ${cn.why || 'причина неизвестна'} (${cn.box}, ${cn.place}, ${cn.share}% экрана на снимках)`]);
+}
+for (const s of pageShots || []) {
+  if (s.error) verdicts.push(['WARN', `страница типа ${s.key} не снялась: ${s.error}`]);
+  else if (s.status >= 400) verdicts.push(['WARN', `страница типа ${s.key} ответила HTTP ${s.status}: ${s.example}`]);
+}
 if (extra.tokenCheck) { const bad = extra.tokenCheck.filter((x) => x.share < 0.1); if (bad.length) verdicts.push(['WARN', `токены цвета не видны на снимках: ${bad.map((x) => `--${x.name} ${x.color} ${pctS(x.share)}`).join(', ')}`]); }
 if (verdicts.length) { console.log(''); for (const [vv, msg] of verdicts) console.log(`${vv.padEnd(5)} ${msg.slice(0, 300)}`); }
 const nFail = verdicts.filter(([vv]) => vv === 'FAIL').length; const nWarn = verdicts.filter(([vv]) => vv === 'WARN').length;
 console.log(`\nИтог: ${nFail || nWarn ? [nFail && `FAIL ${nFail}`, nWarn && `WARN ${nWarn}`].filter(Boolean).join(' · ') : 'OK'}${opt.strict ? ` (--strict: код выхода ${nFail ? 1 : 0})` : ''}`);
-console.log(`Готово: ${run}\n  discovery.md — сводка, discovery.json — данные, ${tag}/ — снимки${design ? `, design/ — переменные${extra.textureTokens && extra.textureTokens.written ? ' (с блоком --grain-*)' : ''}` : ''}`);
+console.log(`Готово: ${run}\n  discovery.md — сводка, discovery.json — данные, ${tag}/ — снимки${design ? `, design/ — переменные${extra.textureTokens && extra.textureTokens.written ? ' (с блоком --grain-*)' : ''}` : ''}${pageShots && pageShots.length ? `, pages/ — по снимку на тип страницы (${pageShots.filter((s) => !s.error).length})` : ''}`);
 if (opt.strict && nFail) process.exit(1);
