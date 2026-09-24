@@ -28,15 +28,27 @@
  *   проверки           findOverflow, canvasList, hexColors, effectiveOpacity
  *   код для страницы   SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN,
  *                      evaluateWith
+ *   свой стиль         addStyleSafe, removeStyleSafe — <style>, а при строгом CSP
+ *                      сконструированная таблица (document.adoptedStyleSheets)
+ *   версия кода        codeVersion, scriptGenerator — поле generator в протоколах
  *   прочее             parseArgs, getFfmpeg, findModuleRoot, summarizeRequests,
  *                      runDir, slugFromUrl, pageSlug, pagesFrom, unmangle,
  *                      ensureDir, writeJson, readJson, kb, sleep
+ *
+ * Протоколы пишутся через writeJson: в объект добавляется поле generator —
+ * какой скрипт и какой его версией снял протокол: { script, commit, dirty,
+ * mtime, lib: { commit, dirty, mtime } }. commit — последний коммит файла в git
+ * скилла, dirty — есть ли в файле незакоммиченные правки. git вызывается один раз
+ * на процесс; без git (или вне репозитория) commit и dirty — null, запись не падает.
+ * state.mjs по этому полю предупреждает, что доказательство снято другой версией.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 /* Где искать puppeteer-core, sharp и ffmpeg-static, по порядку: SITE_REWORK_PROJECT,
    текущая папка и её родители, своя папка скилла (npm i puppeteer-core sharp
@@ -374,7 +386,9 @@ export async function preparePage(browser, vp, { scheme = 'light', reducedMotion
   await page.emulateMediaFeatures(feats);
   if (hookCanvas) await page.evaluateOnNewDocument(canvasHook);
   const log = { console: [], errors: [], failed: [], requests: [] };
-  page.on('console', (m) => { const t = m.type(); if (t === 'error' || t === 'warning') log.console.push({ type: t, text: m.text().slice(0, 300) }); });
+  /* нарушение CSP от нашего же стиля (addStyleSafe пробует <style>) — не ошибка сайта: такие
+     сообщения узнаются по sha256 нашего CSS и в журнал не идут */
+  page.on('console', (m) => { const t = m.type(); if (t !== 'error' && t !== 'warning') return; const text = m.text(); if (ownCspNoise(page, text)) return; log.console.push({ type: t, text: text.slice(0, 300) }); });
   page.on('pageerror', (e) => log.errors.push(String((e && e.message) || e).slice(0, 300)));
   page.on('requestfailed', (r) => log.failed.push({ url: r.url().slice(0, 200), reason: (r.failure() || {}).errorText || 'failed' }));
   /* ответы приходят двумя путями: событие puppeteer (статус, тип) и CDP (байты) —
@@ -388,6 +402,9 @@ export async function preparePage(browser, vp, { scheme = 'light', reducedMotion
     const req = r.request(); const len = Number((r.headers() || {})['content-length'] || 0);
     const entry = { url: r.url(), status: r.status(), type: req.resourceType(), bytes: len, bytesFrom: len ? 'content-length' : 'none' };
     try { if (r.fromCache()) entry.fromCache = true; } catch { /* нет в этой версии */ }
+    /* CSP документа вкладки (заголовок): addStyleSafe по нему сразу берёт сконструированную таблицу,
+       не нарушая политику (иначе — сообщение в консоли и отчёт на report-uri сайта) */
+    try { if (req.isNavigationRequest() && r.frame() === page.mainFrame()) page.rwCsp = String((r.headers() || {})['content-security-policy'] || ''); } catch { /* нет кадра */ }
     log.requests.push(entry);
     const id = req.id;
     if (id) { const s = sizes.get(id); if (s) { applySize(entry, s); sizes.delete(id); } else byId.set(id, entry); }
@@ -492,23 +509,106 @@ export function pagesFrom(list, base) {
   return String(list).split(',').map((p) => unmangle(p.trim())).filter(Boolean).map((p) => new URL(p, base).href);
 }
 
+/* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
+
+/* Выполняется в странице. Ставит (или с remove — снимает) стиль с ключом key: сначала
+   <style data-rw="key">; если CSP страницы вставку запрещает — сконструированной таблицей в
+   document.adoptedStyleSheets (на неё CSP не распространяется, сама политика не отключается).
+   Запрещает ли CSP, видно по политикам: заголовок (policies — его собирает preparePage) и
+   meta http-equiv; style-src-elem, иначе style-src, иначе default-src без 'unsafe-inline' или
+   с nonce/hash (при них 'unsafe-inline' не действует) — запрещено, <style> даже не пробуем:
+   попытка — это сообщение в консоли и отчёт на report-uri сайта. Политика не распознана, а
+   <style> не применился (у элемента нет sheet) — тоже переход на таблицу, и дальше на этой
+   странице сразу таблица (window.__rwCspStyle). Повторный вызов с тем же key заменяет стиль.
+   Возвращает 'style' | 'adopted' | 'removed' | null (нельзя ни так, ни так). */
+function styleInPage({ key, css, policies, remove }) {
+  const sheets = (window.__rwSheets = window.__rwSheets || {});
+  const old = document.querySelector('style[data-rw="' + key + '"]'); if (old) old.remove();
+  const had = sheets[key];
+  if (had) { try { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== had); } catch (e) { /* таблицы запрещены */ } delete sheets[key]; }
+  if (remove) return 'removed';
+  const allows = (list) => {
+    for (const pol of list) for (const one of String(pol || '').split(/[\n,]/)) {
+      const dirs = Object.create(null);
+      for (const d of one.split(';')) { const t = d.trim().toLowerCase().split(/\s+/); if (t[0] && !(t[0] in dirs)) dirs[t[0]] = t.slice(1); }
+      const src = dirs['style-src-elem'] || dirs['style-src'] || dirs['default-src'];
+      if (src && !(src.includes("'unsafe-inline'") && !src.some((s) => /^'(nonce-|sha(256|384|512)-)/.test(s)))) return false;
+    }
+    return true;
+  };
+  const metas = [...document.querySelectorAll('meta[http-equiv]')].filter((m) => /^content-security-policy$/i.test(m.httpEquiv)).map((m) => m.content);
+  if (!window.__rwCspStyle && allows([...(policies || []), ...metas])) {
+    const st = document.createElement('style'); st.setAttribute('data-rw', key); st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+    if (st.sheet) return 'style';
+    st.remove();
+  }
+  window.__rwCspStyle = true;
+  try {
+    const sh = new CSSStyleSheet(); sh.replaceSync(css);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh];
+    sheets[key] = sh;
+    return 'adopted';
+  } catch (e) { return null; }
+}
+
+/* sha256 нашего CSS: так Chrome подписывает нарушение CSP («a hash ('sha256-…')») */
+const cssHash = (css) => crypto.createHash('sha256').update(String(css), 'utf8').digest('base64');
+function markOwnCss(page, css) { if (!page.__rwOwnCss) page.__rwOwnCss = new Set(); page.__rwOwnCss.add(cssHash(css)); }
+function ownCspNoise(page, text) {
+  const own = page.__rwOwnCss;
+  if (!own || !own.size || !/Content Security Policy/i.test(text)) return false;
+  for (const h of own) if (text.includes(h)) return true;
+  return false;
+}
+const styleKey = (key, css) => String(key || `rw-${cssHash(css).replace(/[^a-z0-9]/gi, '').slice(0, 10)}`).replace(/[^\w-]/g, '-');
+
+/**
+ * Вставить свой CSS в страницу и при строгом CSP (style-src без 'unsafe-inline'):
+ * page.addStyleTag на таких страницах падает «Could not load style», а вставленный
+ * вручную <style> молча не применяется. Порядок: <style data-rw="key">, если CSP его
+ * разрешает (заголовок из preparePage и meta), иначе сконструированная таблица
+ * (document.adoptedStyleSheets). Нельзя и так (страница запретила и таблицы) — WARN
+ * в вывод (warn: false — без него) и null, без исключения. Ошибка самой вкладки
+ * (переход посреди вставки) — тоже null, без WARN. Нарушение CSP от нашей пробы в
+ * page.log.console не попадает (preparePage узнаёт его по sha256 CSS).
+ * Повторный вызов с тем же key заменяет стиль. Возвращает 'style' | 'adopted' | null.
+ *   await addStyleSafe(page, '.x{color:transparent!important}', { key: 'hide-text' })
+ *   await removeStyleSafe(page, 'hide-text')
+ */
+export async function addStyleSafe(page, css, { key = null, warn = true } = {}) {
+  const k = styleKey(key, css);
+  markOwnCss(page, css);
+  let how;
+  try { how = await page.evaluate(styleInPage, { key: k, css: String(css), policies: page.rwCsp ? [page.rwCsp] : [] }); } catch { return null; }
+  if (!how && warn) console.log(`WARN свой стиль «${k}» не вставился: CSP страницы запрещает <style>, а сконструированные таблицы стилей недоступны — то, что от него зависит, работает без него`);
+  return how || null;
+}
+/** Снять стиль, поставленный addStyleSafe с этим key (и <style>, и таблицу). */
+export async function removeStyleSafe(page, key) {
+  await page.evaluate(styleInPage, { key: styleKey(key, ''), remove: true }).catch(() => {});
+}
+
 /* ---------- прокрутка ---------- */
 
 /**
  * Отключить плавную прокрутку страницы: html{scroll-behavior:smooth} превращает
  * scrollTo(0, y) в анимацию, и замер идёт посреди пути (a11y открыл 2 блока из 21,
- * perf «прокрутил 12453 px», а страница сдвинулась на 149). Вставляет
- * <style data-rw="instant-scroll">. persist: true — вставлять и после
- * перезагрузок и переходов этой вкладки.
+ * perf «прокрутил 12453 px», а страница сдвинулась на 149). Вставляет стиль
+ * через addStyleSafe (ключ instant-scroll: <style data-rw="instant-scroll">, а при
+ * строгом CSP — сконструированная таблица). persist: true — вставлять и после
+ * перезагрузок и переходов этой вкладки. Возвращает 'style' | 'adopted' | null.
  */
 const INSTANT_CSS = 'html,body,*{scroll-behavior:auto!important}';
 export async function forceInstantScroll(page, { persist = false } = {}) {
-  const add = (css) => {
-    const put = () => { if (document.querySelector('style[data-rw="instant-scroll"]')) return; const s = document.createElement('style'); s.setAttribute('data-rw', 'instant-scroll'); s.textContent = css; (document.head || document.documentElement).appendChild(s); };
-    if (document.documentElement) put(); else document.addEventListener('DOMContentLoaded', put, { once: true });
-  };
-  if (persist && !page.__rwInstantPersist) { await page.evaluateOnNewDocument(add, INSTANT_CSS); page.__rwInstantPersist = true; }
-  await page.evaluate(add, INSTANT_CSS).catch(() => {});
+  if (persist && !page.__rwInstantPersist) {
+    markOwnCss(page, INSTANT_CSS);
+    /* в новом документе заголовка CSP не видно — только meta и проба <style> (её нарушение не в журнале) */
+    const arg = JSON.stringify({ key: 'instant-scroll', css: INSTANT_CSS, policies: [] });
+    await page.evaluateOnNewDocument(`(() => { const put = () => (${styleInPage.toString()})(${arg}); if (document.documentElement) put(); else document.addEventListener('DOMContentLoaded', put, { once: true }); })()`);
+    page.__rwInstantPersist = true;
+  }
+  return addStyleSafe(page, INSTANT_CSS, { key: 'instant-scroll' });
 }
 
 /* Главный прокручиваемый элемент: документ или (у «приложений» с
@@ -722,9 +822,12 @@ export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = 
  * ставятся на паузу в начальной фазе (currentTime = 0 — иначе бегущая строка
  * в двух прогонах стоит в разных местах и diff видит «изменения»), переходы
  * отключаются. Движение, которое рисует JS (холсты, GSAP), так не остановить.
+ * Стиль ставится через addStyleSafe (ключ freeze-motion): при строгом CSP раньше
+ * page.addStyleTag падал «Could not load style», и shots не снимал страницу вовсе.
  */
+const FREEZE_CSS = '*,*::before,*::after{transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}';
 export async function freezeMotion(page) {
-  await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}' });
+  await addStyleSafe(page, FREEZE_CSS, { key: 'freeze-motion' });
   await page.evaluate(() => {
     for (const a of document.getAnimations()) {
       const t = a.effect && a.effect.getTiming ? a.effect.getTiming() : {};
@@ -1075,6 +1178,83 @@ export function runDir(opt, url) {
 }
 
 export function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); return p; }
-export function writeJson(file, data) { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify(data, null, 1)); }
+
+/* ---------- версия кода: поле generator в протоколах ---------- */
+
+const LIB_FILE = realFile(fileURLToPath(import.meta.url));
+const versionCache = new Map();
+const isoMtime = (f) => { try { return fs.statSync(f).mtime.toISOString(); } catch { return null; } };
+/* git только на чтение и без необязательных блокировок: status не обновляет индекс (index.lock),
+   пока в том же репозитории кто-то коммитит */
+const gitRead = (dir, args) => execFileSync('git', ['--no-optional-locks', '-C', dir, ...args], { encoding: 'utf8', timeout: 8000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' }, maxBuffer: 16 * 1024 * 1024 });
+
+/**
+ * Версии файлов кода по git: { [полный путь]: { commit, dirty, mtime } }.
+ * commit — короткий хеш последнего коммита, где менялся файл (null — файл не в git, git нет,
+ * папка не репозиторий); dirty — есть незакоммиченные правки или файл не отслеживается
+ * (null — узнать нельзя); mtime — время файла (ISO). Два вызова git (log и status) на папку
+ * и набор файлов, результат запоминается до конца процесса. Никогда не бросает.
+ */
+export function codeVersion(files) {
+  const list = [...new Set((files || []).filter(Boolean).map((f) => path.resolve(String(f))))];
+  const out = {};
+  /* по настоящему пути: короткие имена Windows (C225~1) и ссылки не делят одну папку на две */
+  const byDir = new Map();
+  for (const f of list) { const r = realFile(f); const d = path.dirname(r); if (!byDir.has(d)) byDir.set(d, []); byDir.get(d).push({ f, name: path.basename(r) }); }
+  for (const [dir, fl] of byDir) {
+    const names = [...new Set(fl.map((x) => x.name))].sort();
+    const key = dir + '|' + names.join('|');
+    if (!versionCache.has(key)) {
+      const res = Object.fromEntries(names.map((n) => [n, { commit: null, dirty: null }]));
+      try {
+        /* log: коммиты, где менялись эти файлы, новые первыми; --relative — имена от папки dir */
+        const log = gitRead(dir, ['log', '--relative', '--max-count=5000', '--format=%x01%h', '--name-only', '--', ...names]);
+        let cur = null; const left = new Set(names);
+        for (const line of log.split(/\r?\n/)) {
+          if (line.startsWith('\x01')) { cur = line.slice(1).trim(); continue; }
+          const n = line.trim(); if (!n || !cur || !left.has(n)) continue;
+          res[n].commit = cur; left.delete(n); if (!left.size) break;
+        }
+        /* status: изменённые и неотслеживаемые (пути от корня репозитория — сверяем по имени) */
+        const st = gitRead(dir, ['status', '--porcelain', '--untracked-files=all', '--', ...names]);
+        const dirtyNames = new Set(st.split(/\r?\n/).filter(Boolean).map((l) => path.basename(l.slice(3).replace(/^"|"$/g, '').split(' -> ').pop())));
+        for (const n of names) res[n].dirty = dirtyNames.has(n);
+      } catch { /* git нет или папка не репозиторий — версия неизвестна */ }
+      versionCache.set(key, res);
+    }
+    const res = versionCache.get(key);
+    for (const { f, name } of fl) out[f] = { ...res[name], mtime: isoMtime(f) };
+  }
+  return out;
+}
+function realFile(f) { try { return fs.realpathSync.native(f); } catch { return f; } }
+
+let generatorCache;
+/**
+ * Кто пишет протокол: { script, commit, dirty, mtime, lib: { commit, dirty, mtime } } —
+ * запущенный файл (process.argv[1]) и lib.mjs, от которого зависят все скрипты.
+ * Считается один раз на процесс. Без git — commit и dirty null.
+ */
+export function scriptGenerator() {
+  if (generatorCache) return generatorCache;
+  const script = process.argv[1] ? realFile(path.resolve(process.argv[1])) : null;
+  const v = codeVersion([script, LIB_FILE]);
+  const s = script && v[script] ? v[script] : { commit: null, dirty: null, mtime: null };
+  const l = v[LIB_FILE] || { commit: null, dirty: null, mtime: null };
+  generatorCache = { script: script ? path.basename(script) : null, commit: s.commit, dirty: s.dirty, mtime: s.mtime, lib: script === LIB_FILE ? null : { commit: l.commit, dirty: l.dirty, mtime: l.mtime } };
+  return generatorCache;
+}
+
+/**
+ * Записать JSON (с отступом 1). Протокол — объект — получает поле generator (scriptGenerator):
+ * какой скрипт и какой версией его снял. Массив, объект с toJSON и объект, где generator уже
+ * есть, пишутся как есть; { generator: false } — без поля (журнал state.json — не протокол).
+ */
+export function writeJson(file, data, { generator = true } = {}) {
+  ensureDir(path.dirname(file));
+  const plain = data && typeof data === 'object' && !Array.isArray(data) && typeof data.toJSON !== 'function';
+  const out = generator && plain && !Object.prototype.hasOwnProperty.call(data, 'generator') ? { ...data, generator: scriptGenerator() } : data;
+  fs.writeFileSync(file, JSON.stringify(out, null, 1));
+}
 export function readJson(file, fallback = null) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
 export const kb = (b) => `${Math.round((b || 0) / 1024)} КБ`;

@@ -3,82 +3,293 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Бриф на переработку</title>
-<meta name="description" content="Форма, которая собирает запрос для скилла site-rework: адрес, задача, референсы, ограничения — и отдаёт текст для вставки в Claude Code.">
+<title>Бриф на сайт</title>
+<meta name="description" content="Форма, которая собирает запрос для скилла site-rework — переработка сайта или новый сайт в языке донора: адрес, о чём сайт, задача, референсы, ограничения, кадры — и отдаёт текст по templates/brief.md для вставки в Claude Code.">
 <style>
-  :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --accent: #7a2e1f; --accent-text: #ffffff; --radius: 12px; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --accent: #d98a5f; --accent-text: #1b1310; } }
-  :root[data-theme="dark"] { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --accent: #d98a5f; --accent-text: #1b1310; }
+  :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --rule: #8f877a; --accent: #7a2e1f; --accent-text: #ffffff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; } }
+  :root[data-theme="dark"] { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 28px; margin: 0 0 4px; }
-  .lead { color: var(--muted); margin: 0 0 24px; }
-  form { display: grid; gap: 18px; }
-  label { display: grid; gap: 6px; font-weight: 600; }
-  label small { font-weight: 400; color: var(--muted); }
-  input, textarea, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; }
-  textarea { min-height: 88px; resize: vertical; }
-  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .row { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
-  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
-  .actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  button { padding: 12px 20px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
-  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
-  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #out { margin-top: 28px; display: none; }
-  #out.show { display: block; }
-  pre { white-space: pre-wrap; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; font: 14px/1.5 ui-monospace, Consolas, monospace; }
-  .hint { color: var(--muted); font-size: 14px; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  .lead { color: var(--muted); margin: 0 0 28px; }
+  form { display: grid; gap: 28px; }
+  /* Поле — строка бланка: подпись, пояснение, линия, на которой пишут. Без коробок. */
+  .field, fieldset { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; border: 0; }
+  .field > label, legend { font-weight: 600; padding: 0; }
+  .hint { margin: 0; color: var(--muted); font-size: 14px; }
+  input[type="url"], input[type="text"], textarea { width: 100%; margin: 2px 0 0; padding: 4px 0; border: 0; border-bottom: 2px solid var(--rule); border-radius: 0; background: transparent; color: var(--text); font: inherit; }
+  /* Многострочное поле разлиновано, как лист брифа: строки ползут вместе с текстом. */
+  textarea { display: block; min-height: 98px; padding: 0; line-height: 24px; resize: vertical; background: repeating-linear-gradient(to bottom, transparent 0 23px, var(--line) 23px 24px) local; }
+  ::placeholder { color: var(--muted); opacity: 0.85; }
+  input:focus, textarea:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+  textarea:focus { --line: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .choices { display: grid; gap: 10px; margin-top: 6px; }
+  .choice { display: grid; grid-template-columns: 24px 1fr; column-gap: 10px; align-items: start; }
+  .choice input { width: 24px; height: 24px; margin: 0; font-size: 16px; accent-color: var(--accent); cursor: pointer; }
+  .choice label { cursor: pointer; }
+  .choice .hint { grid-column: 2; }
+  .sub { margin-top: 8px; }
+  .actions { display: flex; gap: 12px 22px; flex-wrap: wrap; align-items: center; }
+  button { padding: 11px 22px; border: 2px solid var(--accent); border-radius: 0; background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+  button.quiet { padding: 11px 0; border-color: transparent; background: none; color: var(--muted); font-weight: 400; text-decoration: underline; text-underline-offset: 3px; }
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+  #out { margin-top: 40px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } }
+  pre { margin: 14px 0 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--line); color: var(--text); font: 14px/1.55 ui-monospace, Consolas, monospace; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Бриф на переработку сайта</h1>
-  <p class="lead">Заполните, нажмите «Собрать» и вставьте текст в Claude Code. Обязателен только адрес.</p>
+  <h1 data-rework="Бриф на переработку сайта" data-donor="Бриф на новый сайт в языке донора">Бриф на переработку сайта</h1>
+  <p class="lead" data-rework="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес." data-donor="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязательны адрес донора и то, о чём сайт.">Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес.</p>
   <form id="f">
-    <label>Адрес сайта <input name="url" type="url" placeholder="https://example.com" required></label>
-    <label>Что изменить <small>своими словами: что не нравится, чего хочется, для кого сайт</small>
-      <textarea name="task" placeholder="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию."></textarea></label>
-    <div class="row">
-      <label>Страницы в работе <small>через запятую; пусто — главная</small><input name="pages" placeholder="/, /uslugi, /kontakty"></label>
-      <label>Исходники <small>путь к проекту или «нет»</small><input name="src" placeholder="D:\projects\site или нет"></label>
+    <div class="field">
+      <label for="url" data-rework="Адрес сайта" data-donor="Адрес донора">Адрес сайта</label>
+      <p class="hint" id="url-h" data-rework="его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже" data-donor="сайт, чей язык берём: шрифты, ритм, линии, фактуру — но не тексты и не фото">его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже</p>
+      <input id="url" name="url" type="url" placeholder="https://example.com" required aria-describedby="url-h">
     </div>
-    <label>Референсы <small>по одному в строке; что именно нравится</small>
-      <textarea name="refs" placeholder="https://reference1.com — воздух и крупная типографика"></textarea></label>
-    <label>Пожелания по стилю <textarea name="style" placeholder="Спокойно, без кричащих цветов. Настоящие фото."></textarea></label>
-    <label>Ограничения <small>что трогать нельзя</small>
-      <textarea name="limits" placeholder="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать."></textarea></label>
-    <label>Режим
-      <select name="mode">
-        <option value="автономный — решать самому, вопросы копить в отчёт">Автономный: решать самому, вопросы в отчёт</option>
-        <option value="интерактивный — спрашивать там, где варианты ведут к разной работе">Интерактивный: спрашивать в спорных местах</option>
-      </select></label>
+
+    <fieldset>
+      <legend>Что делаем с этим адресом</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="kind-rework" name="kind" value="rework" checked aria-describedby="kind-rework-h">
+          <label for="kind-rework">Перерабатываем этот сайт</label>
+          <p class="hint" id="kind-rework-h">сверяем с ним же до правок; правки — в исходниках или в его зеркале</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="kind-donor" name="kind" value="donor" aria-describedby="kind-donor-h">
+          <label for="kind-donor">Делаем новый сайт в его языке</label>
+          <p class="hint" id="kind-donor-h">адрес — донор; сайт собирается с нуля про ваше дело</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label for="about">О чём сайт и что продаёт</label>
+      <p class="hint" id="about-h" data-rework="пусто — узнаем с самого сайта" data-donor="обязательно: дело не выдумываем">пусто — узнаем с самого сайта</p>
+      <textarea id="about" name="about" placeholder="чем занимаетесь, где, что продаёте и кому" aria-describedby="about-h"></textarea>
+    </div>
+
+    <div class="field" data-only="donor" hidden>
+      <label for="take">Что взять у донора</label>
+      <p class="hint" id="take-h">пусто — язык целиком. Тексты, фото, логотипы и файлы донора не берутся никогда</p>
+      <textarea id="take" name="take" placeholder="шрифты и крупную типографику, зерно" aria-describedby="take-h" disabled></textarea>
+    </div>
+
+    <div class="field">
+      <label for="task" data-rework="Что изменить" data-donor="Что должно быть на сайте">Что изменить</label>
+      <p class="hint" id="task-h" data-rework="своими словами: что не нравится, чего хочется, для кого сайт" data-donor="своими словами: какие блоки, что должен сделать посетитель">своими словами: что не нравится, чего хочется, для кого сайт</p>
+      <textarea id="task" name="task" placeholder="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-rework-ph="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-donor-ph="первый экран, каталог, заявка — и что на них должно происходить" aria-describedby="task-h"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="pages">Страницы в работе</label>
+      <p class="hint" id="pages-h" data-rework="через запятую; пусто — главная" data-donor="какие страницы собрать, через запятую; пусто — одна главная">через запятую; пусто — главная</p>
+      <input id="pages" name="pages" type="text" placeholder="/, /uslugi, /kontakty" aria-describedby="pages-h">
+    </div>
+
+    <div class="field">
+      <label for="refs">Референсы</label>
+      <p class="hint" id="refs-h">по одному в строке; что именно нравится</p>
+      <textarea id="refs" name="refs" placeholder="https://reference1.com — воздух и крупная типографика" aria-describedby="refs-h"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="style">Пожелания по стилю</label>
+      <p class="hint" id="style-h" data-rework="пусто — сохранить текущий язык сайта" data-donor="пусто — язык донора">пусто — сохранить текущий язык сайта</p>
+      <textarea id="style" name="style" placeholder="Спокойно, без кричащих цветов. Настоящие фото." aria-describedby="style-h"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="limits">Ограничения</label>
+      <p class="hint" id="limits-h" data-rework="что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд" data-donor="чего на сайте быть не должно; цены, контакты и факты о деле — в любом случае только из брифа">что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд</p>
+      <textarea id="limits" name="limits" placeholder="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-rework-ph="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-donor-ph="чего не показывать и не обещать" aria-describedby="limits-h"></textarea>
+    </div>
+
+    <div class="field" data-only="rework">
+      <label for="src">Исходники</label>
+      <p class="hint" id="src-h">путь к проекту или «нет»; пусто — поискать в текущей папке, не нашлись — работа через зеркало</p>
+      <input id="src" name="src" type="text" placeholder="D:\projects\site или нет" aria-describedby="src-h">
+    </div>
+
+    <fieldset aria-describedby="media-h">
+      <legend>Кадры и видео</legend>
+      <p class="hint" id="media-h">Ключи Pexels и Unsplash лежат в ~/.claude/site-rework/.env — в бриф их не писать; какие заданы, покажет media.mjs doctor.</p>
+      <div class="choices">
+        <div class="choice">
+          <input type="checkbox" id="media-own" name="media" value="own" aria-describedby="media-own-h">
+          <label for="media-own">Свои</label>
+          <p class="hint" id="media-own-h">ваши фото и видео — в первую очередь</p>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="media-free" name="media" value="free" checked aria-describedby="media-free-h">
+          <label for="media-free">Свободные источники</label>
+          <p class="hint" id="media-free-h">кадры с открытой лицензией, с подписью автора, где она нужна</p>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="media-gen" name="media" value="gen" aria-describedby="media-gen-h">
+          <label for="media-gen">Генерация</label>
+          <p class="hint" id="media-gen-h">стоит кредитов на счету — запускается только после вашего согласия</p>
+        </div>
+      </div>
+      <div class="field sub" data-only="own" hidden>
+        <label for="photos">Где лежат свои</label>
+        <input id="photos" name="photos" type="text" placeholder="D:\projects\site\photo" disabled>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Как работать</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="mode-auto" name="mode" value="автономный — решать самому, вопросы копить в отчёт" checked aria-describedby="mode-auto-h">
+          <label for="mode-auto">Автономно</label>
+          <p class="hint" id="mode-auto-h">решать самому, вопросы копить в отчёт</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="mode-ask" name="mode" value="интерактивный — спрашивать там, где варианты ведут к разной работе" aria-describedby="mode-ask-h">
+          <label for="mode-ask">Спрашивать</label>
+          <p class="hint" id="mode-ask-h">там, где варианты ведут к разной работе</p>
+        </div>
+      </div>
+    </fieldset>
+
     <div class="actions">
       <button type="submit">Собрать бриф</button>
-      <button type="button" class="secondary" id="clear">Очистить</button>
+      <button type="button" class="quiet" id="clear">Очистить</button>
       <span class="hint">Черновик сохраняется в этом браузере.</span>
     </div>
   </form>
-  <section id="out" aria-live="polite">
-    <div class="actions"><button type="button" id="copy">Скопировать</button><span class="hint" id="copied"></span></div>
+  <section id="out" aria-label="Готовый бриф" hidden>
+    <div class="actions"><button type="button" id="copy">Скопировать</button><span class="hint" id="copied" aria-live="polite"></span></div>
     <pre id="text"></pre>
   </section>
 </main>
 <script>
+  // Вывод повторяет поля и порядок templates/brief.md. Поля донора — только в режиме донора,
+  // «зеркало» по умолчанию — только в режиме переработки.
   const f = document.getElementById('f'), out = document.getElementById('out'), text = document.getElementById('text');
+  const copyBtn = document.getElementById('copy'), copied = document.getElementById('copied');
   const KEY = 'site-rework-brief';
-  try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) for (const [k, v] of Object.entries(saved)) if (f.elements[k]) f.elements[k].value = v; } catch {}
-  const data = () => Object.fromEntries([...new FormData(f)].map(([k, v]) => [k, String(v).trim()]));
-  f.addEventListener('input', () => { try { localStorage.setItem(KEY, JSON.stringify(data())); } catch {} });
-  const line = (title, v, empty) => `${title}:\n${v || empty}\n`;
+
+  const data = () => {
+    const d = {};
+    for (const c of f.elements) {
+      if (!c.name) continue;
+      if (c.type === 'radio') { if (c.checked) d[c.name] = c.value; }
+      else if (c.type === 'checkbox') { (d[c.name] ||= []); if (c.checked) d[c.name].push(c.value); }
+      else d[c.name] = String(c.value).trim();
+    }
+    return d;
+  };
+
+  const restore = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return;
+      for (const [k, v] of Object.entries(saved)) {
+        const group = [...f.elements].filter((c) => c.name === k);
+        if (!group.length) continue;
+        if (group[0].type === 'checkbox') { if (Array.isArray(v)) for (const c of group) c.checked = v.includes(c.value); }
+        else if (group[0].type === 'radio') { const hit = group.find((c) => c.value === v); if (hit) hit.checked = true; }
+        else if (typeof v === 'string') group[0].value = v;
+      }
+    } catch {}
+  };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data())); } catch {} };
+
+  const kindOf = () => (f.querySelector('input[name="kind"]:checked') || {}).value === 'donor' ? 'donor' : 'rework';
+
+  const sync = () => {
+    const kind = kindOf();
+    const own = f.querySelector('input[name="media"][value="own"]').checked;
+    for (const el of document.querySelectorAll('[data-rework]')) el.textContent = el.dataset[kind];
+    for (const el of f.querySelectorAll('[data-rework-ph]')) el.placeholder = el.dataset[kind + 'Ph'];
+    for (const el of f.querySelectorAll('[data-only]')) {
+      const on = el.dataset.only === 'own' ? own : el.dataset.only === kind;
+      el.hidden = !on;
+      for (const c of el.querySelectorAll('input, textarea')) c.disabled = !on;
+    }
+    f.elements.about.required = kind === 'donor';
+    // required пропускает одни пробелы, а data() их обрежет — в режиме донора дело не выдумываем.
+    f.elements.about.setCustomValidity(kind === 'donor' && !f.elements.about.value.trim() ? 'Опишите, о чём сайт и что он продаёт: без этого дело придётся выдумывать.' : '');
+  };
+
+  const sources = (v) => {
+    if (!v) return 'не указаны — поискать в текущей папке и её deploy/; не нашлись — работать через зеркало';
+    if (/^нет[.!]?$/i.test(v)) return 'нет — работать через зеркало';
+    return v;
+  };
+
+  const media = (d) => {
+    const m = d.media || [], own = m.includes('own'), free = m.includes('free'), gen = m.includes('gen');
+    if (!own && !free && !gen) return 'не выбрано — по умолчанию: свои → свободные источники (media.mjs) → генерация только с согласия';
+    const lines = [];
+    if (own) lines.push('свои: ' + (d.photos || 'где лежат — не указано'));
+    if (free) lines.push(own ? 'чего нет — из свободных источников (media.mjs)' : 'из свободных источников (media.mjs)');
+    else lines.push(own ? 'только свои; свободные источники не брать' : 'свои и свободные источники не брать');
+    lines.push(gen ? 'генерация — можно, но запускать только после согласия: стоит кредитов на счету' : 'генерация — нет');
+    return lines.join('\n');
+  };
+
+  const brief = (d) => {
+    const donor = d.kind === 'donor';
+    const or = (v, empty) => v || empty;
+    const fields = [
+      ['URL', d.url],
+      ['РЕЖИМ РАБОТЫ', donor ? 'новый сайт в языке донора — URL выше — адрес донора' : 'переработка — URL выше — адрес сайта'],
+      ['О ЧЁМ САЙТ И ЧТО ПРОДАЁТ', or(d.about, donor ? 'не указано — спросить до начала, не выдумывать' : 'узнать с самого сайта')],
+      donor && ['ЧТО ВЗЯТЬ У ДОНОРА', or(d.take, 'язык целиком') + '\nтексты, фото и файлы донора не берутся'],
+      ['ЗАДАЧА', or(d.task, donor ? 'собрать сайт о деле выше в языке донора' : 'найди, что мешает сайту приводить клиентов, и исправь')],
+      ['СТРАНИЦЫ В РАБОТЕ', or(d.pages, 'главная')],
+      ['РЕФЕРЕНСЫ', or(d.refs, 'нет')],
+      ['ПОЖЕЛАНИЯ ПО СТИЛЮ', or(d.style, donor ? 'язык донора' : 'сохранить текущий язык, поднять качество деталей')],
+      ['ОГРАНИЧЕНИЯ', or(d.limits, donor ? 'цены, контакты и факты о деле — только из брифа, не выдумывать' : 'не менять контакты, цены, логотип, основной цвет, бэкенд')],
+      ['ИСХОДНИКИ', donor ? 'не нужны — новый сайт собирается с нуля в папке прогона' : sources(d.src)],
+      ['КАДРЫ И ВИДЕО', media(d)],
+      ['РЕЖИМ', d.mode],
+    ].filter(Boolean);
+    return ['/site-rework', '', ...fields.map(([title, v]) => `${title}:\n${v}\n`)].join('\n');
+  };
+
+  const render = () => { text.textContent = brief(data()); copied.textContent = ''; };
+
+  restore();
+  if (!f.querySelector('input[name="kind"]:checked')) f.elements.kind[0].checked = true;
+  if (!f.querySelector('input[name="mode"]:checked')) f.elements.mode[0].checked = true;
+  sync();
+
+  const onEdit = () => {
+    sync(); save();
+    if (!out.hidden) { if (f.checkValidity()) render(); else out.hidden = true; }
+  };
+  f.addEventListener('input', onEdit);
+  f.addEventListener('change', onEdit);
+
   f.addEventListener('submit', (e) => {
-    e.preventDefault(); const d = data();
-    text.textContent = ['/site-rework', '', line('URL', d.url, ''), line('ЗАДАЧА', d.task, 'найди, что мешает сайту приводить клиентов, и исправь'), line('СТРАНИЦЫ В РАБОТЕ', d.pages, 'главная'), line('РЕФЕРЕНСЫ', d.refs, 'нет'), line('ПОЖЕЛАНИЯ ПО СТИЛЮ', d.style, 'сохранить текущий язык, поднять качество деталей'), line('ОГРАНИЧЕНИЯ', d.limits, 'не менять контакты, цены, логотип, основной цвет, бэкенд'), line('ИСХОДНИКИ', d.src, 'нет — работать через зеркало'), line('РЕЖИМ', d.mode, '')].join('\n');
-    out.classList.add('show'); out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    e.preventDefault(); sync(); render();
+    out.hidden = false;
+    copyBtn.focus({ preventScroll: true });
+    out.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   });
-  document.getElementById('copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(text.textContent); document.getElementById('copied').textContent = 'Скопировано — вставьте в Claude Code.'; } catch { document.getElementById('copied').textContent = 'Выделите текст и скопируйте вручную.'; } });
-  document.getElementById('clear').addEventListener('click', () => { f.reset(); out.classList.remove('show'); try { localStorage.removeItem(KEY); } catch {} });
+
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(text.textContent); copied.textContent = 'Скопировано — вставьте в Claude Code.'; }
+    catch {
+      const r = document.createRange(); r.selectNodeContents(text);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      copied.textContent = 'Текст выделен — скопируйте его сочетанием Ctrl+C.';
+    }
+  });
+
+  document.getElementById('clear').addEventListener('click', () => {
+    f.reset(); sync(); out.hidden = true; copied.textContent = '';
+    try { localStorage.removeItem(KEY); } catch {}
+  });
 </script>
 </body>
 </html>

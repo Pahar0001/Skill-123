@@ -10,6 +10,7 @@
  *
  *   node media.mjs doctor
  *       ключи (только имена), доступность источников (с запасным DoH), sharp, ffmpeg.
+ *       Без MEDIA_CONTACT Commons, копии Commons и AIC не пробуются (SKIP).
  *       Итог: OK — все пробы ответили и все ключи заданы; WARN — часть проб не прошла
  *       (временно) и/или не заданы ключи (отдельный WARN перечисляет их и что без них
  *       недоступно; без MEDIA_CONTACT — спросить контакт у пользователя); FAIL — нет sharp.
@@ -25,9 +26,13 @@
  *       [--n 24]                         сколько кадров на лист (до 60)
  *       [--frames 8|all]                 видео Commons: у скольких роликов собрать кадры из
  *                                        середины (2–4 с на кадр, строго по одному; по умолчанию 8)
- *       [--out <папка>] [--run <slug или url сайта>] [--fresh (без кэша ответов API)]
+ *       [--out <папка>] [--run <slug, url сайта или полный путь папки прогона>]
+ *       [--fresh (без кэша ответов API)]
  *     → <папка>/cand/NN.jpg, sheet-1.jpg…, manifest.json (пути относительно папки).
- *       По умолчанию <папка> = ~/.claude/site-rework/runs/<slug>/media/<запрос>.
+ *       По умолчанию <папка> = ~/.claude/site-rework/runs/<slug>/media/<запрос>
+ *       (или SITE_REWORK_RUNS/<slug>/…); <slug> из адреса — как у остальных скриптов
+ *       (lib.slugFromUrl: http://localhost:4177/ → localhost-4177, путь страницы входит).
+ *       Папки создаются только после проверки всех аргументов.
  *       На листе: номер, источник, РЕАЛЬНЫЙ размер файла, который скачается
  *       под роль («из N» — если оригинал больше), лицензия, пометки (people?
  *       brand? text-or-currency? art? ai? term? small); у видео — длительность,
@@ -55,7 +60,7 @@
  *       [--file-url <адрес файла у источника>]  для локального файла: откуда он (в credits.json)
  *       --seen … --caption … [и все флаги обработки pick: --ok-flags --role --name
  *       --dest --look --contrast --grain --crop-mobile --ratio --src-prefix --avif
- *       --start --dur] [--run <slug>]
+ *       --start --dur] [--run <slug, url сайта или папка прогона — как у search>]
  *     Кадр выбрал человек на сайте без API (Kaboompics, Burst, Picjumbo,
  *     Foodiesfeed — только /legacy/ и /uploads/: у локального файла обязателен
  *     --file-url, иначе не видно, не нейросеть ли это; Mixkit — поштучно, файл
@@ -66,8 +71,9 @@
  *     скачанный человеком (путь). Mixkit: без файла ролик берётся со страницы,
  *     если на ней data-license="videoFree".
  *
- *   node media.mjs credits <папка картинок сайта> [--md [<файл>]]
- *     таблица авторов и лицензий (--md — записать CREDITS.md), строка для
+ *   node media.mjs credits <папка картинок сайта> [--md [<файл или папка>]]
+ *     таблица авторов и лицензий (--md — записать CREDITS.md: без значения — рядом
+ *     с credits.json, папка — CREDITS.md в ней), строка для
  *     подвала: обязательная (CC BY/BY-SA, Unsplash из API) или вежливая (Pexels,
  *     Unsplash через import, музеи).
  *
@@ -82,11 +88,21 @@
  *   node media.mjs <команда> --help (или -h, --h) — эта справка, код 0; команда при этом
  *     не выполняется: ни сети, ни файлов.
  *
+ *   Флаг со значением, данный без значения (`--role` в конце или перед другим флагом), —
+ *   FAIL до любой сети и файлов (search — код 1; pick и import — код 2, как прочие
+ *   неверные значения). Исключения: --md у credits (без значения — CREDITS.md рядом),
+ *   --seen и --caption (их проверяют ворота pick/import, код 2).
+ *
  * Ключи: окружение или ~/.claude/site-rework/.env (образец — .env.example рядом):
  * PEXELS_API_KEY UNSPLASH_ACCESS_KEY PIXABAY_API_KEY SI_API_KEY MEDIA_CONTACT
  * (UNSPLASH_APP_NAME — имя приложения из кабинета Unsplash, идёт в utm ссылок подписи;
  * без него — site_rework, doctor предупреждает). Без ключа источник пропускается.
  * MEDIA_CONTACT — контакт для User-Agent (Wikimedia, AIC); личные данные не подставляются.
+ * Без MEDIA_CONTACT к Wikimedia (Commons: фото, видео, копии; Wikidata) и AIC не уходит
+ * ни одного запроса: search пропускает commons, commons-unsplash, commons-art, aic и видео
+ * commons (SKIP и строка «Commons и AIC пропущены: нет MEDIA_CONTACT — спросить контакт
+ * у пользователя и записать в …/.env»), doctor их не пробует, pick кадра Commons/AIC
+ * и import файла с их адреса — FAIL, код 1. С контактом — как прежде.
  * Сетевые сбои — временные: «повторить позже». Кэш: MEDIA_CACHE или ~/.claude/site-rework/cache
  * (ответы API, исходники и петли роликов). Проверка сбоя имён: MEDIA_TEST_DNS_FAIL="хост,dns:хост2"
  * («хост» — не находится вовсе, «dns:хост» — молчит только системный DNS, выручает DoH).
@@ -98,7 +114,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadSharp, getFfmpeg, parseArgs, ensureDir } from './lib.mjs';
+import { loadSharp, getFfmpeg, parseArgs, ensureDir, slugFromUrl } from './lib.mjs';
 import * as net from './media/net.mjs';
 import { SOURCES, PROFILES, chooseFile, flagsFor, headersFor, ORIENT } from './media/photo.mjs';
 import { ROLES, MAX_GRAIN, makePreview, makeMosaic, hamming, buildSheets, processPhoto, applyLook, unsplashMarkup, cssLook, slugify, kb, mb, parseLook, parseRatio, orientedSize, headerDims } from './media/process.mjs';
@@ -108,6 +124,11 @@ import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit
    другой флаг. Поэтому `--seen --ok-flags` не съест --ok-flags как описание. */
 const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help', 'h'];
 const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS });
+/* Флаги со значением: без значения (`--role` в конце или перед другим флагом) — ошибка до сети
+   и файлов, а не молчаливое «по умолчанию» (`--out` без значения раньше создавал папку «true»).
+   --md у credits значение может не иметь; --seen и --caption проверяют ворота (код 2). */
+const VALUE_OPTS = ['kind', 'profile', 'role', 'orient', 'min', 'sources', 'n', 'frames', 'out', 'run', 'name', 'dest', 'look', 'contrast', 'grain',
+  'crop-mobile', 'ratio', 'src-prefix', 'avif', 'start', 'dur', 'fade', 'license', 'author', 'author-url', 'title', 'file-url'];
 const cmd = pos[0];
 const log = (...a) => console.log(...a);
 /* код 2 — кадр не взят по воротам или по правилам лицензии; 1 — прочие сбои */
@@ -187,14 +208,32 @@ function sanitizeCand(c) {
   const { text, extraFlags, _buf, _err, previewFile, ...rest } = c;
   return JSON.parse(JSON.stringify(rest).replace(/([?&](?:key|api_key|client_id|access_key|token)=)[^&"\\]+/gi, '$1***'));
 }
-function runSlug() {
-  const run = str(opt.run) || '_media';
-  return /^https?:\/\//.test(run) ? new URL(run).hostname.replace(/^www\./, '').replace(/[^a-z0-9]+/gi, '-') : slugify(run, 60);
+/**
+ * Папка прогона для --run: адрес сайта — slug как у остальных скриптов (lib.slugFromUrl:
+ * http://localhost:4177/ → localhost-4177, путь страницы входит в имя); полный путь — сама
+ * папка; иначе — slug (без --run — «media», как раньше). Только вычисляет, ничего не создаёт.
+ */
+function runBase() {
+  const run = str(opt.run).trim();
+  if (!run) return path.join(RUNS, slugify('_media', 60));
+  if (/^(https?|file):\/\//i.test(run)) {
+    let slug;
+    try { slug = slugFromUrl(run); } catch { fail(`--run ${run}: не разобрать адрес`); }
+    return path.join(RUNS, slug);
+  }
+  if (path.isAbsolute(run)) return path.resolve(run);
+  /* готовый slug (как печатают discover и shots) не обрезается: длинный путь страницы даёт длинное имя */
+  return path.join(RUNS, slugify(run, /^[a-z0-9-]+$/i.test(run) ? 200 : 60));
 }
 function searchDir(q, kind, profile) {
   if (opt.out) return path.resolve(String(opt.out));
   const suffix = kind === 'video' ? '-video' : profile === 'art' ? '-art' : '';
-  return path.join(RUNS, runSlug(), 'media', `${slugify(q, 60)}${suffix}`);
+  return path.join(runBase(), 'media', `${slugify(q, 60)}${suffix}`);
+}
+/** Флаги со значением, данные без значения, — FAIL до сети и файлов. */
+function checkValueOpts(code = 1) {
+  const bad = VALUE_OPTS.filter((k) => opt[k] === true);
+  if (bad.length) fail(`${bad.map((k) => `--${k}`).join(', ')} без значения — см. node media.mjs --help`, code);
 }
 async function pool(items, n, fn) {
   const out = new Array(items.length); let i = 0;
@@ -209,13 +248,14 @@ async function cmdDoctor() {
   net.loadEnv();
   log(`media.mjs doctor · node ${process.version}`);
   log(`\nКлючи (окружение и ${net.ENV_FILE}: ${net.envFileExists() ? 'файл есть' : 'файла нет'}; значения не печатаются):`);
-  const uses = { PEXELS_API_KEY: 'pexels (фото, видео)', UNSPLASH_ACCESS_KEY: 'unsplash', PIXABAY_API_KEY: 'pixabay (фото ≤1280, видео)', SI_API_KEY: 'smithsonian (art)', MEDIA_CONTACT: 'контакт в User-Agent (Wikimedia, AIC)' };
+  const uses = { PEXELS_API_KEY: 'pexels (фото, видео)', UNSPLASH_ACCESS_KEY: 'unsplash', PIXABAY_API_KEY: 'pixabay (фото ≤1280, видео)', SI_API_KEY: 'smithsonian (art)', MEDIA_CONTACT: 'контакт в User-Agent (Wikimedia, AIC); без него Commons и AIC пропускаются' };
   const missing = missingKeys();
   for (const k of net.KEY_NAMES) {
     const ok = !missing.includes(k);
     log(`  ${ok ? 'OK  ' : 'WARN'} ${k.padEnd(20)} ${ok ? 'задан' : net.key(k) ? 'задан, но пуст без скобок и переводов строк' : 'не задан'} — ${uses[k]}`);
   }
-  log(`  User-Agent: ${net.contact() ? 'с контактом из MEDIA_CONTACT' : net.userAgent()}`);
+  const noContact = !net.contact();
+  log(`  User-Agent: ${noContact ? `${net.userAgent()} — без контакта: к Commons и AIC запросов нет` : 'с контактом из MEDIA_CONTACT'}`);
   /* utm_source по правилам API — имя приложения; без него подпись уходит с site_rework */
   const noApp = !!net.key('UNSPLASH_ACCESS_KEY') && !net.key('UNSPLASH_APP_NAME');
   if (noApp) log('  WARN UNSPLASH_APP_NAME    не задан — в ссылках подписи Unsplash utm_source=site_rework, а правила API ждут имя вашего приложения (кабинет Unsplash → Your apps)');
@@ -232,7 +272,7 @@ async function cmdDoctor() {
 
   log('\nИсточники (проба с запасным DoH; любой HTTP-ответ = сервер отвечает):');
   const probes = [
-    ...Object.entries(SOURCES).map(([name, s]) => ({ name, url: s.host, headers: s.hdr === 'aic' ? { 'AIC-User-Agent': net.userAgent() } : {}, key: s.key })),
+    ...Object.entries(SOURCES).map(([name, s]) => ({ name, url: s.host, headers: s.hdr === 'aic' ? { 'AIC-User-Agent': net.userAgent() } : {}, key: s.key, contact: !!s.contact })),
     { name: 'thumb.wikimedia (копии Commons)', url: 'https://thumb.wikimedia.org/', method: 'HEAD' },
     { name: 'images.unsplash (файлы)', url: 'https://images.unsplash.com/', method: 'HEAD' },
     { name: 'images.pexels (файлы)', url: 'https://images.pexels.com/', method: 'HEAD' },
@@ -240,26 +280,37 @@ async function cmdDoctor() {
     { name: 'videos.pexels (видео)', url: 'https://videos.pexels.com/', method: 'HEAD' },
     { name: 'mixkit (видео, поштучно)', url: 'https://mixkit.co/', method: 'HEAD' },
   ];
+  /* без MEDIA_CONTACT Wikimedia и AIC не пробуются вовсе: их правила требуют контакт в User-Agent */
+  const skipped = new Set(noContact ? probes.filter((p) => p.contact || net.needsContact(p.url)) : []);
   /* Wikimedia — строго по одному: net.mjs ставит их в очередь сам */
-  const res = await Promise.all(probes.map(async (p) => ({ p, r: await net.probe(p.url, { headers: p.headers || {}, method: p.method || 'GET' }) })));
+  const res = new Map(await Promise.all(probes.filter((p) => !skipped.has(p)).map(async (p) => [p, await net.probe(p.url, { headers: p.headers || {}, method: p.method || 'GET' })])));
   let warn = 0;
-  for (const { p, r } of res) {
+  for (const p of probes) {
     const keyNote = p.key && !net.key(p.key) ? ` · без ${p.key} источник пропускается` : '';
+    if (skipped.has(p)) { log(`  SKIP ${p.name.padEnd(32)} не пробуем: нет MEDIA_CONTACT`); continue; }
+    const r = res.get(p);
     if (r.ok) log(`  OK   ${p.name.padEnd(32)} HTTP ${r.status} за ${(r.ms / 1000).toFixed(1)} с (${r.via === 'dns' ? 'DNS' : r.via})${keyNote}`);
     else { warn++; log(`  WARN ${p.name.padEnd(32)} ${r.error}${keyNote}`); }
   }
+  /* что сделать без контакта — строкой «→ Commons и AIC пропущены…» в блоке незаданных ключей ниже */
   const doh = [...net.dnsStats.entries()].filter(([, v]) => v !== 'dns');
   if (doh.length) log(`  имя найдено через DoH (системный DNS не ответил): ${doh.map(([h, v]) => `${h} → ${v}`).join(', ')}`);
 
   /* Незаданные ключи — отдельный WARN: пробы отвечают и без ключей, но источники без ключа
-     search пропускает, а без MEDIA_CONTACT Commons и AIC получают безымянный User-Agent. */
+     search пропускает, а без MEDIA_CONTACT пропускает Commons (фото и видео) и AIC. */
   if (missing.length) {
     log(`\nWARN: не заданы ключи (${missing.length} из ${net.KEY_NAMES.length}): ${missing.join(', ')} — чем грозит:`);
     for (const k of missing) log(`  · ${k.padEnd(20)} ${KEY_RISK[k]}`);
     const has = (k) => !missing.includes(k);
-    if (!has('PEXELS_API_KEY') && !has('UNSPLASH_ACCESS_KEY')) log('  → фото на первый экран — в основном Commons (CC0 из раннего Unsplash); Openverse — только карточки.');
-    if (!has('PEXELS_API_KEY') && !has('PIXABAY_API_KEY')) log('  → видео-петли — только Commons (шумная выдача, чаще CC BY) и Mixkit поштучно; нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
-    if (!has('MEDIA_CONTACT')) log('  → до поиска на Commons и в AIC спросить у пользователя контакт (адрес сайта студии или рабочую почту) и записать MEDIA_CONTACT=… в ~/.claude/site-rework/.env; почту из git или профиля самому не брать.');
+    if (!has('PEXELS_API_KEY') && !has('UNSPLASH_ACCESS_KEY')) {
+      log(has('MEDIA_CONTACT') ? '  → фото на первый экран — в основном Commons (CC0 из раннего Unsplash); Openverse — только карточки.'
+        : '  → фото на первый экран: без Pexels, Unsplash и MEDIA_CONTACT остаются WordPress Photos (любительские) и Openverse (только карточки) — нужен ключ или контакт.');
+    }
+    if (!has('PEXELS_API_KEY') && !has('PIXABAY_API_KEY')) {
+      log(has('MEDIA_CONTACT') ? '  → видео-петли — только Commons (шумная выдача, чаще CC BY) и Mixkit поштучно; нужен PEXELS_API_KEY или PIXABAY_API_KEY.'
+        : '  → видео-петли — только Mixkit поштучно (Commons пропущен без MEDIA_CONTACT); нужен PEXELS_API_KEY или PIXABAY_API_KEY.');
+    }
+    if (!has('MEDIA_CONTACT')) log(`  → ${net.noContactLine()}.`);
     /* Образец лежит рядом с .env (~/.claude/site-rework/.env.example), не в папке скилла; нет файла — путь не печатаем. */
     const sample = path.join(net.HOME_DIR, '.env.example');
     log(`  Ключи кладутся в ${net.ENV_FILE}${fs.existsSync(sample) ? ` (образец — ${sample})` : ''} или в окружение; без ключа источник пропускается, остальные работают.`);
@@ -268,7 +319,7 @@ async function cmdDoctor() {
   const parts = [];
   if (warn) parts.push(`${warn} проб не прошли — это временно (DNS VPN, лимиты), повторить позже; источник из-за этого не вычёркивать`);
   if (missing.length) {
-    const what = [missing.some((k) => k !== 'MEDIA_CONTACT') ? 'часть источников недоступна' : '', missing.includes('MEDIA_CONTACT') ? 'Commons и AIC идут без контакта в User-Agent (спросить контакт у пользователя)' : ''].filter(Boolean).join(', ');
+    const what = [missing.some((k) => k !== 'MEDIA_CONTACT') ? 'часть источников недоступна' : '', missing.includes('MEDIA_CONTACT') ? 'Commons и AIC пропущены (спросить контакт у пользователя)' : ''].filter(Boolean).join(', ');
     parts.push(`${warn ? '' : 'пробы ответили, но '}не заданы ключи: ${missing.join(', ')} — ${what}`);
   }
   if (noApp) parts.push('UNSPLASH_APP_NAME не задан (utm_source=site_rework)');
@@ -282,7 +333,7 @@ const KEY_RISK = {
   UNSPLASH_ACCESS_KEY: 'нет Unsplash — крупных фото для первого экрана меньше',
   PIXABAY_API_KEY: 'нет Pixabay — ни фото (до 1280 px), ни видео',
   SI_API_KEY: 'нет Smithsonian в профиле art (остальные музеи работают)',
-  MEDIA_CONTACT: 'Commons (Wikimedia) и AIC получают User-Agent без контакта — вопреки их правилам: запросы могут блокировать, оригиналы Commons чаще отвечают 429, запросы идут строго по одному с паузой',
+  MEDIA_CONTACT: 'Commons (Wikimedia: фото, видео, копии) и AIC пропускаются — их правила требуют контакт в User-Agent, без него к ним ни одного запроса',
 };
 /** Незаданные ключи по порядку net.KEY_NAMES; MEDIA_CONTACT, который после очистки пуст, считается незаданным. */
 function missingKeys() {
@@ -292,6 +343,8 @@ function missingKeys() {
 /* ---------- search ---------- */
 
 async function cmdSearch() {
+  /* сначала все аргументы и источники — папки только потом */
+  checkValueOpts(1);
   const q = str(pos[1]).trim();
   if (!q) fail('Нет запроса. Пример: node media.mjs search "bakery bread" --kind photo --role hero');
   const kind = str(opt.kind) || 'photo';
@@ -303,10 +356,33 @@ async function cmdSearch() {
   /* видео для фона первого экрана — горизонтальное, если не попросили другое */
   const orient = str(opt.orient) || (kind === 'video' ? 'landscape' : null);
   if (orient && !ORIENT[orient]) fail(`--orient ${orient}: landscape | portrait | square`);
-  const n = Math.max(1, Math.min(60, Number(opt.n) || 24));
+  let n = 24;
+  if (opt.n !== undefined) {
+    const v = Number(opt.n);
+    if (!(Number.isFinite(v) && v >= 1)) fail(`--n ${opt.n}: сколько кадров на лист — целое от 1 до 60`);
+    n = Math.min(60, Math.floor(v));
+  }
+  if (opt.min !== undefined && !(Number(opt.min) > 0)) fail(`--min ${opt.min}: px по длинной стороне — число больше 0`);
   const min = Number(opt.min) || ROLES[role].min;
+  if (kind === 'video' && opt.frames !== undefined && !/^(all|\d+)$/.test(String(opt.frames))) fail(`--frames ${opt.frames}: число от 0 или all`);
+  let names = null;
+  if (opt.sources !== undefined) {
+    names = splitList(opt.sources);
+    if (!names.length) fail('--sources: пустой список — имена через запятую, например unsplash,pexels');
+  }
+  let video = null;
+  if (kind === 'video') {
+    video = await requireVideo();
+    const bad = names && typeof video.checkSources === 'function' ? video.checkSources(names) : null;
+    if (bad) fail(`видео-поиск: ${bad}`);
+  } else {
+    names = names || PROFILES[profile];
+    const bad = names.filter((s) => !SOURCES[s]);
+    if (bad.length) fail(`Неизвестные источники: ${bad.join(', ')}. Есть: ${Object.keys(SOURCES).join(', ')}`);
+  }
   const sharp = requireSharp();
   const dir = searchDir(q, kind, profile);
+  const existed = fs.existsSync(dir);
   /* новый лист собирается во временной подпапке и заменяет прежний только при успехе:
      повтор поиска при сбое сети не должен стирать готовый лист и отметки pick */
   ensureDir(dir);
@@ -323,9 +399,8 @@ async function cmdSearch() {
   let lists = [];
 
   if (kind === 'video') {
-    const video = await requireVideo();
     let r;
-    try { r = await video.search(q, { ...o, sources: opt.sources ? splitList(opt.sources) : null, frames: opt.frames === undefined ? null : String(opt.frames) }, makeCtx(sharp)); }
+    try { r = await video.search(q, { ...o, sources: names, frames: opt.frames === undefined ? null : String(opt.frames) }, makeCtx(sharp)); }
     catch (e) { fail(`видео-поиск: ${net.describeError(e)}`); }
     Object.assign(status, r.status || {});
     for (const [name, st] of Object.entries(r.status || {})) log(`  ${st.state === 'ok' ? 'OK  ' : st.state === 'skip' ? 'SKIP' : 'WARN'} ${name.padEnd(17)} ${st.message || ''}`);
@@ -333,15 +408,12 @@ async function cmdSearch() {
     for (const c of r.items || []) { if (!by.has(c.source)) by.set(c.source, []); by.get(c.source).push(c); }
     lists = [...by.values()];
   } else {
-    const names = opt.sources ? splitList(opt.sources) : PROFILES[profile];
-    const bad = names.filter((s) => !SOURCES[s]);
-    if (bad.length) fail(`Неизвестные источники: ${bad.join(', ')}. Есть: ${Object.keys(SOURCES).join(', ')}`);
     for (const name of names) {
       const src = SOURCES[name];
       const slow = ['met', 'rijks'].includes(name);
       try {
         const r = await src.search(q, { ...o, n: slow ? Math.min(n, 10) : n });
-        if (r.skip) { status[name] = { state: 'skip', message: r.skip }; log(`  SKIP ${name.padEnd(17)} ${r.skip}`); continue; }
+        if (r.skip) { status[name] = { state: 'skip', message: r.skip, ...(r.no_contact ? { no_contact: true } : {}) }; log(`  SKIP ${name.padEnd(17)} ${r.skip}`); continue; }
         lists.push(r.items.map((c) => ({ ...c, source: c.source || name })));
         status[name] = { state: 'ok', found: r.items.length, message: r.note || '' };
         log(`  OK   ${name.padEnd(17)} найдено ${r.items.length}${r.note ? ` · ${r.note}` : ''}`);
@@ -353,6 +425,9 @@ async function cmdSearch() {
       }
     }
   }
+  /* без MEDIA_CONTACT Commons и AIC пропущены — одна понятная строка, что сделать */
+  const noContactSkipped = Object.entries(status).filter(([, s]) => s.no_contact).map(([k]) => k);
+  if (noContactSkipped.length) log(`  ${net.noContactLine()}.`);
 
   /* файл под роль, ориентация */
   const prepared = lists.map((list) => list.map((c) => {
@@ -447,8 +522,11 @@ async function cmdSearch() {
     if (temp) {
       const why = tempPreviews && !tempSources ? `превью не скачались (${tempPreviews}) из-за временной ошибки сети` : tempPreviews ? `часть источников и превью (${tempPreviews}) ответили временной ошибкой` : 'часть источников ответила временной ошибкой';
       log(`\nWARN: ни одного кандидата — ${why}; это временно, повторить позже тем же запросом.${keepNote}`);
-    } else log(`\nFAIL: ни одного кандидата. Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.${keepNote}`);
+    } else log(`\nFAIL: ни одного кандидата. Короче запрос (2–3 слова по-английски), другой синоним, --role card или ключ Pexels/Unsplash.${noContactSkipped.length ? ' Commons и AIC пропущены без MEDIA_CONTACT — что сделать, см. строку выше.' : ''}${keepNote}`);
     for (const f of failures.slice(0, 5)) log(`  ! ${f}`);
+    /* папку, которую создал этот запуск, пустой не оставляем */
+    dropWork();
+    if (!existed) { try { fs.rmdirSync(dir); } catch { /* не пуста — оставляем */ } }
     process.exit(1);
   }
 
@@ -498,7 +576,8 @@ async function cmdSearch() {
   log('  Пометки — только подсказка: ценники, вывески, валюту и лица видно лишь глазами.');
   log(`\nДальше: node media.mjs pick "${dir}" <N> --seen "что на кадре" --caption "подпись на сайте" --dest <папка сайта>/img --role ${role}`);
   const tempWhat = [tempSources ? 'часть источников' : '', tempPreviews ? `превью (${tempPreviews})` : ''].filter(Boolean).join(' и ');
-  log(`\n${temp ? `WARN: лист готов, ${cands.length} кадров; ${tempWhat} — временная ошибка, повторить позже.` : `OK: лист готов, ${cands.length} кадров.`}`);
+  const contactNote = noContactSkipped.length ? ' Commons и AIC пропущены: нет MEDIA_CONTACT.' : '';
+  log(`\n${temp ? `WARN: лист готов, ${cands.length} кадров; ${tempWhat} — временная ошибка, повторить позже.` : `OK: лист готов, ${cands.length} кадров.`}${contactNote}`);
 }
 
 /* ---------- обработка и учёт (pick и import) ---------- */
@@ -586,7 +665,14 @@ function printTail(rec, markup, extraNotes = [], dest = '', warnings = []) {
 
 /* ---------- pick ---------- */
 
+/** Кадр или ролик с Wikimedia/AIC: без MEDIA_CONTACT его не скачать (ни одного запроса к ним). */
+function needsContactCand(c) {
+  return /^(commons|aic)(-|$)/.test(String(c.source || '')) || c.hdr === 'aic'
+    || [c.file?.url, c.template?.url, c.download_location, ...(c.variants || []).map((v) => v.url)].some((u) => u && net.needsContact(u));
+}
+
 async function cmdPick() {
+  checkValueOpts(2);
   const dir = pos[1] && path.resolve(pos[1]); const N = Number(pos[2]);
   if (!dir || !N) fail('Использование: node media.mjs pick <папка поиска> <N> --seen "…" --caption "…" [--dest <папка>]');
   const m = readManifest(dir);
@@ -599,6 +685,7 @@ async function cmdPick() {
   if (!ROLES[role]) fail(`--role ${opt.role}: hero | section | card | loop`);
   const o = { ...commonOpts(role, path.join(dir, 'picked')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
   o.name = slugify(str(opt.name) || `${role}-${c.source}-${c.id}`, 48);
+  if (!net.contact() && needsContactCand(c)) fail(`${m.kind === 'video' ? 'ролик' : 'кадр'} №${N} (${c.source}) не скачать: правила Wikimedia и AIC требуют контакт в User-Agent, а ${net.noContactHint()}. Или выберите кадр другого источника.`);
   const sharp = requireSharp();
 
   if (m.kind === 'video') {
@@ -694,6 +781,7 @@ function budgetLines(b) {
 /* ---------- import ---------- */
 
 async function cmdImport() {
+  checkValueOpts(2);
   const pageUrl = str(pos[1]); const fileArg = str(pos[2]);
   if (!/^https?:\/\//.test(pageUrl)) fail('Использование: node media.mjs import <url страницы> [<url или путь файла>] --license <id> --seen "…" --caption "…"');
   const lic = resolveLicense(opt.license);
@@ -721,13 +809,15 @@ async function cmdImport() {
   if (lic.manual && fileArg && !isLocal) fail(`${lic.name}: файл скачивает человек в браузере (${lic.note || 'автоматика запрещена'}). Передайте путь к скачанному файлу вторым аргументом.`, 2);
   if (!fileArg && !(isVideo && lic.id === 'mixkit-free')) fail(`Нужен второй аргумент — адрес файла или путь к скачанному файлу. Страницу ${host} скрипт не разбирает.`, 2);
   if (isLocal && !fs.existsSync(fileArg)) fail(`Нет файла ${fileArg}`);
+  /* файл по адресу Wikimedia/AIC скачивает скрипт — без контакта нельзя; скачанный человеком файл (путь) — можно */
+  if (fileArg && !isLocal && net.contactBlocked(fileArg)) fail(`файл ${net.redact(fileArg).slice(0, 120)} не скачать: правила Wikimedia и AIC требуют контакт в User-Agent, а ${net.noContactHint()}. Или скачайте файл в браузере и передайте путь.`);
 
   const g = gate({ seen: opt.seen, caption: opt.caption, flags, okFlags: !!opt['ok-flags'] });
   if (!g.ok) { for (const s of g.messages) console.error(`FAIL: кадр не взят: ${s}`); process.exit(2); }
   const role = str(opt.role) || (isVideo ? 'loop' : 'section');
   if (!ROLES[role]) fail(`--role ${opt.role}: hero | section | card | loop`);
   /* по умолчанию — не в текущую папку (это может быть репозиторий), а в папку прогона */
-  const o = { ...commonOpts(role, path.join(RUNS, runSlug(), 'media', 'import')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
+  const o = { ...commonOpts(role, path.join(runBase(), 'media', 'import')), seen: String(opt.seen).trim(), caption: String(opt.caption).trim() };
   const baseName = str(opt.name) || `${role}-${host.split('.')[0]}-${path.basename(new URL(pageUrl).pathname) || 'img'}`;
   o.name = slugify(baseName, 48);
   const sharp = requireSharp();
@@ -774,7 +864,7 @@ async function cmdImport() {
 
 function cmdCredits() {
   const dest = pos[1] && path.resolve(pos[1]);
-  if (!dest) fail('Использование: node media.mjs credits <папка картинок сайта> [--md [<файл>]]');
+  if (!dest) fail('Использование: node media.mjs credits <папка картинок сайта> [--md [<файл или папка>]]');
   const list = readCredits(dest);
   if (!list.length) fail(`В ${dest} нет credits.json или он пуст.`);
   const md = renderCreditsMd(list);
@@ -783,7 +873,9 @@ function cmdCredits() {
   if (foot) log(`Строка для подвала (подпись ОБЯЗАТЕЛЬНА, поставить до выкладки):\n${foot}${polite ? `\nВежливая строка — по желанию, можно в тот же блок:\n${polite}` : ''}`);
   else log(`Обязательной подписи нет.${polite ? ` Вежливая строка — по желанию:\n${polite}` : ''}`);
   if (opt.md) {
-    const f = opt.md === true ? path.join(dest, 'CREDITS.md') : path.resolve(String(opt.md));
+    let f = opt.md === true ? path.join(dest, 'CREDITS.md') : path.resolve(String(opt.md));
+    /* --md <папка> — CREDITS.md в ней (раньше — отказ EISDIR) */
+    try { if (fs.statSync(f).isDirectory()) f = path.join(f, 'CREDITS.md'); } catch { /* файла ещё нет */ }
     ensureDir(path.dirname(f));
     const tail = foot ? `\n## Строка для подвала (обязательно)\n\n\`\`\`html\n${foot}\n\`\`\`\n${polite ? `\n## Вежливая строка (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : ''}` : polite ? `\n## Строка для подвала (по желанию)\n\n\`\`\`html\n${polite}\n\`\`\`\n` : '';
     fs.writeFileSync(f, md + tail);

@@ -6,7 +6,7 @@
  * донора со сборкой по каждому экрану.
  *
  *   node texture.mjs <url> [--viewport desktop,tablet,mobile] [--out папка] [--screens 4]
- *                    [--label имя] [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras]
+ *                    [--label имя] [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras] [--strict]
  *   node texture.mjs <texture.json> [--viewport desktop,mobile] [--tokens файл] [--css файл] [--md файл]
  *                    [--json файл]      рецепт и файлы по прошлому замеру: страница заново не открывается
  *   node texture.mjs compare <донор: url|texture.json> <сайт: url|texture.json>
@@ -14,26 +14,33 @@
  *   node texture.mjs --png снимок.png [--png2 через-250мс.png] [--png3 ещё.png]
  *                    [--without без-слоя.png] [--region x,y,w,h] [--json файл]
  *   node texture.mjs --tile файл.gif|png|webp|svg      разбор файла текстуры по всем кадрам
- *   node texture.mjs --help | -h
+ *   node texture.mjs --help | --h | -h
  *
  * Режим <texture.json>: вместо адреса — texture.json прошлого замера (файл должен существовать
  * и кончаться на .json; массив результатов, { results: [...] } или один результат). Печатает
  * замеры, рецепт и блок переменных, пишет --tokens/--css/--md; --viewport оставляет только эти
  * экраны (нет таких — ошибка, код 1); texture.json пишется, только если задан --json;
- * --out, --screens, --label и --extras здесь не действуют.
+ * --out, --screens, --label и --extras здесь не действуют. Путь на .json, которого нет, —
+ * «нет файла <путь>», код 1 (и в compare); не адрес http/https/file и не .json — «Неверный адрес».
+ * Аргументы, экраны и texture.json проверяются до создания папок и запуска браузера.
  *
  * Флаги:
  *   --viewport  экраны через запятую (пресеты lib.mjs или ШxВ@плотность); по умолчанию
  *               desktop,tablet,mobile — фактуру снимаем по каждому экрану отдельно (у донора
- *               зерно бывает только на широких). --vp — то же (старое имя).
+ *               зерно бывает только на широких). --viewports и --vp (старое имя) — то же самое
+ *               во всех режимах: замер, texture.json, compare; разные значения у них — ошибка, код 1.
  *               В compare по умолчанию desktop,mobile.
+ *   --strict    код выхода 1 при FAIL. FAIL даёт только compare («фактура не как у донора») — там
+ *               код 1 и без флага; одиночный замер, --png и --tile выдают только OK и WARN, с --strict
+ *               код 0. Ошибка замера или аргументов — всегда код 1.
  *   --out       папка для снимков, файлов текстур и texture.json
  *               (по умолчанию <папка прогона>/texture, см. runDir в lib.mjs).
  *   --screens   сколько экранов по высоте страницы снимать (4, равномерно, снимки ОКНА).
  *   --label     имя в файлах (по умолчанию адрес-экран).
  *   --json      куда записать итог (по умолчанию <out>/texture.json).
  *   --tokens    записать блок переменных --grain-* в файл (site.tokens.css): блок между
- *               /* texture:start *\/ и /* texture:end *\/ заменяется, иначе дописывается.
+ *               /* texture:start *\/ и /* texture:end *\/ заменяется дословно (знаки «$&», «$'» в адресе
+ *               страницы остаются как есть, «*\/» в адресе пишется как «*%2F»), иначе дописывается.
  *   --css       записать шаблон templates/grain.css с подставленными значениями рецепта.
  *   --md        записать раздел «Фактура (параметры для переноса)» для discovery.md.
  *   --extras    ещё вуали, псевдоэлементы, backdrop-filter, blend, градиенты, фоновые видео.
@@ -63,6 +70,11 @@
  * Меньше 10 ровных плиток в полосе — «не измерено», а не «зерна нет».
  * Проход «без слоя»: слой прячется через visibility; если зерно лежит в фоне body или секции
  * с содержимым — из background-image убирается только картинка шума, содержимое остаётся.
+ * Строгий CSP (style-src без 'unsafe-inline'): вставленный <style> страница молча не применяет, и
+ * «без слоя» снимался бы со слоем (вклад 0, ложное «зерна нет») — поэтому стиль тогда ставится
+ * сконструированной таблицей document.adoptedStyleSheets (CSP на неё не распространяется), в выводе
+ * строка «слой спрятан таблицей adoptedStyleSheets». Не вышло и так — WARN «проход без слоя не сделан»,
+ * σ по снимкам со слоем.
  * Сравнение донора и сборки — только при одинаковом экране и DPR.
  *
  * Правила режимов наложения (замер lab.mjs аудита, проверен независимо):
@@ -75,7 +87,12 @@
  * Экспорт для других скриптов (discover.mjs, a11y.mjs): findTextureLayers, TEXTURE_LAYERS_FN,
  * hideTextureLayers, showTextureLayers, measureTexture, textureOnUrl, analyzeTile, measurePng,
  * grainTiles, summarize, lumaOf, blendAdvice, recipeFrom, tokensBlock, fillGrainCss,
- * textureMarkdown, compareTexture, compareSets, TILE_SD. Описание — в комментариях у функций.
+ * textureMarkdown, compareTexture, compareSets, TILE_SD, setPageStyle, dropPageStyle (свой стиль и при
+ * строгом CSP), CSP_NO_STYLE. Описание — в комментариях у функций.
+ *
+ * Коды выхода: 0 — готово (одиночный замер — при любых WARN); 1 — compare с FAIL, неверные аргументы
+ * (экран, адрес, нет файла, флаг без значения) или ошибка замера (FAIL texture.mjs: …); 2 — у compare
+ * не два аргумента.
  *
  * Чужой файл текстуры (noise.gif донора) сохраняется в --out ТОЛЬКО для замера: на сайт он не
  * переносится никогда, своя плитка — grain-tile.mjs.
@@ -388,14 +405,53 @@ export async function findTextureLayers(page, { mark = false, extras = false, mi
   return page.evaluate(`(${TEXTURE_LAYERS_FN})(${JSON.stringify({ mark, extras, minW, minH })})`);
 }
 
+/* Свой стиль на странице, в том числе при строгом CSP. Сначала <style data-rw="key">; если CSP страницы
+   (style-src без 'unsafe-inline') его не применил — у такого элемента нет sheet, стиль молча не действует —
+   элемент убирается и ставится сконструированная таблица в document.adoptedStyleSheets: CSP на неё не
+   распространяется. Сама страница не меняется, CSP для вкладки не отключается. Повторный вызов с тем же
+   ключом заменяет стиль, а не копит таблицы. → 'style' | 'adopted' | null (не вставился никак). */
+function styleSetInPage({ key, css }) {
+  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
+  const reg = window.__rwSheets || (window.__rwSheets = {});
+  if (reg[key]) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== reg[key]); delete reg[key]; }
+  const st = document.createElement('style'); st.setAttribute('data-rw', key); st.textContent = css;
+  (document.head || document.documentElement).appendChild(st);
+  if (st.sheet) return 'style';
+  st.remove();
+  try {
+    const sh = new CSSStyleSheet(); sh.replaceSync(css);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh];
+    reg[key] = sh;
+    return 'adopted';
+  } catch { return null; }
+}
+function styleDropInPage({ key }) {
+  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
+  const reg = window.__rwSheets;
+  if (reg && reg[key]) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== reg[key]); delete reg[key]; }
+}
+/** Текст ошибки, когда стиль не вставился ни элементом, ни adoptedStyleSheets. */
+export const CSP_NO_STYLE = 'CSP страницы запрещает вставку стиля';
+/**
+ * Вставить свой стиль под ключом (тот же ключ — замена) так, чтобы он действовал и при строгом CSP:
+ * <style data-rw=key>, а если CSP его не применил — document.adoptedStyleSheets.
+ * → 'style' | 'adopted' | null. Для perf.mjs (--overlay селектор) и hideTextureLayers.
+ */
+export function setPageStyle(page, key, css) { return page.evaluate(styleSetInPage, { key, css }); }
+/** Убрать стиль, вставленный setPageStyle под этим ключом (любым из двух способов). */
+export function dropPageStyle(page, key) { return page.evaluate(styleDropInPage, { key }); }
+
 /**
  * Спрятать найденные слои (после findTextureLayers с mark: true): слой — visibility:hidden и opacity:0;
  * зерно в фоне блока с содержимым — только картинка шума в background-image заменяется на none;
  * шум фильтром у блока с содержимым — filter:none. Возвращает число правил.
+ * Стиль ставится через setPageStyle (ключ texture-hide): при строгом CSP — adoptedStyleSheets; раньше
+ * <style> там молча не применялся, и проход «без слоя» снимал страницу со слоем. info — необязательный
+ * объект: в info.via пишется способ ('style' | 'adopted'). Не вставился никак — ошибка CSP_NO_STYLE.
  */
-export async function hideTextureLayers(page, layers) {
+export async function hideTextureLayers(page, layers, info = null) {
   const spec = (layers || []).map((L) => ({ k: L.k, pseudo: L.pseudo, hide: L.hide, urls: (L.hideUrls || []).map((u) => String(u).slice(0, 300)), filterId: L.svg && L.svg.filterId ? L.svg.filterId : null }));
-  return page.evaluate((spec) => {
+  const rules = await page.evaluate((spec) => {
     const splitTop = (str) => {
       const out = []; let depth = 0, q = null, cur = ''; const s = String(str || '');
       for (let i = 0; i < s.length; i++) {
@@ -431,15 +487,16 @@ export async function hideTextureLayers(page, layers) {
         rules.push(`${sel}{background-image:${items.join(', ')}!important}`);
       }
     }
-    let st = document.querySelector('style[data-rw="texture-hide"]');
-    if (!st) { st = document.createElement('style'); st.setAttribute('data-rw', 'texture-hide'); (document.head || document.documentElement).appendChild(st); }
-    st.textContent = rules.join('\n');
-    return rules.length;
+    return rules;
   }, spec);
+  const via = await setPageStyle(page, 'texture-hide', rules.join('\n'));
+  if (info) info.via = via;
+  if (!via && rules.length) throw new Error(`${CSP_NO_STYLE} — слой не спрятать`);
+  return rules.length;
 }
 /** Вернуть спрятанные слои. */
 export async function showTextureLayers(page) {
-  await page.evaluate(() => { const st = document.querySelector('style[data-rw="texture-hide"]'); if (st) st.remove(); });
+  await dropPageStyle(page, 'texture-hide');
 }
 
 /* ======================================================================
@@ -731,6 +788,7 @@ function diagnose(res) {
     if (ratio < 0.5 || ratio > 2) out.push(`зерно неравномерно: тёмный/светлый = ${r2(ratio)} (режим наложения не normal или альфа-плитка)`);
   }
   if (res.boil && res.boil.boils === false && res.boil.source === 'файл') out.push(`файл анимирован (${res.boil.frames} кадра), а на снимках через 250 мс зерно стоит — кадр мог не смениться в безголовом Chrome; частоту брать из файла`);
+  if (res.hideError) out.push(`проход «без слоя» не сделан: ${res.hideError} — вклад слоя не измерен, σ — по снимкам со слоем (картинки и градиенты тоже дают σ)`);
   return out;
 }
 
@@ -747,7 +805,7 @@ async function soloContribution(page, L, scrollY0 = 0) {
   if (L.position !== 'fixed' && !L.fixedBy) await scrollToY(page, Math.max(0, scrollY0 + L.rect.y - 40));
   await sleep(300);
   const a = await page.screenshot({ type: 'png' });
-  await hideTextureLayers(page, [L]);
+  await hideTextureLayers(page, [L]); /* CSP не дал вставить стиль — ошибка уходит вызывающему (в «почему»), а не «не зерно» */
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
   await sleep(120);
   const w = await page.screenshot({ type: 'png' });
@@ -800,10 +858,11 @@ export async function measureTexture(page, opts = {}) {
         continue;
       }
       /* файла нет (холст, видео) или он не получен — решает разность снимков со слоем и без него одного */
-      const solo = await soloContribution(page, L, found.scrollY || 0).catch(() => null);
+      let soloErr = null;
+      const solo = await soloContribution(page, L, found.scrollY || 0).catch((e) => { soloErr = String(e && e.message ? e.message : e).slice(0, 160); return null; });
       L.solo = solo;
       if (!solo || solo.sd < GRAIN_MIN_SD) {
-        patterns.push({ el: L.el, urls: L.urls, why: solo ? `по разности снимков со слоем и без — не зерно (σ вклада ${solo.sd} на ${solo.tiles} ровных плитках)` : `${L.file && L.file.error ? L.file.error + '; ' : ''}разность снимков не измерена (нет ровных участков)` });
+        patterns.push({ el: L.el, urls: L.urls, why: solo ? `по разности снимков со слоем и без — не зерно (σ вклада ${solo.sd} на ${solo.tiles} ровных плитках)` : `${L.file && L.file.error ? L.file.error + '; ' : ''}разность снимков не измерена (${soloErr || 'нет ровных участков'})` });
         found.layers.splice(i, 1);
       }
     }
@@ -814,7 +873,9 @@ export async function measureTexture(page, opts = {}) {
   const ys = segmentPositions(total, vh, { step: 1, maxShots: Math.max(1, Number(screens) || 4) });
   const layers = found.layers;
   const allTiles = []; const perScreen = [];
-  const hasLayers = layers.length > 0 && withWithout;
+  let hasLayers = layers.length > 0 && withWithout;
+  /* как прятался слой: 'style' или 'adopted' (строгий CSP); не спрятался — прохода «без слоя» нет */
+  const hideInfo = { via: null }; let hideError = null;
   for (let i = 0; i < ys.length; i++) {
     const seg = await screenSegment(page, ys[i], { pause, settle: 800, mediaTimeout: 4000 });
     const a = seg.buffer;
@@ -822,11 +883,17 @@ export async function measureTexture(page, opts = {}) {
     await sleep(120); const c = await page.screenshot({ type: 'png' });
     let wbuf = null;
     if (hasLayers) {
-      await hideTextureLayers(page, layers);
-      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
-      await sleep(120);
-      wbuf = await page.screenshot({ type: 'png' });
-      await showTextureLayers(page);
+      try { await hideTextureLayers(page, layers, hideInfo); } catch (e) { hideError = String(e && e.message ? e.message : e).slice(0, 160); }
+      if (hideError) {
+        /* снимок «без слоя» был бы снимком со слоем: вклад вышел бы 0, а статус — ложное «нет» */
+        await showTextureLayers(page).catch(() => {});
+        hasLayers = false; /* итог — по снимкам со слоем, без вклада; причина — в diagnosis */
+      } else {
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
+        await sleep(120);
+        wbuf = await page.screenshot({ type: 'png' });
+        await showTextureLayers(page);
+      }
     }
     const shots = {};
     if (dir) {
@@ -848,6 +915,8 @@ export async function measureTexture(page, opts = {}) {
     layers, patterns, svgNoise: found.svgNoise, bodyAfterUsed: found.bodyAfterUsed, bodyBeforeUsed: found.bodyBeforeUsed, unreadableSheets: found.unreadableSheets,
     ...(found.extras ? { extras: found.extras } : {}),
     screens: perScreen, grain: B.grain, without: B.without, contribution: B.contribution, lift: B.lift,
+    /* как прятался слой для прохода «без слоя»: 'style' или 'adopted' (строгий CSP); hideError — не спрятался */
+    ...(hideInfo.via ? { hideVia: hideInfo.via } : {}), ...(hideError ? { hideError } : {}),
   };
   /* кипение: «да / нет» — по снимкам; частота — из файла или @keyframes */
   const src = boilSource(layers);
@@ -983,7 +1052,8 @@ export function tokensBlock(rec, results = []) {
     const b = (k) => { const x = grainBand(r, k); return x.status === 'не измерено' ? '—' : x.sd; };
     return `   ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr}: ${r.status}; σ${r.contribution ? ' (вклад слоя)' : ''} тёмный ${b('dark')} / средний ${b('mid')} / светлый ${b('light')}, lag1 ${grainBand(r, 'all').lag1 ?? '—'}, кипение ${r.boil && r.boil.boils === true ? 'да' : r.boil && r.boil.boils === false ? 'нет' : r.boil && r.boil.boils ? r.boil.boils : '—'}${r.boil && r.boil.frames ? ` (${r.boil.frames} × ${r.boil.frameMs} мс, ${r.boil.source})` : ''}${r.lift && r.lift.dark != null ? `, подъём чёрного ${r.lift.dark}` : ''}`;
   });
-  const src = list[0] ? list[0].url : '';
+  /* адрес внутри комментария CSS: «*\/» в нём закрыл бы комментарий раньше времени */
+  const src = list[0] && list[0].url ? String(list[0].url).replace(/\*\//g, '*%2F') : '';
   return [
     '/* texture:start */',
     `/* Фактура (texture.mjs${src ? `, ${src}` : ''}, ${new Date().toISOString().slice(0, 10)}):`,
@@ -1144,18 +1214,22 @@ export function compareSets(donorList, siteList, opts = {}) {
 const HELP = `texture.mjs — фактура: слои зерна, их параметры, сила зерна числом, рецепт и сверка с донором
 
   node texture.mjs <url> [--viewport desktop,tablet,mobile] [--out папка] [--screens 4] [--label имя]
-                   [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras]
+                   [--json файл] [--tokens файл] [--css файл] [--md файл] [--extras] [--strict]
   node texture.mjs <texture.json> [--viewport desktop,mobile] [--tokens файл] [--css файл] [--md файл] [--json файл]
                    рецепт, --tokens/--css/--md по прошлому замеру — страница заново не открывается;
-                   --viewport оставляет только эти экраны; texture.json пишется только с --json
+                   --viewport оставляет только эти экраны; texture.json пишется только с --json;
+                   путь на .json, которого нет, — «нет файла <путь>», код 1
   node texture.mjs compare <донор: url|texture.json> <сайт: url|texture.json> [--viewport desktop,mobile]
                    [--out папка] [--screens 4] [--sd-tol 0.2] [--lag-tol 0.15]
   node texture.mjs --png снимок.png [--png2 b.png] [--png3 c.png] [--without без-слоя.png] [--region x,y,w,h] [--json файл]
   node texture.mjs --tile файл.gif|png|webp|svg
-  node texture.mjs --help | -h
+  node texture.mjs --help | --h | -h
 
   --viewport  экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@DPR);
-              по умолчанию desktop,tablet,mobile (compare: desktop,mobile). --vp — старое имя.
+              по умолчанию desktop,tablet,mobile (compare: desktop,mobile). --viewports и --vp (старое
+              имя) — то же во всех режимах; разные значения у них — ошибка, код 1.
+  --strict    код 1 при FAIL. FAIL даёт только compare (там код 1 и без флага); одиночный замер,
+              --png и --tile — только OK и WARN, код 0. Ошибка замера или аргументов — всегда 1.
   --out       папка снимков и texture.json (по умолчанию <папка прогона>/texture)
   --screens   экранов по высоте страницы (4), снимки окна
   --label     имя в файлах
@@ -1169,7 +1243,9 @@ const HELP = `texture.mjs — фактура: слои зерна, их пара
               --without — тот же экран без слоя (ровность и вклад слоя), --region x,y,w,h
   --tile      разбор файла текстуры по всем кадрам (кадры, мс, σ, lag1, альфа, похож ли на шум)
 
-Вердикты: OK — совпадает/есть; WARN — не измерено или гаснет; FAIL — не как у донора (compare, код 1).`;
+Вердикты: OK — совпадает/есть; WARN — не измерено или гаснет; FAIL — не как у донора (compare, код 1).
+Строгий CSP страницы: слой для прохода «без слоя» прячется таблицей adoptedStyleSheets (<style> там не действует).
+Коды: 0 — готово; 1 — compare с FAIL, неверные аргументы или ошибка замера; 2 — у compare не два аргумента.`;
 
 const vb = (b) => (b === true ? 'да' : b === false ? 'нет' : b == null ? '—' : String(b));
 function fmtBand(x) {
@@ -1193,6 +1269,7 @@ function printLayer(L) {
 function printResult(r) {
   console.log(`\n== ${r.viewport.name} ${r.viewport.width}×${r.viewport.height}@${r.viewport.dpr} — ${r.url}`);
   console.log(`слоёв фактуры ${r.layers.length}, feTurbulence в документе ${r.svgNoise.length}${r.patterns && r.patterns.length ? `, отброшено кандидатов ${r.patterns.length}` : ''}; body::after ${r.bodyAfterUsed ? 'занят' : 'свободен'}`);
+  if (r.hideVia === 'adopted') console.log('  проход «без слоя»: CSP страницы не применяет вставленный <style> — слой спрятан таблицей adoptedStyleSheets');
   for (const L of r.layers) printLayer(L);
   for (const p of (r.patterns || []).slice(0, 4)) console.log(`  – ${p.el}: не слой — ${p.why}`);
   printBands(r.grain, `зерно на снимках окна (${r.screens.length} экр.)`);
@@ -1222,7 +1299,8 @@ function printRecipe(rec) {
 function writeTokens(file, block) {
   const prev = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   const re = /\/\* texture:start \*\/[\s\S]*?\/\* texture:end \*\//;
-  const next = re.test(prev) ? prev.replace(re, block) : (prev ? prev.replace(/\s*$/, '\n\n') : '') + block + '\n';
+  /* замена функцией: строкой-заменой «$&», «$'», «$`» из адреса в блоке подставляли старый блок и хвост файла */
+  const next = re.test(prev) ? prev.replace(re, () => block) : (prev ? prev.replace(/\s*$/, '\n\n') : '') + block + '\n';
   ensureDir(path.dirname(path.resolve(file))); fs.writeFileSync(file, next);
 }
 async function runSet(url, vps, out, screens, extras, tag = null) {
@@ -1238,17 +1316,43 @@ async function runSet(url, vps, out, screens, extras, tag = null) {
   } finally { await browser.close().catch(() => {}); }
   return list;
 }
-const isJsonPath = (s) => /\.json$/i.test(String(s)) && fs.existsSync(String(s));
-const loadSet = (file) => { const j = readJson(String(file)); if (!j) throw new Error(`не читается ${file}`); return Array.isArray(j) ? j : j.results || [j]; };
+const loadSet = (file) => {
+  const j = readJson(String(file)); if (!j) throw new Error(`не читается ${file}`);
+  const list = Array.isArray(j) ? j : j.results || [j];
+  if (!list.length || list.some((r) => !r || !r.viewport || !r.grain)) throw new Error(`${file} — не texture.json замера (нет results[] с viewport и grain)`);
+  return list;
+};
+/* адрес страницы или texture.json прошлого замера — до папок и браузера. Путь на .json (не http/https/file)
+   без файла — «нет файла», а не «Invalid URL» или переход браузера на C:/… с ERR_FILE_NOT_FOUND */
+const PAGE_URL = /^(https?|file|data|about):$/i;
+function inputKind(s, die) {
+  const str = String(s);
+  let url = false; try { url = PAGE_URL.test(new URL(str).protocol); } catch { /* не адрес */ }
+  if (url) return 'url';
+  if (/\.json$/i.test(str)) return fs.existsSync(str) ? 'json' : die(`нет файла ${str}`);
+  return die(`Неверный адрес «${str}»: нужен полный адрес — http://…, https://… или file:///… — или texture.json прошлого замера  (подробно: --help)`);
+}
 
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h'], values: ['viewport', 'vp', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens'] });
+  const VALUES = ['viewport', 'viewports', 'vp', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens'];
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h', 'strict'], values: VALUES });
+  const die = (msg) => { console.error(msg); process.exit(1); };
+  /* --viewport, --viewports и старое --vp — один флаг во всех режимах (замер, texture.json, compare) */
+  const vpKeys = ['viewport', 'viewports', 'vp'].filter((k) => opt[k] !== undefined && opt[k] !== true);
+  const vpSpec = vpKeys.length ? String(opt[vpKeys[0]]).trim() : null;
   try {
-    /* короткий -h parseArgs отдаёт позиционным — без этой проверки он уходил в замер как адрес */
-    if (opt.help || opt.h || pos.includes('-h') || (!pos.length && !opt.png && !opt.tile)) {
+    /* короткий -h parseArgs отдаёт позиционным — без этой проверки он уходил в замер как адрес;
+       -h на месте значения флага (--out -h) — тоже справка, до любых папок и браузера */
+    if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h') || (!pos.length && !opt.png && !opt.tile)) {
       console.log(HELP);
-    } else if (opt.tile) {
+      process.exit(0);
+    }
+    /* флаг со значением без значения: --tokens в конце писал файл «true», --sd-tol без числа давал допуск 100 % */
+    for (const k of [...VALUES, 'sd-tol', 'lag-tol']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
+    if (new Set(vpKeys.map((k) => String(opt[k]).trim())).size > 1) die(`Заданы ${vpKeys.map((k) => `--${k} ${opt[k]}`).join(' и ')} — это один флаг (--viewport, --viewports, --vp), оставьте один`);
+    for (const k of ['sd-tol', 'lag-tol']) if (opt[k] !== undefined && !(Number(opt[k]) >= 0)) die(`--${k} ${opt[k]}: нужно число от 0 (0.2 = ±20 %)`);
+    if (opt.tile) {
       const t = await analyzeTile(String(opt.tile));
       console.log(`${t.file}: ${t.format} ${t.width}×${t.height}, ${Math.round(t.bytes / 1024)} КБ, кадров ${t.pages}${t.frameMs ? ` по ${t.frameMs} мс (цикл ${t.cycleMs} мс)` : ''}, повтор ${t.loop ?? '—'}; ${t.noiseLike ? 'похоже на шум' : 'НЕ похоже на шум'}`);
       t.frames.forEach((f, i) => console.log(`  кадр ${i}: яркость ${f.mean}±${f.sd} (на сером ±${f.sdOver}), lag1 ${f.lag1}/${f.lag1v}, связь на 3–6 px ${f.farCorr}, альфа ${f.alphaMean} (прозрачных ${f.transparent}), цветность ${f.chroma}, уровней ${f.levels}`));
@@ -1266,12 +1370,15 @@ if (isMain) {
       if (opt.json) writeJson(String(opt.json), { ...m, _tiles: undefined });
     } else if (pos[0] === 'compare') {
       if (!pos[1] || !pos[2]) { console.error('compare <донор: url|json> <сайт: url|json>'); process.exit(2); }
-      const vps = pickViewports(opt.viewport || opt.vp || 'desktop,mobile');
-      const out = path.resolve(String(opt.out || path.join(runDir({}, isJsonPath(pos[2]) ? 'http://site.local/' : String(pos[2])), 'texture-compare')));
+      const kDonor = inputKind(pos[1], die), kSite = inputKind(pos[2], die);
+      const vps = pickViewports(vpSpec || 'desktop,mobile');
+      /* texture.json читаются до папок и браузера: битый файл — ошибка сразу, а не после замера второй стороны */
+      const donorSet = kDonor === 'json' ? loadSet(pos[1]) : null, siteSet = kSite === 'json' ? loadSet(pos[2]) : null;
+      const out = path.resolve(String(opt.out || path.join(runDir({}, kSite === 'json' ? 'http://site.local/' : String(pos[2])), 'texture-compare')));
       ensureDir(out);
       const screens = Number(opt.screens) || 4;
-      const donor = isJsonPath(pos[1]) ? loadSet(pos[1]) : await runSet(String(pos[1]), vps, out, screens, false, 'donor');
-      const site = isJsonPath(pos[2]) ? loadSet(pos[2]) : await runSet(String(pos[2]), vps, out, screens, false, 'site');
+      const donor = donorSet || await runSet(String(pos[1]), vps, out, screens, false, 'donor');
+      const site = siteSet || await runSet(String(pos[2]), vps, out, screens, false, 'site');
       const want = new Set(vps.map(([n]) => n));
       const dl = donor.filter((r) => want.has(r.viewport.name)); const sl = site.filter((r) => want.has(r.viewport.name));
       for (const r of dl) printResult(r);
@@ -1290,20 +1397,20 @@ if (isMain) {
       }
       writeJson(String(opt.json || path.join(out, 'compare.json')), { donor: dl, site: sl, compare: cmp });
       console.log(`\n${fail ? 'FAIL' : warn ? 'WARN' : 'OK'}: сверка фактуры — ${path.join(out, 'compare.json')}`);
-      if (fail) process.exit(1);
+      if (fail) process.exit(1); /* compare даёт 1 при FAIL и без --strict — как раньше */
     } else {
       /* texture.json прошлого замера вместо адреса: рецепт, --tokens, --css, --md без нового замера */
-      const fromJson = isJsonPath(pos[0]);
+      const fromJson = inputKind(pos[0], die) === 'json';
       const saved = fromJson ? readJson(String(pos[0])) : null;
       const url = fromJson ? String((saved && saved.url) || pos[0]) : String(pos[0]);
       let list;
       if (fromJson) {
         list = loadSet(pos[0]);
-        if (opt.viewport || opt.vp) { const want = new Set(pickViewports(opt.viewport || opt.vp).map(([n]) => n)); list = list.filter((r) => want.has(r.viewport.name)); }
-        if (!list.length) throw new Error(`в ${pos[0]} нет замеров${opt.viewport || opt.vp ? ' для этих экранов' : ''}`);
+        if (vpSpec) { const want = new Set(pickViewports(vpSpec).map(([n]) => n)); list = list.filter((r) => want.has(r.viewport.name)); }
+        if (!list.length) throw new Error(`в ${pos[0]} нет замеров${vpSpec ? ' для этих экранов' : ''}`);
         console.log(`замер из ${pos[0]} (${url}, ${saved && saved.takenAt ? saved.takenAt.slice(0, 10) : 'дата неизвестна'}) — страница заново не открывается`);
       } else {
-        const vps = pickViewports(opt.viewport || opt.vp || 'desktop,tablet,mobile');
+        const vps = pickViewports(vpSpec || 'desktop,tablet,mobile');
         const out = path.resolve(String(opt.out || path.join(runDir({}, url), 'texture')));
         ensureDir(out);
         list = await runSet(url, vps, out, Number(opt.screens) || 4, !!opt.extras, opt.label ? String(opt.label) : null);
@@ -1319,6 +1426,10 @@ if (isMain) {
       if (opt.css) { ensureDir(path.dirname(path.resolve(String(opt.css)))); fs.writeFileSync(String(opt.css), fillGrainCss(rec)); console.log(`grain.css с рецептом → ${opt.css}`); }
       if (opt.md) { ensureDir(path.dirname(path.resolve(String(opt.md)))); fs.writeFileSync(String(opt.md), textureMarkdown(list, { recipe: rec })); console.log(`раздел для discovery.md → ${opt.md}`); }
       if (jf) console.log(`итог → ${jf}`);
+      /* одиночный замер сравнивать не с чем: вердикты OK и WARN (не измерено, гаснет, не виден);
+         «не как у донора» — FAIL только в compare. --strict: код 1 при FAIL, здесь его не бывает */
+      const nWarn = list.filter((r) => r.status !== 'есть').length + list.reduce((s, r) => s + (r.diagnosis || []).length, 0);
+      console.log(`\nИтог: ${nWarn ? `WARN ${nWarn}` : 'OK'} — одиночный замер даёт только OK и WARN; «фактура не как у донора» (FAIL, код 1) — texture.mjs compare${opt.strict ? ' (--strict: код выхода 0 — FAIL нет)' : ''}`);
     }
   } catch (e) {
     console.error(`FAIL texture.mjs: ${e && e.message ? e.message : e}`);

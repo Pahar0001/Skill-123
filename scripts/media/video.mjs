@@ -5,7 +5,9 @@
  *   resolve(candidate, opts, ctx) → файл под роль, HEAD, доказательство лицензии
  *   encode(resolved, o, ctx) → { files, poster, markup, changes, warnings, original, cut, budget, checks }
  *
- * Источники по порядку: pexels (ключ) → pixabay (ключ) → commons → mixkit.
+ * Источники по порядку: pexels (ключ) → pixabay (ключ) → commons (только с
+ * MEDIA_CONTACT: правила Wikimedia требуют контакт в User-Agent; без него —
+ * пропуск без единого запроса) → mixkit.
  * Coverr, Dareful, Videezy, Vecteezy, Freepik/Magnific сюда не встраиваются:
  * условия запрещают автоматику или требуют подписи, бесплатно отдают 1080p.
  *
@@ -227,7 +229,8 @@ export function commonsVideoLicense(md) {
 }
 
 async function commons(q, o) {
-  net.warnNoContact(o.log);
+  /* правила Wikimedia требуют контакт в User-Agent: без MEDIA_CONTACT — ни одного запроса */
+  if (!net.contact()) return { skip: net.NO_CONTACT_SKIP, no_contact: true };
   const minW = o.role === 'card' ? 1200 : 1900;
   const search = `${q} filetype:video filew:>${minW}`;
   const url = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2'
@@ -342,19 +345,26 @@ async function mixkit(q, o) {
 
 const SEARCHERS = { pexels, pixabay, commons, mixkit };
 
+/** Проверка списка источников до поиска (media.mjs зовёт её раньше, чем создаёт папки): текст ошибки или null. */
+export function checkSources(names) {
+  for (const s of names || []) {
+    if (NOT_EMBEDDED[s]) return `«${s}» не встраивается: ${NOT_EMBEDDED[s]}. Для видео есть: ${VIDEO_SOURCES.join(', ')}`;
+    if (!SEARCHERS[s]) return `неизвестный источник видео «${s}». Есть: ${VIDEO_SOURCES.join(', ')}`;
+  }
+  return null;
+}
+
 export async function search(query, opts, ctx) {
   const log = opts.log || ctx.log || console.log;
   const names = opts.sources && opts.sources.length ? opts.sources : VIDEO_SOURCES;
-  for (const s of names) {
-    if (NOT_EMBEDDED[s]) throw new Error(`«${s}» не встраивается: ${NOT_EMBEDDED[s]}. Для видео есть: ${VIDEO_SOURCES.join(', ')}`);
-    if (!SEARCHERS[s]) throw new Error(`неизвестный источник видео «${s}». Есть: ${VIDEO_SOURCES.join(', ')}`);
-  }
+  const bad = checkSources(names);
+  if (bad) throw new Error(bad);
   const o = { ...opts, log };
   const items = []; const status = {};
   for (const name of names) {
     try {
       const r = await SEARCHERS[name](query, o);
-      if (r.skip) { status[name] = { state: 'skip', message: r.skip }; continue; }
+      if (r.skip) { status[name] = { state: 'skip', message: r.skip, ...(r.no_contact ? { no_contact: true } : {}) }; continue; }
       items.push(...r.items);
       status[name] = { state: 'ok', found: r.items.length, message: `найдено ${r.items.length}${r.note ? ` · ${r.note}` : ''}` };
     } catch (e) {
@@ -514,6 +524,8 @@ export function parseProbe(stderr) {
   };
 }
 async function probe(bin, input, isUrl) {
+  /* ffmpeg ходит в сеть сам, мимо net.request: запрет Wikimedia и AIC без MEDIA_CONTACT — здесь же */
+  if (isUrl) net.assertContact(input);
   const args = isUrl ? ['-user_agent', net.userAgent(), '-rw_timeout', '30000000', '-i', input] : ['-i', input];
   const r = await ffmpeg(bin, args, { timeout: 120000 });
   const m = parseProbe(r.stderr);
@@ -568,6 +580,7 @@ async function obtainSource(ctx, resolved, start, len) {
   /* пустой отрезок (ffmpeg пишет «Output file is empty» и выходит с кодом 0) — не исходник */
   const segOk = (f, rr = null) => fs.existsSync(f) && fs.statSync(f).size > 16384 && !(rr && /Output file is empty/i.test(rr.stderr || ''));
   if (segOk(seg)) { notes.push('отрезок из кэша'); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
+  net.assertContact(url);
   const r = await ffmpeg(ctx.ffmpeg, ['-y', '-user_agent', net.userAgent(), '-rw_timeout', '30000000', '-ss', String(start), '-t', String(len), '-i', url, '-map', '0:v:0', '-an', '-map_metadata', '-1', '-map_chapters', '-1', '-c', 'copy', '-avoid_negative_ts', 'make_zero', seg], { timeout: 15 * 60e3 });
   if (r.code === 0 && segOk(seg, r)) { notes.push(`вырезан отрезок по ссылке ${mbs(fs.statSync(seg).size)} (весь файл ${mbs(resolved.bytes)} не качался)`); return { input: seg, offset: 0, whole: false, sha256: null, bytes: resolved.bytes, notes }; }
   try { fs.unlinkSync(seg); } catch { /* нет */ }

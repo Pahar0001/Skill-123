@@ -40,7 +40,10 @@
  *
  * Самопроверка после записи читает КАЖДЫЙ кадр каждого файла (не только первый):
  * число кадров и задержки, среднее, σ, альфа, lag1, число уровней, связь соседних
- * кадров и побайтное совпадение с тем, что генерировалось (для форматов без потерь).
+ * кадров и побайтное совпадение с тем, что генерировалось (для форматов без потерь;
+ * у полностью прозрачного пикселя сверяется только альфа — его цвет не виден, и WebP
+ * его не хранит). У полупрозрачной плитки среднее, σ, lag1 и связь кадров считаются по
+ * тому, как она видна на сером 128; «уровней» — цветов видимых пикселей, плюс уровни альфы.
  * Вердикты: OK — файл как задумано; WARN — формат не держит задуманное (alpha в GIF);
  * FAIL — кадров не столько, кадр испорчен или повторяет соседний. Код выхода 1 при FAIL.
  */
@@ -80,7 +83,8 @@ const HELP = `grain-tile.mjs — своя шумовая плитка для з�
 имя в --formats, позиционный аргумент (папка задаётся только через --out), --out без папки.
 
 Вердикты: OK; WARN — формат не держит задуманное (alpha в GIF); FAIL — кадров не столько, кадр
-испорчен, плоский или повторяет соседний (код выхода 1).`;
+испорчен, плоский или повторяет соседний (код выхода 1). У альфа-плитки цвет полностью прозрачных
+пикселей не сверяется (он не виден), σ и среднее — как плитка видна на сером 128.`;
 if (isMain) {
   const argv = process.argv.slice(2);
   if (!argv.length) { console.log(HELP); console.error('\nБез аргументов плитка не пишется: укажите --out папка (или --check файл).'); process.exit(1); }
@@ -118,9 +122,12 @@ export function makeFrames({ size = 256, levels = 16, px = 1, frames = 1, mode =
 }
 
 /* Параметры PNG: серая плитка — палитра из levels цветов (32 КБ вместо 65); альфа-плитка —
-   без палитры: в sharp colours сам включает палитру, и альфа квантуется (было «уровней 3»). */
+   без палитры, и это надо сказать явно: в sharp палитру включает любой из colours, quality,
+   effort и dither, если palette не задан. Раньше у альфы стоял effort: 10 — файл выходил
+   палитровым, прозрачные пиксели получали цвет палитры 76/105/113 вместо 0/255 (самопроверка:
+   «уровней 3», «не совпадают … до 179»), а при --levels больше 128 квантовалась бы и сама альфа. */
 function pngOpts(mode, levels) {
-  return mode === 'alpha' ? { compressionLevel: 9, effort: 10 } : { compressionLevel: 9, palette: true, colours: Math.min(256, Math.max(2, levels)), effort: 10 };
+  return mode === 'alpha' ? { compressionLevel: 9, palette: false } : { compressionLevel: 9, palette: true, colours: Math.min(256, Math.max(2, levels)), effort: 10 };
 }
 
 /** σ яркости плитки с такими параметрами (по умолчанию — 256 px, 16 уровней, серая, seed 7: 78.35). */
@@ -142,16 +149,22 @@ function expectedRgba(buf, mode) {
 
 /* ---------------- проверка файла: все кадры ---------------- */
 
+/* Яркость пикселя — как его видно на среднем сером (128): L·α + 128·(1 − α). У непрозрачной
+   плитки это ровно L, а у альфа-плитки цвет полностью прозрачного пикселя ни на что не влияет
+   (WebP без потерь его обнуляет, «exact» в sharp нет). Уровни — цвета видимых пикселей (α > 0),
+   уровни альфы — отдельно (alphaLevels; у непрозрачной плитки 1). */
 function frameStats(data, off, W, H) {
-  const n = W * H; const L = new Float32Array(n); let s = 0, s2 = 0, a = 0, a0 = 0; const lv = new Set();
+  const n = W * H; const L = new Float32Array(n); let s = 0, s2 = 0, a = 0, a0 = 0; const lv = new Set(); const la = new Set();
   for (let i = 0; i < n; i++) {
-    const o = off + i * 4; const v = 0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2];
-    L[i] = v; s += v; s2 += v * v; a += data[o + 3]; if (data[o + 3] === 0) a0++; if (lv.size < 300) lv.add(data[o]);
+    const o = off + i * 4; const al = data[o + 3]; const y = 0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2];
+    const v = al === 255 ? y : y * (al / 255) + 128 * (1 - al / 255);
+    L[i] = v; s += v; s2 += v * v; a += al; if (al === 0) a0++; else if (lv.size < 300) lv.add(data[o]);
+    if (la.size < 300) la.add(al);
   }
   const m = s / n, v = Math.max(0, s2 / n - m * m); let ch = 0, cv = 0;
   for (let y = 0; y < H; y++) for (let x = 0; x < W - 1; x++) ch += (L[y * W + x] - m) * (L[y * W + x + 1] - m);
   for (let y = 0; y < H - 1; y++) for (let x = 0; x < W; x++) cv += (L[y * W + x] - m) * (L[(y + 1) * W + x] - m);
-  return { L, m, st: { mean: r2(m), sd: r2(Math.sqrt(v)), alpha: r2(a / n / 255), transparent: r2(a0 / n), lag1: v > 0 ? r3(ch / (H * (W - 1)) / v) : null, lag1v: v > 0 ? r3(cv / ((H - 1) * W) / v) : null, levels: lv.size >= 300 ? '300+' : lv.size } };
+  return { L, m, st: { mean: r2(m), sd: r2(Math.sqrt(v)), alpha: r2(a / n / 255), transparent: r2(a0 / n), lag1: v > 0 ? r3(ch / (H * (W - 1)) / v) : null, lag1v: v > 0 ? r3(cv / ((H - 1) * W) / v) : null, levels: lv.size >= 300 ? '300+' : lv.size, alphaLevels: la.size >= 300 ? '300+' : la.size } };
 }
 const corr = (A, B) => { let s = 0, sa = 0, sb = 0; for (let i = 0; i < A.L.length; i++) { const x = A.L[i] - A.m, y = B.L[i] - B.m; s += x * y; sa += x * x; sb += y * y; } return sa && sb ? r3(s / Math.sqrt(sa * sb)) : null; };
 
@@ -169,7 +182,17 @@ export async function checkTileFile(file, { spriteFrames = 1, expect = null } = 
   const frames = []; const lums = [];
   for (let p = 0; p < pages; p++) {
     const off = p * W * H * 4; const f = frameStats(data, off, W, H); lums.push(f);
-    if (expect && expect[p]) { let mx = 0; const e = expect[p]; for (let i = 0; i < e.length; i++) { const d = Math.abs(e[i] - data[off + i]); if (d > mx) mx = d; } f.st.maxDiff = mx; }
+    /* побайтная сверка RGBA; у пикселя, прозрачного и в задуманном, и в файле, сверяется только
+       альфа — его цвет не виден, и WebP без потерь его не хранит */
+    if (expect && expect[p]) {
+      let mx = 0; const e = expect[p];
+      for (let i = 0; i < e.length; i += 4) {
+        const o = off + i; const da = Math.abs(e[i + 3] - data[o + 3]); if (da > mx) mx = da;
+        if (e[i + 3] === 0 && data[o + 3] === 0) continue;
+        for (let k = 0; k < 3; k++) { const d = Math.abs(e[i + k] - data[o + k]); if (d > mx) mx = d; }
+      }
+      f.st.maxDiff = mx;
+    }
     frames.push(f.st);
   }
   const frameCorr = []; for (let p = 1; p < pages; p++) frameCorr.push(corr(lums[p - 1], lums[p]));
@@ -196,7 +219,7 @@ function judge(res, { wantPages, wantDelay, lossless, alphaLost }) {
   if (same.length) probs.push(`кадр ${same.join(', ')} похож на предыдущий (связь ${same.map((i) => res.frameCorr[i - 1]).join('/')}) — «кипения» не будет`);
   const sds = res.frames.map((f) => f.sd);
   const st = probs.length ? 'FAIL' : alphaLost ? 'WARN' : 'OK';
-  const detail = `${res.format} ${res.width}×${res.height}${res.pages > 1 ? ` × ${res.pages} кадров` : ''}${res.delay ? ` по ${[...new Set(res.delay)].join('/')} мс` : ''}, ${kb1(res.bytes)}; σ ${sds.length > 1 ? `${Math.min(...sds)}…${Math.max(...sds)}` : f0.sd}, среднее ${f0.mean}, альфа ${f0.alpha}, lag1 ${f0.lag1}, уровней ${f0.levels}${res.frameCorr.length ? `; связь кадров ${res.frameCorr.join('/')}` : ''}${lossless && !alphaLost && !bad.length && f0.maxDiff != null ? '; все кадры совпали с задуманными' : ''}`;
+  const detail = `${res.format} ${res.width}×${res.height}${res.pages > 1 ? ` × ${res.pages} кадров` : ''}${res.delay ? ` по ${[...new Set(res.delay)].join('/')} мс` : ''}, ${kb1(res.bytes)}; σ ${sds.length > 1 ? `${Math.min(...sds)}…${Math.max(...sds)}` : f0.sd}, среднее ${f0.mean}, альфа ${f0.alpha}, lag1 ${f0.lag1}, уровней ${f0.levels}${f0.alphaLevels !== 1 ? `, альфы ${f0.alphaLevels} (σ и среднее — на сером 128)` : ''}${res.frameCorr.length ? `; связь кадров ${res.frameCorr.join('/')}` : ''}${lossless && !alphaLost && !bad.length && f0.maxDiff != null ? '; все кадры совпали с задуманными' : ''}`;
   line(st, res.file, `${detail}${probs.length ? ' · ' + probs.join('; ') : ''}${alphaLost ? ' · GIF не держит полупрозрачность: для --mode alpha брать PNG или WebP' : ''}`);
   return st;
 }
@@ -214,7 +237,7 @@ if (isMain) {
     const f = String(opt.check);
     if (!fs.existsSync(f)) { console.error(`Нет файла ${f}`); process.exit(1); }
     const res = await checkTileFile(f, { spriteFrames: Number(opt['sprite-frames']) || 1 });
-    for (let i = 0; i < res.frames.length; i++) { const fr = res.frames[i]; console.log(`     кадр ${i}: среднее ${fr.mean}, σ ${fr.sd}, альфа ${fr.alpha}, lag1 ${fr.lag1}/${fr.lag1v}, уровней ${fr.levels}`); }
+    for (let i = 0; i < res.frames.length; i++) { const fr = res.frames[i]; console.log(`     кадр ${i}: среднее ${fr.mean}, σ ${fr.sd}, альфа ${fr.alpha}, lag1 ${fr.lag1}/${fr.lag1v}, уровней ${fr.levels}${fr.alphaLevels !== 1 ? `, альфы ${fr.alphaLevels}` : ''}`); }
     const wantPages = Number(opt['sprite-frames']) || (opt.frames && opt.frames !== true ? Number(opt.frames) : null);
     const wantDelay = opt['frame-ms'] && opt['frame-ms'] !== true ? Number(opt['frame-ms']) : opt.fps && opt.fps !== true ? Math.round(1000 / Number(opt.fps)) : null;
     judge(res, { wantPages, wantDelay });

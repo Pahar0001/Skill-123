@@ -16,17 +16,24 @@
  *   значения: шаг или настройка берёт следующее слово, если это не шаг, не флаг этого
  *   скрипта и не «--»: «--hover --scroll» и «--hover --» — ошибка «--hover: нужно
  *   значение» (код 2). Значение, которое начинается с «--», пишется через «=»:
- *   --hover="--x". Настройки-флаги (--no-fail, --reduced-motion) тоже пишутся через «=»:
- *   =0, false, no, off, нет — выключено, любое другое значение — включено
- *   (--no-fail=0 — провалы снова дают код 1). Неизвестный флаг — предупреждение WARN
- *   в stderr, запуск продолжается. Все ошибки аргументов — до папок и браузера.
+ *   --hover="--x". Флаги без значения тоже пишутся через «=»: =0, false, no, off, нет —
+ *   выключено, любое другое значение — включено. Настройка (--no-fail, --reduced-motion):
+ *   --no-fail=0 — провалы снова дают код 1. Шаг (--scroll, --css, --canvas…): --scroll=0
+ *   и --css=нет — шаг не выполняется (строка об этом в stderr).
+ *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка; «-viewport» —
+ *   с подсказкой «--viewport?») — предупреждение WARN в stderr, запуск продолжается.
+ *   Следующее слово он забирает значением, только
+ *   если это не флаг, не «--» и не адрес (http, https, file, data, about):
+ *   «--strict http://localhost:4177/ --css» — WARN про --strict, адрес на месте.
+ *   Все ошибки аргументов — до папок и браузера.
  *
  *   «--» — конец флагов: следующее слово — адрес, даже если начинается с «-» («-- -h» —
  *   адрес «-h», не справка). Слова после адреса — ошибка (код 2), поэтому --out, --tag
  *   и шаги пишутся ДО «--»: node runtime.mjs --out папка --css -- http://localhost:4177/
  *
  *   шаги, выполняются в порядке записи:
- *        --wait 800            подождать
+ *        --wait 800            подождать столько миллисекунд (число ≥ 0, «0» — не ждать;
+ *                              не число — код 2)
  *        --scroll              прокрутить до конца: появления, закреплённые, переполнение
  *                              по элементам (FAIL — торчит за край или можно уехать вбок;
  *                              WARN — страница шире окна, текст шире коробки, обрезан панелью)
@@ -74,10 +81,22 @@
  *                              тоже справка. Ищется только до «--»: после него — адрес
  *
  * Выход: <папка>/runtime/<tag>.json, снимки рядом и протокол с вердиктами
- * OK / WARN / FAIL. Код выхода 1 при ошибках консоли или проваленных шагах, без адреса,
- * при неверном адресе или неизвестном экране; 2 — ошибка в аргументах (нет значения,
- * «--expect» не сразу за «--eval», --type/--select без «=», --resize не ширина, не ШxВ
- * и не rotate, список экранов, лишние слова после адреса — в том числе после «--»).
+ * OK / WARN / FAIL. Коды выхода:
+ *   0 — провалов нет (WARN код не меняет) или задан --no-fail; справка;
+ *   1 — ошибки консоли или проваленные шаги; нет адреса (если адрес ушёл значением флага,
+ *       сообщение это называет); неверный адрес; неизвестный экран; страница не открылась;
+ *   2 — ошибка в аргументах, до папок и браузера:
+ *       · нет значения: шаг или настройка — последнее слово, следующим идёт шаг, флаг
+ *         или «--», пустое значение («--tag ""», «--shot=»);
+ *       · «--expect» не сразу за «--eval»;
+ *       · --type / --select без «=» или с пустым селектором;
+ *       · --resize — не ширина больше 0, не ШxВ и не rotate;
+ *       · --wait — не число миллисекунд ≥ 0;
+ *       · --scheme — не light, dark или no-preference;
+ *       · --cpu — не число больше 0;
+ *       · --viewport / --viewports: список экранов через запятую, пустое значение
+ *         или разные экраны у --viewport и --viewports;
+ *       · лишние слова после адреса — в том числе после «--».
  * 404 на /favicon.ico — WARN «нет favicon», не провал загрузки.
  *
  * Вердикт OK означает «в браузере произошло то, что ожидалось». Красиво ли
@@ -99,6 +118,7 @@ const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav',
 /* настройки со значением */
 const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init']);
 const usage = (msg) => { console.error(msg); process.exit(2); };
+const short = (s, n = 60) => String(s).replace(/\s+/g, ' ').slice(0, n);
 /* имя флага из слова: «--scroll», «--scroll=1» → scroll; «-h» → h; не флаг → null */
 const nameOf = (s) => { s = String(s); if (s === '-h') return 'h'; if (!s.startsWith('--') || s === '--') return null; const k = s.slice(2); const e = k.indexOf('='); return e > 0 ? k.slice(0, e) : k; };
 const isKnown = (s) => { const n = nameOf(s); return n != null && (STEP.has(n) || FLAG.has(n) || OPTS.has(n)); };
@@ -130,25 +150,49 @@ function splitSelEq(s) {
   return null;
 }
 
-const steps = []; const opt = {}; const pos = []; const unknown = [];
+/* слово, которое разбирается как адрес этого скрипта: неизвестный флаг его значением не забирает */
+const isUrlWord = (s) => { try { return /^(https?|file|data|about):$/.test(new URL(String(s)).protocol); } catch { return false; } };
+const FALSE_RE = /^(0|false|no|off|нет)$/i;
+
+const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
+const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
   if (a === '--') { pos.push(...argv.slice(i + 1).map(String)); break; }
-  if (!a.startsWith('--')) { pos.push(a); continue; }
-  let k = a.slice(2); let v;
+  if (!a.startsWith('-')) { pos.push(a); continue; }
+  /* неизвестный флаг: «--foo», «--foo=1» и любое слово с одним дефисом («-v», «-o»; «-h» — справка, выше).
+     Значение — следующее слово, только если это не флаг, не «--» и не адрес: «--strict U --css»
+     не съедает адрес (раньше — «Нужен адрес»), «-v U» — не «лишние слова после адреса» */
+  const single = !a.startsWith('--');
+  let k = single ? a : a.slice(2); let v;
   const eqI = k.indexOf('=');
-  if (eqI > 0) {
-    v = k.slice(eqI + 1); k = k.slice(0, eqI);
-    if (FLAG.has(k) && !STEP.has(k)) v = !/^(0|false|no|off|нет)$/i.test(v); /* --no-fail=0 — выключено */
+  if (!single && eqI > 0) { v = k.slice(eqI + 1); k = k.slice(0, eqI); }
+  if (single || !(STEP.has(k) || FLAG.has(k) || OPTS.has(k))) {
+    const shown = single ? (eqI > 0 ? a.slice(0, eqI) : a) : `--${k}`;
+    if (v === undefined && !(single && eqI > 0)) {
+      const next = argv[i + 1];
+      if (next !== undefined && next !== '--' && !String(next).startsWith('-') && !isUrlWord(next)) { v = String(argv[++i]); taken.push([shown, v]); }
+    }
+    /* «-viewport mobile» — опечатка в дефисах у известного флага: подсказать, иначе запуск тихо идёт на desktop */
+    unknown.push({ shown, word: v !== undefined && !(eqI > 0) ? v : null, guess: single && isKnown(`-${shown}`) ? `-${shown}` : null });
+    continue;
+  }
+  if (v !== undefined) {
+    if (FLAG.has(k)) {
+      const on = !FALSE_RE.test(String(v).trim());
+      /* шаг-флаг: --scroll=0, --css=нет — шаг выключен и не выполняется; --scroll=1 — выполняется */
+      if (STEP.has(k)) { if (!on) { off.push(a); continue; } v = true; }
+      else v = on; /* --no-fail=0 — выключено */
+    }
   } else if (FLAG.has(k)) v = true;
   else {
     /* значение — следующее слово, если это не шаг, не флаг этого скрипта и не «--»:
        «--hover --scroll» и «--hover --» — ошибка, а не селектор «--scroll» или «--» */
     const next = argv[i + 1];
     if (next === undefined || next === '--' || isKnown(next)) {
-      if (STEP.has(k) || OPTS.has(k)) usage(`--${k}: нужно значение${next === undefined ? ' — это последнее слово в команде' : next === '--' ? ` — следующим идёт «--», а это конец флагов (после него только адрес); значение «--» пишите через «=»: --${k}="--"` : ` — следующим идёт «${next}», а это ${STEP.has(nameOf(next)) ? 'шаг' : 'флаг'}; значение, которое начинается с «--», пишите через «=»: --${k}="${next}"`}`);
-      v = true;
-    } else v = String(argv[++i]);
+      usage(`--${k}: нужно значение${next === undefined ? ' — это последнее слово в команде' : next === '--' ? ` — следующим идёт «--», а это конец флагов (после него только адрес); значение «--» пишите через «=»: --${k}="--"` : ` — следующим идёт «${next}», а это ${STEP.has(nameOf(next)) ? 'шаг' : 'флаг'}; значение, которое начинается с «--», пишите через «=»: --${k}="${next}"`}`);
+    }
+    v = String(argv[++i]); taken.push([`--${k}`, v]);
   }
   if (k === 'expect') {
     const prev = steps[steps.length - 1];
@@ -156,11 +200,19 @@ for (let i = 0; i < argv.length; i++) {
     prev.expect = v; continue;
   }
   if (STEP.has(k)) steps.push({ k, v });
-  else { if (!FLAG.has(k) && !OPTS.has(k)) unknown.push(k); opt[k] = v; }
+  else opt[k] = v;
 }
-for (const u of unknown) console.error(`WARN неизвестный флаг --${u} — не используется (-h — список шагов и настроек)`);
+for (const u of unknown) console.error(`WARN неизвестный флаг ${u.shown} — не используется${u.word != null ? ` вместе со словом «${short(u.word, 60)}», которое он забрал значением` : ''}${u.guess ? ` — может быть, ${u.guess}?` : ''} (-h — список шагов и настроек)`);
+for (const a of off) console.error(`шаг ${a} выключен значением после «=» — не выполняется`);
 const url = pos[0];
-if (!url) { console.error('Нужен адрес: node runtime.mjs <url> [--viewport mobile] [--scroll] [--click sel] [--canvas] [--motion] ... (-h, --help — все шаги)'); process.exit(1); }
+if (!url) {
+  /* адрес ушёл значением флага: «--out http://… --css», «--foo localhost:4177» — назвать это прямо */
+  const asUrl = taken.find(([, w]) => isUrlWord(w)); const byUnknown = taken.find(([f]) => !isKnown(f));
+  const why = asUrl ? ` — «${short(asUrl[1], 80)}» стоит значением ${asUrl[0]}; у ${asUrl[0]} должно быть своё значение, адрес — отдельным словом`
+    : byUnknown ? ` — слово «${short(byUnknown[1], 80)}» забрал значением неизвестный флаг ${byUnknown[0]}; если это адрес, пишите его полностью (http://…) или после «--»`
+      : '';
+  console.error(`Нужен адрес${why}: node runtime.mjs <url> [--viewport mobile] [--scroll] [--click sel] [--canvas] [--motion] ... (-h, --help — все шаги)`); process.exit(1);
+}
 if (pos.length > 1) usage(`лишние слова после адреса: ${pos.slice(1).map((p) => `«${p}»`).join(', ')} — шаги и настройки пишутся с «--» (--hover "sel"), значение с пробелами — в кавычках`);
 let urlOk = null; try { urlOk = new URL(url); } catch { /* ниже */ }
 if (!urlOk || !/^(https?|file|data|about):$/.test(urlOk.protocol)) {
@@ -178,16 +230,21 @@ const parseResize = (v) => {
   return w > 0 && (h === null || h > 0) ? { w, h } : null;
 };
 const RESIZE_HELP = 'нужна ширина больше 0 («1152»), ШxВ («834x1112», x или ×) или rotate';
+/* «834х1112» с русской «х» выглядит верно, но не разбирается — назвать это в сообщении */
+const cyrX = (v) => (/^\s*\d+\s*[хХ]\s*\d+/.test(String(v)) ? ' — между числами русская «х», нужна латинская x' : '');
+/* --wait: миллисекунды, целое или дробное число ≥ 0 */
+const WAIT_RE = /^\d+(?:\.\d+)?$/;
 
 /* значения шагов — до папок и браузера */
-const NEEDS_VALUE = new Set(['hover', 'click', 'type', 'edit', 'key', 'select', 'resize', 'shot', 'eval', 'assert']);
+const NEEDS_VALUE = new Set(['wait', 'hover', 'click', 'type', 'edit', 'key', 'select', 'resize', 'shot', 'eval', 'assert']);
 for (const s of steps) {
   if (NEEDS_VALUE.has(s.k) && (s.v === true || s.v === undefined || String(s.v).trim() === '')) usage(`--${s.k}: нужно значение`);
+  if (s.k === 'wait' && !WAIT_RE.test(String(s.v).trim())) usage(`--wait ${s.v}: нужно число миллисекунд ≥ 0 (--wait 800)`);
   if (s.k === 'type' || s.k === 'select') {
     const p = splitSelEq(s.v);
     if (!p || !p[0].trim()) usage(`--${s.k} "${s.v}": нужно «селектор=${s.k === 'type' ? 'текст' : 'значение'}» (делится по первому «=» вне [ ] и кавычек: ${s.k === 'type' ? 'input[name=phone]=89001234567' : 'select[name=work]=6'})`);
   }
-  if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}`);
+  if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
 }
 for (const k of ['out', 'tag', 'scheme', 'cpu', 'init']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
 if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light или dark`);
@@ -200,7 +257,7 @@ const vpList = vpRaw.split(',').map((x) => x.trim()).filter(Boolean);
 if (!vpList.length) usage(`--${vpFlag}: нужно значение`);
 if (vpList.length > 1) usage(`--${vpFlag} ${vpRaw}: runtime проверяет один экран за запуск — запустите по разу на каждый (${vpList.map((x) => `--viewport ${x}`).join(', затем ')}); несколько экранов за один запуск снимает shots.mjs`);
 const resolved = resolveViewport(vpList[0]);
-if (!resolved) { console.error(`Неизвестный экран ${vpList[0]}. Есть: desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@плотность`); process.exit(1); }
+if (!resolved) { console.error(`Неизвестный экран ${vpList[0]}${cyrX(vpList[0])}. Есть: desktop, laptop, tablet, mobile, mobile-s, android, ШxВ@плотность`); process.exit(1); }
 const [vpName, vp] = resolved;
 let cur = { ...vp };
 const run = runDir(opt, url);
@@ -222,7 +279,6 @@ const line = (status, what, details, data) => {
 };
 let shotN = 0;
 const shot = async (name) => { const file = path.join(outDir, `${tag}-${String(++shotN).padStart(2, '0')}-${name}.png`); await page.screenshot({ path: file }); return path.basename(file); };
-const short = (s, n = 60) => String(s).replace(/\s+/g, ' ').slice(0, n);
 /* одинаковые строки — одной, со счётчиком: «Cannot read … ×20» */
 const uniqCount = (list, max = 4) => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); const arr = [...m.entries()]; return arr.slice(0, max).map(([t, n]) => `${t}${n > 1 ? ` ×${n}` : ''}`).join(' | ') + (arr.length > max ? ` и ещё ${arr.length - max} разных` : ''); };
 
@@ -616,11 +672,13 @@ async function selectStep(v) {
 async function resizeStep(v) {
   let w = cur.width, hh = cur.height;
   const r = parseResize(v); if (!r) return line('FAIL', `окно ${v}`, RESIZE_HELP);
+  /* «было» — окно перед этим шагом, а не начальное: после двух --resize подряд второе «было» — первое новое */
+  const was = `${cur.width}×${cur.height}`;
   if (r.rotate) [w, hh] = [cur.height, cur.width];
   else { w = r.w; if (r.h !== null) hh = r.h; }
   cur = { ...cur, width: w, height: hh };
   await page.setViewport(cur); await sleep(300);
-  line('OK', `окно ${w}×${hh}`, `было ${report.size.split('@')[0]}`);
+  line('OK', `окно ${w}×${hh}`, `было ${was}`);
   await autoCheck(`после смены окна на ${w}×${hh}`);
 }
 
@@ -859,7 +917,7 @@ for (const { k, v, expect } of steps) {
   const errBefore = errCount(); let handled = null;
   curKind = k === 'eval' && expect != null ? 'expect' : k;
   try {
-    if (k === 'wait') { await sleep(Number(v) || 500); line('OK', `ждали ${v} мс`); }
+    if (k === 'wait') { const ms = Number(String(v).trim()); await sleep(ms); line('OK', `ждали ${ms} мс`); }
     else if (k === 'scroll') await scrollStep();
     else if (k === 'hover') await hoverStep(v);
     else if (k === 'hover-all') await hoverAllStep();

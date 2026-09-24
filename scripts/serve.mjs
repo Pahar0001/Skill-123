@@ -8,8 +8,15 @@
  * <папка>   что отдавать; по умолчанию текущая папка.
  * --port    порт, по умолчанию 4173.
  * --host    на каком адресе слушать. По умолчанию только эта машина (127.0.0.1 и ::1):
- *           зеркало чужого сайта и черновики не видны в локальной сети. --host 0.0.0.0 —
- *           открыть для телефона в той же сети (сервер предупредит).
+ *           зеркало чужого сайта и черновики не видны в локальной сети. --host localhost —
+ *           то же самое, оба адреса (одно имя Node слушал бы только по первому адресу из DNS,
+ *           на Windows это ::1, и 127.0.0.1 оставался без сервера). --host 127.0.0.1, ::1
+ *           или [::1] — только этот адрес (тоже только эта машина). --host 0.0.0.0 — открыть
+ *           для телефона в той же сети (сервер предупредит).
+ *           После запуска печатается, на каких адресах сервер слушает на самом деле: только
+ *           127.x.x.x и ::1 — «Только эта машина», иначе WARN «папку видят другие устройства».
+ *           Затем сервер сам подключается к своим адресам: не подключился ни к одному (на части
+ *           машин к ::1 — EACCES, и --host ::1 делает сервер недоступным) — WARN с подсказкой.
  * --proxy   адрес оригинала (http или https; путь отбрасывается — берётся только сайт,
  *           https://site.ru/news/x → https://site.ru). Всё, чего нет в папке (API, формы,
  *           картинки по относительным адресам), и запросы кроме GET/HEAD уходят на
@@ -70,8 +77,10 @@ if (opt.proxy !== undefined) {
   proxy = u.origin;
   if (u.pathname.replace(/\/+$/, '') || u.search) console.log(`WARN --proxy: беру адрес сайта ${u.origin}, путь «${u.pathname}${u.search}» отброшен — запросы страницы идут от корня`);
 }
-if (opt.host === true) die('--host без адреса: --host 0.0.0.0 или --host 127.0.0.1');
-const host = opt.host !== undefined ? String(opt.host) : null;
+if (opt.host === true || (opt.host !== undefined && !String(opt.host).trim())) die('--host без адреса: --host 0.0.0.0 или --host 127.0.0.1');
+/* адрес без скобок: [::1] → ::1. localhost — оба адреса этой машины, как без --host */
+const host = opt.host !== undefined ? String(opt.host).trim().replace(/^\[(.*)\]$/, '$1') : null;
+const hostIsLocalName = !!host && host.toLowerCase() === 'localhost';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -212,22 +221,46 @@ for (const a of probeAddrs) {
   if (!ls) console.log(`WARN ${shown(a)}:${port}: ${r} — занят ли порт на этом адресе, не проверено`);
 }
 
-/* по умолчанию — только эта машина: 127.0.0.1 и ::1 (браузер может открыть localhost по любому из них) */
-const hosts = host ? [host] : ['127.0.0.1', '::1'];
-const listening = [];
-for (const [i, h] of hosts.entries()) {
+/* По умолчанию и при --host localhost — только эта машина: 127.0.0.1 и ::1 (браузер может открыть
+   localhost по любому из них; ::1 не поднялся — нет IPv6 — хватит 127.0.0.1). Иначе — ровно
+   указанный адрес, и ошибка на нём — FAIL. */
+const both = !host || hostIsLocalName;
+const hosts = both ? ['127.0.0.1', '::1'] : [host];
+const started = await Promise.all(hosts.map((h, i) => new Promise((resolve) => {
   const srv = http.createServer(handle);
-  srv.on('error', (e) => {
-    if (i === 0 || host) die(e.code === 'EADDRINUSE' ? `порт ${port} на ${h} занят — укажите другой: --port ${port + 1}` : `не удалось слушать ${h}:${port}: ${e.message}`);
-    if (e.code === 'EADDRINUSE') console.log(`WARN [${h}]:${port} занят другим процессом — открывайте http://127.0.0.1:${port}/, а не localhost`);
-    /* нет IPv6 — хватит 127.0.0.1 */
-  });
+  const onErr = (e) => resolve({ h, i, err: e });
+  srv.once('error', onErr);
   srv.listen(port, h, () => {
-    listening.push(h);
-    if (listening.length === 1) {
-      const open = !['127.0.0.1', '::1', 'localhost'].includes(h);
-      console.log(`http://localhost:${port}/  ←  ${root}${proxy ? `  (остальное → ${proxy})` : ''}`);
-      console.log(open ? `WARN слушает ${h}: папку видят другие устройства в сети. Для работы на этой машине --host не нужен.` : 'Только эта машина (127.0.0.1 и ::1). Для телефона в той же сети: --host 0.0.0.0');
-    }
+    srv.off('error', onErr);
+    srv.on('error', (e) => console.log(`WARN сервер на ${shown(h)}:${port}: ${e.message}`));
+    resolve({ h, i, srv, addr: srv.address() });
   });
+})));
+for (const r of started) {
+  if (!r.err) continue;
+  if (r.i === 0 || !both) die(r.err.code === 'EADDRINUSE' ? `порт ${port} на ${shown(r.h)} занят — укажите другой: --port ${port + 1}` : `не удалось слушать ${shown(r.h)}:${port}: ${r.err.message}`);
+  if (r.err.code === 'EADDRINUSE') console.log(`WARN [${r.h}]:${port} занят другим процессом — открывайте http://127.0.0.1:${port}/, а не localhost`);
+  /* нет IPv6 — хватит 127.0.0.1 */
+}
+
+/* Подсказки — по адресам, которые сервер слушает на самом деле (srv.address()), а не по --host:
+   127.x.x.x и ::1 — эта машина; 0.0.0.0, :: и адрес в сети — видят другие устройства. */
+const isLoop = (a) => /^127\./.test(a) || a === '::1' || /^::ffff:127\./i.test(a);
+const isAny = (a) => a === '0.0.0.0' || a === '::';
+const addrs = started.filter((r) => r.addr).map((r) => (typeof r.addr === 'object' ? r.addr.address : String(r.addr)));
+const list = addrs.map(shown).join(' и ');
+/* localhost в адресе для браузера — если слушаем 127.0.0.1 или все адреса; иначе сам адрес ([::1], адрес в сети) */
+const viaLocalhost = addrs.some((a) => a === '127.0.0.1' || isAny(a));
+console.log(`${viaLocalhost ? `http://localhost:${port}/` : `http://${shown(addrs[0])}:${port}/`}  ←  ${root}${proxy ? `  (остальное → ${proxy})` : ''}`);
+console.log(addrs.every(isLoop) ? `Только эта машина (слушает ${list}). Для телефона в той же сети: --host 0.0.0.0` : `WARN слушает ${list}: папку видят другие устройства в сети. Для работы на этой машине --host не нужен.`);
+
+/* Доступен ли сервер с этой машины: подключаемся к своим адресам (к 0.0.0.0 — через 127.0.0.1, к :: —
+   через 127.0.0.1 и ::1). Ни к одному не вышло — например, --host ::1 там, где к ::1 подключаться
+   нельзя (EACCES), — браузер страницу не откроет. */
+const targets = [...new Set(addrs.flatMap((a) => (a === '0.0.0.0' ? ['127.0.0.1'] : a === '::' ? ['127.0.0.1', '::1'] : [a])))];
+const reach = [];
+for (const t of targets) reach.push([t, await probe(t)]);
+if (reach.length && !reach.some(([, v]) => v === 'busy')) {
+  const why = reach.map(([t, v]) => `${shown(t)}:${port} — ${v === 'free' ? 'отказ' : v}`).join(', ');
+  console.log(`WARN сервер слушает, но подключиться к нему с этой машины не удалось (${why}) — браузер страницу не откроет${addrs.includes('::1') ? '; на части машин к ::1 подключаться нельзя' : ''}. Запустите без --host (127.0.0.1 и ::1) или с --host 127.0.0.1`);
 }

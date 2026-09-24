@@ -30,8 +30,12 @@
  *  - Rijksmuseum: поиск отдаёт и охраняемые работы — брать только с
  *    publicdomain в subject_to; размер из info.json IIIF.
  *  - SMK: IIIF image_iiif_id/full/{w},/0/default.jpg отдаётся (200).
+ *
+ * Commons (commons, commons-unsplash, commons-art) и AIC — только с MEDIA_CONTACT:
+ * правила Wikimedia и AIC требуют контакт в User-Agent. Без него источник
+ * возвращает { skip, no_contact: true } и не делает ни одного запроса.
  */
-import { getJson, getRange, key, userAgent, warnNoContact, redact, contact, describeError } from './net.mjs';
+import { getJson, getRange, key, userAgent, redact, contact, describeError, NO_CONTACT_SKIP } from './net.mjs';
 import { ROLES, headerDims } from './process.mjs';
 
 const YEAR = new Date().getFullYear();
@@ -155,7 +159,6 @@ function commonsLicense(md, mode) {
 }
 
 async function commonsSearch(q, o, mode) {
-  warnNoContact(o.log);
   const minLong = o.min || (ROLES[o.role] || ROLES.section).min;
   const parts = [q];
   if (mode === 'unsplash') parts.push('intitle:Unsplash', 'hastemplate:Cc-zero');
@@ -567,7 +570,6 @@ async function cleveland(q, o) {
 }
 
 async function aic(q, o) {
-  warnNoContact(o.log);
   const url = `https://api.artic.edu/api/v1/artworks/search?q=${encodeURIComponent(q)}&query[term][is_public_domain]=true`
     + `&fields=id,title,artist_title,artist_display,date_display,date_end,image_id,thumbnail,credit_line,is_public_domain&limit=${Math.min(50, o.n)}`;
   const j = await getJson(url, { headers: { 'AIC-User-Agent': userAgent() }, cacheTtl: 12 * 3600e3, fresh: o.fresh });
@@ -710,20 +712,26 @@ async function smithsonian(q, o) {
 
 /* ---------- реестр и профили ---------- */
 
+/* Правила Wikimedia и AIC требуют контакт в User-Agent: без MEDIA_CONTACT такой источник
+   пропускается целиком — ни одного запроса: search получает { skip, no_contact }, а doctor
+   по пометке contact: true (и по хосту) такой источник не пробует. */
+const withContact = (search) => (q, o) => (contact() ? search(q, o) : { skip: NO_CONTACT_SKIP, no_contact: true });
+
 export const SOURCES = {
   unsplash: { kind: 'photo', key: 'UNSPLASH_ACCESS_KEY', search: unsplash, host: 'https://api.unsplash.com/' },
   pexels: { kind: 'photo', key: 'PEXELS_API_KEY', search: pexels, host: 'https://api.pexels.com/v1/' },
-  'commons-unsplash': { kind: 'photo', search: (q, o) => commonsSearch(q, o, 'unsplash'), host: 'https://commons.wikimedia.org/w/api.php' },
+  'commons-unsplash': { kind: 'photo', contact: true, search: withContact((q, o) => commonsSearch(q, o, 'unsplash')), host: 'https://commons.wikimedia.org/w/api.php' },
   commons: {
     kind: 'photo',
+    contact: true,
     /* сначала отобранные сообществом «Quality images», потом весь CC0 */
-    async search(q, o) {
+    search: withContact(async (q, o) => {
       const a = await commonsSearch(q, o, 'quality');
       if (a.items.length >= o.n) return a;
       const b = await commonsSearch(q, o, 'cc0');
       const seen = new Set(a.items.map((c) => c.id));
       return { items: [...a.items, ...b.items.filter((c) => !seen.has(c.id))], note: `Quality images: ${a.items.length}${a.note ? '; ' + a.note : ''}` };
-    },
+    }),
     host: 'https://commons.wikimedia.org/w/api.php',
   },
   pixabay: { kind: 'photo', key: 'PIXABAY_API_KEY', search: pixabay, host: 'https://pixabay.com/api/' },
@@ -732,10 +740,10 @@ export const SOURCES = {
   met: { kind: 'art', search: met, host: 'https://collectionapi.metmuseum.org/public/collection/v1/departments' },
   cleveland: { kind: 'art', search: cleveland, host: 'https://openaccess-api.clevelandart.org/api/artworks/?limit=1&fields=id' },
   rijks: { kind: 'art', search: rijks, host: 'https://data.rijksmuseum.nl/search/collection?title=tulp' },
-  aic: { kind: 'art', search: aic, host: 'https://api.artic.edu/api/v1/artworks?limit=1&fields=id', hdr: 'aic' },
+  aic: { kind: 'art', contact: true, search: withContact(aic), host: 'https://api.artic.edu/api/v1/artworks?limit=1&fields=id', hdr: 'aic' },
   smk: { kind: 'art', search: smk, host: 'https://api.smk.dk/api/v1/art/search/?keys=tulip&rows=1' },
   smithsonian: { kind: 'art', key: 'SI_API_KEY', search: smithsonian, host: 'https://api.si.edu/openaccess/api/v1.0/' },
-  'commons-art': { kind: 'art', search: (q, o) => commonsSearch(q, o, 'art'), host: 'https://commons.wikimedia.org/w/api.php' },
+  'commons-art': { kind: 'art', contact: true, search: withContact((q, o) => commonsSearch(q, o, 'art')), host: 'https://commons.wikimedia.org/w/api.php' },
 };
 
 /* Порядок из SOURCES.md с поправками проверки */

@@ -70,7 +70,15 @@
  *   NA — только с --note: причина, почему проверка к задаче не относится.
  *   FAILED и NEEDS_WORK — --evidence по желанию (файл должен существовать).
  *   У каждой проверки хранится своё время и доказательство (proof в state.json:
- *   status, at, evidence {file, step, kind, verdict, takenAt, siteEditAt, …}, note).
+ *   status, at, evidence {file, step, kind, verdict, takenAt, siteEditAt, generator, …}, note).
+ *
+ * Версия скрипта. Протоколы скриптов скилла несут поле generator (lib.writeJson): имя
+ * скрипта, его последний коммит в git скилла, были ли незакоммиченные правки, то же для
+ * lib.mjs. Протокол, снятый другой версией (коммит скрипта или lib.mjs не тот, что сейчас
+ * рядом со state.mjs, или в момент съёмки либо сейчас в файле незакоммиченные правки),
+ * принимается, но с WARN «протокол снят другой версией скрипта (<коммит> против <текущий>)
+ * — перепрогнать»: инструмент менялся между замером и отметкой. Протокол без generator
+ * (снят раньше) принимается как прежде; в show у него пометка «версия скрипта неизвестна».
  *
  * Пишет: <папка>/state.json; init --force сохраняет старый журнал в state.<время>.json.
  * Код выхода: 0 — готово (и после --help); 1 — отказ (ошибка в аргументах, доказательство
@@ -86,7 +94,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, readJson, writeJson, parseViewport } from './lib.mjs';
+import { parseArgs, readJson, writeJson, parseViewport, codeVersion } from './lib.mjs';
 
 const IMPL = ['TODO', 'DOING', 'DONE', 'BLOCKED', 'DROPPED'];
 const IMPL_ALIAS = { IN_PROGRESS: 'DOING', 'IN-PROGRESS': 'DOING' };
@@ -135,6 +143,8 @@ const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p
 const norm = (p) => { const r = real(p); return process.platform === 'win32' ? r.toLowerCase() : r; };
 const inside = (child, parent) => { const rel = path.relative(norm(parent), norm(child)); return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel)); };
 let st = readJson(file);
+/* журнал — не протокол: без поля generator (версия скрипта пишется только в протоколы) */
+const JOURNAL = { generator: false };
 
 /* ---------- папка сайта: когда её правили в последний раз ---------- */
 
@@ -205,12 +215,53 @@ function findStep(items, spec) {
   return { err: `«${spec}» подходит к ${hits.length} шагам — укажите номер: ${hits.slice(0, 6).map((x) => `#${x.n} ${x.label.slice(0, 40)}`).join('; ')}` };
 }
 
+/* ---------- версия скрипта, снявшего протокол ---------- */
+
+const SCRIPTS_DIR = path.dirname(fileURLToPath(import.meta.url));
+let currentVersions;
+/* текущая версия файла скилла по имени (runtime.mjs, lib.mjs): git — один раз на процесс, на все скрипты сразу */
+function currentVersion(name) {
+  if (!currentVersions) {
+    let files = []; try { files = fs.readdirSync(SCRIPTS_DIR).filter((f) => f.endsWith('.mjs')).map((f) => path.join(SCRIPTS_DIR, f)); } catch { /* нет папки */ }
+    currentVersions = Object.fromEntries(Object.entries(codeVersion(files)).map(([f, v]) => [path.basename(f), v]));
+  }
+  return Object.prototype.hasOwnProperty.call(currentVersions, name) ? currentVersions[name] : null;
+}
+const verLabel = (v) => (v.commit ? `${v.commit}${v.dirty ? '+правки' : ''}` : v.dirty ? 'не в git' : '?');
 /**
- * Проверить доказательство. Возвращает { rec, problems: [{code, msg}], warns: [] }.
+ * Сверить generator протокола с файлами рядом со state.mjs.
+ * → { gen: краткая запись для журнала | null, warn: текст | null, note: текст для show | null }.
+ * WARN — коммит скрипта или lib.mjs другой, либо незакоммиченные правки при съёмке или сейчас.
+ * Без generator или без git версия неизвестна: не WARN, а пометка в show.
+ */
+function versionCheck(g) {
+  if (!g || typeof g !== 'object' || !g.script) return { gen: null, warn: null, note: 'версия скрипта неизвестна (протокол без generator)' };
+  const name = path.basename(String(g.script));
+  const gen = { script: name, commit: g.commit ?? null, dirty: g.dirty ?? null, ...(g.lib && typeof g.lib === 'object' ? { lib: { commit: g.lib.commit ?? null, dirty: g.lib.dirty ?? null } } : {}) };
+  const parts = [[name, gen], ...(gen.lib ? [['lib.mjs', gen.lib]] : [])];
+  const diffs = []; const unknown = []; let wasDirty = false;
+  for (const [n, was] of parts) {
+    const now = currentVersion(n);
+    if (was.commit == null && was.dirty == null) { unknown.push(`${n}: при съёмке git не было`); continue; }
+    if (!now) { unknown.push(`${n}: такого файла рядом со state.mjs нет`); continue; }
+    if (now.commit == null && now.dirty == null) { unknown.push(`${n}: git сейчас недоступен`); continue; }
+    if (was.dirty) wasDirty = true;
+    if (was.commit !== now.commit || was.dirty || now.dirty) diffs.push(`${n} ${verLabel(was)} против ${verLabel(now)}`);
+  }
+  return {
+    gen,
+    warn: diffs.length ? `протокол снят другой версией скрипта (${diffs.join('; ')}) — перепрогнать${wasDirty ? ' (снят с незакоммиченными правками: каким кодом, уже не восстановить)' : ''}` : null,
+    note: unknown.length ? `версия скрипта неизвестна (${unknown.join('; ')})` : null,
+  };
+}
+
+/**
+ * Проверить доказательство. Возвращает { rec, problems: [{code, msg}], warns: [], notes: [] }.
+ * notes — пометки только для show (например, «версия скрипта неизвестна»).
  * code: missing | type | noverdict | fail | step | vp | nosite | inside | stale.
  */
 function checkEvidence(spec, check, { lenient = false } = {}) {
-  const problems = []; const warns = [];
+  const problems = []; const warns = []; const notes = [];
   const P = (code, msg) => problems.push({ code, msg });
   const m = /^(.*?\.(?:json|png|jpe?g|webp|avif|gif))(?:#(.*))?$/i.exec(String(spec).trim());
   if (!m) { P('type', `«${spec}» — не протокол .json и не снимок .png/.jpg/.webp/.avif/.gif`); return { problems, warns, rec: null }; }
@@ -242,6 +293,11 @@ function checkEvidence(spec, check, { lenient = false } = {}) {
     const verdict = explicit || derived;
     rec.verdict = verdict || null;
     if (j.url) rec.url = String(j.url);
+    /* версия скрипта: другая — WARN (отметка ставится), неизвестна — пометка в show */
+    const ver = versionCheck(j.generator);
+    if (ver.gen) rec.generator = ver.gen;
+    if (ver.warn) warns.push(ver.warn);
+    if (ver.note) notes.push(ver.note);
     /* viewport бывает строкой (runtime, a11y, perf) и объектом {name, width} (texture) */
     const vpRaw = j.viewport && typeof j.viewport === 'object' ? j.viewport : null;
     if (j.viewport) rec.viewport = vpRaw ? String(vpRaw.name || (vpRaw.width ? `${vpRaw.width}px` : '')) : String(j.viewport);
@@ -279,7 +335,7 @@ function checkEvidence(spec, check, { lenient = false } = {}) {
     if (L && L.file && evTime <= L.mtimeMs) P('stale', `снято ${fmt(evTime)}, а сайт правили позже: ${L.file} ${fmt(L.mtimeMs)} — прогнать проверку заново`);
     if (L) { rec.siteEditAt = L.mtimeMs ? new Date(L.mtimeMs).toISOString() : null; rec.siteEditFile = L.file; }
   }
-  return { problems, warns, rec };
+  return { problems, warns, rec, notes };
 }
 const evSpec = (e) => `${e.file}${e.step ? '#' + e.step : ''}`;
 const sameEvidence = (a, b) => !!(a && b) && a.file.toLowerCase() === b.file.toLowerCase() && String(a.step || '') === String(b.step || '');
@@ -337,7 +393,7 @@ if (cmd === 'init') {
   st = { url: rest[0], request: rest[1] || '', createdAt: new Date().toISOString(), mode: null, site: null, stages: Object.fromEntries(STAGES.map(([k]) => [k, 'todo'])), tasks: [] };
   applyMeta(st);
   st.stages.discovered = 'active';
-  writeJson(file, st); console.log(`Журнал создан: ${file}`);
+  writeJson(file, st, JOURNAL); console.log(`Журнал создан: ${file}`);
   const [modeLine, siteLine] = metaLines(st);
   console.log(`${st.mode ? 'OK  ' : 'WARN'} ${modeLine}`); console.log(`${st.site ? 'OK  ' : 'WARN'} ${siteLine}`);
   process.exit(0);
@@ -348,7 +404,7 @@ for (const t of st.tasks || []) if (IMPL_ALIAS[t.impl]) t.impl = IMPL_ALIAS[t.im
 if (cmd === 'meta') {
   const before = JSON.stringify([st.site, st.mode, st.siteIgnore]);
   applyMeta(st);
-  if (JSON.stringify([st.site, st.mode, st.siteIgnore]) !== before) { writeJson(file, st); console.log('Записано.'); }
+  if (JSON.stringify([st.site, st.mode, st.siteIgnore]) !== before) { writeJson(file, st, JOURNAL); console.log('Записано.'); }
   for (const l of metaLines(st)) console.log(l);
   const L = siteLatest();
   if (L) console.log(`Последняя правка сайта: ${L.file ? `${L.file} ${fmt(L.mtimeMs)}` : 'файлов нет'} (файлов ${L.files}${L.capped ? ', обход остановлен на 50 000' : ''})`);
@@ -358,7 +414,7 @@ if (cmd === 'meta') {
   const id = st.tasks.reduce((mx, t) => Math.max(mx, Number(t.id) || 0), 0) + 1;
   const now = new Date().toISOString();
   st.tasks.push({ id, task: rest[0], priority: p, area: opt.area && opt.area !== true ? String(opt.area) : null, impl: 'TODO', runtime: 'NOT_CHECKED', visual: 'NOT_CHECKED', mobile: 'NOT_CHECKED', perf: 'NOT_CHECKED', note: '', proof: {}, createdAt: now, updatedAt: now });
-  writeJson(file, st); console.log(`#${id} ${p} ${rest[0]}`);
+  writeJson(file, st, JOURNAL); console.log(`#${id} ${p} ${rest[0]}`);
 } else if (cmd === 'set') {
   const ids = String(rest[0] || '').split(',').map((x) => x.trim()).filter(Boolean);
   if (!ids.length) die('set <id>[,<id>…] поле=значение … [--evidence файл[#шаг]] [--note "…"]');
@@ -427,7 +483,7 @@ if (cmd === 'meta') {
     if (note) t.note = note;
     t.updatedAt = now;
   }
-  writeJson(file, st);
+  writeJson(file, st, JOURNAL);
   for (const w of warns) console.log(`WARN ${w}`);
   for (const t of tasks) {
     const parts = CHECKS.map((c) => `${c} ${t[c]}${changes[c] && recs[c] && changes[c] !== 'NOT_CHECKED' ? ` ← ${evSpec(recs[c])}${recs[c].verdict ? ` (${recs[c].stepStatus || recs[c].verdict})` : ''}` : ''}`);
@@ -435,7 +491,7 @@ if (cmd === 'meta') {
   }
 } else if (cmd === 'stage') {
   const [k, v] = rest; if (!(k in st.stages)) die(`Этапы: ${STAGES.map(([s]) => s).join(', ')}`); if (!(v in MARK)) die('done|active|todo|skipped');
-  st.stages[k] = v; writeJson(file, st); console.log(`${MARK[v]} ${STAGES.find(([s]) => s === k)[1]}`);
+  st.stages[k] = v; writeJson(file, st, JOURNAL); console.log(`${MARK[v]} ${STAGES.find(([s]) => s === k)[1]}`);
 } else if (cmd === 'show') {
   const L = siteLatest();
   console.log(`# ${st.url}\n\nЗапрос: ${st.request}`);
@@ -467,7 +523,7 @@ if (cmd === 'meta') {
       const cur = r && r.rec ? r.rec : e;
       const rewritten = r && r.rec && e.mtimeMs && r.rec.mtimeMs && Math.abs(r.rec.mtimeMs - e.mtimeMs) > 1 ? ' · файл перезаписан после отметки' : '';
       const probs = r && r.problems.length ? ` · ${r.problems.map((x) => (x.code === 'stale' && r.rec && r.rec.siteEditFile ? `УСТАРЕЛО: ${r.rec.siteEditFile} правили ${fmt(Date.parse(r.rec.siteEditAt))} — прогнать заново` : x.msg)).join('; ')}` : '';
-      const wr = r && r.warns && r.warns.length && t[c] === 'VERIFIED' ? ` · WARN ${r.warns.join('; ')}` : '';
+      const wr = (r && r.warns && r.warns.length && t[c] === 'VERIFIED' ? ` · WARN ${r.warns.join('; ')}` : '') + (r && r.notes && r.notes.length ? ` · ${r.notes.join('; ')}` : '');
       evLines.push(`- #${t.id} ${c} ${t[c]} ← ${evSpec(e)}${e.stepLabel ? ` «${e.stepLabel.slice(0, 50)}»` : ''}${cur.verdict ? ` ${cur.stepStatus || cur.verdict}` : ''} · снято ${cur.takenAt ? fmt(Date.parse(cur.takenAt)) : '—'} · отмечено ${p.at ? fmt(Date.parse(p.at)) : '—'}${rewritten}${probs}${wr}`);
     }
   }

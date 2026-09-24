@@ -13,6 +13,9 @@
  *
  * Ключи и контакт читаются из окружения и из ~/.claude/site-rework/.env
  * (вне репозиториев). Контакт для User-Agent — ТОЛЬКО из MEDIA_CONTACT.
+ * Без MEDIA_CONTACT к Wikimedia (Commons, копии, Wikidata) и AIC не уходит
+ * ни один запрос: их правила требуют контакт в User-Agent. request() отказывает
+ * сразу (NetError code ENOCONTACT, не временная), источники пропускаются.
  */
 import https from 'node:https';
 import http from 'node:http';
@@ -66,12 +69,37 @@ export function userAgent() {
   const c = contact();
   return c ? `site-rework-media/${VERSION} (${c}) node/${process.versions.node}` : `site-rework-media/${VERSION} (+local tool)`;
 }
+/* Хосты, чьи правила требуют контакт в User-Agent: вики Wikimedia (Commons, upload/thumb, Wikidata) и AIC. */
+const CONTACT_HOSTS = [/(^|\.)(wikimedia|wikipedia|mediawiki|wikidata)\.org$/i, /(^|\.)artic\.edu$/i];
+/** Нужен ли контакт для адреса (или имени хоста). */
+export function needsContact(urlOrHost) {
+  let h = String(urlOrHost || '');
+  try { h = new URL(h).hostname; } catch { /* уже имя хоста */ }
+  h = h.replace(/\.$/, '');
+  return CONTACT_HOSTS.some((re) => re.test(h));
+}
+/** Запрос к адресу запрещён: хост требует контакт, а MEDIA_CONTACT нет. */
+export function contactBlocked(url) { return needsContact(url) && !contact(); }
+/** Причина пропуска источника (строка SKIP у search и doctor). */
+export const NO_CONTACT_SKIP = 'нет MEDIA_CONTACT — правила Wikimedia и AIC требуют контакт в User-Agent; без него ни одного запроса';
+/** Что сделать без контакта (без точки в конце). */
+export function noContactHint() {
+  return `нет MEDIA_CONTACT — спросить контакт у пользователя (адрес сайта студии или рабочую почту) и записать MEDIA_CONTACT=… в ${ENV_FILE}; почту из git или профиля самому не брать`;
+}
+/** Одна понятная строка: что пропущено и что сделать. */
+export function noContactLine() { return `Commons и AIC пропущены: ${noContactHint()}`; }
+/** Бросить отказ (не временный), если к адресу без контакта ходить нельзя. */
+export function assertContact(url) {
+  if (!contactBlocked(url)) return;
+  let host = String(url); try { host = new URL(url).hostname; } catch { /* как есть */ }
+  throw new NetError(`${host}: запрос не отправлен — правила Wikimedia и AIC требуют контакт в User-Agent, а ${noContactHint()}`, { temporary: false, code: 'ENOCONTACT', host });
+}
 let warnedContact = false;
-/** Одна строка на процесс: политика Wikimedia и AIC просит контакт в User-Agent. */
+/** Одна строка на процесс (для совместимости со сторонними модулями видео): без контакта Commons и AIC пропускаются. */
 export function warnNoContact(log = console.log) {
   if (warnedContact || contact()) return;
   warnedContact = true;
-  log('  WARN нет MEDIA_CONTACT: Wikimedia и AIC просят контакт в User-Agent — запросы идут по одному с паузой, оригиналы Commons чаще отвечают 429 (тогда берётся стандартная копия); задайте MEDIA_CONTACT в ~/.claude/site-rework/.env');
+  log(`  WARN ${noContactLine()}`);
 }
 
 /* ---------- ошибки ---------- */
@@ -312,6 +340,8 @@ export async function request(url, { method = 'GET', headers = {}, timeout = 300
   let current = url; let hops = 0; let lastErr = null;
   for (let attempt = 1; attempt <= tries; attempt++) {
     const host = new URL(current).hostname;
+    /* Wikimedia и AIC без MEDIA_CONTACT — ни одного запроса (и после перехода на их хост) */
+    assertContact(current);
     try {
       const r = await throughGate(host, () => once(current, { method, headers, timeout, maxBytes, toFile, acceptEncoding }));
       if (r.status >= 300 && r.status < 400 && r.headers.location) {

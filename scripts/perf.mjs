@@ -4,8 +4,8 @@
  *
  *   node perf.mjs <url> [--viewport mobile] [--out папка] [--tag имя]
  *                 [--cpu 4] [--net fast3g|slow4g|none] [--runs 3]
- *                 [--overlay [селектор]] [--rounds 5] [--overlay-only]
- *   node perf.mjs --help   (или -h)
+ *                 [--overlay [селектор]] [--rounds 5] [--overlay-only] [--strict]
+ *   node perf.mjs --help   (или --h, -h)
  *
  * Флаги:
  *   --viewport  экран: пресет (desktop, laptop, tablet, mobile, mobile-s, android), запись ШxВ@плотность
@@ -23,9 +23,14 @@
  *               (findTextureLayers: закреплённые или во весь экран); со значением — CSS-селектор слоя,
  *               можно с псевдоэлементом: --overlay "body::after". Слой прячется через opacity:0 и
  *               visibility:hidden (visibility одна не прячет вывод SVG-фильтра feTurbulence).
+ *               Строгий CSP (style-src без 'unsafe-inline'): вставленный <style> страница молча не
+ *               применяет, и «без слоя» мерился бы со слоем — тогда стиль ставится таблицей
+ *               document.adoptedStyleSheets (CSP на неё не распространяется), в выводе об этом строка.
+ *               Не вставился никак — WARN «цена слоя: не измерена — CSP страницы запрещает вставку стиля».
  *   --rounds N  раундов для --overlay, не меньше 5 (по умолчанию 5).
  *   --overlay-only  только цена слоя, без замера загрузки (быстро: сеть не замедляется).
- *   --help, -h  эта справка.
+ *   --strict    код выхода 1 при итоговом вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
+ *   --help, --h, -h  эта справка.
  *
  * Что измеряется: TTFB, FCP, LCP, CLS, долгие задачи, вес по типам ресурсов
  * (сжатый, как передано по сети), самые тяжёлые файлы, память JS, узлы DOM,
@@ -84,9 +89,9 @@
  * прокрутка 55 / 40 кадров/с · видео первого экрана 1 / 2 МБ (телефон), 2.5 / 5 МБ (десктоп).
  * КБ и МБ — по 1024.
  *
- * Код выхода: 0 — замер сделан (вердикт в выводе и в JSON), 1 — неверные аргументы или ни один
- * прогон не удался. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и
- * запуска браузера.
+ * Код выхода: 0 — замер сделан (вердикт в выводе и в JSON), 1 — неверные аргументы, ни один
+ * прогон не удался или, с --strict, итоговый вердикт FAIL (WARN — всё равно 0). Аргументы (адрес,
+ * экран, значения флагов) проверяются до создания папок и запуска браузера.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,10 +99,10 @@ import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN,
 } from './lib.mjs';
-import { findTextureLayers, hideTextureLayers, showTextureLayers } from './texture.mjs';
+import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'overlay-only'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'] });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
@@ -353,20 +358,24 @@ async function overlayCost() {
     await scrollThrough(page, { pause: 200 });
     await scrollToY(page, 0); await settleAnimations(page, 3000); await sleep(500);
     let layers = []; let hide, show;
+    const hideInfo = { via: null }; /* как прятался слой: 'style' или 'adopted' (строгий CSP) */
     if (typeof opt.overlay === 'string') {
       const sel = opt.overlay; const host = sel.replace(/::?(before|after)\s*$/i, '').trim() || '*';
       const found = await page.evaluate((h) => { try { return document.querySelectorAll(h).length; } catch (e) { return -1; } }, host);
       if (found < 0) return { error: `неверный селектор «${sel}»` };
       if (!found) return { found: false, note: `селектор «${sel}» ничего не нашёл` };
       layers = [{ el: sel, how: 'селектор' }];
-      hide = () => page.evaluate((css) => { let st = document.querySelector('style[data-rw="overlay-hide"]'); if (!st) { st = document.createElement('style'); st.setAttribute('data-rw', 'overlay-hide'); document.head.appendChild(st); } st.textContent = css; }, `${sel}{visibility:hidden!important;opacity:0!important}`);
-      show = () => page.evaluate(() => { const st = document.querySelector('style[data-rw="overlay-hide"]'); if (st) st.remove(); });
+      /* строгий CSP молча не применял <style>: «без слоя» мерился со слоем. setPageStyle тогда ставит
+         таблицу adoptedStyleSheets; не вставилось никак — ошибка, цена слоя «не измерена» (WARN) */
+      const css = `${sel}{visibility:hidden!important;opacity:0!important}`;
+      hide = async () => { hideInfo.via = await setPageStyle(page, 'overlay-hide', css); if (!hideInfo.via) throw new Error(`${CSP_NO_STYLE} — слой не спрятать`); };
+      show = () => dropPageStyle(page, 'overlay-hide');
     } else {
       const f = await findTextureLayers(page, { mark: true });
       const big = f.layers.filter((L) => L.coversViewport || ((L.position === 'fixed' || L.fixedBy) && L.rect.w >= f.vw * 0.6 && L.rect.h >= f.vh * 0.4));
       if (!big.length) return { found: false, note: `полноэкранных слоёв фактуры не найдено (всего слоёв ${f.layers.length})` };
       layers = big.map((L) => ({ el: L.el + (L.pseudo || ''), blend: L.mixBlendMode, opacity: L.effectiveOpacity, animation: L.animation || (L.animChain && L.animChain.length ? L.animChain.join('; ') : null), how: 'texture.mjs' }));
-      hide = () => hideTextureLayers(page, big); show = () => showTextureLayers(page);
+      hide = () => hideTextureLayers(page, big, hideInfo); show = () => showTextureLayers(page);
     }
     const out = { found: true, layers, rounds, order: [], with: [], without: [] };
     for (let r = 0; r < rounds; r++) {
@@ -380,6 +389,7 @@ async function overlayCost() {
       }
     }
     await show();
+    out.hideVia = hideInfo.via;
     const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
     const stat = (list, k) => { const a = list.map((x) => x[k]); return { median: med(a), min: Math.min(...a), max: Math.max(...a), all: a }; };
     out.stats = {};
@@ -535,6 +545,7 @@ if (opt.overlay) {
   else {
     const W = overlay.stats.with, N = overlay.stats.without;
     console.log(`\nЦена слоя фактуры: ${overlay.layers.map((l) => `${l.el}${l.blend && l.blend !== 'normal' ? ` ${l.blend}` : ''}${l.opacity != null ? ` α${l.opacity}` : ''}${l.animation ? ` [${l.animation}]` : ''}`).join(', ')}; ${overlay.rounds} раундов по 2 с покоя, чередуются`);
+    if (overlay.hideVia === 'adopted') console.log('  «без слоя»: CSP страницы не применяет вставленный <style> — слой спрятан таблицей adoptedStyleSheets');
     console.log('| вариант | RasterTask: медиана (мин–макс) | Paint: медиана (мин–макс) | растр, мс: медиана |\n|---|---|---|---|');
     for (const [label, S] of [['со слоем', W], ['без слоя', N]]) console.log(`| ${label} | ${S.raster.median} (${S.raster.min}–${S.raster.max}) | ${S.paint.median} (${S.paint.min}–${S.paint.max}) | ${S.rasterMs.median} |`);
     const why = overlay.status === 'WARN' ? `слой перерисовывается в покое: +${overlay.extraRaster} растровых задач и +${overlay.extraPaint} Paint за 2 с (все раунды со слоем выше всех без) — кипение GIF или background-position; сдвиг transform по steps() обходится без перерисовки` : overlay.separated.raster || overlay.separated.paint ? `прибавка в пределах бюджета: +${overlay.extraRaster} растровых задач, +${overlay.extraPaint} Paint за 2 с` : `разницы нет или она в пределах разброса раундов (+${overlay.extraRaster} растровых задач, +${overlay.extraPaint} Paint)`;
@@ -549,3 +560,4 @@ report.verdict = worst;
 const file = path.join(outDir, `${tag}${opt['overlay-only'] ? '-overlay' : ''}.json`);
 writeJson(file, report);
 console.log(`Сохранено: ${file}`);
+if (opt.strict && worst === 'FAIL') { console.log('Код выхода 1: вердикт FAIL (--strict)'); process.exitCode = 1; }
