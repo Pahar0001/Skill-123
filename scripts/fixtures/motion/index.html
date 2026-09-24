@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>motion.mjs — стенд всех видов движения</title>
+<!-- Стенд для `motion.mjs selftest`: здесь есть каждый вид движения, который скрипт должен узнать.
+     У каждого блока data-expect — какой вид ждём (selftest сверяет найденное с этим списком).
+     Внешних файлов нет: страница открывается по file:// и через serve.mjs. -->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1d1d24; background: #f4f4f8; }
+  section { position: relative; padding: 80px 6vw; }
+  h2 { margin: 0 0 24px; font-size: 32px; }
+
+  /* 1. шапка: плотнеет после 100 px, прячется при прокрутке вниз, возвращается при прокрутке вверх (JS) */
+  .head { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; justify-content: space-between; padding: 18px 6vw;
+    background: transparent; transition: background-color .3s ease, transform .35s ease; }
+  .head.is-solid { background: #fff; }
+  .head.is-hidden { transform: translateY(-100%); }
+  .head a { color: inherit; }
+  /* 2. полоса прогресса прокрутки (JS) */
+  .progress { position: fixed; top: 0; left: 0; height: 4px; width: 0; background: #6a4ee1; z-index: 60; }
+
+  /* 3. первый экран: печатающийся текст, вход при загрузке, кнопка с наведением, карточка с наклоном от мыши, свой курсор */
+  .hero { min-height: 100vh; display: grid; align-content: center; gap: 24px; padding-top: 120px; }
+  .hero h1 { margin: 0; font-size: 56px; line-height: 1.1; }
+  .sub { font-size: 20px; animation: fadeUp .8s .2s both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  .btn { display: inline-block; width: max-content; padding: 16px 32px; border-radius: 10px; background: #232530; color: #fff; text-decoration: none;
+    transition: background-color .25s ease, transform .25s ease, box-shadow .25s ease; }
+  .btn:hover { background: #6a4ee1; transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0, 0, 0, .18); }
+  .tilt { width: 260px; height: 160px; border-radius: 16px; background: linear-gradient(135deg, #5cceff, #1c90f0); transform: perspective(600px); }
+  .cursor { position: fixed; left: 0; top: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #ffb03a; pointer-events: none; z-index: 70; }
+  .pop { width: 120px; height: 60px; border-radius: 12px; background: #2fb468; }
+
+  /* 5. бегущая строка (CSS) */
+  .marquee { overflow: hidden; padding: 30px 0; }
+  .track { display: flex; width: max-content; animation: marq 20s linear infinite; }
+  .track span { padding: 0 40px; font-size: 28px; font-weight: 700; white-space: nowrap; }
+  @keyframes marq { to { transform: translateX(-50%); } }
+
+  /* 6. петли: парение, вращение, пульс */
+  .loops { display: flex; gap: 60px; align-items: center; }
+  .float { width: 90px; height: 90px; border-radius: 50%; background: #e8413c; animation: float 3s ease-in-out infinite alternate; }
+  @keyframes float { to { transform: translateY(-14px); } }
+  .spin { width: 90px; height: 90px; background: #f2b233; animation: spin 10s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pulse { width: 90px; height: 90px; border-radius: 20px; background: #2fb468; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.12); } }
+
+  /* 7. появление карточек по очереди (IO добавляет класс) */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card { min-height: 180px; padding: 20px; border-radius: 14px; background: #fff; opacity: 0; transform: translateY(40px); transition: opacity .6s ease, transform .6s ease; }
+  .card.in { opacity: 1; transform: none; }
+  .card:nth-child(2) { transition-delay: .1s; } .card:nth-child(3) { transition-delay: .2s; }
+
+  /* 8. параллакс слоёв (JS) */
+  .para { height: 520px; overflow: hidden; }
+  .layer { position: absolute; width: 180px; height: 180px; border-radius: 24px; }
+  .l1 { left: 10%; top: 120px; background: #866bff; } .l2 { left: 40%; top: 200px; background: #5cceff; } .l3 { left: 70%; top: 160px; background: #ffb03a; }
+
+  /* 9. фон, который при въезде уменьшается и гаснет (JS, как у shapefest) */
+  .banner { height: 420px; margin: 0 6vw; border-radius: 40px; overflow: hidden; background: #000; }
+  .banner__bg { position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, #444 0 18%, transparent 19%), radial-gradient(circle at 70% 60%, #666 0 22%, transparent 23%); transform-origin: 50% 50%; }
+
+  /* 10. CSS-анимация по прокрутке (animation-timeline: view()) */
+  .sda { width: 200px; height: 200px; border-radius: 30px; background: #1c90f0; animation: grow linear both; animation-timeline: view(); animation-range: entry 0% cover 50%; }
+  @keyframes grow { from { transform: scale(.6) rotate(-20deg); opacity: .3; } to { transform: none; opacity: 1; } }
+
+  /* 11. закреплённый раздел с горизонтальной прокруткой (JS) */
+  .pin { height: 300vh; padding: 0; }
+  .pin__sticky { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; align-items: center; }
+  .pin__track { display: flex; gap: 30px; padding: 0 6vw; }
+  .pin__track div { flex: none; width: 60vw; height: 50vh; border-radius: 20px; background: #232530; color: #fff; display: grid; place-items: center; font-size: 40px; }
+
+  /* 12–16 */
+  .counter { font-size: 64px; font-weight: 800; }
+  .carousel { overflow: hidden; width: 420px; border-radius: 16px; }
+  .slides { display: flex; transition: transform .6s ease; }
+  .slides div { flex: none; width: 420px; height: 200px; display: grid; place-items: center; font-size: 30px; color: #fff; }
+  .clip { height: 220px; border-radius: 16px; background: #6a4ee1; clip-path: inset(0 100% 0 0); transition: clip-path 1s ease; }
+  .clip.in { clip-path: inset(0 0 0 0); }
+  .blur { font-size: 40px; filter: blur(12px); opacity: 0; transition: filter .8s ease, opacity .8s ease; }
+  .blur.in { filter: none; opacity: 1; }
+  .shop { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .item { display: block; border-radius: 14px; overflow: hidden; background: #fff; color: inherit; text-decoration: none; }
+  .item__pic { height: 180px; overflow: hidden; }
+  .item__pic div { height: 100%; background: linear-gradient(135deg, #e8413c, #f2b233); transition: transform .4s ease; }
+  .item:hover .item__pic div { transform: scale(1.08); }
+  .item p { margin: 12px 16px 16px; }
+  .under { position: relative; font-size: 22px; color: inherit; text-decoration: none; }
+  .under::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform .3s ease; }
+  .under:hover::after { transform: scaleX(1); }
+  canvas { display: block; width: 320px; height: 160px; background: #fff; border-radius: 12px; }
+  @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="progress" data-expect="progress"></div>
+<header class="head" data-expect="header"><b>MOTION</b><a href="#cards">Карточки</a></header>
+<div class="cursor" data-expect="cursor"></div>
+
+<section class="hero">
+  <h1>Печатаем <span class="type" data-expect="typewriter">миниатюры</span></h1>
+  <p class="sub" data-expect="entrance">Вход при загрузке: снизу и из прозрачности.</p>
+  <a class="btn" href="#cards" data-expect="hover">Смотреть</a>
+  <div class="tilt" data-expect="mouse"></div>
+  <div class="pop" data-expect="entrance">WAAPI</div>
+</section>
+
+<div class="marquee" data-expect="marquee"><div class="track">
+  <span>Warhammer</span><span>D&amp;D</span><span>Elden Ring</span><span>Ведьмак</span><span>Wukong</span>
+  <span aria-hidden="true">Warhammer</span><span aria-hidden="true">D&amp;D</span><span aria-hidden="true">Elden Ring</span><span aria-hidden="true">Ведьмак</span><span aria-hidden="true">Wukong</span>
+</div></div>
+
+<section class="loops">
+  <div class="float" data-expect="float"></div>
+  <div class="spin" data-expect="spin"></div>
+  <div class="pulse" data-expect="pulse"></div>
+</section>
+
+<section id="cards"><h2>Появление по очереди</h2>
+  <div class="cards" data-expect="reveal">
+    <div class="card">Раз</div><div class="card">Два</div><div class="card">Три</div>
+  </div>
+</section>
+
+<section class="para" data-expect="parallax">
+  <div class="layer l1" data-k="0.1"></div><div class="layer l2" data-k="0.3"></div><div class="layer l3" data-k="0.5"></div>
+</section>
+
+<section><div class="banner"><div class="banner__bg" data-expect="scroll-linked"></div></div></section>
+
+<section><h2>CSS по прокрутке</h2><div class="sda" data-expect="scroll-linked"></div></section>
+
+<section class="pin" data-expect="pinned"><div class="pin__sticky"><div class="pin__track">
+  <div>Один</div><div>Два</div><div>Три</div><div>Четыре</div>
+</div></div></section>
+
+<section><h2>Счётчик</h2><div class="counter" data-to="1200" data-expect="counter">0</div></section>
+
+<section><h2>Карусель</h2><div class="carousel" data-expect="carousel"><div class="slides">
+  <div style="background:#e8413c">1</div><div style="background:#2fb468">2</div><div style="background:#1c90f0">3</div>
+</div></div></section>
+
+<section><h2>Шторка и размытие</h2>
+  <div class="clip" data-expect="reveal"></div>
+  <p class="blur" data-expect="reveal">Проявляется из размытия</p>
+</section>
+
+<section><h2>Наведение</h2>
+  <div class="shop">
+    <a class="item" href="#x" data-expect="hover"><div class="item__pic"><div></div></div><p>Карточка</p></a>
+    <a class="item" href="#x"><div class="item__pic"><div></div></div><p>Карточка</p></a>
+    <a class="item" href="#x"><div class="item__pic"><div></div></div><p>Карточка</p></a>
+  </div>
+  <p><a class="under" href="#x" data-expect="hover">Ссылка с линией</a></p>
+  <canvas width="640" height="320" data-expect="canvas"></canvas>
+</section>
+<section style="height:60vh"></section>
+
+<script>
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* печатающийся текст: слово стирается и набирается заново */
+  const words = ['миниатюры', 'героев', 'террейн']; const type = document.querySelector('.type');
+  (async function loop() { if (reduce) return; for (let i = 0; ; i = (i + 1) % words.length) {
+    const w = words[i]; for (let n = 1; n <= w.length; n++) { type.textContent = w.slice(0, n); await new Promise((r) => setTimeout(r, 70)); }
+    await new Promise((r) => setTimeout(r, 900));
+    for (let n = w.length; n >= 0; n--) { type.textContent = w.slice(0, n); await new Promise((r) => setTimeout(r, 35)); }
+  } })();
+  /* вход через WAAPI */
+  document.querySelector('.pop').animate([{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 700, easing: 'ease-out', fill: 'both' });
+  /* мышь: наклон карточки и свой курсор */
+  const tilt = document.querySelector('.tilt'); const cur = document.querySelector('.cursor');
+  addEventListener('mousemove', (e) => {
+    cur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+    if (reduce) return;
+    const rx = ((e.clientY / innerHeight) - 0.5) * -16, ry = ((e.clientX / innerWidth) - 0.5) * 16;
+    tilt.style.transform = `perspective(600px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+  });
+  /* появления по IntersectionObserver */
+  const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); if (e.target.classList.contains('counter')) count(e.target); } }, { rootMargin: '0px 0px -12% 0px' });
+  for (const el of document.querySelectorAll('.card, .clip, .blur, .counter')) io.observe(el);
+  function count(el) { const to = +el.dataset.to, t0 = performance.now(); const step = (t) => { const k = Math.min(1, (t - t0) / 1500); el.textContent = Math.round(to * k).toLocaleString('ru-RU'); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
+  /* прокрутка: шапка, прогресс, параллакс, фон-баннер, горизонтальный раздел */
+  const head = document.querySelector('.head'), prog = document.querySelector('.progress');
+  const layers = [...document.querySelectorAll('.layer')], bg = document.querySelector('.banner__bg'), banner = document.querySelector('.banner');
+  const pin = document.querySelector('.pin'), track = document.querySelector('.pin__track');
+  let lastY = 0;
+  function onScroll() {
+    const y = scrollY, vh = innerHeight, H = document.documentElement.scrollHeight - vh;
+    head.classList.toggle('is-solid', y > 100);
+    head.classList.toggle('is-hidden', y > lastY && y > 300);
+    lastY = y;
+    prog.style.width = `${(y / H) * 100}%`;
+    if (reduce) return;
+    for (const l of layers) l.style.transform = `translateY(${(-(y - l.parentElement.offsetTop + vh) * +l.dataset.k).toFixed(1)}px)`;
+    const top = banner.getBoundingClientRect().top; const p = Math.min(1, Math.max(0, (vh - top) / (vh * 0.535)));
+    bg.style.transform = `scale(${(1.4 - 0.3 * p).toFixed(4)})`; bg.style.opacity = (0.9 - 0.4 * p).toFixed(3);
+    const r = pin.getBoundingClientRect(); const k = Math.min(1, Math.max(0, -r.top / (r.height - vh)));
+    track.style.transform = `translateX(${(-k * (track.scrollWidth - innerWidth)).toFixed(1)}px)`;
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  /* карусель сама листает */
+  const slides = document.querySelector('.slides'); let s = 0;
+  if (!reduce) setInterval(() => { s = (s + 1) % 3; slides.style.transform = `translateX(${-s * 420}px)`; }, 2000);
+  /* холст: движется круг */
+  const c = document.querySelector('canvas'), g = c.getContext('2d');
+  (function draw(t) { g.clearRect(0, 0, 640, 320); g.fillStyle = '#6a4ee1'; g.beginPath(); g.arc(320 + Math.sin(t / 500) * 220, 160, 50, 0, 7); g.fill(); if (!reduce) requestAnimationFrame(draw); })(0);
+</script>
+</body>
+</html>
