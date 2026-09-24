@@ -2,7 +2,7 @@
 /**
  * Статический сервер для зеркала или любой папки с HTML.
  *
- *   node serve.mjs <папка> [--port 4173] [--host 127.0.0.1] [--proxy https://original.site]
+ *   node serve.mjs <папка> [--port 4173] [--host 127.0.0.1] [--proxy https://original.site] [--no-compress]
  *   node serve.mjs --help
  *
  * <папка>   что отдавать; по умолчанию текущая папка.
@@ -23,7 +23,22 @@
  *           оригинал — зеркало перестаёт сыпать 404 в консоль. Передаются метод, тело,
  *           Content-Type и Range; редирект на сам оригинал переписывается в локальный
  *           путь; ответа ждём до 60 с, иначе 502.
+ * --no-compress  отдавать как есть, без сжатия (как до 24.09.2026) — например, чтобы увидеть
+ *           вес сайта на хостинге, который не сжимает.
  * --help, -h  эта справка.
+ *
+ * Сжатие — как у хостинга (Caddy, nginx, Netlify): текстовые ответы — html, css, js/mjs, json,
+ * map, webmanifest, xml, txt, csv, vtt, svg, wasm, gltf — от 512 байт сжимаются по заголовку
+ * Accept-Encoding: br (качество 11, как у статических хостингов), иначе gzip (уровень 6);
+ * q=0 и «identity» уважаются. Без сжатия на месте сайта с Three.js perf.mjs видел 691 КБ JS там,
+ * где на бою 136 КБ br, и давал FAIL веса, которого у покупателя нет. Сжатый вариант файла
+ * хранится в памяти (до 256 МБ, по пути, времени и размеру файла — правка файла сжимается заново);
+ * первое обращение к крупному файлу дольше: brotli 11 — около секунды на 700 КБ. Ответ со сжатием —
+ * Content-Encoding, Content-Length сжатого тела и Vary: Accept-Encoding (Vary — у всех сжимаемых
+ * типов, и когда клиент сжатия не просил). Запрос с Range получает несжатый диапазон (206), как
+ * у nginx. Картинки, шрифты, видео, glb не сжимаются — они уже сжаты. Ответы оригинала через
+ * --proxy сжимаются так же (fetch их распаковал), сжатое запоминается по адресу и содержимому.
+ * Больше 32 МБ — отдаётся как есть, потоком.
  *
  * Занятый порт. До запуска сервер пробует подключиться к 127.0.0.1:порт и [::1]:порт (и к
  * адресу из --host, если он не 0.0.0.0, не :: и не localhost). Ответил кто-то — «FAIL порт
@@ -32,7 +47,8 @@
  * localhost у старого. Если подключение не дали (на части машин к ::1 — EACCES) или ответа
  * нет, на Windows слушатели порта смотрятся в netstat; не удалось и там — WARN «не проверено».
  *
- * Без кэша (Cache-Control: no-store), чтобы правки в rework.css были видны по F5.
+ * Браузеру — без кэша (Cache-Control: no-store), чтобы правки в rework.css были видны по F5;
+ * сжатое сервер держит у себя и сжимает заново, когда файл изменился.
  * Отдаются только файлы внутри папки: «..», «%2e%2e», «%5c..», обратные слеши и ссылки
  * (symlink, junction), ведущие наружу, получают 403; скрытые файлы и папки (.git, .env —
  * всё, что начинается с точки, кроме .well-known) — тоже 403. Папка без «/» в конце
@@ -50,14 +66,17 @@
  * Файлов не пишет. Останавливать Ctrl+C.
  */
 import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import zlib from 'node:zlib';
 import { parseArgs } from './lib.mjs';
 
-const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['port', 'host', 'proxy'], flags: ['help', 'h'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['port', 'host', 'proxy'], flags: ['help', 'h', 'no-compress'] });
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
@@ -96,6 +115,48 @@ const MIME = {
   '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.usdz': 'model/vnd.usdz+zip', '.bin': 'application/octet-stream',
 };
 
+/* ---------- сжатие: br или gzip по Accept-Encoding, сжатое — в памяти ---------- */
+const compress = !opt['no-compress'];
+const MB = 1024 * 1024;
+/* типы, которые сжимает хостинг (как encode у Caddy): текст, JS, JSON, XML, SVG, wasm, gltf */
+const COMPRESSIBLE = /^(text\/|application\/(javascript|json|manifest\+json|xml|wasm)|image\/svg\+xml|model\/gltf\+json)/i;
+const MIN_COMPRESS = 512, MAX_COMPRESS = 32 * MB, CACHE_MAX = 256 * MB;
+const gzipAsync = promisify(zlib.gzip), brotliAsync = promisify(zlib.brotliCompress);
+const zippable = (type, size) => compress && COMPRESSIBLE.test(type) && size >= MIN_COMPRESS && size <= MAX_COMPRESS;
+/* Accept-Encoding: «gzip, deflate, br, zstd», «br;q=0, gzip», «*;q=0.5», «identity». Равные веса — br */
+function pickEncoding(header) {
+  if (!header) return null;
+  const q = {};
+  for (const part of String(header).toLowerCase().split(',')) {
+    const [name, ...params] = part.trim().split(';'); if (!name) continue;
+    let v = 1; for (const p of params) { const m = /^\s*q\s*=\s*([\d.]+)\s*$/.exec(p); if (m) v = Number(m[1]); }
+    q[name.trim()] = Number.isFinite(v) ? v : 0;
+  }
+  const of = (e) => (e in q ? q[e] : '*' in q ? q['*'] : 0);
+  const br = of('br'), gz = Math.max(of('gzip'), of('x-gzip'));
+  if (br <= 0 && gz <= 0) return null;
+  return br >= gz ? 'br' : 'gzip';
+}
+/* кэш сжатого: ключ → { promise, size }; порядок Map — порядок обращений, старое вытесняется сверх CACHE_MAX.
+   Один и тот же файл, запрошенный дважды за время сжатия, сжимается один раз */
+const zcache = new Map(); let zcacheBytes = 0;
+function encoded(key, getBuf, enc) {
+  const k = `${enc}|${key}`;
+  const hit = zcache.get(k);
+  if (hit) { zcache.delete(k); zcache.set(k, hit); return hit.promise; }
+  const entry = { size: 0 };
+  entry.promise = Promise.resolve().then(getBuf).then((buf) => (enc === 'br'
+    ? brotliAsync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length } })
+    : gzipAsync(buf, { level: 6 })));
+  zcache.set(k, entry);
+  entry.promise.then((z) => {
+    if (zcache.get(k) !== entry) return;
+    entry.size = z.length; zcacheBytes += z.length;
+    for (const [ok, ov] of zcache) { if (zcacheBytes <= CACHE_MAX || ok === k) break; zcache.delete(ok); zcacheBytes -= ov.size; }
+  }, () => { if (zcache.get(k) === entry) zcache.delete(k); });
+  return entry.promise;
+}
+
 /* внутри папки — значит, путь от корня не «..», не начинается с «..\» и не уходит на другой диск */
 const within = (base, f) => { const rel = path.relative(base, f); return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel)); };
 const statOf = (f) => { try { return fs.statSync(f); } catch { return null; } };
@@ -112,8 +173,18 @@ async function proxyTo(req, res, target) {
     for (const k of ['content-type', 'content-range', 'accept-ranges']) { const v = r.headers.get(k); if (v) h[k] = v; }
     const loc = r.headers.get('location');
     if (loc) h.location = loc.startsWith(proxy) ? loc.slice(proxy.length) || '/' : loc;
-    /* fetch уже распаковал gzip/br, поэтому content-encoding не передаём, а длину считаем заново */
+    /* fetch уже распаковал gzip/br, поэтому content-encoding оригинала не передаём: текст сжимаем
+       сами, как свои файлы (сжатое — по адресу и содержимому), длину считаем заново */
     const buf = req.method === 'HEAD' ? Buffer.alloc(0) : Buffer.from(await r.arrayBuffer());
+    const type = r.headers.get('content-type') || '';
+    if (req.method !== 'HEAD' && zippable(type, buf.length) && !h['content-range']) {
+      h.vary = 'Accept-Encoding';
+      const enc = pickEncoding(req.headers['accept-encoding']);
+      if (enc) {
+        const z = await encoded(`proxy|${target}|${crypto.createHash('sha1').update(buf).digest('hex')}`, () => buf, enc).catch(() => null);
+        if (z) { h['content-encoding'] = enc; h['content-length'] = z.length; res.writeHead(r.status, h); return res.end(z); }
+      }
+    }
     if (req.method !== 'HEAD') h['content-length'] = buf.length;
     res.writeHead(r.status, h); res.end(buf);
   } catch (e) { plain(res, 502, `502 proxy: ${e.name === 'TimeoutError' ? 'оригинал не ответил за 60 с' : e.message}`); }
@@ -134,6 +205,24 @@ function parseRange(h, size) {
 function sendFile(req, res, file, st) {
   const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
   const base = { 'content-type': type, 'cache-control': 'no-store', 'accept-ranges': 'bytes' };
+  /* текст — сжатым, если клиент просит; с Range — несжатый диапазон ниже (как у nginx) */
+  if (zippable(type, st.size)) {
+    base.vary = 'Accept-Encoding';
+    const enc = req.headers.range ? null : pickEncoding(req.headers['accept-encoding']);
+    if (enc) {
+      encoded(`${file}|${st.mtimeMs}|${st.size}`, () => fs.promises.readFile(file), enc).then((z) => {
+        /* диапазонов сжатого тела нет — Accept-Ranges только у несжатого */
+        const { 'accept-ranges': _ranges, ...head } = base;
+        res.writeHead(200, { ...head, 'content-encoding': enc, 'content-length': z.length });
+        res.end(req.method === 'HEAD' ? undefined : z);
+      }, () => sendRaw(req, res, file, st, base));
+      return;
+    }
+  }
+  sendRaw(req, res, file, st, base);
+}
+
+function sendRaw(req, res, file, st, base) {
   const range = req.headers.range ? parseRange(req.headers.range, st.size) : null;
   if (range === 'bad') { res.writeHead(416, { ...base, 'content-range': `bytes */${st.size}`, 'content-length': 0 }); return res.end(); }
   const [code, start, end, extra] = range
@@ -253,6 +342,7 @@ const list = addrs.map(shown).join(' и ');
 const viaLocalhost = addrs.some((a) => a === '127.0.0.1' || isAny(a));
 console.log(`${viaLocalhost ? `http://localhost:${port}/` : `http://${shown(addrs[0])}:${port}/`}  ←  ${root}${proxy ? `  (остальное → ${proxy})` : ''}`);
 console.log(addrs.every(isLoop) ? `Только эта машина (слушает ${list}). Для телефона в той же сети: --host 0.0.0.0` : `WARN слушает ${list}: папку видят другие устройства в сети. Для работы на этой машине --host не нужен.`);
+console.log(compress ? 'Сжатие как на хостинге: html, css, js, json, svg, xml, txt, wasm от 512 байт — br или gzip по Accept-Encoding. Без сжатия: --no-compress' : 'Без сжатия (--no-compress): текст уходит как есть — perf.mjs покажет «сервер не сжимает» и оценку со сжатием');
 
 /* Доступен ли сервер с этой машины: подключаемся к своим адресам (к 0.0.0.0 — через 127.0.0.1, к :: —
    через 127.0.0.1 и ::1). Ни к одному не вышло — например, --host ::1 там, где к ::1 подключаться
