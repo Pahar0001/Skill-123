@@ -314,13 +314,17 @@ function hoverCandidatesInPage(maxN) {
     const s = getComputedStyle(el); const r = el.getBoundingClientRect();
     const hasImg = !!el.querySelector('img, picture, video, canvas, svg, [style*="background-image"]') || [...el.querySelectorAll('*')].some((x) => getComputedStyle(x).backgroundImage !== 'none');
     /* логотип: первая ссылка шапки, ссылка на главную или с «logo» в классе — свой вид, чтобы сверка не путала его с карточкой или меню */
-    const head = el.closest('header, [class*="header"], nav'); const firstLink = head && head.querySelector('a[href]') === el;
+    /* хлебные крошки — не шапка и не меню: «Главная» в них — ссылка в тексте, а не логотип */
+    const crumbs = (n) => !!n && /crumb|хлебн|вы здесь|you are here/i.test(`${n.className || ''} ${n.getAttribute('aria-label') || ''}`);
+    const head0 = el.closest('header, [class*="header"], nav'); const head = head0 && !crumbs(head0) ? head0 : null;
+    const firstLink = head && head.querySelector('a[href]') === el;
     const href = el.getAttribute('href') || '';
     const isHome = href === '/' || href === './' || href === '#' || href === location.origin + '/';
     if (el.tagName === 'A' && (/logo/i.test(String(el.className || '')) || (head && ((firstLink && (!!el.querySelector('img, svg') || isHome)) || isHome)))) return 'logo';
     const filled = s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent';
     if (hasImg && r.width * r.height > 15000) return 'card';
-    if (el.closest('header, nav') && el.tagName === 'A' && !filled) return 'nav';
+    const inNav = el.closest('header, nav');
+    if (inNav && !crumbs(inNav) && el.tagName === 'A' && !filled) return 'nav';
     if (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || (filled && parseFloat(s.paddingLeft) >= 8) || parseFloat(s.borderTopWidth) >= 1) return 'button';
     if (el.tagName === 'A') return 'link';
     return '';
@@ -961,21 +965,38 @@ const FAMILY = (it) => {
   return it.kind;
 };
 function nums(it) { const out = {}; for (const p of it.props || []) { const a = parseFloat(String(p.from).replace(',', '.')), b = parseFloat(String(p.to).replace(',', '.')); out[p.prop] = [a, b]; } return out; }
+/* Появление, исчезание и привязка к прокрутке — одно и то же изменение, снятое по-разному: если отрезок не
+   укладывается в проход (блок у конца короткой страницы), привязанное к прокрутке видно как скачок — «появление».
+   Пара между ними — только когда у нас есть все свойства донора и числа близки. */
+const SCROLL_GROUP = new Set(['reveal:in', 'reveal:out', 'scroll-linked']);
+const kindRu = (it) => `${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''}`;
 function similar(d, o) {
-  if (FAMILY(d) !== FAMILY(o)) return { score: 0 };
+  const fd = FAMILY(d), fo = FAMILY(o);
+  const cross = fd !== fo;
+  if (cross && !(SCROLL_GROUP.has(fd) && SCROLL_GROUP.has(fo))) return { score: 0 };
   const diffs = []; let score = 1;
   if (d.kind === 'hover' && d.sub !== o.sub) { diffs.push(`наведение: у донора «${d.sub}», у нас «${o.sub}»`); score -= 0.3; }
   const nd = nums(d), no = nums(o);
   for (const [prop, [a, b]] of Object.entries(nd)) {
-    if (!(prop in no)) { if (['reveal', 'scroll-linked', 'parallax', 'entrance'].includes(d.kind)) { diffs.push(`нет «${prop}» (${a} → ${b})`); score -= 0.25; } continue; }
+    if (!(prop in no)) {
+      if (['reveal', 'scroll-linked', 'parallax', 'entrance'].includes(d.kind)) { diffs.push(`нет «${prop}» (${a} → ${b})`); score -= 0.25; }
+      /* наведение: у донора меняется цвет, у нас — только подчёркивание — это другое наведение, а не то же */
+      else if (d.kind === 'hover') { const pr = (d.props || []).find((x) => x.prop === prop); diffs.push(`у нас не меняется «${prop}»${pr ? ` (у донора ${pr.from} → ${pr.to})` : ''}`); score -= 0.15; }
+      continue;
+    }
     const [c, e] = no[prop];
     const bad = (x, y) => Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) > Math.max(0.05, Math.abs(x) * 0.25);
     if (bad(a, c) || bad(b, e)) { diffs.push(`${prop}: у донора ${a} → ${b}, у нас ${c} → ${e}`); score -= 0.15; }
   }
   const dt = d.timing || {}, ot = o.timing || {};
   if (dt.duration && ot.duration && (ot.duration > dt.duration * 1.6 || ot.duration < dt.duration / 1.6)) { diffs.push(`длительность: ${dt.duration} → у нас ${ot.duration} мс`); score -= 0.1; }
+  if (cross) {
+    const keys = Object.keys(nd);
+    if (!keys.length || diffs.length || !keys.every((k) => k in no)) return { score: 0 };
+    return { score: 0.6, diffs: [], notes: [`у донора снято как «${kindRu(d)}», у нас — «${kindRu(o)}»: числа те же (вид зависит от того, уложился ли отрезок в проход прокрутки)`] };
+  }
   if (d.scroll && o.scroll && Number.isFinite(d.scroll.startPct) && Number.isFinite(o.scroll.startPct) && (Math.abs(d.scroll.startPct - o.scroll.startPct) > 20 || Math.abs(d.scroll.endPct - o.scroll.endPct) > 20)) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.startPct}% → ${d.scroll.endPct}%, у нас ${o.scroll.startPct}% → ${o.scroll.endPct}%`); score -= 0.1; }
-  return { score: Math.max(0.05, score), diffs };
+  return { score: Math.max(0.05, score), diffs, notes: [] };
 }
 /* одно наше движение может закрывать несколько одинаковых у донора (одна анимация карточек на весь каталог) */
 function compare(donor, ours, decisions) {
@@ -984,8 +1005,8 @@ function compare(donor, ours, decisions) {
     let best = null;
     for (const o of ours.items) { const s = similar(d, o); if (s.score > 0 && (!best || s.score > best.s.score || (s.score === best.s.score && !used.has(o.id) && used.has(best.o.id)))) best = { o, s }; }
     const dec = decisions[d.id] || decisions[`${d.kind}:${pattern(d.target)}`] || decisions[d.kind];
-    if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, decision: dec || '' }); }
-    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : 'НЕТ', diffs: [], decision: dec || '' });
+    if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, notes: best.s.notes || [], decision: dec || '' }); }
+    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : 'НЕТ', diffs: [], notes: [], decision: dec || '' });
   }
   const extra = ours.items.filter((o) => !used.has(o.id));
   const miss = rows.filter((r) => r.status === 'НЕТ').length, diff = rows.filter((r) => r.status === 'ОТЛИЧАЕТСЯ' && !r.decision).length;
@@ -997,7 +1018,7 @@ function mdCompare(c, donor, ours) {
     '| донор | вид | у донора | у нас | статус | разница / решение |', '|---|---|---|---|---|---|'];
   for (const r of c.rows) {
     const d = r.d; const dWhat = `\`${d.target}\`${d.count > 1 ? ` ×${d.count}` : ''}: ${d.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 90)}`;
-    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${r.o ? `${r.o.id} \`${r.o.target}\`` : '—'} | ${r.status} | ${[...r.diffs, r.decision].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} |`);
+    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${r.o ? `${r.o.id} \`${r.o.target}\`` : '—'} | ${r.status} | ${[...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} |`);
   }
   L.push('', `## Своё (у донора нет) — ${c.extra.length}`, '', ...(c.extra.length ? c.extra.map((o) => `- ${o.id} ${KIND_RU[o.kind] || o.kind}${o.sub ? ` (${o.sub})` : ''} — \`${o.target}\`: ${o.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 100)}`) : ['- нет']),
     '', 'Решения «почему нет / чем заменено» — `motion-decisions.json` в папке прогона: { "m04": "почему", "reveal:div.card": "почему" }.', 'Своё — сверить с банком идей (`ideas.mjs list`): задумано ли, записать удачное.');
@@ -1051,11 +1072,11 @@ if (cmd === 'compare') {
   const c = compare(donor, ours, decisions);
   const tag = opt.tag && opt.tag !== true ? String(opt.tag) : 'compare';
   const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
-    steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}`, details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, r.decision].filter(Boolean).join('; ') })),
+    steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}`, details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
     extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
   writeJson(path.join(out, 'motion', `${tag}.json`), proto);
   fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
-  for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.decision ? ` — решение: ${r.decision}` : ''}`);
+  for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение: ${r.decision}` : ''}`);
   console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
   console.log(`${c.verdict}: сверка движения · ${path.join(out, 'motion', `${tag}.md`)}`);
   process.exit(c.verdict === 'FAIL' ? 1 : 0);
