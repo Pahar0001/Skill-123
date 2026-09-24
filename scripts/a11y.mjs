@@ -40,7 +40,16 @@
  * Ещё: мелкий текст; картинки без alt, поля без подписи, кнопки и ссылки без имени,
  * порядок заголовков, число h1, lang, запрет масштабирования, положительный tabindex,
  * видимость фокуса при обходе клавишей Tab, размер целей нажатия на телефоне (24 px),
- * правило prefers-reduced-motion в стилях, автоплей видео.
+ * кегль полей ввода на телефоне (16 px), правило prefers-reduced-motion в стилях, автоплей видео.
+ *
+ * Цели нажатия и поля на телефоне. Цель нажатия радиокнопки и флажка — вместе с подписью: нажатие
+ * на label (обёртку или label[for]) тоже ставит отметку, поэтому мерится самая крупная из коробок —
+ * своя или подписи (оформленная радиокнопка, обрезанная до 1×1 или прозрачная поверх подписи
+ * 30+ px, — не «input 1×1»). Мелкая подпись — по-прежнему WARN, в строке её размер. «Поля ввода
+ * текста мельче 16px» (iOS увеличит страницу при фокусе) — только текстовые поля: input text,
+ * email, tel, number, search, url, password, date и время, textarea и select; радиокнопки, флажки,
+ * ползунки, выбор файла и цвета iOS не увеличивает. Число в строке — всех найденных, список —
+ * первые 10 и 6.
  *
  * Прокрутка. Сначала страница проходится целиком (lib.scrollThrough, прокрутка мгновенная —
  * forceInstantScroll): иначе при html{scroll-behavior:smooth} страница не доезжала, блоки
@@ -103,7 +112,10 @@
  * адрес с #якорем), исходным не считается и сбрасывается. Возврат — scrollTo по горизонтали,
  * сдвиг видимой области — scrollIntoView корня (исходное место — начало страницы) или временного
  * невидимого блока на исходном месте (dir=rtl). Не вернулась — в JSON viewReset.failed, в выводе
- * «видимая область N раз не вернулась на исходное место», и OK этой строки становится WARN. Худшие 10 %
+ * «видимая область N раз не вернулась на исходное место», и OK этой строки становится WARN. Возвраты
+ * перед замером закреплённого текста на картинке считаются отдельно (viewReset.img — сколько их было до
+ * прохода по высотам): их провал помечается в строке «по снимку фона» (OK → WARN), а строка высот
+ * говорит только о своих. Худшие 10 %
  * пикселей против нормы AA, зерно учитывается как выше. Шапка с mix-blend-mode (difference —
  * «белый текст, который над светлым становится чёрным») мерится смешанным цветом: multiply, screen,
  * overlay, hard-light, darken, lighten, difference, exclusion, color-dodge, color-burn считаются по
@@ -111,11 +123,26 @@
  * «на 1840 px меню nav.menu над секцией section#catalog «Каталог» (фон под текстом светлый): a «Каталог» #FFFFFF 16px
  * — 1.07:1». К высотам подъезжают сверху (прокрутка вниз); если часть текста на высоте спрятана, за
  * окном или обрезана, — ещё раз снизу: шапка, которая прячется при прокрутке вниз, видна при прокрутке вверх
- * (в выводе «прокрутка вверх»). Текст, который и так спрятан, за окном (sticky уехал со своим
- * блоком), перекрыт другим блоком или обрезан предком (закрытое выпадающее меню: max-height 0 и
- * overflow hidden, clip-path — в точке текста браузер его не рисует), на этой высоте не мерится — в
- * выводе сколько таких; текст, центр которого уже при поиске за краем предка с overflow ≠ visible,
- * в список не берётся вовсе. Ни одного замера — WARN «смотреть глазами». Прокручивается не документ,
+ * (в выводе «прокрутка вверх»). Текст, который и так спрятан, за окном, перекрыт другим блоком или
+ * обрезан предком (закрытое выпадающее меню: max-height 0 и overflow hidden, clip-path — в точке
+ * текста браузер его не рисует), на этой высоте не мерится — в выводе сколько таких; текст, центр
+ * которого уже при поиске за краем предка с overflow ≠ visible, в список не берётся вовсе. Ни одного
+ * замера — WARN «смотреть глазами».
+ * Sticky закреплён только в пределах своего контейнера (ближайший предок не inline): карточка товара
+ * с position:sticky внутри сетки уезжает вместе с сеткой и на секции ниже не заходит. Поэтому у
+ * sticky считается участок прокрутки, где он закреплён: от места в потоке (запоминается на верху
+ * страницы, пока блок стоит на нём) до высоты, где контейнер кончается (низ контейнера − высота
+ * блока − top; у bottom — зеркально). Высоты выбираются только внутри участка; участок короче 8 px
+ * (карточка в последней строке сетки на телефоне), нет ни top, ни bottom или между блоком и прокруткой
+ * блок с overflow ≠ visible (прилипает к нему, а не к окну) — блок нигде не закреплён, высот для него
+ * нет, и если закреплённого текста больше нет — OK «sticky-блок ниже верха страницы нигде не
+ * закреплён». Секций с другим фоном нет, а посередине страницы sticky не закреплён — одна высота
+ * посередине его участка. На высоте, выбранной для другого блока (шапки), sticky вне участка —
+ * «не закреплён»: он уехал вместе с контейнером или ещё стоит в потоке и там это обычный текст своей
+ * секции (его контраст — в основном проходе), а не пропуск; «уехал» считается по коробке контейнера
+ * и offsetHeight, а не по коробке блока — шапка, спрятанная transform при прокрутке вниз, остаётся
+ * «вне окна» и мерится при прокрутке вверх. Ноль замеров только из-за «не закреплён» — OK с
+ * пометкой «мерить нечего», а не WARN. Sticky внутри fixed-предка — как fixed. Прокручивается не документ,
  * а блок во весь экран — секции ищутся в нём. Берётся до 40 элементов (больше — сначала мелкие
  * блоки: шапка и меню раньше закреплённых секций, и не больше трёх одинаковых). Закреплённый текст
  * ищется наверху и на высоте одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
@@ -134,7 +161,17 @@
  * Фокус. Обход клавишей Tab идёт на СВЕЖЕЙ странице — отдельная вкладка, без прокруток и кликов:
  * после проверок контраста фокус оставался в нижней панели, обход проходил 1 элемент и писал OK
  * (связка blur()+scrollTo+body.focus() старт не сбрасывает, сбрасывает только загрузка). Если
- * обошли меньше min(5, число фокусируемых) — WARN «обход не состоялся», а не OK. Фокус внутри iframe
+ * обошли меньше min(5, число остановок Tab) — WARN «обход не состоялся», а не OK; группа радиокнопок
+ * с одним name — одна остановка (Tab заходит в неё один раз). Фокус виден, если при фокусе меняется
+ * рамка, тень, фон, цвет или подчёркивание у самого элемента — или у того, кто рисует рамку за него:
+ * подписи (label — обёртка или label[for]), соседа сразу за ним (input:focus-visible + span) или
+ * обёртки до трёх уровней вверх без других фокусируемых внутри (.search:focus-within). Так
+ * оформленная радиокнопка (прозрачна, обрезана 1×1 или appearance:none поверх подписи) с рамкой на
+ * подписи — не FAIL; в строке OK — у кого и где нарисован фокус. Своя рамка невидимого элемента
+ * (прозрачность до 0.05, clip или clip-path inset(50%) как у sr-only, коробка до 2×2 без крупных
+ * детей) не в счёт: FAIL с пометкой «рамка только у самого элемента, а он невидим». Рамка с плавным
+ * переходом (transition) меряется конечной: идущие переходы завершаются перед каждым снимком стиля
+ * (раньше сразу после blur() стиль был тем же, что в фокусе, — ложный FAIL). Фокус внутри iframe
  * (карта, видео): activeElement страницы — сам iframe, его стиль не меняется; видимость там не
  * проверяется, Tab жмётся, пока фокус не вернётся в страницу (до 40 раз), в выводе — «внутри iframe
  * не проверялся». Не вернулся — WARN, не ложный FAIL «не видно фокуса на iframe» и не «ловушка».
@@ -179,6 +216,8 @@ const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'a11y'));
 const tag = opt.tag || vpName;
 const sharp = loadSharp();
 const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, vis: VISIBLE_FN, hexc: HEX_FN };
+/* закреплённый текст на прокрутке: ещё stk — положение sticky-блока (stickyInPage) */
+const FX_DEPS = { ...DEPS, stk: stickyInPage.toString() };
 
 /* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
 
@@ -369,21 +408,88 @@ function domInPage({ isMobile, map }) {
   const hs = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(V).map((h) => +h.tagName[1]);
   const skips = []; for (let i = 1; i < hs.length; i++) if (hs[i] > hs[i - 1] + 1) skips.push(`h${hs[i - 1]}→h${hs[i]}`);
   const vpMeta = (document.querySelector('meta[name=viewport]') || {}).content || '';
-  const targets = isMobile ? [...document.querySelectorAll('a[href], button, [role=button], input[type=checkbox], input[type=radio], summary')].filter((el) => { if (!V(el)) return false; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); const inline = s.display === 'inline' && el.parentElement && /^(p|li|td|span|dd)$/i.test(el.parentElement.tagName); return !inline && (r.width < 24 || r.height < 24); }).map((el) => { const r = el.getBoundingClientRect(); return `${sig(el)} ${Math.round(r.width)}×${Math.round(r.height)}`; }).slice(0, 10) : [];
-  const smallInputs = isMobile ? [...document.querySelectorAll('input:not([type=hidden]), select, textarea')].filter((i) => V(i) && parseFloat(getComputedStyle(i).fontSize) < 16).map((el) => sig(el)).slice(0, 6) : [];
+  /* цель нажатия радиокнопки и флажка — вместе с подписью: нажатие на label (обёртку или label[for])
+     тоже ставит отметку. Оформленная радиокнопка (обрезана 1×1, поверх подписи) мерится по самой крупной
+     из коробок — своей и подписей (крупнее — у кого больше меньшая сторона); раньше «input 1×1» при
+     подписи 30+ px */
+  const tapBox = (el) => {
+    const r = el.getBoundingClientRect(); let best = { w: r.width, h: r.height }, lab = null;
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      for (const lb of el.labels || []) {
+        if (!V(lb)) continue; const q = lb.getBoundingClientRect(); const b = { w: q.width, h: q.height, el: lb };
+        if (!lab || Math.min(b.w, b.h) > Math.min(lab.w, lab.h)) lab = b;
+        if (Math.min(b.w, b.h) > Math.min(best.w, best.h)) best = b;
+      }
+    }
+    return { w: best.w, h: best.h, lab };
+  };
+  const targetsAll = isMobile ? [...document.querySelectorAll('a[href], button, [role=button], input[type=checkbox], input[type=radio], summary')].filter((el) => { if (!V(el)) return false; const s = getComputedStyle(el); const inline = s.display === 'inline' && el.parentElement && /^(p|li|td|span|dd)$/i.test(el.parentElement.tagName); if (inline) return false; const b = tapBox(el); return b.w < 24 || b.h < 24; }).map((el) => { const r = el.getBoundingClientRect(); const { lab } = tapBox(el); return `${sig(el)} ${Math.round(r.width)}×${Math.round(r.height)}${lab ? ` (подпись ${sig(lab.el)} ${Math.round(lab.w)}×${Math.round(lab.h)} — тоже мельче)` : ''}`; }) : [];
+  const targets = targetsAll.slice(0, 10);
+  /* iOS увеличивает страницу при фокусе только на полях ввода текста (и списке select): радиокнопки,
+     флажки, ползунки, выбор файла и цвета не в счёт — раньше «поля мельче 16px» ловили радиокнопки */
+  const TEXT_TYPES = /^(text|email|tel|number|search|url|password|date|datetime-local|month|week|time)$/;
+  const smallInputsAll = isMobile ? [...document.querySelectorAll('input, select, textarea')].filter((i) => (i.tagName !== 'INPUT' || TEXT_TYPES.test(i.type)) && V(i) && parseFloat(getComputedStyle(i).fontSize) < 16).map((el) => `${sig(el)} ${Math.round(parseFloat(getComputedStyle(el).fontSize) * 10) / 10}px`) : [];
+  const smallInputs = smallInputsAll.slice(0, 6);
   let reduced = false; for (const sh of document.styleSheets) { try { const walk = (rs) => { for (const r of rs) { if (r.type === CSSRule.MEDIA_RULE) { if (/prefers-reduced-motion/.test(r.conditionText)) reduced = true; walk(r.cssRules); } } }; walk(sh.cssRules); } catch { /* кросс-домен */ } }
-  return { contrast, smallText, clippedText: clippedCount, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, smallInputs, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
+  return { contrast, smallText, clippedText: clippedCount, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, targetsCount: targetsAll.length, smallInputs, smallInputsCount: smallInputsAll.length, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
 }
 
 /* ---------- закреплённый текст на прокрутке: функции страницы ---------- */
 
+/* sticky-блок на текущей прокрутке. Он закреплён только в пределах своего контейнера (containing block —
+   ближайший предок не inline): карточка товара с position:sticky внутри сетки едет вместе с сеткой, когда
+   та кончается, и на секции ниже не заходит. state: 'закреплён'; 'уехал' — контейнер кончился выше места
+   закрепления (у bottom — начинается ниже), блок уехал вместе с ним; 'не доехал' — ещё стоит на своём месте
+   в потоке; 'не закрепляется' — нет ни top, ни bottom, или между ним и прокруткой блок с overflow ≠ visible
+   (прилипает к нему, а не к окну). lo…hi — высоты прокрутки (документа или __rwScroller), на которых он
+   закреплён; hi null — до конца страницы. Место в потоке известно, только если блок стоит на нём сейчас
+   (иначе lo 0 или hi null — с запасом). Свой transform (шапка, спрятанная сдвигом при прокрутке вниз)
+   «уехал» не даёт: это считается по коробке контейнера и offsetHeight, а не по коробке блока. null — не
+   sticky или внутри fixed-предка, или вне __rwScroller (такой документ не едет): закреплён всегда, как fixed */
+function stickyInPage(host) {
+  const hs = getComputedStyle(host); if (hs.position !== 'sticky') return null;
+  const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null;
+  if (sc && !sc.contains(host)) return null;
+  for (let n = host.parentElement; n && n !== sc && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const s = getComputedStyle(n);
+    if (s.position === 'fixed') return null;
+    if (!/^(visible|clip)$/.test(s.overflowX) || !/^(visible|clip)$/.test(s.overflowY)) return { state: 'не закрепляется', why: `прилипает к ${sig(n)} (overflow ${s.overflowX} ${s.overflowY}), а не к окну`, lo: null, hi: null };
+  }
+  const rTop = sc ? sc.getBoundingClientRect().top + sc.clientTop : 0, rH = sc ? sc.clientHeight : innerHeight;
+  const cur = sc ? sc.scrollTop : scrollY;
+  const len = (v) => (v === 'auto' ? null : /%$/.test(v) ? parseFloat(v) / 100 * rH : parseFloat(v));
+  const top = len(hs.top), bottom = len(hs.bottom);
+  if (top == null && bottom == null) return { state: 'не закрепляется', why: 'нет ни top, ни bottom', lo: null, hi: null };
+  let cb = host.parentElement; while (cb && cb !== document.documentElement && /^(inline|contents)$/.test(getComputedStyle(cb).display)) cb = cb.parentElement;
+  if (!cb) return null;
+  const cr = cb.getBoundingClientRect(), cs = getComputedStyle(cb);
+  const cT = cr.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop), cB = cr.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom);
+  const H = host.offsetHeight, mt = parseFloat(hs.marginTop) || 0, mb = parseFloat(hs.marginBottom) || 0;
+  const hr = host.getBoundingClientRect(); const doc = (v) => v - rTop + cur;
+  const plain = [hs.transform, hs.translate, hs.scale, hs.rotate].every((v) => !v || v === 'none');
+  /* место в потоке запоминается на узле (__rwStickN), когда блок стоит на нём: на верху страницы
+     fixedTextInPage спрашивает все sticky, и карточка, чей текст наверху был за окном, не теряет его */
+  if (top != null) {
+    const spot = rTop + top; const below = plain && hr.top > spot + 1.5;
+    if (below) host.__rwStickN = doc(hr.top);
+    return { state: cB - mb - H < spot - 1.5 ? 'уехал' : below ? 'не доехал' : 'закреплён', top, bottom: null, rTop, rH, lo: host.__rwStickN != null ? host.__rwStickN - top : 0, hi: doc(cB) - mb - H - top };
+  }
+  const spot = rTop + rH - bottom; const above = plain && hr.bottom < spot - 1.5;
+  if (above) host.__rwStickNB = doc(hr.bottom);
+  return { state: cT + mt + H > spot + 1.5 ? 'уехал' : above ? 'не доехал' : 'закреплён', top: null, bottom, rTop, rH, lo: doc(cT) + mt + H + bottom - rH, hi: host.__rwStickNB != null ? host.__rwStickNB + bottom - rH : null };
+}
+
 /* текст в блоках position: fixed или sticky, видимый в окне сейчас: метка data-rw-fx=<номер>.
    Повторный вызов добавляет только новые (шапка, ставшая fixed после прокрутки). band — где по
-   высоте окна стоит центр текста, когда блок закреплён (у sticky — по его top или bottom). */
+   высоте окна стоит центр текста, когда блок закреплён (у sticky — по его top или bottom). У sticky
+   ещё lo…hi — высоты прокрутки, на которых он закреплён (stk), и never — не закрепляется нигде
+   (участок короче 8 px): такие высоты мерить незачем, там это обычный текст своей секции */
 function fixedTextInPage({ limit }) {
   const vw = innerWidth, vh = innerHeight;
   const pinned = (n) => { const p = getComputedStyle(n).position; return p === 'fixed' || p === 'sticky'; };
   const hosts = document.body ? [...document.body.querySelectorAll('*')].filter(pinned) : [];
+  /* место в потоке — у всех sticky, и у тех, чей текст сейчас за окном (stk запоминает его на узле) */
+  for (const h of hosts) if (getComputedStyle(h).position === 'sticky') stk(h);
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
   const hostOf = (el) => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) if (pinned(n)) return n; return null; };
   const kindOf = (el, host) => {
@@ -414,10 +520,12 @@ function fixedTextInPage({ limit }) {
       if (cx < 0 || cy < 0 || cx > vw || cy > vh) continue; /* закрытое меню за краем окна */
       if (clipped(el, cx, cy)) continue;
       const host = hostOf(el); const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
-      let band = cy;
-      if (hs.position === 'sticky') { if (hs.top !== 'auto') band = parseFloat(hs.top) + (cy - hr.top); else if (hs.bottom !== 'auto') band = vh - parseFloat(hs.bottom) - (hr.bottom - cy); }
+      let band = cy; const k = hs.position === 'sticky' ? stk(host) : null;
+      /* место sticky в окне — от верха прокрутки (окна или блока __rwScroller) */
+      if (k && k.top != null) band = k.rTop + k.top + (cy - hr.top); else if (k && k.bottom != null) band = k.rTop + k.rH - k.bottom - (hr.bottom - cy);
       band = Math.max(1, Math.min(vh - 1, band));
-      found.push({ el, host, pos: hs.position, band, area: hr.width * hr.height, key: sig(el).replace(/#[^.]*/, '') + '|' + (hexc(getComputedStyle(el).color) || '') + '|' + sig(host) });
+      const never = !!k && (k.state === 'не закрепляется' || (k.hi != null && k.hi - Math.max(0, k.lo) < 8));
+      found.push({ el, host, pos: hs.position, band, stick: k, never, area: hr.width * hr.height, key: sig(el).replace(/#[^.]*/, '') + '|' + (hexc(getComputedStyle(el).color) || '') + '|' + sig(host) });
     }
   }
   const total = found.length;
@@ -427,7 +535,10 @@ function fixedTextInPage({ limit }) {
   let n = window.__rwFxN || 0; const items = [];
   for (const f of take) {
     const idx = n++; f.el.setAttribute('data-rw-fx', idx);
-    items.push({ idx, sig: sig(f.el), text: f.el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30), host: sig(f.host), kind: kindOf(f.el, f.host), pos: f.pos, band: Math.round(f.band) });
+    /* хозяин sticky — ссылкой на узле (DOM не меняется): на каждой высоте fixedStateInPage спрашивает stk(хозяин) */
+    if (f.stick) f.el.__rwFxHost = f.host;
+    const st = f.stick ? { lo: Math.round(Math.max(0, f.stick.lo ?? 0)), hi: f.stick.hi == null ? null : Math.round(f.stick.hi), never: f.never, why: f.stick.why || null } : null;
+    items.push({ idx, sig: sig(f.el), text: f.el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30), host: sig(f.host), kind: kindOf(f.el, f.host), pos: f.pos, band: Math.round(f.band), ...(st ? { sticky: st } : {}) });
   }
   window.__rwFxN = n;
   return { items, total };
@@ -498,6 +609,10 @@ function fixedStateInPage({ ids }) {
   const inView = (x, y) => x >= VX && y >= VY && x <= VX + VW && y <= VY + VH;
   const out = ids.map((i) => {
     const el = document.querySelector(`[data-rw-fx="${i}"]`); if (!el) return { i, state: 'нет' };
+    /* sticky не на месте закрепления — уехал вместе со своим контейнером или ещё стоит в потоке: на этой
+       высоте он обычный текст своей секции (его контраст — в основном проходе), а не пропуск замера */
+    const host = el.__rwFxHost;
+    if (host && host.isConnected) { const k = stk(host); if (k && k.state !== 'закреплён') return { i, state: 'не закреплён', why: k.state }; }
     if (!vis(el)) return { i, state: 'скрыт' };
     /* коробки строк тянутся на всю длину текста, и за край блока с overflow ≠ visible (многоточие,
        max-width) — там букв нет, на снимке под ними страница за плашкой. Коробки обрезаются по самому
@@ -617,20 +732,23 @@ const resetView = async (page) => {
 /* ---------- закреплённый текст на прокрутке: высоты и замер ---------- */
 const FX_MAX_POS = 8, FX_LIMIT = 40;
 
-/* высоты прокрутки: полоса закреплённого текста (band) над секцией — её середина под полосой.
-   Сначала каждый фон секций, которого полосы не касались наверху (там мерит основной проход), затем
-   остальные секции (подряд идущие с одним фоном — одна); жадно, не больше max */
+/* высоты прокрутки: полоса закреплённого текста над секцией — её середина под полосой. Полоса —
+   { b: высота в окне, lo, hi: высоты прокрутки, на которых текст там стоит } (fixed — вся страница,
+   sticky — пока не уехал со своим контейнером; с запасом 4 px от краёв участка). Сначала каждый фон
+   секций, которого полосы не касались наверху (там мерит основной проход), затем остальные секции
+   (подряд идущие с одним фоном — одна); жадно, не больше max */
+const BAND_PAD = 4;
 function pickPositions(bands, secs, maxScroll, max) {
   if (!secs.length || maxScroll < 1) return [];
-  const at = (y, b) => { const d = y + b; let s = null; for (const x of secs) if (d >= x.top && d < x.bottom) s = x; return s; };
+  const at = (y, e) => { if (y < e.lo + BAND_PAD || y > e.hi - BAND_PAD) return null; const d = y + e.b; let s = null; for (const x of secs) if (d >= x.top && d < x.bottom) s = x; return s; };
   const runOf = new Map(); let run = -1, prev = null;
   for (const s of secs) { if (!prev || prev.bg !== s.bg) run++; runOf.set(s.i, run); prev = s; }
-  const keysAt = (y) => { const k1 = new Set(), k2 = new Set(); for (const b of bands) { const s = at(y, b); if (!s) continue; k1.add(`${b}|${s.bg}`); k2.add(`${b}|${runOf.get(s.i)}`); } return { k1, k2 }; };
+  const keysAt = (y) => { const k1 = new Set(), k2 = new Set(); for (const e of bands) { const s = at(y, e); if (!s) continue; k1.add(`${e.b}|${s.bg}`); k2.add(`${e.b}|${runOf.get(s.i)}`); } return { k1, k2 }; };
   const cands = [];
-  for (const b of bands) for (const s of secs) {
-    const lo = Math.max(1, Math.ceil(s.top - b)), hi = Math.min(maxScroll, Math.floor(s.bottom - b - 1));
+  for (const e of bands) for (const s of secs) {
+    const lo = Math.max(1, Math.ceil(s.top - e.b), Math.ceil(e.lo + BAND_PAD)), hi = Math.min(maxScroll, Math.floor(s.bottom - e.b - 1), Math.floor(e.hi - BAND_PAD));
     if (lo > hi) continue;
-    const y = Math.round(Math.min(hi, Math.max(lo, (s.top + s.bottom) / 2 - b)));
+    const y = Math.round(Math.min(hi, Math.max(lo, (s.top + s.bottom) / 2 - e.b)));
     if (!cands.some((c) => Math.abs(c.y - y) < 16)) cands.push({ y, ...keysAt(y) });
   }
   const top = keysAt(0); const got = { k1: new Set(top.k1), k2: new Set(top.k2) }; const chosen = [];
@@ -672,19 +790,38 @@ async function fixedOnScroll(page, map) {
   await resetView(page);
   await scrollToY(page, 0); await sleep(400);
   const scan = await evaluateWith(page, sectionsInPage, null, DEPS);
-  const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT }, DEPS);
+  const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT }, FX_DEPS);
   let b = { items: [], total: 0 };
   if (scan.maxScroll > 0 && a.items.length < FX_LIMIT) {
     await scrollToY(page, Math.min(scan.viewH, scan.maxScroll)); await sleep(500); await settleAnimations(page, 1500);
-    b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length }, DEPS);
+    b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length }, FX_DEPS);
   }
   const items = [...a.items, ...b.items];
-  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'обрезан': 0, 'прозрачный цвет': 0, 'смешение цвета': 0, 'вне снимка': 0, 'нет': 0 }, measured: 0, worst: null };
+  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'обрезан': 0, 'прозрачный цвет': 0, 'смешение цвета': 0, 'вне снимка': 0, 'нет': 0, 'не закреплён': 0 }, measured: 0, worst: null };
   if (!items.length) return { ...out, none: true };
   if (!sharp) return { ...out, error: 'нет sharp — снимки фона не разобрать' };
-  const bands = [...new Set(items.map((it) => Math.round((it.band - (scan.scTop || 0)) / 8) * 8))];
+  /* полосы: высота в окне и участок прокрутки, где текст там стоит. fixed и sticky, закреплённый с верха
+     страницы, — вся страница; sticky внутри контейнера — только пока контейнер не кончился (lo…hi);
+     sticky, который не закрепляется нигде (never), полос не даёт: на других высотах это обычный текст */
+  const bandMap = new Map();
+  for (const it of items) {
+    if (it.sticky && it.sticky.never) continue;
+    const b = Math.round((it.band - (scan.scTop || 0)) / 8) * 8;
+    const lo = it.sticky && it.sticky.lo > 0 ? it.sticky.lo : -Infinity, hi = it.sticky && it.sticky.hi != null ? it.sticky.hi : Infinity;
+    const k = `${b}|${lo}|${hi}`; if (!bandMap.has(k)) bandMap.set(k, { b, lo, hi });
+  }
+  const bands = [...bandMap.values()];
   let positions = pickPositions(bands, scan.sections, scan.maxScroll, FX_MAX_POS); out.how = 'секции с другим фоном';
-  if (!positions.length && scan.maxScroll >= 1) { positions = [Math.round(scan.maxScroll / 2)]; out.how = 'секций с другим фоном нет — одна высота посередине'; }
+  if (!positions.length && scan.maxScroll >= 1 && bands.length) {
+    /* одна высота посередине страницы; если там закреплённого текста нет (только sticky внутри своего
+       контейнера) — посередине самого длинного участка, где sticky закреплён */
+    const mid = Math.round(scan.maxScroll / 2);
+    const span = (e) => ({ lo: Math.max(1, Math.ceil(e.lo + BAND_PAD)), hi: Math.min(scan.maxScroll, Math.floor(e.hi - BAND_PAD)) });
+    const fit = bands.map(span).filter((r) => r.lo <= r.hi);
+    if (fit.some((r) => mid >= r.lo && mid <= r.hi)) { positions = [mid]; out.how = 'секций с другим фоном нет — одна высота посередине'; }
+    else if (fit.length) { const r = fit.sort((a, z) => (z.hi - z.lo) - (a.hi - a.lo))[0]; positions = [Math.round((r.lo + r.hi) / 2)]; out.how = 'секций с другим фоном нет — одна высота посередине участка, где sticky-блок закреплён'; }
+  }
+  if (!bands.length) out.how = 'sticky-блок нигде не закрепляется';
   out.positions = positions;
   /* на время снимка фона прячется весь текст страницы, а не только закреплённый: текст секции,
      проезжающий под прозрачной шапкой, — не фон (иначе худшие 10 % пикселей — чужие буквы) */
@@ -697,7 +834,7 @@ async function fixedOnScroll(page, map) {
     await resetView(page);
     if (from != null) { await scrollToY(page, from); await sleep(200); }
     await scrollToY(page, y); await sleep(450); await settleAnimations(page, 1500);
-    return evaluateWith(page, fixedStateInPage, { ids }, DEPS);
+    return evaluateWith(page, fixedStateInPage, { ids }, FX_DEPS);
   };
   await scrollToY(page, 0); await sleep(300);
   for (const y of positions) {
@@ -789,20 +926,68 @@ async function grainMap(page) {
 
 /* ---------- фокус: обход Tab на свежей странице ---------- */
 const PROPS = ['outlineStyle', 'outlineWidth', 'outlineColor', 'boxShadow', 'backgroundColor', 'borderTopColor', 'color', 'textDecorationLine'];
+
+/* шаг обхода: элемент в фокусе, виден ли фокус. Стиль (PROPS) снимается в фокусе и после blur() — у
+   самого элемента и у тех, кто рисует рамку за него: подписи (label — обёртка или label[for]), соседа
+   сразу за ним (input:focus-visible + span) и обёрток до трёх уровней вверх, в которых нет других
+   фокусируемых (.search:focus-within). Оформленная радиокнопка (прозрачна, обрезана 1×1 или
+   appearance:none поверх подписи) рамку рисует на подписи — раньше это был ложный FAIL «не видно фокуса
+   на: input». Своя рамка невидимого элемента (прозрачность до 0.05, clip или clip-path inset(50%) как у
+   sr-only, коробка до 2×2 без крупных детей) не в счёт — её не видно, как и у невидимого соседа.
+   iframe: фокус внутри него, activeElement страницы —
+   сам iframe; blur() выбросил бы фокус наружу, поэтому видимость не проверяется, а элемент помечается
+   __rwInside. Элементы сравниваются сами (__rwSeen), а не подписи: пять ссылок с одной подписью — не ловушка */
+function focusStepInPage({ props }) {
+  const el = document.activeElement; if (!el || el === document.body) return null;
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  if (el.__rwSeen) return { sig: sig(el), same: true, type, iframe: el.tagName === 'IFRAME' };
+  el.__rwSeen = true;
+  if (el.tagName === 'IFRAME') { el.__rwInside = true; return { sig: sig(el), same: false, type, iframe: true }; }
+  const FOC = 'a[href], button, input:not([type=hidden]), select, textarea, summary, iframe, [tabindex]:not([tabindex="-1"]), [contenteditable=""], [contenteditable="true"]';
+  /* невидим: прозрачен, обрезан как sr-only (clip, clip-path inset(50%)) или коробка до 2×2 без крупных
+     детей (строчная ссылка вокруг блока бывает 0×0, а рамка рисуется вокруг детей — она видна) */
+  const seen = (n) => {
+    if (eff(n) <= 0.05) return false;
+    const s = getComputedStyle(n); if (/rect\(0(px)?,? 0(px)?/.test(s.clip) || /inset\(50%\)/.test(s.clipPath)) return false;
+    const r = n.getBoundingClientRect();
+    return !(r.width <= 2 && r.height <= 2 && ![...n.children].some((c) => { const q = c.getBoundingClientRect(); return q.width > 2 && q.height > 2; }));
+  };
+  const cand = [['сам', el]];
+  const push = (kind, n) => { if (n && n.nodeType === 1 && !cand.some(([, m]) => m === n)) cand.push([kind, n]); };
+  for (const lb of el.labels || []) push('подпись', lb);
+  push('сосед', el.nextElementSibling);
+  for (let n = el.parentElement, k = 0; n && k < 3 && n !== document.body && n !== document.documentElement; n = n.parentElement, k++) {
+    if ([...n.querySelectorAll(FOC)].some((m) => m !== el)) break;
+    push('обёртка', n);
+  }
+  /* рамка с переходом (transition: box-shadow .25s): сразу после blur() стиль — текущее значение
+     перехода, то же, что в фокусе, и видимая рамка выходила «не видно». Идущие переходы завершаются
+     перед каждым снимком (анимации не трогаются: пульсирующая рамка — анимация) */
+  const settle = () => { if (typeof CSSTransition === 'undefined' || !document.getAnimations) return; for (const a of document.getAnimations()) if (a instanceof CSSTransition) { try { a.finish(); } catch { /* уже кончился */ } } };
+  const snap = () => { settle(); return cand.map(([, n]) => { const s = getComputedStyle(n); return props.map((p) => s[p]); }); };
+  const focused = snap(); const shown = cand.map(([, n]) => seen(n));
+  el.blur(); const base = snap(); el.focus({ preventScroll: true }); settle();
+  const moved = cand.map((_, k) => props.some((p, j) => focused[k][j] !== base[k][j]));
+  if (moved[0] && shown[0]) return { sig: sig(el), changed: true, same: false, type };
+  const k = cand.findIndex(([kind], i) => i > 0 && moved[i] && shown[i]);
+  if (k > 0) return { sig: sig(el), changed: true, via: `${cand[k][0]} ${sig(cand[k][1])}`, same: false, type };
+  return { sig: sig(el), changed: false, hiddenOwn: moved[0], same: false, type };
+}
 async function focusWalk(page) {
-  const focusables = await page.evaluate(() => [...document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, iframe, [tabindex], [contenteditable=""], [contenteditable="true"]')].filter((el) => {
+  /* остановки Tab: группа радиокнопок с одним name — одна остановка (Tab заходит в группу один раз),
+     иначе на странице с парой переключателей выходило ложное «обход не состоялся (4 из 5)» */
+  const focusables = await page.evaluate(() => { const groups = new Set(); return [...document.querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, iframe, [tabindex], [contenteditable=""], [contenteditable="true"]')].filter((el) => {
     if (el.disabled) return false; const ti = el.getAttribute('tabindex'); if (ti !== null && Number(ti) < 0) return false;
-    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible';
-  }).length);
-  const focus = { focusables, expected: Math.min(5, focusables), visited: 0, invisible: [], trapped: false, first: null, stuckAt: null, iframes: [], iframeStuck: null };
+    const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0 && getComputedStyle(el).visibility === 'visible')) return false;
+    if (el.type === 'radio' && el.name) { const g = `${el.form ? [...document.forms].indexOf(el.form) : '-'}|${el.name}`; if (groups.has(g)) return false; groups.add(g); }
+    return true;
+  }).length; });
+  const focus = { focusables, expected: Math.min(5, focusables), visited: 0, invisible: [], hiddenOwn: [], via: [], trapped: false, first: null, stuckAt: null, iframes: [], iframeStuck: null };
   let sameSteps = 0, skipPress = false;
   for (let i = 0; i < 30; i++) {
     if (!skipPress) { await page.keyboard.press('Tab'); await sleep(80); }
     skipPress = false;
-    /* сравниваем сами элементы, а не подписи: пять ссылок подряд с одной подписью — не ловушка.
-       iframe: фокус внутри него, activeElement страницы — сам iframe; blur() выбросил бы фокус наружу,
-       поэтому видимость не проверяется, а элемент помечается __rwInside */
-    const cur = await page.evaluate((props, sigSrc) => { const sig = eval(sigSrc); const el = document.activeElement; if (!el || el === document.body) return null; const type = (el.getAttribute('type') || '').toLowerCase(); if (el.__rwSeen) return { sig: sig(el), same: true, type, iframe: el.tagName === 'IFRAME' }; el.__rwSeen = true; if (el.tagName === 'IFRAME') { el.__rwInside = true; return { sig: sig(el), same: false, type, iframe: true }; } const s = getComputedStyle(el); const focused = Object.fromEntries(props.map((p) => [p, s[p]])); el.blur(); const s2 = getComputedStyle(el); const base = Object.fromEntries(props.map((p) => [p, s2[p]])); el.focus({ preventScroll: true }); return { sig: sig(el), changed: props.some((p) => focused[p] !== base[p]), same: false, type }; }, PROPS, SIG_FN);
+    const cur = await evaluateWith(page, focusStepInPage, { props: PROPS }, DEPS);
     if (!cur) break;
     /* поле даты в Chrome — три внутренних сегмента: Tab ходит по ним, это не ловушка */
     if (cur.same) { if (/^(date|time|datetime-local|month|week)$/.test(cur.type) && (sameSteps = sameSteps + 1) <= 4) continue; focus.trapped = true; focus.stuckAt = cur.sig; break; }
@@ -819,7 +1004,8 @@ async function focusWalk(page) {
       if (!left) { focus.iframeStuck = cur.sig; break; }
       skipPress = true; continue;
     }
-    if (!cur.changed) focus.invisible.push(cur.sig);
+    if (!cur.changed) { focus.invisible.push(cur.sig); if (cur.hiddenOwn) focus.hiddenOwn.push(cur.sig); }
+    else if (cur.via) focus.via.push({ sig: cur.sig, via: cur.via });
   }
   return focus;
 }
@@ -917,6 +1103,9 @@ try {
       } catch { imgContrast.skipped++; try { await h.evaluate((el) => el.classList.remove('rw-hide-text')); } catch { /* ушёл */ } }
     }
   }
+  /* возвраты видимой области при замере текста на картинке — отдельно: примечание о несработавшем
+     возврате идёт в свою строку («по снимку фона»), а не только в строку высот */
+  viewReset.img = { resets: viewReset.resets, failed: viewReset.failed };
   /* закреплённый текст (шапка, меню, нижняя панель) над секциями ниже верха страницы */
   fx = await fixedOnScroll(page, map).catch((e) => ({ error: String(e.message || e).slice(0, 200) }));
   await page.close();
@@ -943,15 +1132,28 @@ const cut = C.total > C.considered;
 L(cf.length ? 'FAIL' : cut ? 'WARN' : 'OK', `контраст: проверено ${C.checked} элементов${cut ? ` — взято ${C.considered} из ${C.total} текстовых (обрезано: остальные не проверялись)` : ` (текстовых на странице ${C.total})`}${C.translucent ? ` (из них ${C.translucent} полупрозрачных — смешаны с фоном)` : ''}${C.unknown ? `, ещё ${C.unknown} на картинке, градиенте или чужой подложке — см. ниже` : ''}${C.transparentText ? `, прозрачный цвет текста (градиент через background-clip) — ${C.transparentText}, не проверялись` : ''}`, cf.length ? cf.slice(0, 5).map(([k, v]) => `${k} = ${v.ratio}:1 (нужно ${v.need}:1), ${v.count} эл.: ${v.examples.join(', ')}`).join(' | ') : 'все пары проходят AA');
 /* перекрытый или ушедший за окно текст не мерился — это не «OK», а «проверить глазами» (WARN) */
 const covTxt = imgContrast.coveredList.length ? `не измерены — ${imgContrast.coveredList.slice(0, 5).map((c) => `${c.sig} «${c.text}» ${c.state === 'перекрыт' ? `перекрыт ${c.by}` : c.state}`).join(', ')}${imgContrast.coveredList.length > 5 ? ` и ещё ${imgContrast.coveredList.length - 5}` : ''} — смотреть глазами` : '';
+/* возврат видимой области перед замером закреплённого текста на картинке не удался — снимок мог лечь не под текстом */
+const vrI = viewReset.img || { resets: viewReset.resets, failed: viewReset.failed };
+const vrImg = vrI.failed ? `видимая область ${vrI.failed} раз из ${vrI.resets} не вернулась на исходное место перед замером закреплённого текста — снимок мог лечь не под текстом, смотреть глазами` : '';
 if (C.unknown && imgContrast.error) L('WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): не измерен — ${imgContrast.error}`, `${C.unknown} элементов на картинке, градиенте или чужой подложке не проверены — смотреть глазами`);
-else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt].filter(Boolean).join('; '));
+else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt, vrImg].filter(Boolean).join('; '));
 if (fx && !fx.none) {
   const T = 'контраст закреплённого текста на прокрутке';
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
-  const vrTxt = viewReset.failed ? `; видимая область ${viewReset.failed} раз из ${viewReset.resets} не вернулась на исходное место (сдвинута замером текста на картинке) — снимки могли лечь не под текстом, смотреть глазами` : '';
+  /* только возвраты этого прохода (перед высотами); возвраты при замере текста на картинке — в строке выше */
+  const vrF = viewReset.failed - vrI.failed, vrR = viewReset.resets - vrI.resets;
+  const vrTxt = vrF ? `; видимая область ${vrF} раз из ${vrR} не вернулась на исходное место (сдвинута замером текста на картинке) — снимки могли лечь не под текстом, смотреть глазами` : '';
+  /* sticky вне места закрепления — не пропуск: на этой высоте он обычный текст своей секции */
+  const unp = (fx.skipped || {})['не закреплён'] || 0;
+  const unpTxt = unp ? '; «не закреплён» — sticky-блок на этой высоте уехал вместе со своим контейнером или ещё стоит на своём месте в потоке: там он обычный текст своей секции (контраст — в строках выше), не пропуск' : '';
   if (fx.error) L('WARN', `${T}: не измерен`, fx.error);
-  else if (!fx.positions.length) L('OK', `${T}: ${fx.items.length} элементов`, 'страница в один экран — других высот нет (верх страницы — в строках контраста выше)');
-  else {
+  else if (!fx.positions.length) {
+    /* высот нет: страница в один экран или весь закреплённый текст — sticky, который ниже верха не закрепляется */
+    const why = [...new Set(fx.items.filter((it) => it.sticky).map((it) => `${it.host}: ${it.sticky.why || 'контейнер кончается сразу под ним'}`))].slice(0, 3).join('; ');
+    L('OK', `${T}: ${fx.items.length} элементов`, fx.maxScroll >= 1
+      ? `sticky-блок ниже верха страницы нигде не закреплён (${why}) — на других высотах это обычный текст своей секции, его контраст — в строках выше`
+      : 'страница в один экран — других высот нет (верх страницы — в строках контраста выше)');
+  } else {
     const who = [...new Set(fx.items.map((it) => `${it.kind} ${it.host}`))].slice(0, 4).join(', ');
     const up = fx.results.filter((r) => r.approach === 'снизу').length;
     const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
@@ -960,10 +1162,15 @@ if (fx && !fx.none) {
       const groups = new Map();
       for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
       const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
-      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${vrTxt}`);
-    } else if (!fx.measured) L('WARN', head, `ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами${vrTxt}`);
+      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${unpTxt}${vrTxt}`);
+    } else if (!fx.measured) {
+      /* ни одного замера только потому, что sticky на этих высотах не закреплён, — мерить нечего: OK с пометкой */
+      const other = Object.entries(fx.skipped || {}).filter(([k, v]) => v && k !== 'не закреплён');
+      if (unp && !other.length) L(vrF ? 'WARN' : 'OK', head, `замеров 0 — и мерить нечего: sticky-блок закреплён только в пределах своего контейнера, а на этих высотах он там не закреплён${unpTxt}${vrTxt}`);
+      else L('WARN', head, `ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами${unpTxt}${vrTxt}`);
+    }
     /* видимая область не вернулась на исходное место — снимки могли быть не там, где шапка: не OK, а WARN */
-    else { const w = fx.worst; L(viewReset.failed ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})${vrTxt}`); }
+    else { const w = fx.worst; L(vrF ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})${unpTxt}${vrTxt}`); }
   }
 }
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
@@ -992,14 +1199,23 @@ L(dom.positiveTabindex ? 'WARN' : 'OK', `положительный tabindex: ${
   const f = focus; const short = f.visited < f.expected;
   const st = f.invisible.length ? 'FAIL' : f.trapped || f.iframeStuck ? 'WARN' : short ? 'WARN' : f.focusables ? 'OK' : 'OK';
   const inFrames = f.iframes.length ? `; внутри iframe (${f.iframes.slice(0, 3).join(', ')}) фокус не проверялся — чужой документ` : '';
-  const det = (f.invisible.length ? `не видно фокуса на: ${f.invisible.slice(0, 8).join(', ')}${short ? `; к тому же обход не состоялся (${f.visited} из ${f.focusables})` : ''}`
+  /* фокус на подписи, соседе или обёртке — не провал, но пусть будет видно, где он нарисован */
+  const hid = f.hiddenOwn || [], via = f.via || [];
+  const viaTxt = via.length ? `; у ${via.length} — на подписи, соседе или обёртке: ${via.slice(0, 4).map((v) => `${v.sig} → ${v.via}`).join(', ')}${via.length > 4 ? ` и ещё ${via.length - 4}` : ''}` : '';
+  const det = (f.invisible.length ? `не видно фокуса на: ${f.invisible.slice(0, 8).map((s) => (hid.includes(s) ? `${s} (рамка только у самого элемента, а он невидим — прозрачен или обрезан)` : s)).join(', ')}${short ? `; к тому же обход не состоялся (${f.visited} из ${f.focusables})` : ''}${viaTxt}`
     : f.iframeStuck ? `из iframe ${f.iframeStuck} за 40 нажатий Tab фокус не вернулся в страницу — проверить руками`
       : f.trapped ? `ловушка фокуса или перехват Tab на ${f.stuckAt} — проверить руками`
         : short ? `обход не состоялся: Tab прошёл ${f.visited} из ожидаемых ${f.expected} (фокусируемых на странице ${f.focusables}) — Tab перехвачен, фокус уходит из страницы или стартует не сначала`
-          : f.focusables ? `фокус виден везде (первым — ${f.first})` : 'фокусируемых элементов нет') + inFrames;
+          : f.focusables ? `фокус виден везде (первым — ${f.first})${viaTxt}` : 'фокусируемых элементов нет') + inFrames;
   L(st, `фокус: обошли ${f.visited} элементов на свежей странице`, det);
 }
-if (vp.isMobile) { L(dom.targets.length ? 'WARN' : 'OK', `цели нажатия мельче 24px: ${dom.targets.length}`, dom.targets.join(', ')); L(dom.smallInputs.length ? 'WARN' : 'OK', `поля мельче 16px: ${dom.smallInputs.length}`, dom.smallInputs.length ? 'iOS увеличит страницу при фокусе: ' + dom.smallInputs.join(', ') : ''); }
+if (vp.isMobile) {
+  /* число — всех найденных, список — первые 10 и 6 (раньше число было длиной обрезанного списка) */
+  const nT = dom.targetsCount ?? dom.targets.length, nS = dom.smallInputsCount ?? dom.smallInputs.length;
+  const more = (n, list) => (n > list.length ? ` и ещё ${n - list.length}` : '');
+  L(nT ? 'WARN' : 'OK', `цели нажатия мельче 24px: ${nT}`, nT ? dom.targets.join(', ') + more(nT, dom.targets) : 'радиокнопки и флажки — вместе с подписью');
+  L(nS ? 'WARN' : 'OK', `поля ввода текста мельче 16px: ${nS}`, nS ? 'iOS увеличит страницу при фокусе: ' + dom.smallInputs.join(', ') + more(nS, dom.smallInputs) : 'радиокнопки, флажки и ползунки iOS не увеличивает — не в счёт');
+}
 L(dom.reducedMotionRule ? 'OK' : 'WARN', 'prefers-reduced-motion', dom.reducedMotionRule ? 'правило есть' : 'правила нет — анимации не отключаются для тех, кому от них плохо');
 L(dom.autoplayVideo ? 'FAIL' : 'OK', `видео с автоплеем и звуком: ${dom.autoplayVideo}`);
 L(dom.landmarks.main ? 'OK' : 'WARN', `ориентиры: main ${dom.landmarks.main}, nav ${dom.landmarks.nav}, header ${dom.landmarks.header}, footer ${dom.landmarks.footer}`, dom.landmarks.main ? '' : 'нет <main> — читалка не найдёт начало содержимого');
