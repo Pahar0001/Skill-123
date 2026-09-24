@@ -931,11 +931,13 @@ CHROME_PATH — свой браузер; DESIGN_REF_NO_SR=1 — без помо�
 const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isCli) {
   try {
-    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h'] });
+    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h'], optional: ['out', 'name'] });
     if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
     if (!pos[0]) { console.error('Нужен адрес: node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots] (--help — все флаги)'); process.exit(1); }
     for (const k of ['out', 'name']) if (k in opt && (typeof opt[k] !== 'string' || !opt[k].trim())) { console.error(`--${k} без значения: нужно --${k} <${k === 'out' ? 'папка' : 'имя'}>`); process.exit(1); }
     if (opt.name && /[\\/]/.test(opt.name)) { console.error(`--name — имя файлов, а не путь (${opt.name}); папка задаётся --out`); process.exit(1); }
+    /* в Windows «:» в имени файла — поток NTFS или ошибка, «*?"<>|» запрещены; точки и пробелы в конце обрезаются */
+    if (opt.name && (/[:*?"<>|\x00-\x1f]/.test(opt.name) || /[. ]$/.test(opt.name))) { console.error(`--name ${opt.name}: в имени файлов нельзя «: * ? " < > |» и точку или пробел в конце — например, --name ${String(opt.name).replace(/[:*?"<>|\x00-\x1f]+/g, '-').replace(/[-. ]+$/, '') || 'reference'}`); process.exit(1); }
     /* адрес или путь к файлу — до папок и браузера: «localhost:4177/» без схемы URL читает как схему localhost:,
        а C:\…\page.html (как до 24.09.2026) — путь: переход по file:///…, имя и «Источник» по строке пути */
     let addr;
@@ -944,7 +946,7 @@ if (isCli) {
     const out = path.resolve(opt.out || 'docs/design'), slug = opt.name || slugFromUrl(addr.name);
     /* имя без порта до 24.09.2026: файлы под старым именем в этой папке не подхватятся — сказать заранее */
     const old = opt.name ? null : slugFromUrlOld(addr.name);
-    if (old && old !== slug && ['.md', '.json'].some((e) => fs.existsSync(path.join(out, old + e)))) console.log(`Внимание: в ${out} есть файлы под прежним именем ${old}.* (без порта). Теперь имя ${slug}.* — правленая ${old}.md не подхватится; нужно старое имя — --name ${old}.`);
+    if (old && old !== slug && ['.md', '.json', '.tokens.css', '.ignore'].some((e) => fs.existsSync(path.join(out, old + e)))) console.log(`Внимание: в ${out} есть файлы под прежним именем ${old}.* (без порта). Теперь имя ${slug}.* — правленая ${old}.md не подхватится; нужно старое имя — --name ${old}.`);
     const shotsDir = opt['no-shots'] ? null : path.join(out, slug + '-shots');
     fs.mkdirSync(shotsDir || out, { recursive: true });
     const data = await extract(url, { shotsDir, light: !!opt.light, pixels: !opt['no-pixels'], source: addr.source });

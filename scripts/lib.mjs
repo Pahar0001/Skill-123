@@ -113,10 +113,11 @@ export function die(e) { console.error(String((e && e.message) || e)); process.e
 /**
  * Аргументы вида --out dir --name slug (и --out=dir); остальное — позиционные.
  * «--» — дальше только позиционные. flags — ключи, которые никогда не берут
- * значение (--no-shots url не съест адрес). С site-rework — его parseArgs.
+ * значение (--no-shots url не съест адрес). С site-rework — его parseArgs (со всеми полями spec:
+ * optional — ключи со значением, commands; неизвестный флаг там даёт WARN и не забирает адрес).
  */
-export function parseArgs(argv, { flags = [], values = [] } = {}) {
-  if (SR && SR.parseArgs) return SR.parseArgs(argv, { flags, values });
+export function parseArgs(argv, { flags = [], values = [], optional = [], commands = [] } = {}) {
+  if (SR && SR.parseArgs) return SR.parseArgs(argv, { flags, values, optional, commands });
   const pos = []; const opt = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
