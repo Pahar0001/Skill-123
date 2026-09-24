@@ -130,7 +130,7 @@ import {
 } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict', 'help', 'h'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'strict', 'help', 'h'], optional: ['out', 'tag', 'viewports', 'viewport', 'pages', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'return'] });
 /* -h и --h — как --help: справка без побочных действий (ни папок, ни браузера) */
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(`${msg}  (подробно: --help)`); process.exit(1); };

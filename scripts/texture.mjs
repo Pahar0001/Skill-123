@@ -21,7 +21,7 @@
  * замеры, рецепт и блок переменных, пишет --tokens/--css/--md; --viewport оставляет только эти
  * экраны (нет таких — ошибка, код 1); texture.json пишется, только если задан --json;
  * --out, --screens, --label и --extras здесь не действуют. Путь на .json, которого нет, —
- * «нет файла <путь>», код 1 (и в compare); не адрес http/https/file и не .json — «Неверный адрес».
+ * «нет файла <путь>», код 1 (и в compare); не адрес (http, https, file, data, about) и не .json — «Неверный адрес».
  * Аргументы, экраны и texture.json проверяются до создания папок и запуска браузера.
  *
  * Флаги:
@@ -1322,7 +1322,7 @@ const loadSet = (file) => {
   if (!list.length || list.some((r) => !r || !r.viewport || !r.grain)) throw new Error(`${file} — не texture.json замера (нет results[] с viewport и grain)`);
   return list;
 };
-/* адрес страницы или texture.json прошлого замера — до папок и браузера. Путь на .json (не http/https/file)
+/* адрес страницы или texture.json прошлого замера — до папок и браузера. Путь на .json (не http, https, file, data, about)
    без файла — «нет файла», а не «Invalid URL» или переход браузера на C:/… с ERR_FILE_NOT_FOUND */
 const PAGE_URL = /^(https?|file|data|about):$/i;
 function inputKind(s, die) {
@@ -1336,7 +1336,7 @@ function inputKind(s, die) {
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
   const VALUES = ['viewport', 'viewports', 'vp', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens'];
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h', 'strict'], values: VALUES });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h', 'strict'], values: VALUES, optional: ['sd-tol', 'lag-tol'], commands: ['compare'] });
   const die = (msg) => { console.error(msg); process.exit(1); };
   /* --viewport, --viewports и старое --vp — один флаг во всех режимах (замер, texture.json, compare) */
   const vpKeys = ['viewport', 'viewports', 'vp'].filter((k) => opt[k] !== undefined && opt[k] !== true);

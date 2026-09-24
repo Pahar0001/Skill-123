@@ -123,7 +123,9 @@ import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit
 /* Значения флагов берутся «как у всех»: следующий аргумент, если он не похож на
    другой флаг. Поэтому `--seen --ok-flags` не съест --ok-flags как описание. */
 const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help', 'h'];
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS });
+/* флаги со значением — «optional»: значение берётся, если следующее слово не флаг (проверка «без значения» ниже) */
+const OPTIONAL = ['kind', 'profile', 'role', 'orient', 'min', 'sources', 'n', 'frames', 'out', 'run', 'seen', 'caption', 'name', 'dest', 'look', 'contrast', 'grain', 'crop-mobile', 'ratio', 'src-prefix', 'avif', 'start', 'dur', 'fade', 'license', 'author', 'author-url', 'title', 'file-url', 'md'];
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS, optional: OPTIONAL, commands: ['doctor', 'search', 'pick', 'import', 'credits'] });
 /* Флаги со значением: без значения (`--role` в конце или перед другим флагом) — ошибка до сети
    и файлов, а не молчаливое «по умолчанию» (`--out` без значения раньше создавал папку «true»).
    --md у credits значение может не иметь; --seen и --caption проверяют ворота (код 2). */
@@ -135,7 +137,7 @@ const log = (...a) => console.log(...a);
 const fail = (msg, code = 1) => { console.error(`FAIL: ${msg}`); process.exit(code); };
 const str = (v) => (typeof v === 'string' ? v : '');
 const long = (w, h) => Math.max(w || 0, h || 0);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toLocaleDateString('sv-SE'); /* ГГГГ-ММ-ДД по местному времени, не UTC */
 const RUNS = process.env.SITE_REWORK_RUNS || path.join(os.homedir(), '.claude', 'site-rework', 'runs');
 const PHOTO_SIGS = ['jpeg', 'png', 'webp', 'tiff', 'gif', 'avif'];
 
@@ -383,6 +385,8 @@ async function cmdSearch() {
   const sharp = requireSharp();
   const dir = searchDir(q, kind, profile);
   const existed = fs.existsSync(dir);
+  /* папки, которые создаст этот запуск (runs/<slug>, media, папка поиска): при пустой выдаче убираются и они */
+  const created = []; for (let p = dir; !fs.existsSync(p) && path.dirname(p) !== p; p = path.dirname(p)) created.push(p);
   /* новый лист собирается во временной подпапке и заменяет прежний только при успехе:
      повтор поиска при сбое сети не должен стирать готовый лист и отметки pick */
   ensureDir(dir);
@@ -526,7 +530,7 @@ async function cmdSearch() {
     for (const f of failures.slice(0, 5)) log(`  ! ${f}`);
     /* папку, которую создал этот запуск, пустой не оставляем */
     dropWork();
-    if (!existed) { try { fs.rmdirSync(dir); } catch { /* не пуста — оставляем */ } }
+    if (!existed) { for (const p of created) { try { fs.rmdirSync(p); } catch { break; /* не пуста — оставляем её и всё выше */ } } }
     process.exit(1);
   }
 

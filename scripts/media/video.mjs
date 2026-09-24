@@ -65,7 +65,7 @@ const even = (n) => Math.max(2, Math.floor(n / 2) * 2);
 const evenUp = (n) => Math.max(2, Math.ceil(n / 2) * 2);
 const mbs = (b) => `${((b || 0) / 1048576).toFixed(2)} МБ`;
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Date().toLocaleDateString('sv-SE'); /* ГГГГ-ММ-ДД по местному времени, не UTC */
 const refuse = (msg) => { throw Object.assign(new Error(msg), { refuse: true }); };
 
 /* ---------- выбор файла ---------- */

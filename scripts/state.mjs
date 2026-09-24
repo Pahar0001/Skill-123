@@ -118,7 +118,7 @@ const IGNORE_FILE = /(\.(log|db|sqlite3?|tmp|temp|swp|swo|pid|lock)$|-(wal|shm|j
 const argv = process.argv.slice(2);
 const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area'];
 const FLAG_KEYS = ['force', 'strict', 'help', 'h'];
-const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS });
+const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS, commands: ['init', 'meta', 'add', 'set', 'stage', 'show'] });
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
@@ -227,7 +227,10 @@ function currentVersion(name) {
   }
   return Object.prototype.hasOwnProperty.call(currentVersions, name) ? currentVersions[name] : null;
 }
-const verLabel = (v) => (v.commit ? `${v.commit}${v.dirty ? '+правки' : ''}` : v.dirty ? 'не в git' : '?');
+const verLabel = (v) => (v.commit ? `${String(v.commit).slice(0, 7)}${v.dirty ? '+правки' : ''}` : v.dirty ? 'не в git' : '?');
+/* коммит пишется полным хешем; старые протоколы — сокращённым (%h): сверяются по началу, иначе рост
+   сокращения в git (7 → 8 знаков) дал бы всем старым протоколам ложное «другой версией» */
+const sameCommit = (a, b) => !!a && !!b && (String(a).startsWith(String(b)) || String(b).startsWith(String(a)));
 /**
  * Сверить generator протокола с файлами рядом со state.mjs.
  * → { gen: краткая запись для журнала | null, warn: текст | null, note: текст для show | null }.
@@ -239,18 +242,19 @@ function versionCheck(g) {
   const name = path.basename(String(g.script));
   const gen = { script: name, commit: g.commit ?? null, dirty: g.dirty ?? null, ...(g.lib && typeof g.lib === 'object' ? { lib: { commit: g.lib.commit ?? null, dirty: g.lib.dirty ?? null } } : {}) };
   const parts = [[name, gen], ...(gen.lib ? [['lib.mjs', gen.lib]] : [])];
-  const diffs = []; const unknown = []; let wasDirty = false;
+  const diffs = []; const unknown = []; let wasDirty = false; let nowDirty = false;
   for (const [n, was] of parts) {
     const now = currentVersion(n);
     if (was.commit == null && was.dirty == null) { unknown.push(`${n}: при съёмке git не было`); continue; }
     if (!now) { unknown.push(`${n}: такого файла рядом со state.mjs нет`); continue; }
     if (now.commit == null && now.dirty == null) { unknown.push(`${n}: git сейчас недоступен`); continue; }
     if (was.dirty) wasDirty = true;
-    if (was.commit !== now.commit || was.dirty || now.dirty) diffs.push(`${n} ${verLabel(was)} против ${verLabel(now)}`);
+    if (now.dirty) nowDirty = true;
+    if (!sameCommit(was.commit, now.commit) || was.dirty || now.dirty) diffs.push(`${n} ${verLabel(was)} против ${verLabel(now)}`);
   }
   return {
     gen,
-    warn: diffs.length ? `протокол снят другой версией скрипта (${diffs.join('; ')}) — перепрогнать${wasDirty ? ' (снят с незакоммиченными правками: каким кодом, уже не восстановить)' : ''}` : null,
+    warn: diffs.length ? `протокол снят другой версией скрипта (${diffs.join('; ')}) — ${nowDirty ? 'в скрипте сейчас незакоммиченные правки: перепрогон этот WARN не снимет — сначала закоммитить скрипт, потом перепрогнать' : 'перепрогнать'}${wasDirty ? ' (снят с незакоммиченными правками: каким кодом, уже не восстановить)' : ''}` : null,
     note: unknown.length ? `версия скрипта неизвестна (${unknown.join('; ')})` : null,
   };
 }

@@ -763,7 +763,7 @@ async function shotMarks(page, r, file) {
    ====================================================================== */
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'], optional: ['taste', 'json'], commands: ['baseline', 'rules'] });
   const isUrl = (s) => /^(https?|file):/i.test(String(s));
   /* «--taste http://…» — адрес, а не папка журнала */
   if (typeof opt.taste === 'string' && isUrl(opt.taste)) { pos.push(opt.taste); opt.taste = true; }

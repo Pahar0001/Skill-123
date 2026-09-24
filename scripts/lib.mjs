@@ -151,10 +151,17 @@ export function requireChrome() {
    держит скрипт двадцать минут. */
 export async function launch({ headless = true, protocolTimeout = 90000 } = {}) {
   const puppeteer = loadPuppeteer();
-  return puppeteer.launch({
-    executablePath: requireChrome(), headless, protocolTimeout,
-    args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'],
-  });
+  const exe = requireChrome();
+  try {
+    return await puppeteer.launch({
+      executablePath: exe, headless, protocolTimeout,
+      args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'],
+    });
+  } catch (e) {
+    /* «Timed out after 30000 ms while waiting for the WS endpoint…» со стеком puppeteer — назвать, что делать */
+    const why = String((e && e.message) || e).split('\n')[0].slice(0, 200);
+    throw new Error(`браузер не запустился (${exe}): ${why} — закройте зависшие процессы chrome или задайте CHROME_PATH на другой Chrome и повторите`);
+  }
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -576,12 +583,14 @@ const styleKey = (key, css) => String(key || `rw-${cssHash(css).replace(/[^a-z0-
  *   await addStyleSafe(page, '.x{color:transparent!important}', { key: 'hide-text' })
  *   await removeStyleSafe(page, 'hide-text')
  */
+const warnedStyle = new Set();
 export async function addStyleSafe(page, css, { key = null, warn = true } = {}) {
   const k = styleKey(key, css);
   markOwnCss(page, css);
   let how;
   try { how = await page.evaluate(styleInPage, { key: k, css: String(css), policies: page.rwCsp ? [page.rwCsp] : [] }); } catch { return null; }
-  if (!how && warn) console.log(`WARN свой стиль «${k}» не вставился: CSP страницы запрещает <style>, а сконструированные таблицы стилей недоступны — то, что от него зависит, работает без него`);
+  /* одна строка на ключ за запуск: при нескольких вкладках и перезагрузках она повторялась */
+  if (!how && warn && !warnedStyle.has(k) && warnedStyle.add(k)) console.log(`WARN свой стиль «${k}» не вставился: CSP страницы запрещает <style>, а сконструированные таблицы стилей недоступны — то, что от него зависит, работает без него`);
   return how || null;
 }
 /** Снять стиль, поставленный addStyleSafe с этим key (и <style>, и таблицу). */
@@ -1121,24 +1130,37 @@ export function summarizeRequests(requests) {
  * Ещё: запись --key=value; «--» — дальше только позиционные; значение,
  * начинающееся с «--», берётся, если не похоже на имя флага («--note "--scroll
  * прошёл"» → заметка) или если ключ перечислен в spec.values.
- * spec: { values: [...ключи, которые всегда берут следующий аргумент], flags: [...ключи без значения] }.
+ * spec: { values: [...ключи, которые всегда берут следующий аргумент], flags: [...ключи без значения],
+ *         optional: [...ключи со значением, которое берётся, если следующее слово не похоже на флаг],
+ *         commands: [...команды скрипта: compare, init…] }.
+ * Неизвестный ключ (нет ни в одном списке, если списки заданы) не забирает следующим словом адрес
+ * (http, https, file, data, about), команду скрипта и слово на «-» («--strict http://…», «--verbose
+ * compare a b» — адрес и команда остаются на месте) и даёт WARN в stderr: опечатка во флаге больше
+ * не проходит молча. Ключи из списков разбираются как раньше.
  */
-export function parseArgs(argv, { values = [], flags = [] } = {}) {
-  const V = new Set(values), F = new Set(flags);
+export function parseArgs(argv, { values = [], flags = [], optional = [], commands = [] } = {}) {
+  const V = new Set(values), F = new Set(flags), O = new Set(optional), C = new Set(commands);
+  const declared = V.size + F.size + O.size > 0;
   const looksLikeKey = (s) => s === '--' || /^--[A-Za-z][\w.-]*(=|$)/.test(s);
-  const pos = []; const opt = {};
+  const keepInPlace = (s) => /^(https?|file|data|about):/i.test(s) || C.has(s) || s.startsWith('-');
+  const pos = []; const opt = {}; const unknown = [];
   for (let i = 0; i < argv.length; i++) {
     const a = String(argv[i]);
     if (a === '--') { pos.push(...argv.slice(i + 1)); break; }
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
-      if (eq > 2) { opt[a.slice(2, eq)] = a.slice(eq + 1); continue; }
-      const k = a.slice(2); const next = argv[i + 1];
+      const k = eq > 2 ? a.slice(2, eq) : a.slice(2);
+      const known = V.has(k) || F.has(k) || O.has(k);
+      if (eq > 2) { opt[k] = a.slice(eq + 1); if (declared && !known) unknown.push([k, null]); continue; }
+      const next = argv[i + 1]; const n = next === undefined ? '' : String(next);
       if (F.has(k) || next === undefined) opt[k] = true;
-      else if (V.has(k) || !looksLikeKey(String(next))) opt[k] = argv[++i];
-      else opt[k] = true;
+      else if (V.has(k)) opt[k] = argv[++i];
+      else if (looksLikeKey(n) || (!known && keepInPlace(n))) opt[k] = true;
+      else opt[k] = argv[++i];
+      if (declared && !known) unknown.push([k, opt[k] === true ? null : opt[k]]);
     } else pos.push(a);
   }
+  for (const [k, took] of unknown) console.error(`WARN неизвестный флаг --${k} — не используется${took !== null ? ` (вместе со словом «${String(took).slice(0, 40)}», которое он забрал значением)` : ''}; -h — список флагов`);
   return { pos, opt };
 }
 
@@ -1190,7 +1212,7 @@ const gitRead = (dir, args) => execFileSync('git', ['--no-optional-locks', '-C',
 
 /**
  * Версии файлов кода по git: { [полный путь]: { commit, dirty, mtime } }.
- * commit — короткий хеш последнего коммита, где менялся файл (null — файл не в git, git нет,
+ * commit — полный хеш последнего коммита (до 24.09.2026 — короткий; state.mjs сверяет по началу), где менялся файл (null — файл не в git, git нет,
  * папка не репозиторий); dirty — есть незакоммиченные правки или файл не отслеживается
  * (null — узнать нельзя); mtime — время файла (ISO). Два вызова git (log и status) на папку
  * и набор файлов, результат запоминается до конца процесса. Никогда не бросает.
@@ -1208,7 +1230,7 @@ export function codeVersion(files) {
       const res = Object.fromEntries(names.map((n) => [n, { commit: null, dirty: null }]));
       try {
         /* log: коммиты, где менялись эти файлы, новые первыми; --relative — имена от папки dir */
-        const log = gitRead(dir, ['log', '--relative', '--max-count=5000', '--format=%x01%h', '--name-only', '--', ...names]);
+        const log = gitRead(dir, ['log', '--relative', '--max-count=5000', '--format=%x01%H', '--name-only', '--', ...names]);
         let cur = null; const left = new Set(names);
         for (const line of log.split(/\r?\n/)) {
           if (line.startsWith('\x01')) { cur = line.slice(1).trim(); continue; }

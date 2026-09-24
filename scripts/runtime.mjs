@@ -20,8 +20,11 @@
  *   выключено, любое другое значение — включено. Настройка (--no-fail, --reduced-motion):
  *   --no-fail=0 — провалы снова дают код 1. Шаг (--scroll, --css, --canvas…): --scroll=0
  *   и --css=нет — шаг не выполняется (строка об этом в stderr).
- *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка; «-viewport» —
- *   с подсказкой «--viewport?») — предупреждение WARN в stderr, запуск продолжается.
+ *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка) — предупреждение WARN
+ *   в stderr, запуск продолжается. Известный флаг с одним дефисом («-viewport mobile») —
+ *   ошибка (код 2) «флаг пишется с двумя дефисами»: иначе прогон молча шёл бы на desktop.
+ *   Настройка дважды с разными значениями (--viewport, --out, --tag, --scheme, --cpu) —
+ *   ошибка (код 2); --wait — не больше 600000 мс.
  *   Следующее слово он забирает значением, только
  *   если это не флаг, не «--» и не адрес (http, https, file, data, about):
  *   «--strict http://localhost:4177/ --css» — WARN про --strict, адрес на месте.
@@ -155,6 +158,7 @@ const isUrlWord = (s) => { try { return /^(https?|file|data|about):$/.test(new U
 const FALSE_RE = /^(0|false|no|off|нет)$/i;
 
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
+const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu']);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
@@ -200,9 +204,17 @@ for (let i = 0; i < argv.length; i++) {
     prev.expect = v; continue;
   }
   if (STEP.has(k)) steps.push({ k, v });
-  else opt[k] = v;
+  else {
+    /* настройка дважды с разными значениями («--viewport mobile --viewport desktop») — раньше молча бралась последняя */
+    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один (runtime проверяет один экран за запуск)`);
+    opt[k] = v;
+  }
 }
 for (const u of unknown) console.error(`WARN неизвестный флаг ${u.shown} — не используется${u.word != null ? ` вместе со словом «${short(u.word, 60)}», которое он забрал значением` : ''}${u.guess ? ` — может быть, ${u.guess}?` : ''} (-h — список шагов и настроек)`);
+/* известный флаг с одним дефисом («-viewport mobile») — не опечатка, которую можно пропустить: запуск молча
+   шёл бы с настройками по умолчанию (desktop), и протокол врал бы об экране */
+const typo = unknown.find((u) => u.guess);
+if (typo) usage(`${typo.shown} — флаг пишется с двумя дефисами: ${typo.guess}`);
 for (const a of off) console.error(`шаг ${a} выключен значением после «=» — не выполняется`);
 const url = pos[0];
 if (!url) {
@@ -240,6 +252,8 @@ const NEEDS_VALUE = new Set(['wait', 'hover', 'click', 'type', 'edit', 'key', 's
 for (const s of steps) {
   if (NEEDS_VALUE.has(s.k) && (s.v === true || s.v === undefined || String(s.v).trim() === '')) usage(`--${s.k}: нужно значение`);
   if (s.k === 'wait' && !WAIT_RE.test(String(s.v).trim())) usage(`--wait ${s.v}: нужно число миллисекунд ≥ 0 (--wait 800)`);
+  /* больше 2^31 мс setTimeout срабатывает сразу, а протокол писал бы «ждали …» — предел 10 минут */
+  if (s.k === 'wait' && Number(String(s.v).trim()) > 600000) usage(`--wait ${s.v}: не больше 600000 мс (10 минут)`);
   if (s.k === 'type' || s.k === 'select') {
     const p = splitSelEq(s.v);
     if (!p || !p[0].trim()) usage(`--${s.k} "${s.v}": нужно «селектор=${s.k === 'type' ? 'текст' : 'значение'}» (делится по первому «=» вне [ ] и кавычек: ${s.k === 'type' ? 'input[name=phone]=89001234567' : 'select[name=work]=6'})`);
@@ -247,7 +261,7 @@ for (const s of steps) {
   if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
 }
 for (const k of ['out', 'tag', 'scheme', 'cpu', 'init']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
-if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light или dark`);
+if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light, dark или no-preference`);
 if (opt.cpu !== undefined && !(Number(opt.cpu) > 0)) usage(`--cpu ${opt.cpu}: нужно число — во сколько раз замедлить процессор (4)`);
 /* экран: --viewport и --viewports — одно и то же; runtime проверяет один экран за запуск */
 const vpGiven = ['viewport', 'viewports'].filter((k) => opt[k] !== undefined).map((k) => [k, String(opt[k]).trim()]);

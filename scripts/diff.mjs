@@ -51,7 +51,7 @@ import path from 'node:path';
 import { loadSharp, parseArgs, ensureDir, writeJson, readJson } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-rescale', 'all'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-rescale', 'all'], optional: ['out', 'threshold', 'pair'] });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (m) => { console.error(m); process.exit(1); };
 

@@ -213,7 +213,7 @@ function help() {
 }
 
 function cli() {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json', 'help', 'h'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['quote', 'why', 'source', 'rule', 'block', 'img', 'run', 'donor', 'dir', 'baseline', 'blocks'], flags: ['json', 'help', 'h'], optional: ['by', 'verdict', 'date', 'last', 'viewport', 'viewports'], commands: ['add', 'brief', 'bans', 'check'] });
   const cmd = pos[0];
   /* -h, --h, --help и «help» — справка у любой команды, код 0, ничего не пишется */
   if (opt.help || opt.h || pos.includes('-h') || cmd === 'help') { help(); return; }

@@ -102,7 +102,7 @@ import {
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'], optional: ['overlay'] });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };

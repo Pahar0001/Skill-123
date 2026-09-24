@@ -6,9 +6,10 @@
 <title>Бриф на сайт</title>
 <meta name="description" content="Форма, которая собирает запрос для скилла site-rework — переработка сайта или новый сайт в языке донора: адрес, о чём сайт, задача, референсы, ограничения, кадры — и отдаёт текст по templates/brief.md для вставки в Claude Code.">
 <style>
-  :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --rule: #8f877a; --accent: #7a2e1f; --accent-text: #ffffff; }
+  :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --rule: #8f877a; --accent: #7a2e1f; --accent-text: #ffffff; color-scheme: light dark; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; } }
-  :root[data-theme="dark"] { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; }
+  :root[data-theme="dark"] { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -24,7 +25,8 @@
   /* Многострочное поле разлиновано, как лист брифа: строки ползут вместе с текстом. */
   textarea { display: block; min-height: 98px; padding: 0; line-height: 24px; resize: vertical; background: repeating-linear-gradient(to bottom, transparent 0 23px, var(--line) 23px 24px) local; }
   ::placeholder { color: var(--muted); opacity: 0.85; }
-  input:focus, textarea:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+  input:not([type=radio]):not([type=checkbox]):focus, textarea:focus { outline: none; border-bottom-color: var(--accent); box-shadow: 0 2px 0 var(--accent); }
+  input[type=radio]:focus-visible, input[type=checkbox]:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
   textarea:focus { --line: color-mix(in srgb, var(--accent) 35%, transparent); }
   .choices { display: grid; gap: 10px; margin-top: 6px; }
   .choice { display: grid; grid-template-columns: 24px 1fr; column-gap: 10px; align-items: start; }
@@ -215,8 +217,9 @@
       for (const c of el.querySelectorAll('input, textarea')) c.disabled = !on;
     }
     f.elements.about.required = kind === 'donor';
-    // required пропускает одни пробелы, а data() их обрежет — в режиме донора дело не выдумываем.
-    f.elements.about.setCustomValidity(kind === 'donor' && !f.elements.about.value.trim() ? 'Опишите, о чём сайт и что он продаёт: без этого дело придётся выдумывать.' : '');
+    // required пропускает пробелы и невидимые символы, а data() их обрежет — в режиме донора дело не выдумываем.
+    const aboutMeaningful = (f.elements.about.value.replace(/[\u200B\u200C\u200D\uFEFF]/g, '').match(/[\p{L}\p{N}]/gu) || []).length >= 3;
+    f.elements.about.setCustomValidity(kind === 'donor' && !aboutMeaningful ? 'Опишите, о чём сайт и что он продаёт: без этого дело придётся выдумывать.' : '');
   };
 
   const sources = (v) => {
@@ -263,9 +266,11 @@
   if (!f.querySelector('input[name="mode"]:checked')) f.elements.mode[0].checked = true;
   sync();
 
+  let built = false;
   const onEdit = () => {
     sync(); save();
-    if (!out.hidden) { if (f.checkValidity()) render(); else out.hidden = true; }
+    if (!built) return;
+    if (f.checkValidity()) { render(); out.hidden = false; } else out.hidden = true;
   };
   f.addEventListener('input', onEdit);
   f.addEventListener('change', onEdit);
@@ -273,6 +278,7 @@
   f.addEventListener('submit', (e) => {
     e.preventDefault(); sync(); render();
     out.hidden = false;
+    built = true;
     copyBtn.focus({ preventScroll: true });
     out.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   });
@@ -288,6 +294,7 @@
 
   document.getElementById('clear').addEventListener('click', () => {
     f.reset(); sync(); out.hidden = true; copied.textContent = '';
+    built = false;
     try { localStorage.removeItem(KEY); } catch {}
   });
 </script>

@@ -126,7 +126,7 @@ const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>'
 const mdCell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 
 export function renderCreditsMd(list, { title = 'Фото и видео: авторы и лицензии' } = {}) {
-  const lines = [`# ${title}`, '', `Собрано ${new Date().toISOString().slice(0, 10)} скриптом media.mjs (скилл site-rework).`, '',
+  const lines = [`# ${title}`, '', `Собрано ${new Date().toLocaleDateString('sv-SE')} скриптом media.mjs (скилл site-rework).`, '',
     '| файл | что на кадре | подпись на сайте | автор | лицензия | источник | подпись на сайте нужна | изменено |',
     '|---|---|---|---|---|---|---|---|'];
   for (const r of list) {

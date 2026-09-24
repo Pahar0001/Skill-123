@@ -70,7 +70,7 @@ export function userAgent() {
   return c ? `site-rework-media/${VERSION} (${c}) node/${process.versions.node}` : `site-rework-media/${VERSION} (+local tool)`;
 }
 /* Хосты, чьи правила требуют контакт в User-Agent: вики Wikimedia (Commons, upload/thumb, Wikidata) и AIC. */
-const CONTACT_HOSTS = [/(^|\.)(wikimedia|wikipedia|mediawiki|wikidata)\.org$/i, /(^|\.)artic\.edu$/i];
+const CONTACT_HOSTS = [/(^|\.)(wikimedia|wikipedia|mediawiki|wikidata)\.org$/i, /(^|\.)artic\.edu$/i, /(^|\.)w\.wiki$/i]; /* w.wiki — сокращатель Wikimedia */
 /** Нужен ли контакт для адреса (или имени хоста). */
 export function needsContact(urlOrHost) {
   let h = String(urlOrHost || '');
