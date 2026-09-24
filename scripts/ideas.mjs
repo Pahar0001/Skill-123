@@ -65,6 +65,9 @@ function save(list) {
   fs.writeFileSync(MD, toMd(list));
 }
 const lastUse = (i) => (i.uses && i.uses.length ? i.uses.map((u) => u.date || '').sort().pop() : '');
+/* Грубая основа русского слова: одно окончание с конца (длинные первыми), остаётся не меньше 4 букв */
+const ENDINGS = ['ями', 'ами', 'иях', 'ией', 'ого', 'ему', 'ыми', 'ими', 'ах', 'ях', 'ов', 'ев', 'ей', 'ой', 'ый', 'ий', 'ая', 'яя', 'ое', 'ее', 'ые', 'ие', 'ом', 'ем', 'ам', 'ям', 'ок', 'ек', 'а', 'я', 'ы', 'и', 'у', 'ю', 'е', 'о', 'ь'];
+const stem = (w) => { for (const e of ENDINGS) if (w.endsWith(e) && w.length - e.length >= 4) return w.slice(0, -e.length); return w; };
 function toMd(list) {
   const L = ['# Банк идей', '', 'Удачные ходы прошлых сайтов и заготовки. Пишется скриптом `ideas.mjs` (правка руками — в ideas.json, потом `ideas.mjs md`).',
     'На новый сайт: `ideas.mjs pick --run <прогон> --kind motion` — свежее, не отвергнутое, не с последних сайтов.', ''];
@@ -104,12 +107,14 @@ if (cmd === 'pick') {
   /* последние прогоны — по датам использования любых идей */
   const runs = [...new Map(list.flatMap((i) => (i.uses || []).map((u) => [u.run, u.date || '']))).entries()].sort((a, b) => (a[1] < b[1] ? 1 : -1)).map((x) => x[0]);
   const recentRuns = new Set(runs.filter((r) => r !== run).slice(0, recent));
-  /* основа слова — первые 5 букв: «кофейня» находит «кофейни», «выпечкой» — «выпечка» */
-  const words = [...new Set(val('for').toLowerCase().split(/[^a-zа-яё0-9]+/i).filter((w) => w.length > 3).map((w) => w.slice(0, 5)))];
+  /* основа слова — без окончания, не короче 4 букв, и сверяется с НАЧАЛОМ слов идеи: «кофейня» находит
+     «кофейни», «выпечкой» — «выпечка», «героев» — «герои»; «настолок» не находит «настоящие» (первые
+     5 букв давали такое совпадение) */
+  const words = [...new Set(val('for').toLowerCase().split(/[^a-zа-яё0-9]+/i).filter((w) => w.length > 3).map(stem))];
   const rank = { liked: 0, untested: 1, neutral: 2 };
   const xs = list.filter((i) => i.status !== 'rejected' && (!k || i.kind === k))
     .filter((i) => !(i.uses || []).some((u) => recentRuns.has(u.run) || u.run === run))
-    .map((i) => ({ i, fit: words.filter((w) => `${i.fits} ${i.what} ${(i.tags || []).join(' ')}`.toLowerCase().includes(w)).length }))
+    .map((i) => { const iw = `${i.fits} ${i.title} ${i.what} ${(i.tags || []).join(' ')}`.toLowerCase().split(/[^a-zа-яё0-9]+/i); return { i, fit: words.filter((w) => iw.some((x) => x.startsWith(w))).length }; })
     .sort((a, b) => b.fit - a.fit || rank[a.i.status] - rank[b.i.status] || (lastUse(a.i) < lastUse(b.i) ? -1 : 1))
     .slice(0, n);
   if (!xs.length) { console.log(`Свежих идей${k ? ` вида ${k}` : ''} нет: всё было на последних ${recent} сайтах или отвергнуто. Придумать своё из товара и записать: ideas.mjs add …`); process.exit(0); }

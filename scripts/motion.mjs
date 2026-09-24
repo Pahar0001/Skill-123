@@ -61,7 +61,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
-  scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp,
+  scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote,
 } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
@@ -667,6 +667,8 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     await gotoRetry(page, url, { waitUntil: 'load', timeout: 60000 });
     await page.evaluate(() => document.fonts.ready).catch(() => {});
     await waitForOverlay(page, 4000).catch(() => null);
+    /* окно cookie закрыть до замеров: оно перекрывает первый экран на вырезках и ловит наведение */
+    result.consent = consentNote(await closeConsent(page).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 100) })));
     const deps = { sig: SIG_FN };
     result.libs = await evaluateWith(page, libsInPage, null, deps);
     const n = await evaluateWith(page, collectInPage, 5000, deps);
@@ -932,7 +934,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
 /* ---------- отчёт ---------- */
 function mdTable(res) {
   const L = [`# Движение: ${res.url} (${res.viewport} ${res.size})`, '',
-    `Снято ${res.takenAt.slice(0, 16).replace('T', ' ')} · motion.mjs · за ${res.stats ? res.stats.seconds : '?'} с · библиотеки: ${res.libs.libs && res.libs.libs.length ? res.libs.libs.join(', ') : 'не видно'} · «меньше движения»: ${res.libs.reducedRule ? 'правило есть' : 'НЕТ'}${res.libs.smoothCss ? ' · html{scroll-behavior:smooth}' : ''}`, '',
+    `Снято ${res.takenAt.slice(0, 16).replace('T', ' ')} · motion.mjs · за ${res.stats ? res.stats.seconds : '?'} с · окно cookie: ${res.consent || '—'} · библиотеки: ${res.libs.libs && res.libs.libs.length ? res.libs.libs.join(', ') : 'не видно'} · «меньше движения»: ${res.libs.reducedRule ? 'правило есть' : 'НЕТ'}${res.libs.smoothCss ? ' · html{scroll-behavior:smooth}' : ''}`, '',
     '| № | вид | где | запуск | что меняется | параметры | как повторить |', '|---|---|---|---|---|---|---|'];
   for (const it of res.items) {
     /* одинаковый эффект у разных элементов — назвать и остальные (до двух) */

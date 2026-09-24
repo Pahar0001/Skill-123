@@ -121,7 +121,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   launch, openPage, scrollThrough, fullPageShot, pickViewports, parseArgs, runDir, writeJson, summarizeRequests, ensureDir, kb, sleep,
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
-  waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE,
+  waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE, closeConsent, consentNote,
 } from './lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1151,89 +1151,7 @@ async function textureDeltaFallback(page, found, dir, name) {
    цвет ссылок при наведении
    ===================================================================== */
 
-/* В странице (или во фрейме согласия). Окно согласия — закреплённый блок, диалог или блок с именем
-   cookie/consent/…, видимый, с текстом про cookie / consent / куки / персональные данные до 3000
-   знаков, не шапка и не меню (ссылок не больше 8). Кнопка: принять → отклонить → закрыть; ссылка
-   на другой адрес — никогда. Окно помечается data-rw-consent-box (его кнопки inPage не считает
-   кнопками сайта), ссылки на окно и кнопку — window.__rwConsentBox / __rwConsentBtn. */
-function consentInPage() {
-  const TEXT = /cookie|consent|gdpr|куки|персональн\S* данн/i;
-  const NAME = /cookie|consent|gdpr|onetrust|cookiebot|didomi|usercentrics|cky-|cc-window|cc-banner|termly|iubenda|klaro|osano/i;
-  const ACCEPT = /^(accept( all)?( cookies)?|accept (and|&) close|allow( all)?( cookies)?|i accept|agree( and (close|continue))?|i agree|got it!?|ok(ay)?!?|understood|continue|принять( все| всё)?( cookie| куки)?|принимаю|согласен|согласна|согласиться|соглашаюсь|я согласен|хорошо|понятно|ок|окей|разрешить( все)?)[.!]?$/i;
-  const REJECT = /^(reject( all)?( cookies)?|decline( all)?|deny( all)?|refuse|(use )?(only )?(necessary|essential)( cookies)?( only)?|отклонить( все)?|отказаться|запретить|только необходимые)[.!]?$/i;
-  const CLOSE = /^(close|dismiss|×|✕|✖|x|закрыть)$/i;
-  const cls = (el) => `${el.id || ''} ${typeof el.className === 'string' ? el.className : ''}`;
-  const text = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
-  const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && eff(el) > 0.05; };
-  const els = []; const walk = (root, d) => { for (const el of root.querySelectorAll('*')) { els.push(el); if (el.shadowRoot && d < 4) walk(el.shadowRoot, d + 1); } }; walk(document, 0);
-  const boxes = els.filter((el) => {
-    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|HEADER|NAV)$/.test(el.tagName)) return false;
-    const s = getComputedStyle(el);
-    const fixedish = s.position === 'fixed' || s.position === 'sticky' || el.matches('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
-    if ((!fixedish && !NAME.test(cls(el))) || !vis(el)) return false;
-    const t = text(el); return t.length > 0 && t.length <= 3000 && TEXT.test(t);
-  });
-  const outer = boxes.filter((b) => !boxes.some((o) => o !== b && o.contains(b)));
-  const label = (b) => String((b.tagName === 'INPUT' ? b.value : text(b)) || b.getAttribute('aria-label') || b.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
-  for (const box of outer) {
-    if (box.querySelectorAll('a[href]').length > 8 || box.querySelector('nav')) continue;
-    const btns = []; const collect = (root, d) => { for (const b of root.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]')) btns.push(b); if (d < 3) for (const e of root.querySelectorAll('*')) if (e.shadowRoot) collect(e.shadowRoot, d + 1); };
-    collect(box, 0); if (box.shadowRoot) collect(box.shadowRoot, 1);
-    const ok = btns.filter((b) => vis(b) && !b.disabled && !(b.tagName === 'A' && b.getAttribute('href') && !/^(#|javascript:)/i.test(b.getAttribute('href'))));
-    const pick = ok.find((b) => ACCEPT.test(label(b))) || ok.find((b) => REJECT.test(label(b))) || ok.find((b) => CLOSE.test(label(b)) || /close|dismiss|закрыть/i.test(b.getAttribute('aria-label') || ''));
-    const r = box.getBoundingClientRect(); const cy = r.top + r.height / 2, cx = r.left + r.width / 2;
-    const place = `${cy < innerHeight / 3 ? 'сверху' : cy > innerHeight * 2 / 3 ? 'снизу' : 'по центру'}${r.width >= innerWidth * 0.9 ? ' во всю ширину' : cx < innerWidth / 3 ? ' слева' : cx > innerWidth * 2 / 3 ? ' справа' : ''}`;
-    box.setAttribute('data-rw-consent-box', '1'); window.__rwConsentBox = box; window.__rwConsentBtn = pick || null;
-    const vw = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)), vh = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
-    return {
-      box: sig(box), text: text(box).slice(0, 90), w: Math.round(r.width), h: Math.round(r.height), place, share: Math.round(vw * vh / (innerWidth * innerHeight) * 100),
-      buttons: ok.map(label).filter(Boolean).slice(0, 6), pick: pick ? label(pick) : null,
-      pickKind: pick ? (ACCEPT.test(label(pick)) ? 'принять' : REJECT.test(label(pick)) ? 'отклонить' : 'закрыть') : null,
-    };
-  }
-  return null;
-}
-async function consentGone(fr, ms) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    const shown = await evaluateWith(fr, () => { const b = window.__rwConsentBox; if (!b || !b.isConnected) return false; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && eff(b) > 0.05; }, null, DEPS).catch(() => false);
-    if (!shown) return true;
-    await sleep(150);
-  }
-  return false;
-}
-/* Найти и закрыть окно согласия: основной документ, потом фреймы CMP. click: false — только найти и
-   пометить (--keep-consent). → { found, closed, box, place, w, h, share, buttons, pick, pickKind,
-   frame, why, waitedMs } или { found: false } */
-const CONSENT_FRAME = /consent|cookie|cmp|privacy|sourcepoint|quantcast|onetrust|didomi|trustarc|usercentrics|cookiebot|iubenda/i;
-async function closeConsent(page, { click = true } = {}) {
-  const main = page.mainFrame();
-  const frames = [main, ...page.frames().filter((f) => f !== main && CONSENT_FRAME.test(f.url()))];
-  for (const fr of frames) {
-    const f = await withDeadline(evaluateWith(fr, consentInPage, null, DEPS), 10000, 'поиск окна согласия').catch(() => null);
-    if (!f) continue;
-    let frame = null; if (fr !== main) { try { frame = new URL(fr.url()).hostname; } catch { frame = 'фрейм'; } }
-    const res = { found: true, closed: false, ...f, frame };
-    if (!click) return { ...res, why: 'не закрывалось (--keep-consent)' };
-    if (!f.pick) return { ...res, why: 'в окне нет кнопки «принять», «отклонить» или «закрыть»' };
-    const t0 = Date.now();
-    await fr.evaluate(() => { const b = window.__rwConsentBtn; if (b && b.isConnected) b.click(); }).catch(() => {});
-    let gone = await consentGone(fr, 2500);
-    if (!gone && fr === main) { /* настоящий клик мышью: часть окон не слушает click() из скрипта */
-      const pt = await fr.evaluate(() => { const b = window.__rwConsentBtn; if (!b || !b.isConnected) return null; const r = b.getBoundingClientRect(); return r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; }).catch(() => null);
-      if (pt) { await page.mouse.click(pt.x, pt.y).catch(() => {}); gone = await consentGone(fr, 2500); }
-    }
-    await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
-    return { ...res, closed: gone, waitedMs: Date.now() - t0, why: gone ? null : `нажали «${f.pick}», окно осталось на экране` };
-  }
-  return { found: false };
-}
-function consentNote(c) {
-  if (!c || !c.found) return c && c.error ? `проверка не прошла: ${c.error}` : 'не появлялось';
-  const where = `${c.box}, ${c.place}, ${c.w}×${c.h}${c.frame ? `, во фрейме ${c.frame}` : ''}`;
-  if (c.closed) return `закрыто кнопкой «${c.pick}» (${where})${c.late ? ' — появилось позже, после прокрутки: на снимках прокрутки оно есть, замеры сняты без него' : ''}`;
-  return `**не закрыто** — ${c.why || 'причина неизвестна'} (${where}${c.buttons && c.buttons.length ? `; кнопки в окне: ${c.buttons.map((b) => `«${b}»`).join(', ')}` : ''}) — закрывает ${c.share}% экрана на снимках`;
-}
+/* Окно согласия cookie — lib.mjs: closeConsent, consentNote (им пользуются discover и motion). */
 
 /* Доля заливки кнопок в их коробках (C2 для кнопок): снимок коробки каждой кнопки (data-rw-btn
    ставит inPage), до 3 кнопок на цвет, сначала с первого экрана; доля пикселей ±PIX_TOL от цвета
