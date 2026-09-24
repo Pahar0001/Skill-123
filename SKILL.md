@@ -157,7 +157,7 @@ three motion runtime visual mobile perf a11y polish report; другое имя 
 
 ```
 node ~/.claude/skills/site-rework/scripts/state.mjs <папка> init <url> "<запрос>" --site <папка сайта> --mode rework|mirror|donor
-node ~/.claude/skills/site-rework/scripts/taste.mjs brief --blocks <блоки из запроса>      # запреты и эталоны прошлых прогонов
+node ~/.claude/skills/site-rework/scripts/taste.mjs brief --run <папка> --blocks <блоки из запроса>   # запреты и эталоны: общие и этого прогона
 ```
 И прочитать `~/.claude/site-rework/taste/WISHES.md` — пожелания пользователя
 его словами и выводы «как делать нешаблонно» (раздел «Два журнала» ниже).
@@ -165,20 +165,23 @@ node ~/.claude/skills/site-rework/scripts/taste.mjs brief --blocks <блоки �
 делать». Определить режим; папка сайта для `--site`: исходники — папка
 проекта, зеркало — `<папка>/mirror`, донор — `<папка>/site`. По ней журнал
 узнаёт, что доказательство устарело (сайт правили после проверки). Локальный проект — поднять сервер (`npm run dev`
-или что есть). Записать ревизию инструментов в `<папка>/tools.md` по
+или что есть; статическую папку — `serve.mjs`, он сжимает как хостинг). Узнать браузер пользователя по
+умолчанию — первая строка вывода `runtime.mjs` («у пользователя по умолчанию Firefox — проверьте и в нём:
+--browser firefox»): в нём — дымовая проверка перед сдачей. Записать ревизию инструментов в `<папка>/tools.md` по
 чек-листу `reference/tool-registry.md`.
 
 ### 1. Разведка — состояние ANALYZED
 
 ```
-node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка>        # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система
+node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка>        # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система; окно cookie закрывается само, аккордеоны и меню — кликом, страницы по типам (+ --pages-shots N для донора)
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-scroll --scroll --canvas --motion --video --fullpage
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-menu --viewport mobile --scroll --click "<переключатель меню>" --shot menu
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-menu --viewport mobile --scroll --click "<переключатель меню>" --shot menu   # селектор — из discovery.md
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-state --css --hover-all --nav     # автопроверки состояния, reference/qa.md
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag base --runs 3   # телефон, медленная сеть — база: медиана трёх, как и на этапе 4
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag base-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag before --pages /,<другие страницы в задаче> --with-320
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
+node ~/.claude/skills/site-rework/scripts/motion.mjs <url или донор> --out <папка> --tag <site|donor>-home   # всё движение числами: вид, запуск, из → в, длительность, отрезок прокрутки
 ```
 Если у сайта или донора есть зерно, шум, плёнка — `node ~/.claude/skills/site-rework/scripts/texture.mjs
 <url> --out <папка>/texture` (рецепт и `--grain-*`, `reference/engines.md` → «Фактура»).
@@ -208,6 +211,12 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или дон
 `frontend-design` — здесь, на шаге кандидатов; его предложения проходят тот
 же отсев.
 
+**Движение** — отдельной таблицей в `analysis.md` («Движение донора → блоки»), по `reference/motion.md`:
+каждая строка `motion/<донор>.md` — наш блок с теми же числами или «почему нет» в
+`<папка>/motion-decisions.json` (копировать по максимуму); сверху — 1–2 движения из самого товара и
+1–2 свежие идеи из банка: `ideas.mjs pick --run <папка> --for "<о чём сайт>"` (не было на последних
+сайтах, пользователь не отверг; взятое — `ideas.mjs use <id> --run <папка> --block <блок>`).
+
 План — задачи в журнале с приоритетом:
 
 ```
@@ -232,7 +241,7 @@ P4 движение · P5 полировка. Порядок: P0 → P5, вну�
   глазами → `pick` с `--seen` и `--caption` → `credits`;
 - фактура: `reference/engines.md` → «Фактура»: своя плитка `grain-tile.mjs`, слой `templates/grain.css`;
 - 3D: `reference/engines.md` → «3D»: сначала ответ «нужно ли», потом подход, потом обязательная проверка холста;
-- движение: `reference/engines.md` → «Движение»: язык донора первым, CSS первым, `prefers-reduced-motion` всегда;
+- движение: рецепты `reference/motion.md` по таблице motion.mjs (числа донора, не на глаз), `reference/engines.md` → «Движение»; CSS первым, `prefers-reduced-motion` всегда;
 - телефон: отдельная вёрстка первого экрана, меню, форм и таблиц, а не «ужать десктоп»; 320 px тоже.
 
 После каждой задачи — статусы с доказательствами:
@@ -252,6 +261,8 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
+node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <url> --out <папка>   # движение донора: пара у нас или решение
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag browser-user --browser firefox --wait 3000 --canvas   # браузер пользователя
 ```
 У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),
 и следующий запуск на том же экране его перезаписывает — у каждого набора
@@ -265,7 +276,8 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папк�
 доказательствами новее последней правки; автопроверки состояния без FAIL;
 320 без переполнения; `perf` не хуже базы; `a11y` без FAIL; в `cliche.mjs`
 нет правил веса 3 «НЕТ У ДОНОРА» без записи в `<папка>/authorship-decisions.json`, «размножено»
-не больше ×2, ни одного «ЗАПРЕЩЁН»; иначе — ещё круг. Если круги
+не больше ×2, ни одного «ЗАПРЕЩЁН»; `motion.mjs compare` без FAIL; в браузере пользователя
+страницы открываются без ошибок и 3D/движение запускаются; иначе — ещё круг. Если круги
 закончились по времени — оставшееся честно в отчёт.
 
 ### 5. Отчёт — `templates/report.md`
@@ -278,17 +290,23 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папк�
 `state.mjs show`. Пути к снимкам и протоколам — в отчёт.
 
 Любая оценка пользователя («шаблонно», «нравится», выбор варианта) —
-сразу `taste.mjs add` с его словами дословно и кропом.
+сразу `taste.mjs add --run <папка>` с его словами дословно и кропом. Удачное своё — в банк идей
+(`ideas.mjs add`), отзыв на взятую идею — `ideas.mjs status <id> liked|rejected --quote "<его слова>"`.
 
-## Два журнала по ходу любого прогона
+## Журналы по ходу любого прогона
 
 - **Пожелания пользователя** — `~/.claude/site-rework/taste/WISHES.md`, только
   **общие**, для всех сайтов. Читать на шаге 0 вместе с `taste.mjs brief`.
   Замечание по одному сайту («здесь форма шаблонная») — в `analysis.md` прогона,
   раздел «Пожелания по этому сайту», и `taste.mjs add --run`; общим его не
-  делать, пока пользователь сам так не скажет (непонятно — спросить). Запрет
-  в журнале вкуса действует на все сайты, области «только этот сайт» у него нет.
+  делать, пока пользователь сам так не скажет (непонятно — спросить). Запись журнала
+  вкуса с `--run <папка>` действует только в этом прогоне (область site); общей
+  (`--scope general`) её делают, только если пользователь сказал, что это для всех сайтов.
   Вывод «как делать нешаблонно» из общего замечания — в раздел выводов WISHES.md.
+- **Банк идей** — `~/.claude/site-rework/taste/ideas.json` (`ideas.mjs`, читать — `IDEAS.md`): удачные
+  ходы прошлых сайтов и заготовки, где стояли и как на них отозвался пользователь. На плане —
+  `pick`, после сдачи — `add` и `status`. Разнообразие: одна «подписная» идея не ставится на два
+  сайта подряд, отвергнутое не предлагается.
 - **Неточности самого скилла** — `~/.claude/site-rework/SKILL-ISSUES.md`: скрипт
   упал, соврал, вывод путает, инструкция расходится со скриптом, не хватило
   флага. Записывать сразу, как заметил (формат — в шапке файла), обойти и
@@ -350,13 +368,11 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папк�
 **Правка самих скриптов во время прогона.** Инструмент, изменившийся между
 замерами, делает «до» и «после» несравнимыми. Правка скрипта — отдельным
 коммитом в git скилла (`git -C ~/.claude/skills/site-rework …`), потом
-заново прогнать все проверки, которые этот скрипт уже делал. Версию скрипта
-в протокол пишут только `extract.mjs` (design-reference); `discover`,
-`runtime`, `shots`, `perf`, `a11y`, `texture` — нет, и журнал сверяет время
-доказательства только с правками сайта, а не скриптов. Поэтому сверять
-руками: протокол старше `git -C ~/.claude/skills/site-rework log -1
---format=%ci -- scripts/<скрипт>.mjs` или снят до незакоммиченной правки
-(`git -C ~/.claude/skills/site-rework status`) — устарел.
+заново прогнать все проверки, которые этот скрипт уже делал. Протоколы помнят,
+каким кодом сняты (поле `generator`: скрипт и `lib.mjs`, коммит, незакоммиченные правки), и
+`state.mjs` пишет WARN «снят другой версией скрипта»; подключаемые модули (`texture.mjs` у
+`a11y`, `perf`, `discover`; `taste.mjs` у `cliche`) не учитываются — после их правки
+перепрогнать зависящие проверки руками.
 
 ## Файлы скилла
 
@@ -367,16 +383,19 @@ scripts/runtime.mjs    проверка в браузере: клики с эф�
 scripts/texture.mjs    фактура числом: слои зерна, σ по фонам, кипение, рецепт, compare донор против сайта
 scripts/grain-tile.mjs своя детерминированная шумовая плитка (PNG, спрайт, WebP, GIF) и её проверка
 scripts/cliche.mjs     шаблонность: дефолты на живой странице против донора и журнала вкуса
-scripts/taste.mjs      журнал вкуса между прогонами: отвергнутое и принятое с картинками
+scripts/taste.mjs      журнал вкуса между прогонами: отвергнутое и принятое с картинками, область site|general
 scripts/media.mjs      фото и видео из законных бесплатных источников: doctor, search, pick, import, credits
 scripts/media/         модули источников, обработки, видео и манифеста
 scripts/shots.mjs      снимки «до/после» на одинаковых экранах; возврат наверх сверяется с первым экраном
 scripts/diff.mjs       где изменилась картинка: доля, полосы, картинка различий
-scripts/perf.mjs       скорость с бюджетами: LCP, CLS, вес, кадры/с, память, цена слоёв
-scripts/a11y.mjs       контраст (с прозрачностью и зерном), кегль, alt, подписи, фокус, цели нажатия
+scripts/perf.mjs       скорость с бюджетами: LCP с элементом, CLS, вес (холодный кэш, сжатие), долгие задачи по фазам, кадры/с, память, цена слоёв
+scripts/a11y.mjs       контраст (с прозрачностью и зерном), кегль, alt, подписи, фокус (и на подписи), цели нажатия (с подписью), закреплённое на прокрутке
+scripts/motion.mjs     движение числами: 18 видов, библиотеки; compare донор → наш сайт; selftest на fixtures/motion
+scripts/ideas.mjs      банк идей: удачное с прошлых сайтов, где стояло, отзыв; pick — свежее под новый сайт
 scripts/state.mjs      журнал задач и этапов: статусы только с доказательствами
 scripts/mirror.mjs     зеркало чужой страницы как верстак (rework.css / rework.js)
-scripts/serve.mjs      статический сервер (Range для видео, только эта машина); --proxy отдаёт остальное оригиналу
+scripts/serve.mjs      статический сервер (Range для видео, сжатие br/gzip как у хостинга, только эта машина); --proxy отдаёт остальное оригиналу
+scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
 reference/tool-registry.md   что есть, когда чем пользоваться, чем заменять
 reference/discovery.md       визуальный разбор словами, паспорт, фактура, дизайн-система, референсы
@@ -384,6 +403,7 @@ reference/donor-mode.md      новый сайт на языке донора: �
 reference/authorship.md      каталог дефолтов, паспорт донора, решение по блоку, компоненты без донора, журнал вкуса
 reference/analysis.md        разбор запроса, матрица менять/сохранять, воронка UX, тексты, приоритеты
 reference/engines.md         картинки и видео, фактура, 3D, движение, телефон, правила реализации
+reference/motion.md          движение: снять у донора, перенести числами (рецепты по видам), своё и банк идей, сверка
 reference/qa.md              проверки: runtime и автопроверки состояния, визуал, функции, телефон, скорость, доступность
 templates/brief.md           форма запроса
 templates/report.md          форма отчёта

@@ -14,6 +14,7 @@ node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <па�
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
 node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
+node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --out <папка> --tag donor-home                   # всё движение числами (+ --viewport mobile --tag donor-home-mobile)
 ```
 
 **Все страницы донора, а не только главная.** Донор задаёт и структуру сайта:
@@ -21,23 +22,30 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out
 тарифы, лицензия, политика, вход. До плана:
 
 ```
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <донор>/<путь> --out <папка>/donor/pages --tag <тип> --scroll --fullpage --eval "JSON.stringify([...document.querySelectorAll('h1,h2,h3')].filter(e=>e.offsetParent).map(e=>e.tagName+': '+e.textContent.trim().slice(0,70)))"
+node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <папка>/donor --no-design --pages-shots 8
 ```
 
-— внутренние ссылки из `donor/discovery.json` сгруппировать по первому сегменту
-пути, снять по одной странице каждого типа, открыть снимки глазами и в
+— раздел «Страницы сайта по типам» (ссылки и sitemap) и `donor/pages/<тип>.png` с h1–h3 по одной
+странице каждого типа; открыть снимки глазами и в
 `analysis.md` составить таблицу «тип страницы донора → что там → аналог для
 нашего проекта → совет». Аналоги, которые подходят по смыслу, — **вопрос
 пользователю** (`AskUserQuestion`, несколько вариантов), до плана. Пользователь
 просил об этом прямо: «сайт многостраничный … если нашел — спрашивай, нужна ли такая страничка».
 
-**Каждое движение донора — решение.** Из «Движения» и «Подписных приёмов»
-разведки — таблица «движение донора (элемент, из → в, чем управляется: загрузка,
-прокрутка, наведение) → наш блок / почему нет». Движение по прокрутке замерять на
-нескольких высотах (`runtime --eval "scrollTo(0,N)…"` + transform и opacity), не
-по одному кадру: у shapefest фон чёрной плашки при въезде уменьшается 1.4 → 1.1 и
-гаснет 0.9 → 0.5, а стопка картинок первого экрана — параллакс 5–50% прокрутки.
-Пропущенное движение пользователь видит сразу.
+**Каждое движение донора — решение.** `motion.mjs` снимает всё движение донора таблицей
+(`<папка>/motion/donor-home.md`: вид, элемент, запуск, из → в, длительность или отрезок прокрутки,
+рецепт) — её целиком в `analysis.md`, раздел «Движение донора → блоки», и у каждой строки: наш блок
+с теми же числами или «почему нет» (в `<папка>/motion-decisions.json`). У shapefest так снято:
+фон чёрной плашки 1.4 → 1.1 и 0.9 → 0.5 на отрезке «верх блока 100% → 46% экрана», стопка первого
+экрана — параллакс 5–50% прокрутки с поворотом, появления Framer 0 → 1 со сдвигом 20 px, лента
+логотипов 50 px/с, печатающийся текст с мигающим курсором, карточки при наведении ×1.1 с
+поворотом. Копировать по максимуму: пропущенное движение пользователь видит сразу. Типы страниц
+донора со своим движением — тем же скриптом (`--tag donor-<тип>`).
+
+**Своё и банк идей — сверху донора.** 1–2 движения из самого товара (у VN3D — фигурка печатается
+слоями в такт печатающемуся слову) и 1–2 свежие идеи из банка: `ideas.mjs pick --run <папка>
+--kind motion --for "<о чём сайт>"` (не было на последних сайтах, пользователь не отверг); взятую —
+`ideas.mjs use`. Рецепты — `reference/motion.md`.
 
 Фактура в вёрстку — блок `--grain-*`, а не `--texture-*` из
 `donor.tokens.css` (это сырой CSS слоя донора, справочно). С `--no-design`
@@ -50,7 +58,9 @@ discover блок не дописывает — его пишет `texture.mjs
 по одному скрипту за раз.
 
 Токены донора проверить на бессмыслицу до того, как на них опираться:
-акцент подтверждён пикселями или «акцента нет»; приглушённый — «не
+акцент подтверждён пикселями или «акцента нет» (акцент — цвет действий: заливка кнопок первого экрана,
+в том числе вложенного блока внутри `<a>`, как у Framer; нет залитых кнопок — цвет ссылок при
+наведении; фоны секций, шапки и подвала — оформление, не акцент; так считают extract, cliche и discover); приглушённый — «не
 выявлено», если контраста нет; размер `0px`; шрифт, который не грузится.
 Исправленное — записать.
 
@@ -88,6 +98,7 @@ discover блок не дописывает — его пишет `texture.mjs
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
 node ~/.claude/skills/site-rework/scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile --out <папка>/texture-compare
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
+node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <адрес сайта> --out <папка>
 ```
 
 - `verify.mjs` — шкала, цвета, акцент («у образца акцента нет» — тоже
@@ -101,6 +112,8 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --b
 - `cliche.mjs` — приёмы, которых нет у донора, «размножено», запреты из
   журнала вкуса; вердикт по порогам из `reference/authorship.md`, обоснования —
   в `<папка>/authorship-decisions.json`.
+- `motion.mjs compare` — каждое движение донора с парой у нас или с решением в
+  `motion-decisions.json`; FAIL — пропуск без решения, WARN — числа другие; «своё» — сверить с планом.
 - Пары снимков донор/результат на одном экране, по одной на каждый
   приём-подпись: открыть обе глазами рядом (не `diff.mjs` — пиксельная
   разница здесь бессмысленна).
@@ -112,4 +125,6 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --b
 
 Раздел «Что взято у донора, что своё, что отличается сознательно» —
 таблица по приёмам-подписям с отметкой «сверено: снимок / число», плюс
-итог `verify.mjs`, `texture.mjs compare` и `cliche.mjs`.
+итог `verify.mjs`, `texture.mjs compare`, `cliche.mjs` и `motion.mjs compare` (движение донора: взято / решено
+иначе / своё). После сдачи — удачное своё в банк идей (`ideas.mjs add`), реакцию пользователя —
+`ideas.mjs status <id> liked|rejected --quote "<его слова>"`.
