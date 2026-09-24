@@ -6,8 +6,17 @@
  *   node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots]
  *                          [--light] [--no-pixels] [--force] [--help]
  *
+ *   <url>           http://, https://, file:// или путь к файлу страницы:
+ *                   C:\w\site\index.html (имя файлов — как раньше, w-site-index-html),
+ *                   site\index.html или /home/u/page.html — существующий файл.
+ *                   Адрес без схемы (localhost:4177/) — ошибка с подсказкой, до папок.
  *   --out <папка>   куда писать (по умолчанию docs/design)
- *   --name <имя>    имя файлов (по умолчанию из адреса)
+ *   --name <имя>    имя файлов (по умолчанию из адреса: хост без www, порт, путь;
+ *                   порт у localhost, 127.x, [::1], *.localhost, 0.0.0.0 — всегда,
+ *                   у остальных — только явный нестандартный: localhost:4177 →
+ *                   localhost-4177.*, site.ru:8080 → site-ru-8080.*, site.ru → site-ru.*;
+ *                   до 24.09.2026 порт не писался — старые файлы localhost.* не
+ *                   подхватываются, extract об этом предупредит; нужно старое — --name)
  *   --no-shots      без снимков (в память снимки окна всё равно делаются —
  *                   ими подтверждается акцент, если не указан --no-pixels)
  *   --light         без состояний наведения/фокуса и без тёмной темы (быстрее)
@@ -17,8 +26,9 @@
  * На выходе: <slug>.json (сырые замеры), <slug>.tokens.css (переменные),
  * <slug>.md (заготовка спецификации) и снимки в <slug>-shots/.
  *
- * Из кода: extract(url, { shotsDir, light, pixels, browser }) — browser:
- * уже запущенный браузер (тогда он не закрывается). Ошибки бросаются, а не
+ * Из кода: extract(url, { shotsDir, light, pixels, browser, source }) — browser:
+ * уже запущенный браузер (тогда он не закрывается); source — что писать в
+ * «Источник» вместо url (путь к файлу вместо file:///…). Ошибки бросаются, а не
  * завершают процесс: вызывающий (discover.mjs) дописывает свои файлы.
  *
  * Как считается (коротко, подробнее — SKILL.md):
@@ -42,11 +52,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  SR, launch, sleep, parseArgs, slugFromUrl, die, loadSharp, evaluateWith, gotoRetry,
+  SR, launch, sleep, parseArgs, slugFromUrl, slugFromUrlOld, pageAddress, die, loadSharp, evaluateWith, gotoRetry,
   scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
-export const VERSION = 'extract 2026-09-23';
+export const VERSION = 'extract 2026-09-24';
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 /** Доля пикселей снимков окна, с которой насыщенный цвет считается акцентом. */
@@ -537,9 +547,10 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
 /**
  * Снять дизайн-систему. shotsDir — папка снимков или null; light — без состояний
  * и тёмной темы; pixels — подтверждать акцент по снимкам окна; browser — уже
- * запущенный браузер (не закрывается).
+ * запущенный браузер (не закрывается); source — что писать в «Источник» (по
+ * умолчанию url).
  */
-export async function extract(url, { shotsDir = null, light = false, pixels = true, browser = null } = {}) {
+export async function extract(url, { shotsDir = null, light = false, pixels = true, browser = null, source = null } = {}) {
   const own = !browser;
   const br = browser || await launch();
   try {
@@ -556,7 +567,7 @@ export async function extract(url, { shotsDir = null, light = false, pixels = tr
       dark = { page: d.page, palette: d.palette, themes: th, source: why, differs: d.page.background !== desktop.page.background || d.page.color !== desktop.page.color };
     }
     let sharpOk = false; try { sharpOk = !!loadSharp(); } catch { /* нет */ }
-    return { source: url, takenAt: new Date().toLocaleDateString('sv-SE'), tool: { version: VERSION, siteRework: !!SR, sharp: sharpOk }, desktop, mobile, dark, darkReason };
+    return { source: source || url, takenAt: new Date().toLocaleDateString('sv-SE'), tool: { version: VERSION, siteRework: !!SR, sharp: sharpOk }, desktop, mobile, dark, darkReason };
   } finally { if (own) await br.close().catch(() => {}); }
 }
 
@@ -902,8 +913,13 @@ const HELP = `Съём дизайн-системы со страницы.
 
   node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots] [--light] [--no-pixels] [--force]
 
+  <url>           http://, https://, file:// или путь к существующему файлу страницы
+                  (C:\\w\\site\\index.html, site\\index.html, /home/u/page.html)
   --out <папка>   куда писать (по умолчанию docs/design)
-  --name <имя>    имя файлов (по умолчанию из адреса)
+  --name <имя>    имя файлов (по умолчанию из адреса: хост без www, порт, путь;
+                  порт у localhost, 127.x, [::1], *.localhost, 0.0.0.0 — всегда,
+                  у остальных доменов — только явный нестандартный:
+                  http://localhost:4177/ → localhost-4177.*, https://www.site.ru/a → site-ru-a.*)
   --no-shots      без файлов снимков (акцент всё равно проверяется снимками в памяти)
   --light         без состояний наведения/фокуса и без тёмной темы
   --no-pixels     не подтверждать акцент по пикселям снимков окна
@@ -918,10 +934,20 @@ if (isCli) {
     const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h'] });
     if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
     if (!pos[0]) { console.error('Нужен адрес: node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots] (--help — все флаги)'); process.exit(1); }
-    const url = pos[0], out = path.resolve(opt.out || 'docs/design'), slug = opt.name || slugFromUrl(url);
+    for (const k of ['out', 'name']) if (k in opt && (typeof opt[k] !== 'string' || !opt[k].trim())) { console.error(`--${k} без значения: нужно --${k} <${k === 'out' ? 'папка' : 'имя'}>`); process.exit(1); }
+    if (opt.name && /[\\/]/.test(opt.name)) { console.error(`--name — имя файлов, а не путь (${opt.name}); папка задаётся --out`); process.exit(1); }
+    /* адрес или путь к файлу — до папок и браузера: «localhost:4177/» без схемы URL читает как схему localhost:,
+       а C:\…\page.html (как до 24.09.2026) — путь: переход по file:///…, имя и «Источник» по строке пути */
+    let addr;
+    try { addr = pageAddress(pos[0]); } catch (e) { console.error(e.message); process.exit(1); }
+    const url = addr.url;
+    const out = path.resolve(opt.out || 'docs/design'), slug = opt.name || slugFromUrl(addr.name);
+    /* имя без порта до 24.09.2026: файлы под старым именем в этой папке не подхватятся — сказать заранее */
+    const old = opt.name ? null : slugFromUrlOld(addr.name);
+    if (old && old !== slug && ['.md', '.json'].some((e) => fs.existsSync(path.join(out, old + e)))) console.log(`Внимание: в ${out} есть файлы под прежним именем ${old}.* (без порта). Теперь имя ${slug}.* — правленая ${old}.md не подхватится; нужно старое имя — --name ${old}.`);
     const shotsDir = opt['no-shots'] ? null : path.join(out, slug + '-shots');
     fs.mkdirSync(shotsDir || out, { recursive: true });
-    const data = await extract(url, { shotsDir, light: !!opt.light, pixels: !opt['no-pixels'] });
+    const data = await extract(url, { shotsDir, light: !!opt.light, pixels: !opt['no-pixels'], source: addr.source });
     fs.writeFileSync(path.join(out, slug + '.json'), JSON.stringify(data, null, 1));
     fs.writeFileSync(path.join(out, slug + '.tokens.css'), tokensCss(data));
     const md = path.join(out, slug + '.md');

@@ -132,9 +132,67 @@ export function parseArgs(argv, { flags = [], values = [] } = {}) {
   return { pos, opt };
 }
 
+/**
+ * Имя файлов спецификации по адресу (extract без --name): хост без www, порт,
+ * путь — через «-». Правило то же, что у slugFromUrl скилла site-rework:
+ * порт у этой машины (localhost, *.localhost, 127.x.x.x, [::1], 0.0.0.0) —
+ * всегда, иначе все локальные сайты пишут в один localhost.json; у остальных —
+ * только явный нестандартный (URL сам убирает :80 у http и :443 у https), так
+ * имена для обычных доменов прежние. IPv6 без скобок: [::1] → ip6-localhost.
+ *   https://www.site.ru/news/x → site-ru-news-x;  http://localhost:4177/ → localhost-4177;
+ *   http://127.0.0.1:8080/a → 127-0-0-1-8080-a;   http://[::1]:4177/ → ip6-localhost-4177;
+ *   http://localhost/ → localhost-80;              http://site.ru:8080/ → site-ru-8080.
+ * Прочие схемы (file:, about:) и путь с буквой диска (C:\w\x.html) — как
+ * раньше: хост и путь целиком, буква диска в имя не входит.
+ */
 export function slugFromUrl(url) {
   const u = new URL(url);
+  if (!/^https?:$/.test(u.protocol)) return slugFromUrlOld(url);
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const local = h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0';
+  const port = u.port || (local ? (u.protocol === 'https:' ? '443' : '80') : '');
+  const name = h === '::1' ? 'ip6-localhost' : h.includes(':') ? `ip6-${h}` : h.replace(/^www\./, '');
+  return (name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference';
+}
+
+/** Имя по правилу до 24.09.2026 (без порта): extract подсказывает, если файлы под старым именем уже лежат в --out. */
+export function slugFromUrlOld(url) {
+  const u = new URL(url);
   return (u.hostname.replace(/^www\./, '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference';
+}
+
+/**
+ * Адрес страницы из аргумента командной строки (extract, verify) — проверяется
+ * до папок и браузера. http(s)://, file://, data:, about: — как есть. Путь к
+ * файлу — с буквой диска (C:\w\page.html, C:/w/page.html) или любой
+ * существующий (page.html, site/index.html, /home/u/page.html) — переход по
+ * file:///… Для пути с буквой диска «Источник» и имя файлов прежние, по строке
+ * пути, как до 24.09.2026 (C:\w\site\index.html → w-site-index-html);
+ * относительный путь считается от текущей папки и называется как его полный путь.
+ * Иначе — Error с подсказкой: localhost:4177/ без схемы, ftp://, нет файла, папка.
+ * → { url — куда переходить, source — что писать в «Источник», name — строка для slugFromUrl }
+ */
+export function pageAddress(arg) {
+  const s = String(arg == null ? '' : arg).trim();
+  if (!s) throw new Error('Нужен адрес страницы (http://, https://, file://) или путь к файлу');
+  const isDrive = (p) => /^[a-z]:[\\/]/i.test(p), isPage = (p) => /\.(x?html?|svg)$/i.test(p);
+  const drive = isDrive(s);
+  let proto = null;
+  if (!drive) { try { proto = new URL(s).protocol; } catch { /* не адрес — может быть путь к файлу */ } }
+  if (proto && /^(https?|file|data|about):$/.test(proto)) return { url: s, source: s, name: s };
+  let st = null;
+  try { st = fs.statSync(s); } catch { /* нет такого пути */ }
+  if (st && st.isFile()) {
+    const abs = path.resolve(s), url = pathToFileURL(abs).href, source = drive ? s : abs;
+    return { url, source, name: isDrive(source) ? source : url };
+  }
+  if (st && st.isDirectory()) throw new Error(`${s} — папка, а нужна страница: путь к файлу (${path.join(s, 'index.html')}) или адрес http://`);
+  /* похоже на сайт без схемы: localhost:4177/, site.ru/news — подсказать схему */
+  const host = s.split(/[/\\:]/)[0];
+  const web = drive ? null : /^(localhost|127(\.\d+){3}|\[::1\]|0\.0\.0\.0)$/i.test(host) || s.startsWith('[::1]') ? `http://${s}`
+    : /^[\w-]+(\.[\w-]+)*\.[a-z]{2,}$/i.test(host) && !isPage(host) ? `https://${s}` : null;
+  if (drive || isPage(s) || (!web && !proto && /[\\/]/.test(s))) throw new Error(`Нет такого файла: ${path.resolve(s)}${web ? ` (если это сайт — ${web})` : ''}`);
+  throw new Error(`Не похоже на адрес страницы: ${s} (нужен http://, https://, file:// или путь к файлу${web ? ` — может, ${web}` : ''})`);
 }
 
 /* ---------- код для страницы (исходники для eval) ---------- */

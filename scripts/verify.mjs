@@ -6,6 +6,10 @@
  *
  *   node verify.mjs <спецификация.json> <адрес своей страницы> [--strict] [--help]
  *
+ *   адрес — http://, https://, file:// или путь к существующему файлу страницы
+ *   (C:\w\site\index.html, site\index.html) — по тому же правилу, что у extract;
+ *   адрес без схемы (localhost:4177/) — ошибка с подсказкой до запуска браузера
+ *
  *   --strict  уровни шкалы, которых нет на странице, и предупреждения (??) —
  *             тоже расхождения
  *
@@ -22,12 +26,13 @@
  */
 import fs from 'node:fs';
 import { extract, roles, motionSummary, dist, seenColor, accentInfo } from './extract.mjs';
-import { parseArgs } from './lib.mjs';
+import { parseArgs, pageAddress } from './lib.mjs';
 
 const HELP = `Сверка своей страницы со спецификацией design-reference.
 
   node verify.mjs <спецификация.json> <адрес страницы> [--strict]
 
+  адрес — http://, https://, file:// или путь к файлу страницы (C:\\w\\site\\index.html)
   --strict  отсутствующие уровни шкалы и предупреждения ?? — тоже расхождения
   --help, -h  эта справка
 
@@ -40,7 +45,10 @@ if (pos.length < 2) { console.error('Нужно: node verify.mjs <специфи
 const spec = JSON.parse(fs.readFileSync(pos[0], 'utf8'));
 const ignoreFile = pos[0].replace(/\.json$/, '.ignore');
 const ignore = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
-const mine = await extract(pos[1], { light: true });
+/* адрес — тем же правилом, что у extract: путь к файлу → file:///…, без схемы — сказать до браузера */
+let page;
+try { page = pageAddress(pos[1]); } catch (e) { console.error(e.message); process.exit(1); }
+const mine = await extract(page.url, { light: true, source: page.source });
 
 const rows = [];
 /* level: 'ok' | 'bad' | 'warn' */
