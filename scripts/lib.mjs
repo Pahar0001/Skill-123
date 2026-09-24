@@ -8,6 +8,16 @@
  * на части машин завершается молча. Свой путь — в CHROME_PATH, свой ffmpeg —
  * в FFMPEG_PATH.
  *
+ * Браузеры (launch({ browser })): chrome — по умолчанию (CHROME_PATH, Chrome, запасным
+ * Edge); edge — Edge (EDGE_PATH), тот же движок и протокол, что у Chrome; firefox —
+ * Firefox (FIREFOX_PATH) через WebDriver BiDi. У Firefox нет Chrome DevTools Protocol:
+ * замедления процессора и сети, байтов по сети (только content-length), типа запроса
+ * (берётся по заголовку Sec-Fetch-Dest и расширению — resourceTypeOf) и эмуляции
+ * медиа на вкладке. Тема, «меньше движения» и «касание» в медиазапросах ((hover: none),
+ * (pointer: coarse)) задаются Firefox при запуске настройками — launch({ scheme,
+ * reducedMotion, mobile }); вкладка с другими значениями пишет в page.rwLimits, чего
+ * не получила. meta viewport и события касания Firefox не эмулирует.
+ *
  * Папка прогона: SITE_REWORK_RUNS или ~/.claude/site-rework/runs/<slug>.
  * Туда складываются снимки, замеры, состояние задач и отчёт, чтобы «до»
  * и «после» можно было сравнить и через неделю.
@@ -18,6 +28,8 @@
  *
  * Что здесь есть (что принимает и что возвращает — в комментарии у каждой функции):
  *   запуск и страница  launch, preparePage, openPage, gotoRetry, waitForOverlay
+ *   браузеры           parseBrowser, findBrowser, browserInfo, defaultBrowser,
+ *                      defaultBrowserHint, resourceTypeOf, BROWSER_NAMES
  *   экраны             VIEWPORTS (+ запись «320x568@2»), parseViewport,
  *                      resolveViewport, pickViewports
  *   прокрутка          scrollThrough, scrollToY, forceInstantScroll,
@@ -31,6 +43,8 @@
  *   свой стиль         addStyleSafe, removeStyleSafe — <style>, а при строгом CSP
  *                      сконструированная таблица (document.adoptedStyleSheets)
  *   версия кода        codeVersion, scriptGenerator — поле generator в протоколах
+ *   предупреждения     collectWarnings, takeWarnings — WARN из lib (свой стиль не
+ *                      вставился) не посреди строки прогресса, а в вердикте скрипта
  *   прочее             parseArgs, getFfmpeg, findModuleRoot, summarizeRequests,
  *                      runDir, slugFromUrl, pageSlug, pagesFrom, unmangle,
  *                      ensureDir, writeJson, readJson, kb, sleep
@@ -144,24 +158,192 @@ export function requireChrome() {
   process.exit(1);
 }
 
+/* Edge и Firefox для launch({ browser }). Свой путь — EDGE_PATH и FIREFOX_PATH; Firefox ставится и в
+   папку пользователя (%LOCALAPPDATA%\Mozilla Firefox) */
+const EDGE = [
+  process.env.EDGE_PATH,
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/usr/bin/microsoft-edge', '/usr/bin/microsoft-edge-stable',
+].filter(Boolean);
+const FIREFOX = [
+  process.env.FIREFOX_PATH,
+  'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+  'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe',
+  process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Mozilla Firefox', 'firefox.exe') : null,
+  '/Applications/Firefox.app/Contents/MacOS/firefox',
+  '/usr/bin/firefox', '/usr/lib/firefox/firefox', '/snap/bin/firefox',
+].filter(Boolean);
+
+/** Имена браузеров, которые умеет launch: ключ — значение --browser. */
+export const BROWSER_NAMES = { chrome: 'Chrome', edge: 'Edge', firefox: 'Firefox' };
+
+/** Значение --browser → 'chrome' | 'edge' | 'firefox' или null (не знаем такого): ff, msedge, google-chrome — тоже. */
+export function parseBrowser(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (/^(chrome|google-?chrome|chromium)$/.test(s)) return 'chrome';
+  if (/^(edge|msedge|microsoft-?edge)$/.test(s)) return 'edge';
+  if (/^(firefox|ff|mozilla|mozilla-?firefox)$/.test(s)) return 'firefox';
+  return null;
+}
+
+/** Путь к браузеру или null: findBrowser('firefox'). 'chrome' — как requireChrome: CHROME_PATH, Chrome, запасным Edge. */
+export function findBrowser(kind = 'chrome') {
+  const list = kind === 'firefox' ? FIREFOX : kind === 'edge' ? EDGE : CHROME;
+  return list.find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || null;
+}
+
+/* Настройки Firefox, которые у Chrome задаются эмуляцией на вкладке: у Firefox их можно дать только
+   при запуске. Тема: 0 — тёмная, 1 — светлая; «меньше движения»: 1 — да, 0 — нет (иначе берётся из
+   настроек Windows); указатель: 1 — грубый без наведения (телефон: (hover: none), (pointer: coarse)),
+   6 — точный с наведением. file:// — как --allow-file-access-from-files у Chrome */
+function firefoxPrefs({ scheme = 'light', reducedMotion = false, mobile = false } = {}) {
+  return {
+    'layout.css.prefers-color-scheme.content-override': scheme === 'dark' ? 0 : 1,
+    'ui.prefersReducedMotion': reducedMotion ? 1 : 0,
+    'ui.primaryPointerCapabilities': mobile ? 1 : 6,
+    'ui.allPointerCapabilities': mobile ? 1 : 6,
+    'security.fileuri.strict_origin_policy': false,
+  };
+}
+
+/* свойства браузера, которые пишет launch: неперечисляемые, чтобы объект puppeteer выглядел как раньше */
+const setHidden = (o, k, v) => { try { Object.defineProperty(o, k, { value: v, enumerable: false, configurable: true, writable: true }); } catch { /* заморожен */ } };
+
 /* GPU не отключаем намеренно: без него WebGL в безголовом Chrome может не
    подняться, и проверка 3D покажет пустой холст там, где у людей всё работает.
    protocolTimeout — сколько ждать ответа страницы на одну команду: зависшая
    (нехватка памяти, бесконечный цикл) страница даёт ошибку через 90 с, а не
-   держит скрипт двадцать минут. */
-export async function launch({ headless = true, protocolTimeout = 90000 } = {}) {
+   держит скрипт двадцать минут.
+   browser: 'chrome' (по умолчанию) | 'edge' | 'firefox' (см. parseBrowser). Firefox запускается через
+   WebDriver BiDi; scheme, reducedMotion и mobile нужны только ему (см. firefoxPrefs) — у Chrome и Edge
+   это задаёт preparePage на каждой вкладке. У возвращённого браузера неперечисляемые поля: rwKind
+   ('chrome' | 'edge' | 'firefox' — по тому, что запустилось: Edge запасным вместо Chrome — 'edge'),
+   rwEngine ('chromium' | 'gecko'), rwName, rwVersion ('153.0.8010.53'), rwExe, rwEmulation
+   (у Firefox — с какими scheme, reducedMotion, mobile он запущен). Сводка — browserInfo(browser). */
+export async function launch({ headless = true, protocolTimeout = 90000, browser = 'chrome', scheme = 'light', reducedMotion = false, mobile = false } = {}) {
+  const kind = parseBrowser(browser || 'chrome');
+  if (!kind) throw new Error(`неизвестный браузер «${browser}» — есть chrome, firefox и edge`);
   const puppeteer = loadPuppeteer();
-  const exe = requireChrome();
+  let exe;
+  if (kind === 'chrome') exe = requireChrome();
+  else {
+    exe = findBrowser(kind);
+    if (!exe) throw new Error(`не найден ${BROWSER_NAMES[kind]} — укажите путь к нему в переменной ${kind === 'firefox' ? 'FIREFOX_PATH' : 'EDGE_PATH'}`);
+  }
+  const gecko = kind === 'firefox';
+  let b;
   try {
-    return await puppeteer.launch({
-      executablePath: exe, headless, protocolTimeout,
-      args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'],
-    });
+    b = await puppeteer.launch(gecko
+      ? { browser: 'firefox', executablePath: exe, headless, protocolTimeout, extraPrefsFirefox: firefoxPrefs({ scheme, reducedMotion, mobile }) }
+      : { executablePath: exe, headless, protocolTimeout, args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'] });
   } catch (e) {
     /* «Timed out after 30000 ms while waiting for the WS endpoint…» со стеком puppeteer — назвать, что делать */
     const why = String((e && e.message) || e).split('\n')[0].slice(0, 200);
-    throw new Error(`браузер не запустился (${exe}): ${why} — закройте зависшие процессы chrome или задайте CHROME_PATH на другой Chrome и повторите`);
+    const edge = /msedge/i.test(exe);
+    /* Edge 153 на части машин в безголовом режиме выходит сразу с кодом 0 и пустым выводом */
+    if (edge && /code:?\s*0\b/i.test(String((e && e.message) || e))) throw new Error(`Edge закрылся сразу после запуска без окна (код 0, ${exe}) — у Edge на части машин безголовый режим не работает; проверяйте в Chrome (по умолчанию) или задайте CHROME_PATH`);
+    throw new Error(`браузер не запустился (${exe}): ${why} — закройте зависшие процессы ${gecko ? 'firefox (запущенные проверками, не свой Firefox)' : edge ? 'msedge' : 'chrome'} или задайте ${gecko ? 'FIREFOX_PATH' : edge ? 'EDGE_PATH' : 'CHROME_PATH'} на другой ${gecko ? 'Firefox' : edge ? 'Edge' : 'Chrome'} и повторите`);
   }
+  let version = null; try { version = await b.version(); } catch { /* браузер без версии */ }
+  const name = gecko ? 'Firefox' : /msedge/i.test(exe) ? 'Edge' : /chromium/i.test(exe) ? 'Chromium' : 'Chrome';
+  setHidden(b, 'rwKind', gecko ? 'firefox' : name === 'Edge' ? 'edge' : 'chrome');
+  setHidden(b, 'rwEngine', gecko ? 'gecko' : 'chromium');
+  setHidden(b, 'rwName', name);
+  setHidden(b, 'rwVersion', version ? ((/(\d+(?:\.\d+)+)/.exec(version) || [])[1] || version) : null);
+  setHidden(b, 'rwExe', exe);
+  setHidden(b, 'rwEmulation', gecko ? { scheme: scheme === 'dark' ? 'dark' : 'light', reducedMotion: !!reducedMotion, mobile: !!mobile } : null);
+  return b;
+}
+
+/* движок браузера, вкладки или контекста: 'gecko' у Firefox, иначе 'chromium' */
+function engineOf(x) {
+  try {
+    const b = x && typeof x.browser === 'function' ? x.browser() : x;
+    if (b && b.rwEngine) return b.rwEngine;
+    if (b && b.protocol === 'webDriverBiDi') return 'gecko';
+  } catch { /* не браузер */ }
+  return 'chromium';
+}
+
+/**
+ * Сводка о браузере для вывода и протокола: { kind, name, engine, version, exe, label }.
+ * label — «Chrome 153.0.8010.53», «Firefox 156.0.1». Принимает браузер из launch (или вкладку);
+ * браузер, запущенный не через launch, — { kind: null, name: null, … } с тем, что удалось узнать.
+ */
+export function browserInfo(x) {
+  let b = x; try { if (x && typeof x.browser === 'function') b = x.browser(); } catch { /* сам браузер */ }
+  const engine = engineOf(b);
+  const name = (b && b.rwName) || null; const version = (b && b.rwVersion) || null;
+  return { kind: (b && b.rwKind) || null, name, engine, version, exe: (b && b.rwExe) || null, label: name ? `${name}${version ? ` ${version}` : ''}` : engine === 'gecko' ? 'Firefox' : 'Chromium' };
+}
+
+/* Браузер по умолчанию по ProgId из реестра: известные — с именем, движком и значением --browser
+   (run: null — отдельным браузером проверки не запускаются) */
+const PROGIDS = [
+  [/^Firefox(URL|HTML|PDF)/i, 'firefox', 'Firefox', 'gecko', 'firefox'],
+  [/^(LibreWolf|Waterfox|Floorp|Zen|TorBrowser|PaleMoon)/i, 'gecko-other', null, 'gecko', 'firefox'],
+  [/^(ChromeHTML|ChromeBHTML|ChromeDHTML|ChromeSSHTM|GoogleChrome)/i, 'chrome', 'Chrome', 'chromium', 'chrome'],
+  [/^(MSEdge|AppXq0fevzme2pys62n3e0fbqa7peapykr8v)/i, 'edge', 'Edge', 'chromium', 'edge'],
+  [/^Yandex/i, 'yandex', 'Яндекс Браузер', 'chromium', null],
+  [/^Opera/i, 'opera', 'Opera', 'chromium', null],
+  [/^Brave/i, 'brave', 'Brave', 'chromium', null],
+  [/^Vivaldi/i, 'vivaldi', 'Vivaldi', 'chromium', null],
+  [/^(Chromium|Arc|Thorium)/i, 'chromium-other', null, 'chromium', null],
+  [/^(IE\.HTTPS?|htmlfile)$/i, 'ie', 'Internet Explorer', 'trident', null],
+];
+let defaultBrowserCache;
+/**
+ * Браузер пользователя по умолчанию — чтобы проверить и в нём: { id, name, engine, run, progId, exe }
+ * или null (не Windows, реестр не прочитан). Windows: ProgId из реестра через reg query —
+ * HKCU\…\Shell\Associations\UrlAssociations\https (затем http), UserChoiceLatest\ProgId (Windows 11
+ * новых сборок), затем UserChoice. id: firefox | chrome | edge | yandex | opera | brave | vivaldi |
+ * gecko-other | chromium-other | ie | other; engine: gecko | chromium | trident | null; run — значение
+ * --browser, которым его проверить (chrome, edge, firefox), или null; exe — путь из команды открытия
+ * (HKCR\<ProgId>\shell\open\command), если он читается и файл есть. Считается один раз за процесс.
+ */
+export function defaultBrowser() {
+  if (defaultBrowserCache !== undefined) return defaultBrowserCache;
+  defaultBrowserCache = null;
+  if (process.platform !== 'win32') return null;
+  /* вывод reg — в кодировке консоли; ProgId и путь к Program Files — латиница, остальное не нужно */
+  const q = (key, value) => {
+    try {
+      const out = execFileSync('reg', ['query', key, ...(value ? ['/v', value] : ['/ve'])], { encoding: 'latin1', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      const m = new RegExp(`^\\s*${value ? value : '\\S.*?'}\\s+REG_(?:SZ|EXPAND_SZ)\\s+(.+?)\\s*$`, 'mi').exec(out);
+      return m ? m[1] : null;
+    } catch { return null; }
+  };
+  const base = 'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations';
+  let progId = null;
+  for (const proto of ['https', 'http']) {
+    for (const sub of ['UserChoiceLatest\\ProgId', 'UserChoice']) { progId = q(`${base}\\${proto}\\${sub}`, 'ProgId'); if (progId) break; }
+    if (progId) break;
+  }
+  if (!progId) return null;
+  const hit = PROGIDS.find(([re]) => re.test(progId));
+  const [, id, name, engine, run] = hit || [null, 'other', null, null, null];
+  let exe = null;
+  const cmd = q(`HKCR\\${progId}\\shell\\open\\command`, null);
+  const m = cmd && /^\s*"([^"]+\.exe)"|^\s*(\S+\.exe)/i.exec(cmd);
+  if (m) { const p = m[1] || m[2]; try { if (/^[\x20-\x7e]+$/.test(p) && fs.existsSync(p)) exe = p; } catch { /* путь не читается */ } }
+  const label = name || (exe ? path.basename(exe, '.exe') : progId.replace(/[-.].*$/, ''));
+  defaultBrowserCache = { id, name: label, engine, run, progId, exe };
+  return defaultBrowserCache;
+}
+
+/**
+ * Подсказка о браузере пользователя для первой строки вывода: строка или '' (подсказывать нечего).
+ * current — значение --browser прогона ('chrome' | 'edge' | 'firefox'); def — defaultBrowser().
+ *   у пользователя по умолчанию Firefox — проверьте и в нём: --browser firefox
+ */
+export function defaultBrowserHint(current, def = defaultBrowser()) {
+  if (!def) return '';
+  if (def.run && def.run === current) return def.id === 'gecko-other' ? `у пользователя по умолчанию ${def.name} — движок Firefox, проверка идёт в Firefox` : `у пользователя по умолчанию ${def.name} — проверка идёт в нём`;
+  if (def.run) return `у пользователя по умолчанию ${def.name}${def.id === 'gecko-other' ? ' (движок Firefox)' : ''} — проверьте и в нём: --browser ${def.run}`;
+  if (def.engine === 'chromium') return current === 'firefox' ? `у пользователя по умолчанию ${def.name} — движок Chromium, как у Chrome: основная проверка — в Chrome (без --browser)` : `у пользователя по умолчанию ${def.name} — движок Chromium, как у Chrome: отдельным браузером он не проверяется`;
+  return `у пользователя по умолчанию ${def.name} — скрипты его не запускают, проверьте в нём вручную`;
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -365,7 +547,48 @@ function canvasHook() {
     P.getContext = wrapped;
     const tco = P.transferControlToOffscreen;
     if (tco) P.transferControlToOffscreen = function transferControlToOffscreen(...a) { const r = tco.apply(this, a); mark(this, 'offscreen'); return r; };
+    /* кадры WebGL: когда страница рисовала в последний раз и при каком размере буфера. По ним проверка
+       холста отличает «ни разу не рисовала» от «рисует только по событию, и показанный кадр потерян»
+       (без preserveDrawingBuffer браузер его не восстанавливает, смена размера буфера его стирает):
+       canvas.__rwDraws — вызовов рисования, __rwFrames — кадров (вызовы дальше 8 мс друг от друга),
+       __rwDrawAt — performance.now() последнего, __rwDrawSize — «ширина×высота» буфера при нём */
+    const DRAW = ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced', 'drawRangeElements', 'clear'];
+    for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+      const CP = C && C.prototype; if (!CP) continue;
+      for (const m of DRAW) {
+        const f = CP[m]; if (typeof f !== 'function' || f.__rwHooked) continue;
+        const w = function (...a) {
+          const cv = this && this.canvas;
+          if (cv) { try { const now = performance.now(); if (!(now - (cv.__rwDrawAt || -1e9) < 8)) cv.__rwFrames = (cv.__rwFrames || 0) + 1; cv.__rwDraws = (cv.__rwDraws || 0) + 1; cv.__rwDrawAt = now; cv.__rwDrawSize = cv.width + '×' + cv.height; } catch (e) { /* холст заморожен */ } }
+          return f.apply(this, a);
+        };
+        Object.defineProperty(w, '__rwHooked', { value: true });
+        try { Object.defineProperty(w, 'toString', { value: () => f.toString(), configurable: true }); } catch (e) { /* нет */ }
+        try { CP[m] = w; } catch (e) { /* свойство только для чтения */ }
+      }
+    }
   } catch (e) { /* не страница с холстами */ }
+}
+
+/**
+ * Тип запроса, как resourceType() у Chrome ('document', 'script', 'stylesheet', 'image', 'font',
+ * 'media', 'fetch', 'xhr', 'other'…). В Firefox (WebDriver BiDi) resourceType() бросает — там тип
+ * берётся по заголовку Sec-Fetch-Dest (его шлют на https и localhost; 'empty' — fetch или XHR,
+ * отдаётся как 'fetch'), затем по навигации и расширению файла. Никогда не бросает.
+ */
+const DEST_TYPES = { document: 'document', iframe: 'document', frame: 'document', script: 'script', worker: 'script', sharedworker: 'script', serviceworker: 'script', style: 'stylesheet', image: 'image', font: 'font', audio: 'media', video: 'media', track: 'texttrack', manifest: 'manifest', empty: 'fetch' };
+export function resourceTypeOf(req) {
+  try { return req.resourceType(); } catch { /* Firefox: нет в BiDi */ }
+  let dest = ''; try { dest = String((req.headers() || {})['sec-fetch-dest'] || '').toLowerCase(); } catch { /* без заголовков */ }
+  if (DEST_TYPES[dest]) return DEST_TYPES[dest];
+  try { if (req.isNavigationRequest()) return 'document'; } catch { /* нет */ }
+  let p = ''; try { p = new URL(req.url()).pathname.toLowerCase(); } catch { /* data: и прочее */ }
+  if (/\.(m?js|cjs)$/.test(p)) return 'script';
+  if (/\.css$/.test(p)) return 'stylesheet';
+  if (/\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)$/.test(p)) return 'image';
+  if (/\.(woff2?|ttf|otf|eot)$/.test(p)) return 'font';
+  if (/\.(mp4|webm|ogg|ogv|mp3|m4a|wav|mov|m3u8|mpd)$/.test(p)) return 'media';
+  return 'other';
 }
 
 /**
@@ -380,22 +603,47 @@ function canvasHook() {
  * page.rwCdp — эта CDP-сессия (Network уже включён), её можно переиспользовать.
  *
  * Параметры: scheme ('light'|'dark'), reducedMotion, userAgent (свой агент),
- * hookCanvas (true — перехват getContext, тип контекста в canvas.__rwCtx),
- * trackBytes (true — байты через CDP).
+ * hookCanvas (true — перехват getContext, тип контекста в canvas.__rwCtx; у WebGL ещё и
+ * кадры: __rwDraws, __rwFrames, __rwDrawAt, __rwDrawSize), trackBytes (true — байты через CDP).
+ *
+ * Firefox (браузер из launch({ browser: 'firefox' })): медиа на вкладке не эмулируются — тема,
+ * «меньше движения» и указатель телефона взяты из запуска; если вкладка просит другое, и что
+ * вообще не эмулируется (meta viewport, события касания), — строками в page.rwLimits
+ * («не поддерживается в Firefox: …»); байты — только по content-length (page.rwBytesFrom).
  */
 export async function preparePage(browser, vp, { scheme = 'light', reducedMotion = false, userAgent = null, hookCanvas = true, trackBytes = true } = {}) {
+  const gecko = engineOf(browser) === 'gecko';
   const page = guardPage(await browser.newPage());
+  const limits = [];
   await page.setViewport(vp);
   const ua = userAgent || vp.ua || (vp.isMobile ? (vp.width > 600 ? TABLET_UA : MOBILE_UA) : null);
-  if (ua) await page.setUserAgent(ua);
-  const feats = [{ name: 'prefers-color-scheme', value: scheme }];
-  if (reducedMotion) feats.push({ name: 'prefers-reduced-motion', value: 'reduce' });
-  await page.emulateMediaFeatures(feats);
+  if (ua) { try { await page.setUserAgent(ua); } catch (e) { if (!gecko) throw e; limits.push(`свой агент (User-Agent) не поставился: ${String((e && e.message) || e).split('\n')[0].slice(0, 80)}`); } }
+  if (gecko) {
+    /* у Firefox нет эмуляции медиа на вкладке: всё это задано при запуске (launch → firefoxPrefs) */
+    let b = browser; try { if (typeof browser.browser === 'function') b = browser.browser(); } catch { /* сам браузер */ }
+    const em = b && b.rwEmulation;
+    const want = scheme === 'dark' ? 'dark' : 'light';
+    if (!em) limits.push('тема и «меньше движения» не заданы: Firefox запущен не через lib.launch — страница видит настройки системы');
+    else {
+      if (scheme !== 'light' && scheme !== 'dark') limits.push(`тема «${scheme}» не задаётся — страница видит «${em.scheme}»`);
+      else if (want !== em.scheme) limits.push(`тема «${want}» на этой вкладке не включается — Firefox запущен с «${em.scheme}» (тема задаётся при запуске)`);
+      if (!!reducedMotion !== em.reducedMotion) limits.push(`«меньше движения» ${reducedMotion ? 'не включается' : 'не выключается'} на этой вкладке — Firefox запущен ${em.reducedMotion ? 'с ним' : 'без него'} (задаётся при запуске)`);
+      if (!!vp.isMobile !== em.mobile) limits.push(`указатель ${vp.isMobile ? 'телефона ((hover: none), (pointer: coarse))' : 'компьютера'} не включается на этой вкладке — Firefox запущен для ${em.mobile ? 'телефона' : 'компьютера'}`);
+    }
+    if (vp.isMobile) limits.push('телефон — частично: размер, плотность, агент и указатель ((hover: none), (pointer: coarse)) есть, а meta viewport и события касания Firefox не эмулирует — вёрстку телефона смотреть в Chrome');
+  } else {
+    const feats = [{ name: 'prefers-color-scheme', value: scheme }];
+    if (reducedMotion) feats.push({ name: 'prefers-reduced-motion', value: 'reduce' });
+    await page.emulateMediaFeatures(feats);
+  }
+  page.rwLimits = limits;
+  page.rwBytesFrom = gecko ? 'content-length' : 'cdp';
   if (hookCanvas) await page.evaluateOnNewDocument(canvasHook);
   const log = { console: [], errors: [], failed: [], requests: [] };
   /* нарушение CSP от нашего же стиля (addStyleSafe пробует <style>) — не ошибка сайта: такие
      сообщения узнаются по sha256 нашего CSS и в журнал не идут */
-  page.on('console', (m) => { const t = m.type(); if (t !== 'error' && t !== 'warning') return; const text = m.text(); if (ownCspNoise(page, text)) return; log.console.push({ type: t, text: text.slice(0, 300) }); });
+  /* предупреждение у Firefox (BiDi) — 'warn', у Chrome — 'warning': в журнал одним именем */
+  page.on('console', (m) => { let t = m.type(); if (t === 'warn') t = 'warning'; if (t !== 'error' && t !== 'warning') return; const text = m.text(); if (ownCspNoise(page, text)) return; log.console.push({ type: t, text: text.slice(0, 300) }); });
   page.on('pageerror', (e) => log.errors.push(String((e && e.message) || e).slice(0, 300)));
   page.on('requestfailed', (r) => log.failed.push({ url: r.url().slice(0, 200), reason: (r.failure() || {}).errorText || 'failed' }));
   /* ответы приходят двумя путями: событие puppeteer (статус, тип) и CDP (байты) —
@@ -407,7 +655,8 @@ export async function preparePage(browser, vp, { scheme = 'light', reducedMotion
   };
   page.on('response', (r) => {
     const req = r.request(); const len = Number((r.headers() || {})['content-length'] || 0);
-    const entry = { url: r.url(), status: r.status(), type: req.resourceType(), bytes: len, bytesFrom: len ? 'content-length' : 'none' };
+    /* resourceTypeOf, а не req.resourceType(): в Firefox тот бросает прямо в обработчике события */
+    const entry = { url: r.url(), status: r.status(), type: resourceTypeOf(req), bytes: len, bytesFrom: len ? 'content-length' : 'none' };
     try { if (r.fromCache()) entry.fromCache = true; } catch { /* нет в этой версии */ }
     /* CSP документа вкладки (заголовок): addStyleSafe по нему сразу берёт сконструированную таблицу,
        не нарушая политику (иначе — сообщение в консоли и отчёт на report-uri сайта) */
@@ -417,7 +666,8 @@ export async function preparePage(browser, vp, { scheme = 'light', reducedMotion
     if (id) { const s = sizes.get(id); if (s) { applySize(entry, s); sizes.delete(id); } else byId.set(id, entry); }
     if (r.status() >= 400) log.failed.push({ url: r.url().slice(0, 200), reason: 'HTTP ' + r.status() });
   });
-  if (trackBytes) {
+  /* у Firefox нет CDP: байты остаются по content-length */
+  if (trackBytes && !gecko) {
     try {
       const cdp = await page.createCDPSession();
       await cdp.send('Network.enable');
@@ -488,7 +738,8 @@ export async function gotoRetry(page, url, { waitUntil = 'networkidle2', timeout
     } catch (e) {
       last = e;
       const msg = String(e && e.message || e);
-      if (!/net::ERR_|Navigation timeout|Timeout/i.test(msg) || i === attempts) break;
+      /* NS_ERROR_… — те же сетевые ошибки у Firefox */
+      if (!/net::ERR_|NS_ERROR_|Navigation timeout|Timeout/i.test(msg) || i === attempts) break;
       await sleep(1500 * i);
     }
   }
@@ -580,6 +831,8 @@ const styleKey = (key, css) => String(key || `rw-${cssHash(css).replace(/[^a-z0-
  * (переход посреди вставки) — тоже null, без WARN. Нарушение CSP от нашей пробы в
  * page.log.console не попадает (preparePage узнаёт его по sha256 CSS).
  * Повторный вызов с тем же key заменяет стиль. Возвращает 'style' | 'adopted' | null.
+ * WARN идёт через общий канал предупреждений lib: скрипт, включивший collectWarnings(),
+ * получает его из takeWarnings() и сам печатает и считает в вердикте.
  *   await addStyleSafe(page, '.x{color:transparent!important}', { key: 'hide-text' })
  *   await removeStyleSafe(page, 'hide-text')
  */
@@ -590,9 +843,23 @@ export async function addStyleSafe(page, css, { key = null, warn = true } = {}) 
   let how;
   try { how = await page.evaluate(styleInPage, { key: k, css: String(css), policies: page.rwCsp ? [page.rwCsp] : [] }); } catch { return null; }
   /* одна строка на ключ за запуск: при нескольких вкладках и перезагрузках она повторялась */
-  if (!how && warn && !warnedStyle.has(k) && warnedStyle.add(k)) console.log(`WARN свой стиль «${k}» не вставился: CSP страницы запрещает <style>, а сконструированные таблицы стилей недоступны — то, что от него зависит, работает без него`);
+  if (!how && warn && !warnedStyle.has(k) && warnedStyle.add(k)) libWarn(`свой стиль «${k}» не вставился: CSP страницы запрещает <style>, а сконструированные таблицы стилей недоступны — то, что от него зависит, работает без него`);
   return how || null;
 }
+
+/* ---------- предупреждения lib ---------- */
+
+/* WARN из lib по умолчанию печатается сразу строкой «WARN …» — у скрипта с прогрессом («· home desktop … ок»)
+   это посреди строки, и в вердикт и json он не попадал */
+const libWarnings = { collect: false, list: [] };
+function libWarn(text) { if (libWarnings.collect) libWarnings.list.push(text); else console.log(`WARN ${text}`); }
+/**
+ * Собирать предупреждения lib, а не печатать: collectWarnings() (или collectWarnings(false) — снова
+ * печатать сразу). Накопленное забирает takeWarnings() → [текст без «WARN »]: скрипт печатает на
+ * своём месте и считает в вердикте и протоколе.
+ */
+export function collectWarnings(on = true) { libWarnings.collect = !!on; }
+export function takeWarnings() { const l = libWarnings.list; libWarnings.list = []; return l; }
 /** Снять стиль, поставленный addStyleSafe с этим key (и <style>, и таблицу). */
 export async function removeStyleSafe(page, key) {
   await page.evaluate(styleInPage, { key: styleKey(key, ''), remove: true }).catch(() => {});
@@ -640,6 +907,8 @@ function detectScrollerInPage() {
   return { kind: 'element', el: best.tagName.toLowerCase() + (best.id ? '#' + best.id : '') + (best.classList.length ? '.' + [...best.classList].slice(0, 2).join('.') : ''), height: best.scrollHeight };
 }
 const pageHeight = (page) => page.evaluate(() => { const sc = window.__rwScroller; return sc && sc.isConnected ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0); });
+/* высота страницы и окно раскладки одним вызовом (scrollThrough перечитывает их на каждом шаге) */
+const pageMetrics = (page) => page.evaluate(() => { const sc = window.__rwScroller; return { h: sc && sc.isConnected ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0), ih: innerHeight }; });
 const currentScroll = (page) => page.evaluate(() => { const sc = window.__rwScroller; return Math.round(sc && sc.isConnected ? sc.scrollTop : scrollY); });
 
 /**
@@ -788,16 +1057,20 @@ export function segmentPositions(total, vh, { step = 0.8, maxShots = 8, skipTop 
  * Низ для подписей — pageHeight − viewH. Шаг прокрутки и позиции снимков считаются
  * от видимой области (visualViewport — то, что попадает на снимок): при контенте шире
  * экрана окно раскладки выше неё, и шаг от innerHeight оставлял бы пропуски между кадрами.
+ * Окно раскладки перечитывается на каждом шаге вместе с высотой страницы: у страницы без
+ * meta viewport оно растёт по ходу прохода (ленивое шире экрана), и «низ» от начального
+ * innerHeight выходил ниже настоящего; viewH в ответе — последнее значение.
  */
 export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = null, tag = 'scroll', maxShots = 8, shotPause = 1200, waitMedia = true, mediaTimeout = 6000, skipTop = false, maxSteps = 150, onStep = null, sheet = false } = {}) {
   const dims = await page.evaluate(() => ({ ih: innerHeight, vv: window.visualViewport ? visualViewport.height : 0 })).catch(() => ({}));
   const dev = (page.viewport() || {}).height || 0;
-  const vh = dims.ih || dev || 800; /* окно раскладки — для «низа» */
+  let vh = dims.ih || dev || 800; /* окно раскладки — для «низа»; перечитывается на каждом шаге */
   const sh = Math.min(vh, dims.vv || dev || vh); /* видимая область — шаг и снимки */
   const px = Math.max(1, Math.round(sh * step));
   const scroller = await page.evaluate(detectScrollerInPage).catch(() => ({ kind: 'document' }));
   const initialHeight = await pageHeight(page);
   let total = initialHeight; let n = 0; let maxY = 0;
+  const remeasure = async () => { const m = await pageMetrics(page).catch(() => null); if (m) { total = m.h; if (m.ih > 0) vh = m.ih; } else total = await pageHeight(page); };
   for (let y = 0; y < total && n < maxSteps; y += px) {
     await scrollToY(page, y); await sleep(pause);
     /* где страница стоит после паузы: скрипт сайта мог вернуть её назад */
@@ -805,10 +1078,10 @@ export async function scrollThrough(page, { step = 0.8, pause = 350, shotsDir = 
     if (sy > maxY) maxY = sy;
     if (onStep) await onStep({ y, scrollY: sy, index: n });
     n++;
-    total = await pageHeight(page);
+    await remeasure();
   }
   /* низ страницы: шаги могли остановиться чуть выше */
-  if (maxY < total - vh - 2) { await scrollToY(page, total); await sleep(pause); const sy = await currentScroll(page); if (sy > maxY) maxY = sy; total = await pageHeight(page); }
+  if (maxY < total - vh - 2) { await scrollToY(page, total); await sleep(pause); const sy = await currentScroll(page); if (sy > maxY) maxY = sy; await remeasure(); }
   const shots = [];
   if (shotsDir) {
     ensureDir(shotsDir);

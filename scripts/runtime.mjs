@@ -4,7 +4,7 @@
  * (рисуют ли и резкие ли), клики и их настоящий эффект, поля с маской, наведение,
  * меню, анимации, видео, выброшенный браузером CSS, переполнение по ширине.
  *
- *   node runtime.mjs <url> [--viewport mobile] [--out папка] [--tag имя]
+ *   node runtime.mjs <url> [--viewport mobile] [--out папка] [--tag имя] [--browser firefox]
  *        [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"]
  *   node runtime.mjs [шаги и настройки] -- <url>      «--» — конец флагов, дальше только адрес
  *
@@ -23,8 +23,8 @@
  *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка) — предупреждение WARN
  *   в stderr, запуск продолжается. Известный флаг с одним дефисом («-viewport mobile») —
  *   ошибка (код 2) «флаг пишется с двумя дефисами»: иначе прогон молча шёл бы на desktop.
- *   Настройка дважды с разными значениями (--viewport, --out, --tag, --scheme, --cpu) —
- *   ошибка (код 2); --wait — не больше 600000 мс.
+ *   Настройка дважды с разными значениями (--viewport, --out, --tag, --scheme, --cpu,
+ *   --browser) — ошибка (код 2); --wait — не больше 600000 мс.
  *   Следующее слово он забирает значением, только
  *   если это не флаг, не «--» и не адрес (http, https, file, data, about):
  *   «--strict http://localhost:4177/ --css» — WARN про --strict, адрес на месте.
@@ -39,7 +39,14 @@
  *                              не число — код 2)
  *        --scroll              прокрутить до конца: появления, закреплённые, переполнение
  *                              по элементам (FAIL — торчит за край или можно уехать вбок;
- *                              WARN — страница шире окна, текст шире коробки, обрезан панелью)
+ *                              WARN — страница шире окна, текст шире коробки, обрезан панелью).
+ *                              «Ждали появления» — прозрачное или сдвинутое ниже первого экрана;
+ *                              «не появились» (WARN) — не стало видно ни на одном шаге прохода.
+ *                              Поля формы (input, select, textarea, option) и прозрачное, у которого
+ *                              прозрачность не менялась ни на одном шаге, без перехода, анимации и
+ *                              признаков появления (классы и data-атрибуты reveal, fade, aos…), —
+ *                              отдельно «невидимы по замыслу», без WARN (радиокнопка с opacity 0
+ *                              поверх подписи — приём оформления, а не сломанное появление)
  *        --hover "sel"         навести и записать, что изменилось в стилях (и почему нет)
  *        --hover-all           каждое правило :hover из CSS: меняет ли объявленное; мёртвое —
  *                              FAIL с причиной (держит анимация fill both/forwards, перебито)
@@ -59,7 +66,13 @@
  *                              или rotate — повернуть); ширина и высота больше 0
  *        --canvas              холсты: рисует ли (снимок с холстом и без), меняется ли кадр,
  *                              резкость буфера: FAIL — буфер меньше 0.85 ширины в CSS px,
- *                              WARN — меньше 0.85 от ширины × DPR, 2D с искажёнными пропорциями
+ *                              WARN — меньше 0.85 от ширины × DPR, 2D с искажёнными пропорциями.
+ *                              ПУСТОЙ (FAIL) — с причиной по кадрам WebGL, которые считает перехват:
+ *                              «ни разу не рисовала на этом холсте»; «рисует только по событию —
+ *                              показанный кадр потерян» (без preserveDrawingBuffer браузер его не
+ *                              восстанавливает: preserveDrawingBuffer или перерисовка по
+ *                              visibilitychange / IntersectionObserver); «буфер сменил размер после
+ *                              последнего кадра — кадр стёрт» (перерисовка после смены размера)
  *        --motion              анимации: идут, бесконечные, закончились и держат свойство;
  *                              «меньше движения» — в отдельной вкладке
  *        --video               видео: poster, muted/playsinline, играет ли, пауза вне экрана
@@ -76,8 +89,22 @@
  *   (после конца переходов).
  *   не шаги, а настройки:
  *        --init "js"           код до всех скриптов страницы (например, PerformanceObserver)
- *        --cpu 4               процессор в N раз медленнее
+ *        --cpu 4               процессор в N раз медленнее (только Chrome и Edge)
  *        --scheme light|dark   цветовая схема (по умолчанию light)
+ *        --browser chrome|firefox|edge  в каком браузере проверять (по умолчанию chrome; ff и msedge —
+ *                              тоже). Первая строка вывода — браузер прогона и браузер пользователя
+ *                              по умолчанию (Windows, реестр): «у пользователя по умолчанию Firefox —
+ *                              проверьте и в нём: --browser firefox». Без --tag протокол не Chrome —
+ *                              <экран>-firefox.json, <экран>-edge.json (Chrome-протокол не затирается).
+ *                              Firefox — через WebDriver BiDi; чего у него нет, то WARN «не поддерживается
+ *                              в Firefox», а не падение: --cpu (замедление — протокол Chrome), --scheme
+ *                              no-preference, на телефоне — meta viewport и события касания (размер,
+ *                              плотность, агент, (hover: none) и (pointer: coarse) есть). Байты по сети —
+ *                              только по content-length, тип запроса — по Sec-Fetch-Dest. Тема и «меньше
+ *                              движения» у Firefox задаются при запуске, поэтому вкладка «меньше движения»
+ *                              у --motion и --video — отдельный Firefox. Edge — движок Chrome, всё как в
+ *                              Chrome (на машине, где Edge без окна не запускается, — понятная ошибка).
+ *                              --browser есть у runtime.mjs и shots.mjs; остальные скрипты — только Chrome
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
@@ -97,10 +124,16 @@
  *       · --wait — не число миллисекунд ≥ 0;
  *       · --scheme — не light, dark или no-preference;
  *       · --cpu — не число больше 0;
+ *       · --browser — не chrome, firefox или edge;
  *       · --viewport / --viewports: список экранов через запятую, пустое значение
  *         или разные экраны у --viewport и --viewports;
  *       · лишние слова после адреса — в том числе после «--».
  * 404 на /favicon.ico — WARN «нет favicon», не провал загрузки.
+ * Карта импортов при загрузке (разметка, в любом браузере): <script type="importmap"> должен стоять
+ * раньше любого <link rel="modulepreload"> и <script type="module"> (встроенного тоже) и не после
+ * заголовка Link: rel=modulepreload — иначе WARN «карта импортов после modulepreload/module-скрипта —
+ * Firefox её отбросит» (Chrome прощает, в Firefox import('three') по имени падает); вторая карта —
+ * WARN «Firefox примет только первую». Карта на месте — строка OK.
  *
  * Вердикт OK означает «в браузере произошло то, что ожидалось». Красиво ли
  * это — отвечает только снимок, открытый глазами.
@@ -111,6 +144,7 @@ import { fileURLToPath } from 'node:url';
 import {
   launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
+  parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
 } from './lib.mjs';
 
 /* ---------- аргументы: шаги в порядке записи ---------- */
@@ -119,7 +153,7 @@ const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', '
 /* без значения: шаги-флаги и настройки-флаги */
 const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'help', 'h']);
 /* настройки со значением */
-const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init']);
+const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser']);
 const usage = (msg) => { console.error(msg); process.exit(2); };
 const short = (s, n = 60) => String(s).replace(/\s+/g, ' ').slice(0, n);
 /* имя флага из слова: «--scroll», «--scroll=1» → scroll; «-h» → h; не флаг → null */
@@ -158,7 +192,7 @@ const isUrlWord = (s) => { try { return /^(https?|file|data|about):$/.test(new U
 const FALSE_RE = /^(0|false|no|off|нет)$/i;
 
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
-const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu']);
+const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser']);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
@@ -206,7 +240,7 @@ for (let i = 0; i < argv.length; i++) {
   if (STEP.has(k)) steps.push({ k, v });
   else {
     /* настройка дважды с разными значениями («--viewport mobile --viewport desktop») — раньше молча бралась последняя */
-    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один (runtime проверяет один экран за запуск)`);
+    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один${k === 'browser' ? ' (runtime проверяет в одном браузере за запуск)' : ' (runtime проверяет один экран за запуск)'}`);
     opt[k] = v;
   }
 }
@@ -260,9 +294,12 @@ for (const s of steps) {
   }
   if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
 }
-for (const k of ['out', 'tag', 'scheme', 'cpu', 'init']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
+for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
 if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light, dark или no-preference`);
 if (opt.cpu !== undefined && !(Number(opt.cpu) > 0)) usage(`--cpu ${opt.cpu}: нужно число — во сколько раз замедлить процессор (4)`);
+/* браузер прогона: chrome (по умолчанию), firefox, edge */
+const browserKind = opt.browser === undefined ? 'chrome' : parseBrowser(opt.browser);
+if (!browserKind) usage(`--browser ${opt.browser}: нужно chrome, firefox или edge`);
 /* экран: --viewport и --viewports — одно и то же; runtime проверяет один экран за запуск */
 const vpGiven = ['viewport', 'viewports'].filter((k) => opt[k] !== undefined).map((k) => [k, String(opt[k]).trim()]);
 if (vpGiven.length === 2 && vpGiven[0][1] !== vpGiven[1][1]) usage(`заданы и --viewport ${vpGiven[0][1]}, и --viewports ${vpGiven[1][1]} — это один флаг; runtime проверяет один экран за запуск`);
@@ -276,13 +313,14 @@ const [vpName, vp] = resolved;
 let cur = { ...vp };
 const run = runDir(opt, url);
 const outDir = ensureDir(path.join(run, 'runtime'));
-const tag = opt.tag || `${vpName}${opt['reduced-motion'] ? '-reduced' : ''}`;
+/* не Chrome — свой протокол по умолчанию: desktop-firefox.json рядом с desktop.json, а не поверх него */
+const tag = opt.tag || `${vpName}${opt['reduced-motion'] ? '-reduced' : ''}${browserKind !== 'chrome' ? `-${browserKind}` : ''}`;
 const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN };
 const effOf = new Function('el', `return (${EFFECTIVE_OPACITY_FN})(el);`);
 
 const STATE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'boxShadow', 'transform', 'opacity', 'textDecorationLine', 'outlineStyle', 'outlineColor', 'filter', 'letterSpacing', 'scale', 'translate', 'rotate'];
 
-const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
+const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], browser: null, startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
 let fails = 0, warns = 0;
 /* вид текущего шага — в протокол: state.mjs отличает запись (eval без --expect, снимок) от проверки */
 let curKind = 'load';
@@ -296,16 +334,29 @@ const shot = async (name) => { const file = path.join(outDir, `${tag}-${String(+
 /* одинаковые строки — одной, со счётчиком: «Cannot read … ×20» */
 const uniqCount = (list, max = 4) => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); const arr = [...m.entries()]; return arr.slice(0, max).map(([t, n]) => `${t}${n > 1 ? ` ×${n}` : ''}`).join(' | ') + (arr.length > max ? ` и ещё ${arr.length - max} разных` : ''); };
 
-/* ---------- страница ---------- */
-const browser = await launch();
-let page;
+/* ---------- браузер и страница ---------- */
+/* браузер пользователя по умолчанию (Windows, реестр) — чтобы подсказать проверку и в нём */
+const defBrowser = defaultBrowser();
+let browser;
+try { browser = await launch({ browser: browserKind, scheme: opt.scheme === 'dark' ? 'dark' : 'light', reducedMotion: !!opt['reduced-motion'], mobile: !!vp.isMobile }); }
+catch (e) { console.error(`FAIL браузер: ${e.message}`); process.exit(1); }
+const bInfo = browserInfo(browser);
+const gecko = bInfo.engine === 'gecko';
+const bHint = defaultBrowserHint(browserKind, defBrowser);
+/* первая строка вывода: в каком браузере проверка и какой у пользователя по умолчанию */
+console.log(`браузер ${bInfo.label}${bHint ? ` · ${bHint}` : ''}`);
+report.browser = { ...bInfo, default: defBrowser, hint: bHint || null };
+const NOT_IN = `не поддерживается в ${bInfo.name || 'Firefox'}`;
+let page, navRes = null, cpuSkipped = false;
 const reqLog = [];
 try {
   page = await preparePage(browser, vp, { scheme: opt.scheme || 'light', reducedMotion: !!opt['reduced-motion'] });
-  page.on('request', (r) => { if (reqLog.length < 5000) reqLog.push({ t: Date.now(), type: r.resourceType(), url: r.url().slice(0, 160) }); });
-  if (Number(opt.cpu) > 1) { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(opt.cpu) }); }
+  /* resourceTypeOf: в Firefox resourceType() бросает прямо в обработчике */
+  page.on('request', (r) => { if (reqLog.length < 5000) reqLog.push({ t: Date.now(), type: resourceTypeOf(r), url: r.url().slice(0, 160) }); });
+  /* замедление процессора — Chrome DevTools Protocol, у Firefox его нет: WARN ниже, прогон без замедления */
+  if (Number(opt.cpu) > 1) { if (gecko) cpuSkipped = true; else { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(opt.cpu) }); } }
   if (opt.init) await page.evaluateOnNewDocument(String(opt.init));
-  await gotoRetry(page, url);
+  navRes = await gotoRetry(page, url);
   await page.evaluate(() => document.fonts.ready).catch(() => {});
   page.overlay = await waitForOverlay(page, 5000);
   await sleep(500);
@@ -323,6 +374,38 @@ if (favFails()) line('WARN', 'нет favicon', '/favicon.ico отвечает 40
 const otherFailed = page.log.failed.filter((f) => !/\/favicon\.ico(\?|#|$)/i.test(f.url));
 if (otherFailed.length) line('WARN', 'упавшие запросы', otherFailed.slice(0, 4).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 50)}`).join('; '));
 if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? `ушла через ${page.overlay.waitedMs} мс` : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+/* чего нет в этом браузере (Firefox): честный WARN, а не падение */
+for (const l of page.rwLimits || []) line('WARN', NOT_IN, l);
+if (cpuSkipped) line('WARN', NOT_IN, `замедление процессора (--cpu ${opt.cpu}) — это протокол Chrome (DevTools); прогон идёт без замедления, замер под нагрузкой — в Chrome или Edge`);
+
+/* карта импортов — по разметке, в любом браузере: Firefox принимает <script type="importmap">, только пока
+   не начал грузить модули (modulepreload, module-скрипт — внешний или встроенный), и только первую карту;
+   Chrome прощает и то и другое, поэтому проверки в Chrome зелёные, а у владельца в Firefox 3D не запускается */
+const imap = await page.evaluate(() => {
+  const els = [...document.querySelectorAll('script, link')];
+  const type = (e) => (e.getAttribute('type') || '').trim().toLowerCase();
+  const isMap = (e) => e.tagName === 'SCRIPT' && type(e) === 'importmap';
+  const isMod = (e) => e.tagName === 'SCRIPT' && type(e) === 'module';
+  const isPre = (e) => e.tagName === 'LINK' && /(^|\s)modulepreload(\s|$)/i.test(e.getAttribute('rel') || '');
+  const cut = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; };
+  const desc = (e) => (isPre(e) ? `<link rel="modulepreload" href="${cut(e.getAttribute('href'), 60)}">` : e.getAttribute('src') ? `<script type="module" src="${cut(e.getAttribute('src'), 60)}">` : `встроенный <script type="module"> «${cut(e.textContent, 40)}»`);
+  const maps = els.filter(isMap);
+  if (!maps.length) return null;
+  const before = [];
+  for (const e of els) { if (e === maps[0]) break; if (isMod(e) || isPre(e)) before.push(desc(e)); }
+  return { maps: maps.length, before };
+}).catch(() => null);
+/* modulepreload в заголовке ответа (Link) начинает загрузку модуля раньше всей разметки — Firefox так же отбрасывает карту */
+if (imap) {
+  let link = ''; try { link = String(((navRes && navRes.headers()) || {}).link || ''); } catch { /* без заголовков */ }
+  const hdr = link.split(/,(?=\s*<)/).filter((x) => /;\s*rel\s*=\s*"?[^";]*\bmodulepreload\b/i.test(x)).map((x) => `заголовок ответа Link: <${((/<([^>]*)>/.exec(x) || [])[1] || '').slice(0, 60)}>; rel=modulepreload`);
+  imap.before.unshift(...hdr);
+}
+if (imap) {
+  if (imap.before.length) line('WARN', 'карта импортов после modulepreload/module-скрипта — Firefox её отбросит', `раньше <script type="importmap"> стоит ${imap.before.slice(0, 3).join(', ')}${imap.before.length > 3 ? ` и ещё ${imap.before.length - 3}` : ''} — Firefox принимает карту импортов, только пока не начал грузить модули, и import('…') по имени из неё падает (Chrome прощает); поставьте карту выше всех modulepreload и module-скриптов`, { importMap: imap });
+  if (imap.maps > 1) line('WARN', `карт импортов ${imap.maps} — Firefox примет только первую`, 'имена из второй и следующих карт в Firefox не найдутся (Chrome карты объединяет) — сведите их в одну', { importMap: imap });
+  if (!imap.before.length && imap.maps === 1) line('OK', 'карта импортов стоит раньше модулей', 'Firefox её примет');
+}
 
 /* ---------- общие помощники ---------- */
 const readState = (h) => h.evaluate((el, props) => { const s = getComputedStyle(el); return Object.fromEntries(props.map((p) => [p, s[p]])); }, STATE_PROPS);
@@ -419,6 +502,10 @@ async function scrollStep() {
     document.querySelectorAll('[data-rw-hidden]').forEach((e) => e.removeAttribute('data-rw-hidden'));
     const infinite = new Set(document.getAnimations().filter((a) => a.effect && a.effect.getTiming && a.effect.getTiming().iterations === Infinity && a.effect.target).map((a) => a.effect.target));
     const moving = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (infinite.has(e)) return true; return false; };
+    /* поле формы — не блок появления: радиокнопка или флажок с opacity 0 поверх подписи — приём оформления;
+       невидимые поля идут отдельно, в «невидимы по замыслу» */
+    const FIELD = /^(INPUT|SELECT|TEXTAREA|OPTION|OPTGROUP|DATALIST)$/;
+    const fields = [];
     const vh = innerHeight; let i = 0;
     for (const el of document.body.querySelectorAll('*')) {
       if (i >= 120) break;
@@ -426,20 +513,63 @@ async function scrollStep() {
       const s = getComputedStyle(el); if (s.display === 'none' || s.position === 'fixed' || /hover/i.test(String(el.className))) continue;
       if (!(parseFloat(s.opacity) < 0.95 || (s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)'))) continue;
       if (moving(el) || (el.parentElement && el.parentElement.closest('[data-rw-hidden]'))) continue;
+      if (FIELD.test(el.tagName)) { if (fields.length < 40) fields.push(el); continue; }
       el.setAttribute('data-rw-hidden', String(i++));
+      /* прозрачность при отметке и самая большая за проход: появление «туда и обратно» (AOS с once: false
+         прячет блок снова, когда он ушёл из окна) — тоже появление */
+      el.__rwOp0 = eff(el); el.__rwOpMax = el.__rwOp0; el.__rwOpMoved = false;
     }
+    window.__rwFields = fields;
   }, null, DEPS);
-  const res = await scrollThrough(page, { shotsDir: outDir, tag: `${tag}-scroll`, maxShots: 6 });
+  /* на каждом шаге прохода — что с отмеченными: стало ли видно, менялась ли прозрачность */
+  const onStep = () => evaluateWith(page, () => {
+    for (const el of document.querySelectorAll('[data-rw-hidden]')) {
+      const o = eff(el);
+      if (o > (el.__rwOpMax || 0)) el.__rwOpMax = o;
+      if (Math.abs(o - (el.__rwOp0 || 0)) > 0.01) el.__rwOpMoved = true;
+    }
+  }, null, DEPS).catch(() => {});
+  const res = await scrollThrough(page, { shotsDir: outDir, tag: `${tag}-scroll`, maxShots: 6, onStep });
   scrolled = true;
   const after = await evaluateWith(page, () => {
     const marked = [...document.querySelectorAll('[data-rw-hidden]')];
-    const still = marked.filter((el) => eff(el) < 0.05).map(sig);
+    /* кто прячет: сам элемент или ближайший предок с прозрачностью 0 или visibility:hidden */
+    const hider = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const s = getComputedStyle(e); if (parseFloat(s.opacity) < 0.05 || s.visibility === 'hidden') return e; } return el; };
+    /* может проявиться: переход прозрачности, видимости, сдвига или фильтра, анимация, признаки библиотек появления */
+    const TR = /^(all|opacity|visibility|transform|translate|scale|rotate|filter|clip-path)$/;
+    const canMove = (e) => {
+      const s = getComputedStyle(e);
+      const props = s.transitionProperty.split(',').map((x) => x.trim()); const durs = s.transitionDuration.split(',').map((x) => parseFloat(x) || 0);
+      if (props.some((p, k) => TR.test(p) && (durs[k % durs.length] || 0) > 0)) return true;
+      if (s.animationName && s.animationName !== 'none') return true;
+      try { if (e.getAnimations().length) return true; } catch { /* нет getAnimations */ }
+      return false;
+    };
+    const HINT_CLASS = /(^|[\s_-])(reveal|fade|appear|animat|aos|wow|inview|in-view|on-scroll|scroll-?(reveal|anim)|sal-|js-anim)/i;
+    const HINT_ATTR = /^data-(aos|sal|sr|scroll|animate|anim|reveal|inview|wow|motion|w-id|framer-appear)/i;
+    const hinted = (el) => {
+      for (let e = el, k = 0; e && e.nodeType === 1 && k < 3; e = e.parentElement, k++) {
+        const cls = typeof e.className === 'string' ? e.className : (e.getAttribute('class') || '');
+        if (HINT_CLASS.test(cls)) return true;
+        for (const a of e.attributes) if (HINT_ATTR.test(a.name)) return true;
+      }
+      return false;
+    };
+    const still = [], meant = [];
+    for (const el of marked) {
+      if (eff(el) >= 0.05 || (el.__rwOpMax || 0) >= 0.05) continue; /* видно сейчас или было видно на каком-то шаге */
+      const h = hider(el);
+      /* прозрачность ни разу не менялась, проявиться нечем и не похоже на появление — невидимо по замыслу */
+      (!el.__rwOpMoved && !canMove(h) && !(h !== el && canMove(el)) && !hinted(h) && !hinted(el) ? meant : still).push(sig(el));
+    }
+    const fields = (window.__rwFields || []).filter((el) => el.isConnected && eff(el) < 0.05).map(sig);
     const sticky = [...document.body.querySelectorAll('*')].filter((el) => ['sticky', 'fixed'].includes(getComputedStyle(el).position) && el.getBoundingClientRect().height > 20 && eff(el) > 0.05).slice(0, 5).map(sig);
-    return { marked: marked.length, still, sticky };
+    return { marked: marked.length, still, meant: [...fields, ...meant], fields: fields.length, sticky };
   }, null, DEPS);
   const ov = await findOverflow(page);
   const st = ov.verdict === 'FAIL' ? 'FAIL' : (after.still.length || ov.verdict === 'WARN' || res.stuck || !res.reachedBottom) ? 'WARN' : 'OK';
-  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${after.marked} блоков ждали появления, не появились: ${after.still.length}${after.still.length ? ` (${after.still.slice(0, 4).join(', ')})` : ''}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, panelCut: ov.panelCut } });
+  const meantNote = after.meant.length ? ` · невидимы по замыслу (поля формы и прозрачное без перехода и анимации, прозрачность не менялась): ${after.meant.length} (${after.meant.slice(0, 4).join(', ')}${after.meant.length > 4 ? '…' : ''})` : '';
+  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${after.marked} блоков ждали появления, не появились: ${after.still.length}${after.still.length ? ` (${after.still.slice(0, 4).join(', ')})` : ''}${meantNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, still: after.still, meant: after.meant }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, panelCut: ov.panelCut } });
 }
 
 async function hoverStep(v) {
@@ -647,7 +777,8 @@ async function editStep(v) {
   await clear();
   await h.evaluate((el, t) => { el.focus(); const dt = new DataTransfer(); dt.setData('text/plain', t); el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }, pasteText);
   await sleep(80); let paste = await val();
-  if (!chars(paste.v).length) { await page.keyboard.sendCharacter(pasteText); await sleep(80); paste = await val(); }
+  /* ввод строки одним событием (Input.insertText у Chrome); в Firefox sendCharacter берёт только один знак — execCommand */
+  if (!chars(paste.v).length) { try { await page.keyboard.sendCharacter(pasteText); } catch { await page.evaluate((t) => document.execCommand('insertText', false, t), pasteText).catch(() => {}); } await sleep(80); paste = await val(); }
   steps.push({ step: `вставка «${pasteText}»`, value: paste.v });
   const pasteOk = numeric ? chars(paste.v).length === 11 || chars(paste.v).length === 10 : chars(paste.v).length >= chars(pasteText).length - 1;
   line(pasteOk ? 'OK' : 'WARN', `правка ${v}: вставка`, `«${pasteText}» → «${paste.v}»${pasteOk ? '' : ' — номер искажён'}`);
@@ -727,12 +858,19 @@ async function canvasStep() {
   const raw = async (b, box) => (await sharp(b).extract({ left: Math.round(box.x * dprS), top: Math.round(box.y * dprS), width: Math.max(1, Math.round(box.width * dprS)), height: Math.max(1, Math.round(box.height * dprS)) }).ensureAlpha().raw().toBuffer({ resolveWithObject: true }));
   const diffShare = (a, b) => { const A = a.data, B = b.data; const n = Math.min(A.length, B.length); let d = 0, t = 0; for (let i = 0; i < n; i += 16) { t++; if (Math.abs(A[i] - B[i]) > 24 || Math.abs(A[i + 1] - B[i + 1]) > 24 || Math.abs(A[i + 2] - B[i + 2]) > 24) d++; } return t ? d / t * 100 : 0; };
   const rows = [];
+  /* кадры WebGL из перехвата в preparePage: сколько раз и когда страница рисовала, при каком размере буфера */
+  const drawsOf = (h) => h.evaluate((el) => {
+    /* тот же контекст, что у страницы (getContext того же типа возвращает существующий) — потерян ли он */
+    let lost = null; try { const x = /^webgl/.test(el.__rwCtx || '') ? el.getContext(el.__rwCtx) : null; lost = x && x.isContextLost ? x.isContextLost() : null; } catch { /* холст отдан OffscreenCanvas */ }
+    return { draws: el.__rwDraws || 0, frames: el.__rwFrames || 0, ago: el.__rwDrawAt ? Math.round(performance.now() - el.__rwDrawAt) : null, drawSize: el.__rwDrawSize || null, size: `${el.width}×${el.height}`, lost };
+  }).catch(() => null);
   for (let i = 0; i < list.length; i++) {
     const c = list[i]; const b = buf.list[i] || {}; const visible = c.clientWidth > 0 && c.clientHeight > 0 && c.opacity > 0.05;
-    let paints = null, moves = null, waited = 0, p = null, m = null;
+    let paints = null, moves = null, waited = 0, p = null, m = null, d0 = null, d1 = null;
     if (sharp && handles[i] && visible && c.ctx) {
       try {
         await handles[i].evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await sleep(200); await settleAnimations(page, 2000);
+        d0 = await drawsOf(handles[i]);
         const box = await handles[i].boundingBox();
         if (box && box.width >= 4 && box.height >= 4) {
           const x0 = Math.max(0, box.x), y0 = Math.max(0, box.y);
@@ -740,9 +878,12 @@ async function canvasStep() {
           const t0 = Date.now();
           for (let attempt = 0; attempt < 5; attempt++) {
             const A = await raw(await page.screenshot(), clip);
-            await handles[i].evaluate((el) => { el.__rwOp = el.style.opacity; el.style.opacity = '0'; }); await sleep(120);
+            /* спрятать и показать сразу, без перехода: у холста часто transition: opacity (3D проявляется, когда
+               готово), и через 120 мс он ещё виден наполовину — «спрятанный» снимок почти не отличался, шум между
+               двумя такими снимками был большим, и рисующий холст выходил «не отличается от фона» */
+            await handles[i].evaluate((el) => { el.__rwOp = el.style.opacity; el.__rwTr = el.style.transition; el.style.transition = 'none'; el.style.opacity = '0'; void getComputedStyle(el).opacity; }); await sleep(120);
             const H = await raw(await page.screenshot(), clip); const H2 = await raw(await page.screenshot(), clip);
-            await handles[i].evaluate((el) => { el.style.opacity = el.__rwOp || ''; }); await sleep(350);
+            await handles[i].evaluate((el) => { el.style.opacity = el.__rwOp || ''; void getComputedStyle(el).opacity; el.style.transition = el.__rwTr || ''; }); await sleep(350);
             const C = await raw(await page.screenshot(), clip);
             p = diffShare(A, H); m = diffShare(A, C); const noise = diffShare(H, H2);
             paints = p > 0.3 && p > noise * 3; moves = m > 0.3 && m > noise * 3;
@@ -750,19 +891,31 @@ async function canvasStep() {
             await sleep(700); waited = Date.now() - t0;
           }
         }
+        d1 = await drawsOf(handles[i]);
       } catch { /* холст ушёл со страницы */ }
     }
     const sh = c.ctx ? sharpness(c) : { st: 'OK', bad: [] };
     let st = sh.st; const why = [];
     if (!visible) { st = 'WARN'; why.push('невидим'); }
     else if (!c.ctx) { st = 'WARN'; why.push('контекст не создан страницей — рисовать нечем (ленивая сцена или ошибка); проверить снимком после действия'); }
-    else if (paints === false && !b.regions) { st = 'FAIL'; why.push(`ПУСТОЙ: за ${(waited / 1000).toFixed(1)} с со спрятанным холстом картинка та же`); }
+    else if (paints === false && !b.regions) {
+      st = 'FAIL'; why.push(`ПУСТОЙ: за ${(waited / 1000).toFixed(1)} с со спрятанным холстом картинка та же`);
+      /* почему пусто — по кадрам WebGL (FAIL остаётся: у человека место тоже пустое — после скрытия, свёрнутой вкладки, смены размера) */
+      if (/^webgl/.test(c.ctx) && d1) {
+        const keep = !!(c.attrs && c.attrs.preserveDrawingBuffer);
+        if (d1.lost) why.push('контекст WebGL потерян (webglcontextlost) и не восстановлен — страница не обрабатывает потерю контекста: слушать webglcontextlost / webglcontextrestored и собирать сцену заново');
+        else if (!d1.draws) why.push('страница ни разу не рисовала на этом холсте (контекст есть) — сцена не запустилась или ждёт действия');
+        else if (d1.drawSize && d1.drawSize !== d1.size) why.push(`буфер сменил размер после последнего кадра (${d1.drawSize} → ${d1.size}) — кадр стёрт и не перерисован: перерисовывать после смены размера (ResizeObserver)`);
+        else if (d0 && d1.draws === d0.draws) why.push(`рисует только по событию: последний кадр ${d1.ago != null ? `${(d1.ago / 1000).toFixed(1)} с назад` : 'давно'} (кадров всего ${d1.frames}), за проверку не рисовал — после скрытия кадр потерян${keep ? '' : ': без preserveDrawingBuffer браузер его не восстанавливает'} — нужен preserveDrawingBuffer: true или перерисовка по visibilitychange / IntersectionObserver`);
+        else if (d0) why.push(`рисует (за проверку кадров ${d1.frames - d0.frames}), но картинки не видно — рисует прозрачным или цветом фона, или холст закрыт другим слоем`);
+      }
+    }
     else if (paints === true) why.push(`РИСУЕТ${waited ? ` (ожил через ${(waited / 1000).toFixed(1)} с)` : ''}: меняет ${Math.round(p * 10) / 10}% своей площади, ${moves ? `кадр меняется (${Math.round(m * 10) / 10}%)` : 'кадр статичен'}`);
     else if (paints === false) why.push('по снимку не отличается от фона, но в буфере рисунок есть');
     if (b.regions != null) why.push(`буфер: рисунок в ${b.regions} из 5 зон, ${b.filled}% пикселей`);
     why.push(...sh.bad);
     if (sh.bad.length === 0 && visible && c.ctx) why.push(`резкость ×${c.ratioCss} от CSS px, ×${c.ratioDevice} от DPR`);
-    rows.push({ ...c, paints, moves, buffer: b });
+    rows.push({ ...c, paints, moves, buffer: b, draws: d1 });
     line(st, `холст ${c.sig} ${c.clientWidth}×${c.clientHeight} (${c.ctx || 'нет контекста'})`, `${why.join(' · ')} · ${buf.fps} кадров/с на странице`);
   }
   report.canvas = { list: rows, fps: buf.fps };
@@ -781,16 +934,26 @@ async function motionStep() {
   const holding = now.filter((a) => a.state === 'finished' && /forwards|both/.test(a.fill || ''));
   line('OK', `анимации: идут ${running.length}, бесконечных ${inf.length}, закончились и держат свойство ${holding.length}`, `${[...new Set(inf.map((a) => a.name))].slice(0, 6).join(', ') || 'бесконечных нет'}${holding.length ? ` · держат: ${holding.slice(0, 5).map((a) => `${a.target} ${a.name} (${a.fill}: ${a.props.join(', ')})`).join('; ')} — :hover и классы не поменяют эти свойства` : ''}`);
   /* «меньше движения» — в отдельной вкладке: переключение на лету оставляет страницу в переходах */
-  const p2 = await preparePage(browser, cur, { scheme: opt.scheme || 'light', reducedMotion: true });
+  const rt = await reducedTab(); const p2 = rt.page;
   try {
     await gotoRetry(p2, url); await p2.evaluate(() => document.fonts.ready).catch(() => {}); await sleep(1500);
     const red = await animList(p2);
     const infR = red.filter((a) => a.iterations === 'infinite' && a.state === 'running');
     const smooth = await p2.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
     const st = infR.length ? 'WARN' : 'OK';
-    line(st, 'анимации при «меньше движения» (отдельная вкладка)', `бесконечных идёт ${infR.length}${infR.length ? `: ${[...new Set(infR.map((a) => `${a.target} ${a.name}`))].slice(0, 5).join(', ')} — не останавливаются` : ''} · всего анимаций ${red.length} против ${now.length}${smooth === 'smooth' ? ' · плавная прокрутка остаётся (scroll-behavior:smooth)' : ''}`);
+    line(st, `анимации при «меньше движения» (${rt.where})`, `бесконечных идёт ${infR.length}${infR.length ? `: ${[...new Set(infR.map((a) => `${a.target} ${a.name}`))].slice(0, 5).join(', ')} — не останавливаются` : ''} · всего анимаций ${red.length} против ${now.length}${smooth === 'smooth' ? ' · плавная прокрутка остаётся (scroll-behavior:smooth)' : ''}`);
     report.motion = { now, reduced: red };
-  } finally { await p2.close().catch(() => {}); }
+  } finally { await rt.close(); }
+}
+
+/* вкладка «меньше движения» для --motion и --video: у Chrome и Edge — эмуляция на новой вкладке; у Firefox
+   это настройка запуска, поэтому — отдельный Firefox на время замера (закрывается в close) */
+async function reducedTab() {
+  const prep = { scheme: opt.scheme || 'light', reducedMotion: true };
+  if (!gecko) { const p2 = await preparePage(browser, cur, prep); return { page: p2, where: 'отдельная вкладка', close: () => p2.close().catch(() => {}) }; }
+  const b2 = await launch({ browser: 'firefox', scheme: opt.scheme === 'dark' ? 'dark' : 'light', reducedMotion: true, mobile: !!cur.isMobile });
+  try { const p2 = await preparePage(b2, cur, prep); return { page: p2, where: 'отдельный Firefox', close: () => b2.close().catch(() => {}) }; }
+  catch (e) { await b2.close().catch(() => {}); throw e; }
 }
 
 /* видео: атрибуты, играет ли, пауза вне экрана и при «меньше движения» */
@@ -823,15 +986,15 @@ async function videoStep() {
     line(st, `видео ${v.el} ${v.w}×${v.h} «${v.src}»`, `${[v.autoplay ? 'автоплей' : 'по клику', v.muted ? 'без звука' : 'со звуком', v.loop ? 'по кругу' : '', v.playsinline ? 'playsinline' : '', v.poster ? 'постер' : '', `preload ${v.preload}`].filter(Boolean).join(', ')}${state ? ` · ${state}` : ''}${probs.length ? ` · ${probs.join('; ')}` : ''}`);
   }
   if (vids.some((v) => v.autoplay)) {
-    const p2 = await preparePage(browser, cur, { scheme: opt.scheme || 'light', reducedMotion: true });
+    const rt = await reducedTab(); const p2 = rt.page;
     try {
       await gotoRetry(p2, url); await sleep(1500);
       const r = await p2.evaluate(async () => { const out = []; for (const v of document.querySelectorAll('video[autoplay]')) { const a = v.currentTime; await new Promise((res) => setTimeout(res, 1000)); out.push(v.currentTime - a > 0.2); } return out; });
       const still = r.filter(Boolean).length;
-      line(still ? 'WARN' : 'OK', 'видео при «меньше движения» (отдельная вкладка)', still ? `${still} из ${r.length} автоплей-видео продолжают играть — показать постер или остановить` : 'автоплей остановлен');
-    } finally { await p2.close().catch(() => {}); }
+      line(still ? 'WARN' : 'OK', `видео при «меньше движения» (${rt.where})`, still ? `${still} из ${r.length} автоплей-видео продолжают играть — показать постер или остановить` : 'автоплей остановлен');
+    } finally { await rt.close(); }
   }
-  line('OK', 'вес видео', `загружено ${Math.round(mediaBytes / 1024)} КБ медиа за время проверки (${cur.width}px); бюджет первого экрана — ≤2.5 МБ на desktop, ≤1 МБ на телефоне`);
+  line('OK', 'вес видео', `загружено ${Math.round(mediaBytes / 1024)} КБ медиа за время проверки (${cur.width}px)${page.rwBytesFrom === 'content-length' ? ', по content-length (без CDP — потоковое без длины не в счёт)' : ''}; бюджет первого экрана — ≤2.5 МБ на desktop, ≤1 МБ на телефоне`);
   report.video = vids;
 }
 
@@ -956,7 +1119,7 @@ for (const { k, v, expect } of steps) {
       line(r ? 'OK' : 'FAIL', `assert ${short(v, 200)}`, r ? show(r).slice(0, 200) : `ложно: ${show(r).slice(0, 200)}`);
     }
     else if (k === 'shot') { const f = await shot(String(v)); line('OK', `снимок ${v}`, f); }
-    else if (k === 'fullpage') { const file = path.join(outDir, `${tag}-full.png`); const how = await fullPageShot(page, file); line('OK', 'снимок всей страницы', `${path.basename(file)}${how !== 'full' ? ` (снято как ${how}: страница выше предела Chrome)` : ''}`); }
+    else if (k === 'fullpage') { const file = path.join(outDir, `${tag}-full.png`); const how = await fullPageShot(page, file); line('OK', 'снимок всей страницы', `${path.basename(file)}${how !== 'full' ? ` (снято как ${how}: страница выше предела снимка браузера)` : ''}`); }
   } catch (e) {
     line('FAIL', `${k} ${v === true || v === undefined ? '' : v}`, short(e.message || e, 200));
   }
