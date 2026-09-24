@@ -312,7 +312,12 @@ function hoverCandidatesInPage(maxN) {
   const seen = new Set(); const out = []; const vw = innerWidth;
   const kindOf = (el) => {
     const s = getComputedStyle(el); const r = el.getBoundingClientRect();
-    const hasImg = !!el.querySelector('img, picture, video, canvas, [style*="background-image"]') || [...el.querySelectorAll('*')].some((x) => getComputedStyle(x).backgroundImage !== 'none');
+    const hasImg = !!el.querySelector('img, picture, video, canvas, svg, [style*="background-image"]') || [...el.querySelectorAll('*')].some((x) => getComputedStyle(x).backgroundImage !== 'none');
+    /* логотип: первая ссылка шапки, ссылка на главную или с «logo» в классе — свой вид, чтобы сверка не путала его с карточкой или меню */
+    const head = el.closest('header, [class*="header"], nav'); const firstLink = head && head.querySelector('a[href]') === el;
+    const href = el.getAttribute('href') || '';
+    const isHome = href === '/' || href === './' || href === '#' || href === location.origin + '/';
+    if (el.tagName === 'A' && (/logo/i.test(String(el.className || '')) || (head && ((firstLink && (!!el.querySelector('img, svg') || isHome)) || isHome)))) return 'logo';
     const filled = s.backgroundColor !== 'rgba(0, 0, 0, 0)' && s.backgroundColor !== 'transparent';
     if (hasImg && r.width * r.height > 15000) return 'card';
     if (el.closest('header, nav') && el.tagName === 'A' && !filled) return 'nav';
@@ -433,7 +438,8 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
   const items = [];
   /* текст листа: долгое частое наблюдение, если было, иначе замеры окна «время» */
   let texts = vals.map((v) => v.text);
-  if (watch && watch.length >= 3) { texts = watch.map((w) => w[1]); ts = watch.map((w) => w[0]); }
+  const fromWatch = !!(watch && watch.length >= 3);
+  if (fromWatch) { texts = watch.map((w) => w[1]); ts = watch.map((w) => w[0]); }
   const distinct = [...new Set(texts)];
   if (distinct.length >= 3) {
     const nums = distinct.map((x) => Number(String(x).replace(/[\s ,]/g, '')));
@@ -451,12 +457,16 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
       if (pairs && grow / pairs > 0.7) {
         /* скорость — по участкам набора и стирания целиком (между соседними замерами бывает и 1, и 3 знака) */
         const add = [], del = []; let q0 = 0;
-        for (let k = 1; k <= texts.length; k++) {
+        /* частое наблюдение пишет только смены текста: скорость — по соседним сменам (паузы на слове длиннее 1 с — не в счёт) */
+        if (fromWatch) for (let k = 1; k < texts.length; k++) { const dl = texts[k].length - texts[k - 1].length, dt = (ts[k] - ts[k - 1]) / 1000; if (dt > 0 && dt < 1 && dl) (dl > 0 ? add : del).push(Math.abs(dl) / dt); }
+        else for (let k = 1; k <= texts.length; k++) {
           const sg = k < texts.length ? Math.sign(texts[k].length - texts[k - 1].length) : 0; const sg0 = Math.sign(texts[Math.min(q0 + 1, texts.length - 1)].length - texts[q0].length);
           if (k === texts.length || (sg && sg0 && sg !== sg0)) { const dl = texts[k - 1].length - texts[q0].length, dt = (ts[k - 1] - ts[q0]) / 1000; if (dt > 0.15 && Math.abs(dl) >= 2) (dl > 0 ? add : del).push(Math.abs(dl) / dt); q0 = k - 1; }
         }
         const med = (a) => (a.length ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
-        items.push({ kind: 'typewriter', trigger: 'time', props: [{ prop: 'текст', from: '', to: words.slice(0, 5).join(' / ') }], timing: { speed: `набор ≈${round(med(add))} знаков/с${del.length ? `, стирание ≈${round(med(del))}/с` : ''}` } });
+        /* ни одно слово не допечаталось до стирания за окно — показать самые длинные из увиденных */
+        const seen = words.length ? words : [...new Set(seq)].filter((w) => w.length > 2 && !seq.some((o) => o !== w && o.startsWith(w))).sort((a, b) => b.length - a.length).slice(0, 3);
+        items.push({ kind: 'typewriter', trigger: 'time', props: [{ prop: 'текст', from: '', to: seen.slice(0, 5).join(' / ') + (words.length ? '' : ' (видели не целиком)') }], timing: { speed: `набор ≈${round(med(add))} знаков/с${del.length ? `, стирание ≈${round(med(del))}/с` : ''}` } });
       } else items.push({ kind: 'rotating-words', trigger: 'time', props: [{ prop: 'текст', from: distinct[0], to: distinct.slice(1, 4).join(' / ') }], timing: {} });
     }
   }
@@ -877,11 +887,12 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     /* одинаковые элементы — одной строкой ×N */
     const final = [];
     for (const it of merged) {
-      const key = `${it.kind}|${it.sub || ''}|${pattern(it.el.sig)}|${it.props.map((p) => p.prop + ':' + p.from + '>' + p.to).join(';')}|${it.el.parent || ''}`;
+      const r1 = (x) => String(x).replace(/-?\d+\.\d+/g, (m) => String(Math.round(Number(m) * 10) / 10)); /* 0.51 и 0.5 — одно и то же движение */
+      const key = `${it.kind}|${it.sub || ''}|${pattern(it.el.sig)}|${it.props.map((p) => p.prop + ':' + r1(p.from) + '>' + r1(p.to)).join(';')}|${it.el.parent || ''}`;
       const same = final.find((f) => f._key === key
         || (f.kind === it.kind && it.kind === 'reveal' && pattern(f.el.sig) === pattern(it.el.sig) && f.el.parent === it.el.parent)
         || (f.kind === 'reveal' && it.kind === 'reveal' && f.sub === it.sub && f.props.map((p) => p.prop + p.from + p.to).join() === it.props.map((p) => p.prop + p.from + p.to).join() && (f.timing.duration || 0) === (it.timing.duration || 0))
-        || (f.kind === 'scroll-linked' && it.kind === 'scroll-linked' && f.props.map((p) => p.prop + p.from + p.to).join() === it.props.map((p) => p.prop + p.from + p.to).join())
+        || (f.kind === 'scroll-linked' && it.kind === 'scroll-linked' && f.props.map((p) => p.prop + r1(p.from) + r1(p.to)).join() === it.props.map((p) => p.prop + r1(p.from) + r1(p.to)).join())
         || (f.kind === 'hover' && it.kind === 'hover' && f.component === it.component && f.sub === it.sub && f.props.map((p) => p.prop + p.from + p.to).join() === it.props.map((p) => p.prop + p.from + p.to).join())
         || (f.kind === 'parallax' && it.kind === 'parallax' && f.el.parent && f.el.parent === it.el.parent));
       if (same) { same.count = (same.count || 1) + 1; if (same.examples.length < 3) same.examples.push(it.el.sig); if (it.kind === 'parallax' && it.scroll) same.coefs.push(it.scroll.coefficient); continue; }
