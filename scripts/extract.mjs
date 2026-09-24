@@ -7,29 +7,34 @@
  *                          [--light] [--no-pixels] [--force] [--help]
  *
  *   <url>           http://, https://, file:// или путь к файлу страницы:
- *                   C:\w\site\index.html (имя файлов — как раньше, w-site-index-html),
- *                   site\index.html или /home/u/page.html — существующий файл.
- *                   Адрес без схемы (localhost:4177/) — ошибка с подсказкой, до папок.
+ *                   C:\w\site\index.html, site\index.html или /home/u/page.html —
+ *                   существующий файл. Адрес без схемы (localhost:4177/) — ошибка
+ *                   с подсказкой, до папок.
  *   --out <папка>   куда писать (по умолчанию docs/design)
- *   --name <имя>    имя файлов (по умолчанию из адреса: хост без www, порт, путь;
- *                   порт у localhost, 127.x, [::1], *.localhost, 0.0.0.0 — всегда,
- *                   у остальных — только явный нестандартный: localhost:4177 →
- *                   localhost-4177.*, site.ru:8080 → site-ru-8080.*, site.ru → site-ru.*;
- *                   до 24.09.2026 порт не писался — старые файлы localhost.* не
- *                   подхватываются, extract об этом предупредит; нужно старое — --name)
- *   --no-shots      без снимков (в память снимки окна всё равно делаются —
- *                   ими подтверждается акцент, если не указан --no-pixels)
+ *   --name <имя>    имя файлов (по умолчанию из адреса, как slugFromUrl у site-rework:
+ *                   хост без www, порт, путь; порт у localhost, 127.x, [::1],
+ *                   *.localhost, 0.0.0.0 — всегда, у остальных — только явный
+ *                   нестандартный: localhost:4177 → localhost-4177.*, site.ru:8080 →
+ *                   site-ru-8080.*, site.ru → site-ru.*; файл страницы — «file-» и две
+ *                   последние части пути: C:\w\site\index.html → file-site-index-html.*;
+ *                   прежние имена (без порта; у файлов — весь путь: w-site-index-html,
+ *                   c-w-site-index-html) не подхватываются, extract об этом предупредит;
+ *                   нужно старое — --name)
+ *   --no-shots      без файлов снимков (коробки кнопок и ссылок всё равно снимаются
+ *                   в память — ими подтверждается акцент, если не указан --no-pixels)
  *   --light         без состояний наведения/фокуса и без тёмной темы (быстрее)
- *   --no-pixels     не подтверждать акцент по пикселям снимков окна
+ *   --no-pixels     не подтверждать акцент пикселями коробок кнопок и ссылок
  *   --force         перезаписать уже существующую <имя>.md
  *
  * На выходе: <slug>.json (сырые замеры), <slug>.tokens.css (переменные),
  * <slug>.md (заготовка спецификации) и снимки в <slug>-shots/.
  *
- * Из кода: extract(url, { shotsDir, light, pixels, browser, source }) — browser:
- * уже запущенный браузер (тогда он не закрывается); source — что писать в
- * «Источник» вместо url (путь к файлу вместо file:///…). Ошибки бросаются, а не
- * завершают процесс: вызывающий (discover.mjs) дописывает свои файлы.
+ * Из кода: extract(url, { shotsDir, light, pixels, states, browser, source }) —
+ * browser: уже запущенный браузер (тогда он не закрывается); source — что писать
+ * в «Источник» вместо url (путь к файлу вместо file:///…); states — снимать
+ * наведение и фокус (по умолчанию — если не light; verify просит их, когда акцент
+ * образца взят с наведения). Ошибки бросаются, а не завершают процесс:
+ * вызывающий (discover.mjs) дописывает свои файлы.
  *
  * Как считается (коротко, подробнее — SKILL.md):
  * - видимость — итоговая прозрачность через предков (EFFECTIVE_OPACITY_FN из
@@ -40,11 +45,25 @@
  * - роли текста — по реальному фону под текстом (elementsFromPoint на каждом
  *   шаге прокрутки): пары {фон, цвет, вес}, темы dark/light; приглушённый —
  *   между текстом и фоном по яркости и с контрастом к фону ≥ 3, иначе «не выявлено»;
- * - акцент — насыщенный цвет, подтверждённый долей пикселей на снимках окна
- *   ≥ 0.2%, иначе «акцента нет»;
+ * - акцент — цвет действий: заливка кнопок и ссылок-кнопок (в том числе фон
+ *   вложенного блока внутри <a>, как у Framer), первый экран — в первую очередь;
+ *   залитых нет — цвет, который ссылки и кнопки получают при наведении, или
+ *   подчёркивание ссылок. Фоны секций, шапки и подвала — не акцент. Цвет
+ *   подтверждается пикселями снимка коробки самого элемента (заливка ≥ 25%
+ *   коробки, текст ≥ 3%, линия ≥ 2%), иначе «акцента нет»;
  * - шкала body — только собственный видимый текст (без style/script),
  *   кегль ≥ 6px, вес = длина текста, в блоках от 40 знаков; сверяется с самым
  *   крупным абзацем (bodyProbe);
+ * - h1 — самый крупный видимый h1 первого экрана (на первом экране h1 нет —
+ *   самый крупный на странице); h2–h4 — самый частый стиль своего тега;
+ * - nav — меню шапки: nav вверху первого экрана (сначала внутри header), затем
+ *   закреплённое меню (position: fixed), затем ссылки шапки; ссылки-кнопки с
+ *   заливкой не в счёт; какой элемент взят — scaleFrom.nav;
+ * - контейнер — ширина содержимого (без внутренних полей) центрированных обёрток
+ *   уже окна, чьи дети занимают эту ширину от края до края; обёртка не стоит в ряду
+ *   с соседями (карточка средней колонки тоже по центру) и не лежит в колонке;
+ *   блок во всю ширину обёртки выше — не новая ширина; вес — высота обёртки;
+ *   какие обёртки взяты — containerFrom;
  * - шрифты — по первой гарнитуре стека, стек хранится рядом;
  * - тёмная тема снимается, только если в CSS есть @media (prefers-color-scheme: dark).
  */
@@ -52,15 +71,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  SR, launch, sleep, parseArgs, slugFromUrl, slugFromUrlOld, pageAddress, die, loadSharp, evaluateWith, gotoRetry,
+  SR, launch, sleep, parseArgs, slugFromUrl, legacySlugs, pageAddress, die, loadSharp, evaluateWith, gotoRetry,
   scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
-export const VERSION = 'extract 2026-09-24';
+export const VERSION = 'extract 2026-09-24.2';
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
-/** Доля пикселей снимков окна, с которой насыщенный цвет считается акцентом. */
+/** Старое правило (json до extract 2026-09-24.2): доля пикселей всех снимков окна, с которой насыщенный цвет — акцент. */
 export const ACCENT_MIN_SHARE = 0.002;
+/** Доля пикселей снимка коробки элемента, с которой цвет действий подтверждён: заливка, текст (наведение), линия подчёркивания. */
+export const FILL_MIN = 0.25, TEXT_MIN = 0.03, LINE_MIN = 0.02;
 const PIXEL_TOLERANCE = 36; /* евклидово расстояние в RGB: зерно 7% сдвигает пиксель до ~30 */
 
 /* ---------- выполняется внутри страницы (hex, eff, sig, layer подставляются) ---------- */
@@ -257,8 +278,6 @@ function inPage() {
     } else if (s.display.includes('flex') && s.flexDirection.startsWith('row') && el.children.length > 1 && r.width > vw * 0.5) {
       gridInfo.push({ el: sig(el), flexItems: el.children.length, gap: s.columnGap, width: Math.round(r.width) });
     }
-    const left = Math.round(r.left), right = Math.round(vw - r.right);
-    if (r.width > 320 && r.width < vw - 8 && Math.abs(left - right) <= 2 && left > 0 && r.height > 80) bump(containers, Math.round(r.width));
     const dur = s.transitionDuration.split(',').map((x) => parseFloat(x) * (x.includes('ms') ? 1 : 1000));
     if (dur.some((d) => d > 0)) bump(trans, [s.transitionProperty, s.transitionDuration, s.transitionTimingFunction, s.transitionDelay].join(' | '));
   }
@@ -280,8 +299,107 @@ function inPage() {
     for (const [p, l] of cnt) if (l > bl && effOf(p) > 0.05 && parseFloat(getComputedStyle(p).fontSize) >= 6) { best = p; bl = l; }
     return best;
   };
-  const levels = { h1: 'h1', h2: 'h2', h3: 'h3', h4: 'h4', body: null, small: 'small, figcaption, .caption, label', button: 'button, .btn, .button, a[class*="btn"], a[class*="button"]', nav: 'nav a, header a' };
-  const scale = {};
+
+  /* ---------- роли по элементам: действия (акцент), h1, меню, контейнер ---------- */
+  const shown = (el) => { const r = el.getBoundingClientRect(); return r.width >= 4 && r.height >= 4; };
+  /* доля коробки, не обрезанная предками с overflow hidden/clip: свёрнутое меню, заглушки конструкторов */
+  const clipShare = (el) => {
+    const r = el.getBoundingClientRect(); let L = r.left, T = r.top, R = r.right, B = r.bottom;
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (/hidden|clip/.test(s.overflowX)) { const q = p.getBoundingClientRect(); L = Math.max(L, q.left); R = Math.min(R, q.right); }
+      if (/hidden|clip/.test(s.overflowY)) { const q = p.getBoundingClientRect(); T = Math.max(T, q.top); B = Math.min(B, q.bottom); }
+      if (s.position === 'fixed') break;
+    }
+    return (Math.max(0, R - L) * Math.max(0, B - T)) / Math.max(1, r.width * r.height);
+  };
+  const docTop = (el) => el.getBoundingClientRect().top + scrollY;
+  const onFirst = (el) => { const r = el.getBoundingClientRect(); return r.top + scrollY < vh && r.bottom + scrollY > 0; };
+  const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  const isHex = (h) => /^#[0-9A-F]{6}$/i.test(h || '');
+  const distOf = (a, b) => { const x = rgbOf(a), y = rgbOf(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+  /* насыщенный: насыщенность > 0.4 и разброс каналов ≥ 60 (у почти чёрных насыщенность врёт) */
+  const vivid = (h) => { if (!isHex(h)) return false; const c = rgbOf(h), mx = Math.max(...c), mn = Math.min(...c); return mx > 0 && (mx - mn) / mx > 0.4 && mx - mn >= 60; };
+
+  /* действия: ссылки и кнопки размером с кнопку (карточка-ссылка выше 100px — не кнопка); заливка — у самого
+     элемента или у вложенного блока, закрывающего ≥ 60% коробки (Framer: фон у div внутри <a>); заливка должна
+     отличаться от фона под кнопкой. Насыщенные — кандидаты в акцент, их коробки помечаются для проверки пикселями */
+  const filledSet = new Set(), fills = [], underlines = []; let actId = 0;
+  const fillOf = (b) => {
+    const r = b.getBoundingClientRect(), area = r.width * r.height;
+    for (const x of [b, ...[...b.querySelectorAll('*')].slice(0, 40)]) {
+      const q = x.getBoundingClientRect(); if (q.width * q.height < area * 0.6) continue;
+      const L = layer(x); if (L && L !== 'image') return { x, color: L };
+    }
+    return null;
+  };
+  for (const b of document.body.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"]')) {
+    if (!allSet.has(b) || !(effOf(b) >= 0.5)) continue;
+    const r = b.getBoundingClientRect();
+    if (r.height < 20 || r.height > 100 || r.width < 32 || r.width > 600 || clipShare(b) < 0.5) continue;
+    const f = fillOf(b); if (!f) continue;
+    const under = bgOf(b.parentElement || b);
+    if (isHex(under) && distOf(f.color, under) <= 20) continue;
+    filledSet.add(b);
+    if (!vivid(f.color) || fills.length >= 60) continue;
+    const id = String(actId++); f.x.setAttribute('data-dref-act', id);
+    fills.push({ id, value: f.color, el: sig(b), fill: f.x === b ? null : sig(f.x), text: textOf(b).slice(0, 40), first: onFirst(b), w: Math.round(r.width), h: Math.round(r.height) });
+  }
+  /* подчёркивание ссылок насыщенным цветом: text-decoration у текста или у самой ссылки, либо нижняя рамка */
+  for (const a of document.body.querySelectorAll('a')) {
+    if (underlines.length >= 40) break;
+    if (!allSet.has(a) || filledSet.has(a) || !shown(a) || clipShare(a) < 0.5) continue;
+    const p = carrier(a); if (!p) continue;
+    let c = null;
+    for (let e = p; e && !c; e = e === a ? null : e.parentElement) { const s = getComputedStyle(e); if (/underline/.test(s.textDecorationLine)) c = hex(s.textDecorationColor); }
+    if (!c) { const s = getComputedStyle(a); if (parseFloat(s.borderBottomWidth) >= 1 && s.borderBottomStyle !== 'none') c = hex(s.borderBottomColor); }
+    if (!c || !vivid(c)) continue;
+    const under = bgOf(p); if (isHex(under) && distOf(c, under) <= 60) continue;
+    const id = String(actId++); p.setAttribute('data-dref-act', id);
+    const r = p.getBoundingClientRect();
+    underlines.push({ id, value: c, el: sig(a), text: textOf(a).slice(0, 40), first: onFirst(a), w: Math.round(r.width), h: Math.round(r.height) });
+  }
+
+  /* h1 — самый крупный видимый h1 первого экрана (на Framer-странице h1 бывает двадцать: подписи, подвал);
+     на первом экране h1 нет — самый крупный на странице */
+  const pickH1 = () => {
+    const list = [...document.querySelectorAll('h1')].filter((h) => allSet.has(h) && shown(h) && clipShare(h) > 0.5).map((h) => ({ h, p: carrier(h) })).filter((x) => x.p);
+    if (!list.length) return null;
+    const fsz = (x) => parseFloat(getComputedStyle(x.p).fontSize);
+    list.sort((a, b) => (onFirst(b.h) - onFirst(a.h)) || (fsz(b) - fsz(a)) || (docTop(a.h) - docTop(b.h)));
+    const { h, p } = list[0], first = onFirst(h);
+    return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first, of: list.length, how: list.length === 1 ? 'единственный видимый h1' : first ? 'самый крупный h1 первого экрана' : 'самый крупный h1 (на первом экране h1 нет)' } };
+  };
+
+  /* меню (nav) — одна и та же роль на любой странице: nav вверху первого экрана (сначала внутри header, выше —
+     раньше), затем закреплённое меню (position: fixed), затем ссылки шапки или верхней полосы. Ссылок в меню
+     не меньше двух; ссылки-кнопки с заливкой («Корзина», «Get All Access») не в счёт. Стиль — самый частый
+     среди ссылок меню. Меню скрыто (бургер на телефоне) — уровня nav нет, в scaleFrom.nav причина */
+  const pickMenu = () => {
+    const band = Math.min(vh * 0.25, 220);
+    const inBand = (el) => { const r = el.getBoundingClientRect(); return r.top + scrollY < band && r.bottom + scrollY > 0; };
+    const linkOk = (a) => allSet.has(a) && shown(a) && !filledSet.has(a) && clipShare(a) > 0.5 && !!carrier(a);
+    const linksIn = (root, where) => [...root.querySelectorAll('a, [role="menuitem"]')].filter((a) => linkOk(a) && where(a));
+    const hdrs = [...document.querySelectorAll('header, [role="banner"]')].filter((h) => allSet.has(h));
+    const inHdr = (el) => hdrs.some((h) => h.contains(el));
+    const navs = [...document.querySelectorAll('nav, [role="navigation"]')].filter((n) => allSet.has(n));
+    let pick = null;
+    const tryList = (list, how, where) => { for (const n of list) { const l = linksIn(n, where); if (l.length >= 2) return { root: n, links: l, how }; } return null; };
+    pick = tryList(navs.filter(inBand).sort((a, b) => (inHdr(b) - inHdr(a)) || (docTop(a) - docTop(b))), 'меню шапки', inBand)
+      || tryList(navs.filter((n) => isFixed(n)), 'закреплённое меню (position: fixed)', () => true)
+      || tryList(hdrs.filter(inBand), 'ссылки шапки', inBand);
+    if (!pick) {
+      const l = [...document.body.querySelectorAll('a')].filter((a) => linkOk(a) && inBand(a));
+      if (l.length >= 2) { let root = l[0].parentElement; while (root && root !== document.body && !l.every((a) => root.contains(a))) root = root.parentElement; pick = { root: root || document.body, links: l, how: 'ссылки вверху страницы' }; }
+    }
+    if (!pick) return { style: null, from: { el: null, how: navs.some(inBand) || hdrs.some(inBand) ? 'меню шапки скрыто (бургер) или в нём меньше двух ссылок' : 'меню не найдено: нет nav и ссылок вверху страницы' } };
+    const votes = {}; for (const a of pick.links) bump(votes, keyOf(getComputedStyle(carrier(a))), 1);
+    const best = top(votes, 1)[0];
+    return { style: best ? JSON.parse(best.value) : null, from: { el: sig(pick.root), how: pick.how, links: pick.links.length, texts: pick.links.slice(0, 6).map((a) => textOf(a).slice(0, 24)) } };
+  };
+
+  const levels = { h1: null, h2: 'h2', h3: 'h3', h4: 'h4', body: null, small: 'small, figcaption, .caption, label', button: 'button, .btn, .button, a[class*="btn"], a[class*="button"]', nav: null };
+  const scale = {}, scaleFrom = {};
   /* body: собственный видимый текст в блоках от 40 знаков, вес — длина текста */
   const bodyVotes = {}, blockLen = new Map(), blockKeys = new Map();
   const blockOf = (e) => { for (; e && e !== document.body; e = e.parentElement) { const d = getComputedStyle(e).display; if (!/^inline/.test(d) && d !== 'contents') return e; } return document.body; };
@@ -305,6 +423,8 @@ function inPage() {
   for (const [b, keys] of blockKeys) { const L = blockLen.get(b); if (!bodyProbe || L > bodyProbe.chars) bodyProbe = { el: sig(b), chars: L, key: topKey(keys) }; }
   if (bodyProbe) { const { key, ...rest } = bodyProbe; bodyProbe = { ...rest, ...JSON.parse(key) }; }
   for (const [name, sel] of Object.entries(levels)) {
+    if (name === 'h1') { const x = pickH1(); if (x) { scale.h1 = JSON.parse(keyOf(getComputedStyle(x.p))); scaleFrom.h1 = x.from; } continue; }
+    if (name === 'nav') { const x = pickMenu(); scaleFrom.nav = x.from; if (x.style) scale.nav = x.style; continue; }
     let votes = bodyVotes;
     if (sel) {
       votes = {};
@@ -312,6 +432,62 @@ function inPage() {
     }
     const best = top(votes, 1)[0]; if (best) scale[name] = JSON.parse(best.value);
   }
+
+  /* контейнер: блоки с центрированным содержимым уже окна (коробка без внутренних отступов: .wrap 1200 с полями
+     40 → 1120; полноширинная секция с полями — тоже), содержимое которых занимает эту ширину (дети от края до
+     края — одна обёртка или ряд колонок; секция с полями 40 и узкой обёрткой внутри — не контейнер). Ни сам блок,
+     ни предки не стоят в ряду с соседями (карточка средней колонки тоже по центру — её отсекает ряд);
+     display: contents прозрачен. Блок, который целиком заполняет содержимое обёртки выше (сетка в .wrap,
+     карточка во всю колонку на телефоне), новой ширины не задаёт. Вес — высота обёртки: узкая колонка
+     текста не перевешивает обёртку секций */
+  const layoutParent = (e) => { let p = e.parentElement; while (p && p !== document.body && getComputedStyle(p).display === 'contents') p = p.parentElement; return p; };
+  const layoutKids = (p) => { const out = []; for (const k of p.children) { if (getComputedStyle(k).display === 'contents') out.push(...layoutKids(k)); else out.push(k); } return out; };
+  const rowMemo = new Map();
+  const inRow = (e) => {
+    if (rowMemo.has(e)) return rowMemo.get(e);
+    let res = false; const p = layoutParent(e);
+    if (p) {
+      const r = e.getBoundingClientRect();
+      for (const k of layoutKids(p)) {
+        if (k === e || /^(absolute|fixed)$/.test(getComputedStyle(k).position) || !(effOf(k) > 0.05)) continue;
+        const q = k.getBoundingClientRect(); if (q.width < 24 || q.height < 24) continue;
+        const ov = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
+        if (ov > 0.5 * Math.min(q.height, r.height) && (q.right <= r.left + 1 || q.left >= r.right - 1)) { res = true; break; }
+      }
+    }
+    rowMemo.set(e, res); return res;
+  };
+  const inColumns = (e) => { for (let x = e; x && x !== document.body && x !== document.documentElement; x = layoutParent(x)) if (inRow(x)) return true; return false; };
+  /* дети блока (в потоке, видимые, не строчные) от левого до правого края его содержимого */
+  const spans = (el, L, R) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const k of layoutKids(el)) {
+      const s = getComputedStyle(k); if (/^inline$/.test(s.display) || /^(absolute|fixed)$/.test(s.position) || !(effOf(k) > 0.05)) continue;
+      const q = k.getBoundingClientRect(); if (q.width < 24 || q.height < 8) continue;
+      lo = Math.min(lo, q.left); hi = Math.max(hi, q.right);
+    }
+    return lo <= L + 2 && hi >= R - 2;
+  };
+  const wrapBox = new Map();
+  for (const el of all) {
+    const s = getComputedStyle(el);
+    if (/^inline|^contents$/.test(s.display) || /^(absolute|fixed)$/.test(s.position)) continue;
+    const r = el.getBoundingClientRect(); if (!(r.height > 80)) continue;
+    const L = r.left + px(s.paddingLeft) + px(s.borderLeftWidth), R = r.right - px(s.paddingRight) - px(s.borderRightWidth);
+    if (!(R - L > 320 && R - L < vw - 8 && L > 0 && Math.abs(L - (vw - R)) <= 2)) continue;
+    if (isFixed(el) || inColumns(el) || !spans(el, L, R)) continue;
+    wrapBox.set(el, { L, R });
+  }
+  const wraps = [];
+  for (const [el, b] of wrapBox) {
+    /* ближайшая обёртка выше; блок во всю её ширину содержимого — не новая ширина */
+    let up = layoutParent(el); while (up && up !== document.body && !wrapBox.has(up)) up = layoutParent(up);
+    const r = el.getBoundingClientRect();
+    if (up && wrapBox.has(up)) { const u = wrapBox.get(up); if (Math.abs(r.left - u.L) <= 2 && Math.abs(r.right - u.R) <= 2) continue; }
+    wraps.push({ el, w: Math.round(b.R - b.L), h: r.height });
+  }
+  for (const x of wraps) bump(containers, x.w, x.h);
+  const containerFrom = wraps.sort((a, b) => b.h - a.h).slice(0, 8).map((x) => ({ value: x.w, el: sig(x.el), height: Math.round(x.h) }));
 
   /* секции и ритм */
   let root = document.querySelector('main') || document.body;
@@ -362,7 +538,8 @@ function inPage() {
     page: { background: hex(bodyS.backgroundColor) || hex(htmlS.backgroundColor) || '#FFFFFF', color: hex(bodyS.color), scrollBehavior: htmlS.scrollBehavior, lang: document.documentElement.lang },
     palette: { backgrounds: top(bg, 8), text: top(fg, 6), borders: top(border, 5), pairs: pairList },
     fonts: { used: top(fam, 5).map((f) => ({ ...f, stack: topKey(famStack[f.value]) || f.value })), faces: fontFaces, links: fontLinks, faceSrc, unreadableSheets },
-    scale, bodyProbe, containers: top(containers, 5), grids: gridInfo.slice(0, 25),
+    scale, scaleFrom, bodyProbe, containers: top(containers, 5), containerFrom, grids: gridInfo.slice(0, 25),
+    actions: { fills, underlines },
     spacing: top(space, 16), shape: { radius: top(radius, 6), shadow: top(shadow, 4), borderWidth: top(bw, 4) },
     sections, texture, passport,
     colorScheme: { darkMedia, lightDark, root: htmlS.colorScheme || 'normal', meta: metaScheme || null, unreadableSheets, unreadable },
@@ -376,7 +553,14 @@ async function revealAfter(page) {
 
 /* ---------- состояния: наведение и фокус ---------- */
 const STATE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'boxShadow', 'transform', 'opacity', 'textDecorationLine', 'outlineStyle', 'outlineColor', 'outlineWidth', 'outlineOffset', 'filter', 'letterSpacing'];
-async function states(page) {
+/* цвета элемента в #RRGGBB[AA] — для цвета наведения (любая запись: rgb, oklch, color-mix) */
+const HOVER_HEX = new Function('el', `const hex = ${HEX_SRC}; const s = getComputedStyle(el); return { backgroundColor: hex(s.backgroundColor), color: hex(s.color), borderTopColor: parseFloat(s.borderTopWidth) > 0 ? hex(s.borderTopColor) : null };`);
+/**
+ * Наведение и фокус первых 14 разных ссылок, кнопок и полей. sharp — если есть,
+ * насыщенный цвет, который элемент получает при наведении (фон, текст, рамка),
+ * проверяется пикселями снимка его коробки под курсором: hoverColor { prop, color, share }.
+ */
+async function states(page, sharp = null) {
   await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
   const handles = await page.$$('a, button, input, [role="button"], summary');
   const seen = new Set(); const out = [];
@@ -384,7 +568,7 @@ async function states(page) {
   for (const h of handles) {
     if (out.length >= 14) break;
     /* спрятанные (ссылка-пропуск за краем, прозрачный контейнер) не наводим */
-    const info = await h.evaluate(new Function('el', `const eff = ${DEPS.eff}; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return { sig: el.tagName.toLowerCase() + '.' + [...el.classList].slice(0, 3).join('.'), ok: r.width > 8 && r.height > 8 && r.right > 0 && r.left < innerWidth && r.bottom + scrollY > 0 && s.visibility !== 'hidden' && eff(el) > 0.05, transition: s.transitionProperty + ' ' + s.transitionDuration + ' ' + s.transitionTimingFunction };`)).catch(() => ({ ok: false }));
+    const info = await h.evaluate(new Function('el', `const eff = ${DEPS.eff}; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return { sig: el.tagName.toLowerCase() + '.' + [...el.classList].slice(0, 3).join('.'), ok: r.width > 8 && r.height > 8 && r.right > 0 && r.left < innerWidth && r.bottom + scrollY > 0 && s.visibility !== 'hidden' && eff(el) > 0.05, transition: s.transitionProperty + ' ' + s.transitionDuration + ' ' + s.transitionTimingFunction, text: (el.innerText || el.value || '').replace(/\\s+/g, ' ').trim().slice(0, 40), first: r.top + scrollY < innerHeight, w: Math.round(r.width), h: Math.round(r.height) };`)).catch(() => ({ ok: false }));
     if (!info.ok || seen.has(info.sig)) continue; seen.add(info.sig);
     const read = () => h.evaluate((el, props) => { const s = getComputedStyle(el); return Object.fromEntries(props.map((p) => [p, s[p]])); }, STATE_PROPS);
     try {
@@ -393,75 +577,77 @@ async function states(page) {
       const base = await read();
       await h.hover(); await sleep(650);
       const hov = await read();
+      /* цвет действия при наведении: первый насыщенный непрозрачный цвет, которого не было до наведения */
+      let hoverColor = null;
+      const hx = await h.evaluate(HOVER_HEX).catch(() => ({}));
+      for (const p of ['backgroundColor', 'color', 'borderTopColor']) {
+        let c = hx[p]; if (!c || hov[p] === base[p]) continue;
+        if (c.length === 9) { if (parseInt(c.slice(7), 16) < 217) continue; c = c.slice(0, 7); }
+        if (!vividHex(c)) continue;
+        hoverColor = { prop: p, color: c, share: null };
+        if (sharp) { try { hoverColor.share = r6(await boxShare(page, h, sharp, c)); } catch { /* коробка вне окна или ушла */ } }
+        break;
+      }
       await page.mouse.move(0, 0); await sleep(200);
       await h.focus(); await sleep(250);
       const foc = await read();
       await h.evaluate((el) => el.blur());
       const diff = (a, b) => Object.fromEntries(Object.keys(a).filter((k) => a[k] !== b[k]).map((k) => [k, { from: a[k], to: b[k] }]));
-      out.push({ el: info.sig, transition: info.transition, hover: diff(base, hov), focus: diff(base, foc) });
+      out.push({ el: info.sig, text: info.text, first: info.first, w: info.w, h: info.h, transition: info.transition, hover: diff(base, hov), focus: diff(base, foc), ...(hoverColor ? { hoverColor } : {}) });
     } catch { /* элемент ушёл со страницы или перекрыт — пропускаем */ }
   }
   return out;
 }
 
-/* ---------- пиксели снимков: сколько на экране каждого цвета-кандидата ---------- */
+/* ---------- пиксели: цвет действия на снимке коробки самого элемента ---------- */
 
 /**
- * В странице: где на экране CSS ставит каждый цвет-кандидат — прямоугольники
- * (в пикселях окна) видимых элементов с таким фоном, цветом собственного текста
- * или рамкой. Слои фактуры и невидимое (итоговая прозрачность ≤ 0.05) не в счёт.
- * Пиксели считаются только внутри них: жёлтый баннер на фотографии — не акцент
- * интерфейса, а цвет, который в CSS есть, но на экране закрыт, — не виден.
+ * Доля пикселей коробки элемента, которые ближе PIXEL_TOLERANCE к цвету '#RRGGBB'.
+ * Снимается окно целиком и вырезается по getBoundingClientRect: ElementHandle.screenshot
+ * на странице Framer после scrollIntoView снимал не то место (голубой фон вместо кнопки).
  */
-function colorRects(values) {
-  const vw = innerWidth, vh = innerHeight;
-  const want = new Map(values.map((v, i) => [v, i]));
-  const out = values.map(() => []);
-  const own = (el) => { for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) return true; return false; };
-  for (const el of document.body.querySelectorAll('*')) {
-    if (/^(STYLE|SCRIPT|NOSCRIPT|TEMPLATE)$/i.test(el.tagName)) continue;
-    const r = el.getBoundingClientRect();
-    if (!(r.width > 0 && r.height > 0) || r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
-    const s = getComputedStyle(el);
-    const hits = new Set();
-    const b = hex(s.backgroundColor); if (b && want.has(b)) hits.add(want.get(b));
-    const c = hex(s.color); if (c && want.has(c) && own(el)) hits.add(want.get(c));
-    for (const side of ['Top', 'Right', 'Bottom', 'Left']) if (parseFloat(s['border' + side + 'Width']) > 0) { const x = hex(s['border' + side + 'Color']); if (x && want.has(x)) hits.add(want.get(x)); }
-    if (!hits.size || el.closest('[data-dref-tex]') || !(eff(el) > 0.05)) continue;
-    const x0 = Math.max(0, r.left), y0 = Math.max(0, r.top), x1 = Math.min(vw, r.right), y1 = Math.min(vh, r.bottom);
-    for (const k of hits) if (out[k].length < 800) out[k].push([x0, y0, x1 - x0, y1 - y0]);
-  }
-  return out;
+async function boxShare(page, h, sharp, color) {
+  const r = await h.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height, vw: innerWidth }; });
+  const buf = await page.screenshot({ type: 'png' });
+  const img = sharp(buf), meta = await img.metadata(), k = meta.width / r.vw;
+  const left = Math.max(0, Math.round(r.x * k)), top = Math.max(0, Math.round(r.y * k));
+  const width = Math.min(meta.width, Math.round((r.x + r.w) * k)) - left, height = Math.min(meta.height, Math.round((r.y + r.h) * k)) - top;
+  if (!(width >= 2 && height >= 2)) throw new Error('коробка вне окна');
+  const { data } = await img.extract({ left, top, width, height }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const T = rgb(color), t2 = PIXEL_TOLERANCE * PIXEL_TOLERANCE;
+  let hit = 0;
+  for (let i = 0; i < data.length; i += 3) { const dr = data[i] - T[0], dg = data[i + 1] - T[1], db = data[i + 2] - T[2]; if (dr * dr + dg * dg + db * db <= t2) hit++; }
+  return hit / (width * height);
 }
 
 /**
- * Снимок окна → сколько пикселей каждого кандидата: всего на снимке и внутри
- * его прямоугольников (rects[k], пиксели окна; scale — сколько пикселей
- * снимка в пикселе окна). acc копит суммы по всем снимкам.
+ * Проверка кандидатов в акцент пикселями: для каждого цвета до двух элементов
+ * (первый экран — раньше, затем крупнее), элемент — в середину окна, снимок его
+ * коробки, доля пикселей этого цвета → item.share. Заливок — до 6 цветов,
+ * подчёркиваний — до 4. Не цвет всего снимка: голубой фон шапки в коробку
+ * кнопки не попадает, а кнопка, закрытая другим слоем, не подтвердится.
  */
-async function countPixels(sharp, buf, targets, rects, dpr, acc) {
-  let img = sharp(buf); const meta = await img.metadata();
-  let scale = dpr || 1;
-  if (meta.width > 1600) { img = img.resize({ width: Math.round(meta.width / 2), kernel: 'nearest' }); scale /= 2; }
-  const { data, info } = await img.removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const W = info.width, H = info.height, N = W * H, t2 = PIXEL_TOLERANCE * PIXEL_TOLERANCE;
-  acc.pixels += N;
-  const mask = new Uint8Array(N);
-  for (let k = 0; k < targets.length; k++) {
-    mask.fill(0);
-    for (const [x, y, w, h] of rects[k] || []) {
-      const X0 = Math.max(0, Math.floor(x * scale)), X1 = Math.min(W, Math.ceil((x + w) * scale));
-      const Y0 = Math.max(0, Math.floor(y * scale)), Y1 = Math.min(H, Math.ceil((y + h) * scale));
-      if (X1 > X0) for (let row = Y0; row < Y1; row++) mask.fill(1, row * W + X0, row * W + X1);
+async function checkActions(page, actions) {
+  const sharp = loadSharp();
+  if (!sharp) return { error: 'нет sharp — акцент не проверен по снимкам' };
+  const colorsOf = (list, n) => {
+    const by = new Map(); for (const it of list) { if (!by.has(it.value)) by.set(it.value, []); by.get(it.value).push(it); }
+    return [...by.values()].sort((a, b) => (b.some((i) => i.first) - a.some((i) => i.first)) || (b.length - a.length)).slice(0, n);
+  };
+  let shots = 0;
+  for (const items of [...colorsOf(actions.fills, 6), ...colorsOf(actions.underlines, 4)]) {
+    const pick = [...items].sort((a, b) => (b.first - a.first) || (b.w * b.h - a.w * a.h)).slice(0, 2);
+    for (const it of pick) {
+      const h = await page.$(`[data-dref-act="${it.id}"]`).catch(() => null);
+      if (!h) continue;
+      try {
+        await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await sleep(350);
+        it.share = r6(await boxShare(page, h, sharp, it.value)); shots++;
+      } catch { /* элемент ушёл или коробка вне окна — не проверен */ } finally { await h.dispose().catch(() => {}); }
     }
-    const T = targets[k].rgb; let all = 0, ui = 0;
-    for (let p = 0, i = 0; p < N; p++, i += 3) {
-      const dr = data[i] - T[0], dg = data[i + 1] - T[1], db = data[i + 2] - T[2];
-      if (dr * dr + dg * dg + db * db <= t2) { all++; if (mask[p]) ui++; }
-    }
-    acc.all[k] += all; acc.ui[k] += ui;
-    if (ui / N > acc.maxShot[k]) acc.maxShot[k] = ui / N;
   }
+  await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await sleep(200);
+  return { shots, tolerance: PIXEL_TOLERANCE, fillMin: FILL_MIN, textMin: TEXT_MIN, lineMin: LINE_MIN };
 }
 
 /* ---------- один проход по странице ---------- */
@@ -510,52 +696,36 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
         for (const c of cssTexts) if (DARK_TEXT.test(await c.text)) { data.colorScheme.darkMedia = true; data.colorScheme.darkFrom = 'css-text'; data.colorScheme.darkSheet = c.url.slice(0, 200); break; }
       }
     }
-    /* проход 2: снимки окна равномерно по высоте — в файлы и для проверки акцента по пикселям */
-    const targets = pixels ? accentPool(data).slice(0, 6).map((c) => ({ value: c.value, rgb: rgb(c.seen) })) : [];
-    const sharp = targets.length ? loadSharp() : null;
-    if (shotsDir || sharp) {
-      const ys = segmentPositions(data.pageHeight, viewport.height, { maxShots: shotsDir ? 10 : 8 });
-      const acc = { pixels: 0, all: targets.map(() => 0), ui: targets.map(() => 0), maxShot: targets.map(() => 0) };
+    /* проход 2: снимки окна равномерно по высоте — в файлы */
+    if (shotsDir) {
+      const ys = segmentPositions(data.pageHeight, viewport.height, { maxShots: 10 });
       for (let k = 0; k < ys.length; k++) {
         const s = await screenAt(page, ys[k]);
-        if (shotsDir) fs.writeFileSync(path.join(shotsDir, `${tag}-scroll-${String(k).padStart(2, '0')}.png`), s.buffer);
-        if (sharp) {
-          const rects = await evaluateWith(page, colorRects, targets.map((t) => t.value), DEPS);
-          await countPixels(sharp, s.buffer, targets, rects, viewport.deviceScaleFactor || 1, acc);
-        }
+        fs.writeFileSync(path.join(shotsDir, `${tag}-scroll-${String(k).padStart(2, '0')}.png`), s.buffer);
       }
       await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await sleep(300);
-      if (pixels) {
-        data.palette.pixelCheck = targets.length && !sharp
-          ? { error: 'нет sharp — акцент не проверен по снимкам', shots: ys.length }
-          : {
-            shots: ys.length, pixels: acc.pixels, tolerance: PIXEL_TOLERANCE, min: ACCENT_MIN_SHARE,
-            /* share — доля пикселей всех снимков окна, где цвет стоит на своём месте (фон, текст или рамка элемента с этим цветом) */
-            share: Object.fromEntries(targets.map((t, k) => [t.value, acc.pixels ? r6(acc.ui[k] / acc.pixels) : 0])),
-            /* shareAll — тот же цвет где угодно на снимке, в том числе на фотографиях; maxShot — наибольшая доля на одном снимке */
-            shareAll: Object.fromEntries(targets.map((t, k) => [t.value, acc.pixels ? r6(acc.all[k] / acc.pixels) : 0])),
-            maxShot: Object.fromEntries(targets.map((t, k) => [t.value, r6(acc.maxShot[k])])),
-          };
-      }
-    } else if (pixels) data.palette.pixelCheck = targets.length ? { error: 'нет sharp — акцент не проверен по снимкам', shots: 0 } : { shots: 0, pixels: 0, tolerance: PIXEL_TOLERANCE, min: ACCENT_MIN_SHARE, share: {} };
+    }
+    /* акцент: цвет действий подтверждается пикселями коробок самих кнопок и ссылок, а не долей по всему снимку */
+    if (pixels) data.actions.pixels = await checkActions(page, data.actions);
     if (shotsDir) data.fullShot = await fullShot(page, path.join(shotsDir, `${tag}-full.png`));
-    if (withStates) data.states = await states(page);
+    if (withStates) data.states = await states(page, pixels ? loadSharp() : null);
     return data;
   } finally { page.off('response', onResp); await page.close().catch(() => {}); }
 }
 
 /**
  * Снять дизайн-систему. shotsDir — папка снимков или null; light — без состояний
- * и тёмной темы; pixels — подтверждать акцент по снимкам окна; browser — уже
- * запущенный браузер (не закрывается); source — что писать в «Источник» (по
- * умолчанию url).
+ * и тёмной темы; pixels — подтверждать акцент пикселями коробок кнопок и ссылок;
+ * states — снимать наведение и фокус (по умолчанию — если не light); browser —
+ * уже запущенный браузер (не закрывается); source — что писать в «Источник»
+ * (по умолчанию url).
  */
-export async function extract(url, { shotsDir = null, light = false, pixels = true, browser = null, source = null } = {}) {
+export async function extract(url, { shotsDir = null, light = false, pixels = true, states = null, browser = null, source = null } = {}) {
   const own = !browser;
   const br = browser || await launch();
   try {
     if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
-    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: !light, pixels, readCss: !light });
+    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: states == null ? !light : !!states, pixels, readCss: !light });
     const mobile = await measure(br, url, MOBILE, { shotsDir, tag: 'mobile', withStates: false });
     let dark = null, darkReason = null;
     const why = darkSource(desktop.colorScheme);
@@ -624,7 +794,7 @@ export function themes(d) {
   return out.dark || out.light ? out : null;
 }
 
-/** Насыщенные цвета — кандидаты в акцент, по убыванию насыщенность × log(вес). c.seen — цвет на фоне страницы. */
+/** Насыщенные цвета палитры (фоны, текст, рамки), по убыванию насыщенность × log(вес). c.seen — цвет на фоне страницы. */
 export function accentPool(d) {
   const background = d.page.background.slice(0, 7);
   const see = (list) => (list || []).map((c) => ({ ...c, seen: flat(c.value, background) }));
@@ -634,23 +804,91 @@ export function accentPool(d) {
   return uniq;
 }
 
+/** Насыщенный цвет действия: насыщенность > 0.4 и разброс каналов ≥ 60 (как в странице). */
+const vividHex = (h) => { if (!isHex6(h)) return false; const c = rgb(h), mx = Math.max(...c), mn = Math.min(...c); return mx > 0 && (mx - mn) / mx > 0.4 && mx - mn >= 60; };
+const KIND = { fill: 'заливка кнопки', hover: 'наведение', underline: 'подчёркивание ссылки' };
+
 /**
- * Акцент: { value, status, share, note, candidates }. status: 'подтверждён'
- * (≥ 0.2% пикселей снимков окна), 'нет' (насыщенных цветов нет или ни один не
- * виден на снимках), 'не проверен' (снимков не было — старый json, --no-pixels, нет sharp).
+ * Кандидаты в акцент — цвета действий, группами по цвету (близкие, до 12 по RGB, — одна группа):
+ * ярус 1 — заливки кнопок и ссылок-кнопок; ярус 2 — цвет при наведении (d.states[].hoverColor)
+ * и подчёркивание ссылок. Порядок: ярус, есть ли на первом экране, сколько элементов, площадь.
+ * У группы: confirmed — хоть один элемент прошёл порог пикселей своей коробки, checked — проверялся.
+ */
+export function actionGroups(d) {
+  const A = d.actions || {}, items = [];
+  for (const f of A.fills || []) items.push({ ...f, kind: 'fill', tier: 1, min: FILL_MIN });
+  for (const s of d.states || []) {
+    const hc = s.hoverColor; if (!hc) continue;
+    items.push({ value: hc.color, el: s.el, text: s.text || '', first: !!s.first, w: s.w, h: s.h, share: hc.share, prop: hc.prop, kind: 'hover', tier: 2, min: hc.prop === 'backgroundColor' ? FILL_MIN : TEXT_MIN });
+  }
+  for (const u of A.underlines || []) items.push({ ...u, kind: 'underline', tier: 2, min: LINE_MIN });
+  const groups = [];
+  for (const it of items) {
+    let g = groups.find((x) => x.tier === it.tier && dist(x.value, it.value) <= 12);
+    if (!g) groups.push(g = { value: it.value, tier: it.tier, items: [] });
+    g.items.push(it);
+  }
+  for (const g of groups) {
+    g.first = g.items.some((i) => i.first); g.count = g.items.length; g.area = g.items.reduce((a, i) => a + (i.w || 0) * (i.h || 0), 0);
+    const checked = g.items.filter((i) => i.share != null);
+    g.checked = checked.length > 0;
+    g.passed = checked.filter((i) => i.share >= i.min).sort((a, b) => (b.first - a.first) || (b.share - a.share));
+    g.confirmed = g.passed.length > 0;
+    g.lead = g.passed[0] || [...g.items].sort((a, b) => (b.first - a.first) || ((b.w || 0) * (b.h || 0) - (a.w || 0) * (a.h || 0)))[0];
+    g.value = g.lead.value;
+  }
+  return groups.sort((a, b) => (a.tier - b.tier) || (b.first - a.first) || (b.count - a.count) || (b.area - a.area));
+}
+
+/** «заливка кнопки «Browse 3D illustrations» (первый экран, ещё 2)» — чем подтверждён цвет. */
+function describeGroup(g) {
+  const i = g.lead, what = i.kind === 'hover' ? `наведение (${i.prop === 'backgroundColor' ? 'фон' : i.prop === 'color' ? 'текст' : 'рамка'}) у ${i.text ? `«${i.text}»` : i.el}` : `${KIND[i.kind]} ${i.text ? `«${i.text}»` : i.el}`;
+  const more = [i.first ? 'первый экран' : null, g.count > 1 ? `ещё ${g.count - 1}` : null].filter(Boolean).join(', ');
+  return what + (more ? ` (${more})` : '');
+}
+
+/** Насыщенные фоны палитры, которые не цвет действий (шапка, подвал, секции): для пояснения. */
+function decorColors(d, groups) {
+  const bgs = new Set(((d.palette && d.palette.backgrounds) || []).map((c) => c.value));
+  return accentPool(d).filter((c) => bgs.has(c.value) && vividHex(c.value) && !groups.some((g) => g.items.some((i) => dist(c.value, i.value) <= 12))).map((c) => c.value).slice(0, 3);
+}
+
+/**
+ * Акцент — цвет действий: { value, status, share, note, source, candidates, old }.
+ * status: 'подтверждён' (элемент прошёл порог пикселей своей коробки: заливка ≥ 25%,
+ * текст при наведении ≥ 3%, линия ≥ 2%), 'нет' (цветных кнопок и ссылок нет или ни одна
+ * не видна на снимке своей коробки), 'не проверен' (--no-pixels, нет sharp).
+ * json до extract 2026-09-24.2 (нет actions) — старое правило по доле всего снимка, old: true.
  */
 export function accentInfo(d) {
+  if (!d.actions) return { ...accentInfoOld(d), old: true };
+  const groups = actionGroups(d), P = d.actions.pixels;
+  const candidates = groups.slice(0, 6).map((g) => ({ value: g.value, kind: g.lead.kind, first: g.first, count: g.count, share: g.passed[0] ? g.passed[0].share : Math.max(0, ...g.items.map((i) => i.share || 0)), confirmed: g.confirmed }));
+  const dc = decorColors(d, groups), decor = dc.length ? `; насыщенные фоны ${dc.join(', ')} — оформление (секции, шапка, подвал), не цвет действий` : '';
+  if (!groups.length) return { value: null, status: 'нет', note: `залитых цветом кнопок, цветного наведения и подчёркивания ссылок нет — акцента нет${decor}`, source: null, candidates };
+  if (!P || P.error) {
+    const g = groups[0];
+    return { value: g.value, status: 'не проверен', note: `${describeGroup(g)}; пикселями не проверялся${P && P.error ? ` (${P.error})` : ' (--no-pixels)'}`, source: g.lead.kind, candidates };
+  }
+  const ok = groups.find((g) => g.confirmed);
+  if (ok) return { value: ok.value, status: 'подтверждён', share: ok.lead.share, note: `${describeGroup(ok)} — ${pct(ok.lead.share)} пикселей коробки${decor}`, source: ok.lead.kind, candidates };
+  const list = groups.slice(0, 3).map((g) => `${g.value} ${KIND[g.lead.kind]} ${g.checked ? pct(Math.max(0, ...g.items.map((i) => i.share || 0))) : 'не снят'}`).join(', ');
+  return { value: null, status: 'нет', note: `цвета действий на снимках своих коробок не видны (${list}) — акцента нет${decor}`, source: null, candidates };
+}
+
+/** Старое правило (json до extract 2026-09-24.2): насыщенный цвет палитры, ≥ 0.2% пикселей всех снимков окна. */
+function accentInfoOld(d) {
   const pool = accentPool(d);
   const pc = d.palette.pixelCheck;
-  if (!pool.length) return { value: null, status: 'нет', note: 'насыщенных цветов в палитре нет' };
-  if (!pc || pc.error || !pc.share) return { value: pool[0].value, status: 'не проверен', note: pc && pc.error ? pc.error : 'снимками окна не проверялся', candidates: pool.slice(0, 6).map((c) => ({ value: c.value })) };
+  const why = 'json снят до правила «цвет действий» — переснять extract';
+  if (!pool.length) return { value: null, status: 'нет', note: `насыщенных цветов в палитре нет (${why})` };
+  if (!pc || pc.error || !pc.share) return { value: pool[0].value, status: 'не проверен', note: `${pc && pc.error ? pc.error : 'снимками окна не проверялся'} (${why})`, candidates: pool.slice(0, 6).map((c) => ({ value: c.value })) };
   const min = pc.min || ACCENT_MIN_SHARE;
   const cand = pool.slice(0, 6).map((c) => ({ value: c.value, share: pc.share[c.value], shareAll: pc.shareAll ? pc.shareAll[c.value] : undefined }));
   const ok = cand.find((c) => c.share != null && c.share >= min);
-  if (ok) return { value: ok.value, status: 'подтверждён', share: ok.share, note: `${pct(ok.share)} пикселей снимков окна`, candidates: cand };
-  const onPhotos = cand.filter((c) => c.shareAll != null && c.shareAll >= min && !(c.share >= min));
-  const list = cand.slice(0, 3).map((c) => `${c.value} (${c.share == null ? '—' : pct(c.share)}${c.shareAll != null && c.shareAll > (c.share || 0) * 2 && c.shareAll >= 0.0001 ? `, на снимке всего ${pct(c.shareAll)}` : ''})`).join(', ');
-  return { value: null, status: 'нет', note: `в CSS есть ${list}, на своих местах на снимках окна меньше ${pct(min)} — акцента нет${onPhotos.length ? `; ${onPhotos.map((c) => c.value).join(', ')} видно только вне элементов с этим цветом (фото, картинки)` : ''}`, candidates: cand };
+  if (ok) return { value: ok.value, status: 'подтверждён', share: ok.share, note: `${pct(ok.share)} пикселей снимков окна, по старому правилу (${why})`, candidates: cand };
+  const list = cand.slice(0, 3).map((c) => `${c.value} (${c.share == null ? '—' : pct(c.share)})`).join(', ');
+  return { value: null, status: 'нет', note: `в CSS есть ${list}, на снимках окна меньше ${pct(min)} — акцента нет (${why})`, candidates: cand };
 }
 
 /** Тема, к которой относится фон страницы (для старых ролей text/muted). */
@@ -783,6 +1021,26 @@ function darkLine(data) {
   return `${dk.differs ? 'есть' : 'объявлена, но фон и текст страницы не меняются'} (${dk.source}): фон ${dk.page.background}, текст ${dk.page.color}${t && t.muted ? ', приглушённый ' + t.muted : ''}`;
 }
 
+/**
+ * Откуда взят уровень шкалы (h1 или nav) — строка для спецификации, сводки и verify;
+ * null — json до extract 2026-09-24.2 (scaleFrom нет). code — имя элемента в `…`.
+ */
+export function levelSource(d, lvl, code = false) {
+  const f = d && d.scaleFrom && d.scaleFrom[lvl];
+  if (!f) return null;
+  const q = (s) => (code ? `\`${s}\`` : s);
+  if (!f.el) return f.how;
+  if (lvl === 'h1') return `${q(f.el)} «${f.text}» — ${f.how}${f.of > 1 ? ` (видимых h1: ${f.of})` : ''}`;
+  return `${q(f.el)} — ${f.how}: ${(f.texts || []).join(', ')}${f.links > (f.texts || []).length ? ' …' : ''}`;
+}
+
+/** Контейнер и откуда он: «1120px — div.framer-126l6gr и ещё 5, по высоте 10829px»; старый json — только число. */
+export function containerNote(d) {
+  const c = (d.containers || [])[0]; if (!c) return 'не выявлено';
+  const from = (d.containerFrom || []).filter((x) => String(x.value) === String(c.value));
+  return `${c.value}px` + (from.length ? ` — ${from[0].el}${from.length > 1 ? ` и ещё ${from.length - 1}` : ''}, по высоте ${c.weight}px` : '');
+}
+
 const chg = (o) => Object.entries(o).map(([k, v]) => `${k} ${String(v.from).slice(0, 40)} → ${String(v.to).slice(0, 40)}`).join(', ') || 'без изменений';
 function skeleton(data, slug) {
   const d = data.desktop, m = data.mobile, r = roles(d), mo = motionSummary(d), mod = spacingModule(d), th = themes(d), ac = accentInfo(d), fr = fontRoles(d), bc = bodyCheck(d), bcm = bodyCheck(m);
@@ -808,6 +1066,7 @@ function skeleton(data, slug) {
 
 ## 1. Палитра
 ${Object.entries(r).map(roleLine).join('\n')}
+- цвета действий (кандидаты в акцент): ${(ac.candidates || []).filter((c) => c.kind).map((c) => `${c.value} ${KIND[c.kind]} ×${c.count}${c.first ? ', первый экран' : ''}${c.share ? `, ${pct(c.share)} коробки` : ''}${c.confirmed ? '' : ' — не подтверждён'}`).join('; ') || 'нет'}
 - тёмная тема системы: ${darkLine(data)}
 
 Роли текста по реальному фону секций:
@@ -838,11 +1097,15 @@ ${head}${sc(d.scale)}
 Узкий экран (390):
 ${head}${sc(m.scale)}
 
+Откуда взяты уровни (h2–h4, body, small, button — самый частый стиль своего тега):
+- h1: ${levelSource(d, 'h1', true) || 'не выявлено'}; на узком: ${levelSource(m, 'h1', true) || 'не выявлено'}
+- nav: ${levelSource(d, 'nav', true) || 'не выявлено'}; на узком: ${levelSource(m, 'nav', true) || 'не выявлено'}
+
 Сверка основного текста: ${bc ? (bc.ok ? 'совпадает — ' : '**расходится, проверить глазами** — ') + bc.note : 'длинных абзацев нет'}${bcm && !bcm.ok ? `\nНа узком: **расходится** — ${bcm.note}` : ''}
 
 ## 4. Сетка
-- ширина контента: ${d.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}
-- узкий экран, ширина контента: ${m.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}
+- ширина контента: ${d.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}${d.containerFrom && d.containers.length ? ` (вес — высота обёрток; --container ${containerNote(d)})` : ''}
+- узкий экран, ширина контента: ${m.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}${m.containerFrom && m.containers.length ? ` (${containerNote(m)})` : ''}
 - колонки: ${d.grids.slice(0, 8).map((g) => `${g.el} — ${g.columns ? g.columns + ' кол.' : g.flexItems + ' в ряд'}, желоб ${g.gap}`).join('; ') || 'не выявлено'}
 - на узком: ${m.grids.slice(0, 8).map((g) => `${g.el} — ${g.columns ? g.columns + ' кол.' : g.flexItems + ' в ряд'}`).join('; ') || 'всё в одну колонку'}
 
@@ -900,6 +1163,12 @@ export function summaryLines(data) {
   if (th) for (const [name, label] of [['dark', 'тёмные'], ['light', 'светлые']]) { const t = th[name]; if (t) out.push(`OK   ${label} секции: фон ${t.bg}, текст ${t.text || '—'}, приглушённый ${t.muted || 'не выявлен (' + t.mutedWhy + ')'}`); }
   else out.push('WARN роли текста по фону секций не сняты — роли по фону страницы');
   out.push(`OK   роли: ${Object.entries(r).map(([k, v]) => `${k} ${v || '—'}`).join(', ')}`);
+  const lv = (x, k) => (x.scale[k] ? `${x.scale[k].fontSize}/${x.scale[k].fontWeight} ${x.scale[k].fontFamily}` : 'нет');
+  if (d.scaleFrom) {
+    out.push(`OK   h1: ${lv(d, 'h1')} — ${levelSource(d, 'h1') || 'h1 не найден'}`);
+    out.push(`OK   меню (nav): ${lv(d, 'nav')} — ${levelSource(d, 'nav') || 'не найдено'}; на узком: ${lv(m, 'nav')}${m.scaleFrom && m.scaleFrom.nav && !m.scaleFrom.nav.el ? ` (${m.scaleFrom.nav.how})` : ''}`);
+    out.push(`OK   контейнер: ${containerNote(d)}; на узком: ${containerNote(m)}`);
+  }
   for (const [b, label] of [[bc, 'широкий'], [bcm, 'узкий']]) if (b) out.push(`${b.ok ? 'OK  ' : 'WARN'} основной текст (${label}): ${b.note}`);
   if (m.scale.body && parseFloat(m.scale.body.fontSize) < 6) out.push(`FAIL основной текст на узком экране ${m.scale.body.fontSize}`);
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
@@ -916,13 +1185,15 @@ const HELP = `Съём дизайн-системы со страницы.
   <url>           http://, https://, file:// или путь к существующему файлу страницы
                   (C:\\w\\site\\index.html, site\\index.html, /home/u/page.html)
   --out <папка>   куда писать (по умолчанию docs/design)
-  --name <имя>    имя файлов (по умолчанию из адреса: хост без www, порт, путь;
-                  порт у localhost, 127.x, [::1], *.localhost, 0.0.0.0 — всегда,
-                  у остальных доменов — только явный нестандартный:
-                  http://localhost:4177/ → localhost-4177.*, https://www.site.ru/a → site-ru-a.*)
-  --no-shots      без файлов снимков (акцент всё равно проверяется снимками в памяти)
+  --name <имя>    имя файлов (по умолчанию из адреса, как у site-rework: хост без www,
+                  порт, путь; порт у localhost, 127.x, [::1], *.localhost, 0.0.0.0 —
+                  всегда, у остальных доменов — только явный нестандартный:
+                  http://localhost:4177/ → localhost-4177.*, https://www.site.ru/a → site-ru-a.*;
+                  файл страницы — «file-» и две последние части пути:
+                  C:\\w\\site\\index.html → file-site-index-html.*)
+  --no-shots      без файлов снимков (акцент всё равно проверяется снимками коробок кнопок)
   --light         без состояний наведения/фокуса и без тёмной темы
-  --no-pixels     не подтверждать акцент по пикселям снимков окна
+  --no-pixels     не подтверждать акцент пикселями коробок кнопок и ссылок
   --force         перезаписать существующую <имя>.md
   --help, -h      эта справка
 
@@ -939,14 +1210,14 @@ if (isCli) {
     /* в Windows «:» в имени файла — поток NTFS или ошибка, «*?"<>|» запрещены; точки и пробелы в конце обрезаются */
     if (opt.name && (/[:*?"<>|\x00-\x1f]/.test(opt.name) || /[. ]$/.test(opt.name))) { console.error(`--name ${opt.name}: в имени файлов нельзя «: * ? " < > |» и точку или пробел в конце — например, --name ${String(opt.name).replace(/[:*?"<>|\x00-\x1f]+/g, '-').replace(/[-. ]+$/, '') || 'reference'}`); process.exit(1); }
     /* адрес или путь к файлу — до папок и браузера: «localhost:4177/» без схемы URL читает как схему localhost:,
-       а C:\…\page.html (как до 24.09.2026) — путь: переход по file:///…, имя и «Источник» по строке пути */
+       а C:\…\page.html — путь: переход по file:///…, «Источник» — строка пути */
     let addr;
     try { addr = pageAddress(pos[0]); } catch (e) { console.error(e.message); process.exit(1); }
     const url = addr.url;
     const out = path.resolve(opt.out || 'docs/design'), slug = opt.name || slugFromUrl(addr.name);
-    /* имя без порта до 24.09.2026: файлы под старым именем в этой папке не подхватятся — сказать заранее */
-    const old = opt.name ? null : slugFromUrlOld(addr.name);
-    if (old && old !== slug && ['.md', '.json', '.tokens.css', '.ignore'].some((e) => fs.existsSync(path.join(out, old + e)))) console.log(`Внимание: в ${out} есть файлы под прежним именем ${old}.* (без порта). Теперь имя ${slug}.* — правленая ${old}.md не подхватится; нужно старое имя — --name ${old}.`);
+    /* прежние имена (без порта; у файлов — весь путь): файлы под ними в этой папке не подхватятся — сказать заранее */
+    const olds = opt.name ? [] : legacySlugs(addr).filter((o) => o !== slug && ['.md', '.json', '.tokens.css', '.ignore'].some((e) => fs.existsSync(path.join(out, o + e))));
+    if (olds.length) console.log(`Внимание: в ${out} есть файлы под прежним именем ${olds.map((o) => o + '.*').join(', ')} (до 24.09.2026: без порта у локальных адресов, у файлов страниц — весь путь). Теперь имя ${slug}.* — правленая ${olds[0]}.md не подхватится; нужно старое имя — --name ${olds[0]}.`);
     const shotsDir = opt['no-shots'] ? null : path.join(out, slug + '-shots');
     fs.mkdirSync(shotsDir || out, { recursive: true });
     const data = await extract(url, { shotsDir, light: !!opt.light, pixels: !opt['no-pixels'], source: addr.source });

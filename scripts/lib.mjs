@@ -18,7 +18,8 @@
  * EFFECTIVE_OPACITY_FN (итоговая прозрачность через предков и checkVisibility),
  * SIG_FN, evaluateWith, gotoRetry (переход с повторами), scrollThrough (проход
  * с onStep), screenSegment и segmentPositions (снимки окна с ожиданием картинок),
- * fullPageShot (склейка длинных страниц), parseArgs, findModuleRoot.
+ * fullPageShot (склейка длинных страниц), parseArgs, findModuleRoot, slugFromUrl (имя
+ * файлов для file://).
  * Без него работают запасные варианты ниже — грубее (нет ожидания картинок,
  * нет теневого DOM в прозрачности); extract пишет это в json: tool.siteRework.
  * DESIGN_REF_NO_SR=1 — не подключать site-rework (проверка запасного пути).
@@ -143,11 +144,17 @@ export function parseArgs(argv, { flags = [], values = [], optional = [], comman
  *   https://www.site.ru/news/x → site-ru-news-x;  http://localhost:4177/ → localhost-4177;
  *   http://127.0.0.1:8080/a → 127-0-0-1-8080-a;   http://[::1]:4177/ → ip6-localhost-4177;
  *   http://localhost/ → localhost-80;              http://site.ru:8080/ → site-ru-8080.
- * Прочие схемы (file:, about:) и путь с буквой диска (C:\w\x.html) — как
- * раньше: хост и путь целиком, буква диска в имя не входит.
+ * Файл страницы (file:) — «file-» и две последние части пути, раскодированные
+ * (кириллица остаётся): file:///C:/w/site/index.html → file-site-index-html;
+ * с site-rework рядом — его же функцией. Прочие схемы (about:, data:) — хост и путь.
  */
 export function slugFromUrl(url) {
   const u = new URL(url);
+  if (u.protocol === 'file:') {
+    if (SR && SR.slugFromUrl) return SR.slugFromUrl(url);
+    let p = u.pathname; try { p = decodeURIComponent(p); } catch { /* как есть */ }
+    return ('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file';
+  }
   if (!/^https?:$/.test(u.protocol)) return slugFromUrlOld(url);
   const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const local = h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0';
@@ -156,10 +163,22 @@ export function slugFromUrl(url) {
   return (name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference';
 }
 
-/** Имя по правилу до 24.09.2026 (без порта): extract подсказывает, если файлы под старым именем уже лежат в --out. */
+/** Имя по правилу до 24.09.2026 (без порта; у файлов — весь путь): extract подсказывает, если файлы под старым именем уже лежат в --out. */
 export function slugFromUrlOld(url) {
   const u = new URL(url);
   return (u.hostname.replace(/^www\./, '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference';
+}
+
+/**
+ * Прежние имена файлов для адреса из pageAddress: без порта (http://localhost:4177/ →
+ * localhost), у file:// — весь путь (c-w-site-index-html), у пути к файлу в Windows —
+ * путь без буквы диска (w-site-index-html, так звал extract до 24.09.2026).
+ */
+export function legacySlugs(addr) {
+  const out = new Set();
+  try { out.add(slugFromUrlOld(addr.url)); } catch { /* не адрес */ }
+  if (/^[a-z]:[\\/]/i.test(addr.source || '')) { try { out.add(slugFromUrlOld(addr.source)); } catch { /* не адрес */ } }
+  return [...out];
 }
 
 /**
@@ -167,9 +186,10 @@ export function slugFromUrlOld(url) {
  * до папок и браузера. http(s)://, file://, data:, about: — как есть. Путь к
  * файлу — с буквой диска (C:\w\page.html, C:/w/page.html) или любой
  * существующий (page.html, site/index.html, /home/u/page.html) — переход по
- * file:///… Для пути с буквой диска «Источник» и имя файлов прежние, по строке
- * пути, как до 24.09.2026 (C:\w\site\index.html → w-site-index-html);
- * относительный путь считается от текущей папки и называется как его полный путь.
+ * file:///… «Источник» у пути с буквой диска — строка пути как есть, у
+ * относительного — полный путь. Имя файлов — по адресу file:///…, как у
+ * site-rework: C:\w\site\index.html → file-site-index-html (до 24.09.2026 было
+ * w-site-index-html — прежние имена отдаёт legacySlugs).
  * Иначе — Error с подсказкой: localhost:4177/ без схемы, ftp://, нет файла, папка.
  * → { url — куда переходить, source — что писать в «Источник», name — строка для slugFromUrl }
  */
@@ -185,7 +205,7 @@ export function pageAddress(arg) {
   try { st = fs.statSync(s); } catch { /* нет такого пути */ }
   if (st && st.isFile()) {
     const abs = path.resolve(s), url = pathToFileURL(abs).href, source = drive ? s : abs;
-    return { url, source, name: isDrive(source) ? source : url };
+    return { url, source, name: url };
   }
   if (st && st.isDirectory()) throw new Error(`${s} — папка, а нужна страница: путь к файлу (${path.join(s, 'index.html')}) или адрес http://`);
   /* похоже на сайт без схемы: localhost:4177/, site.ru/news — подсказать схему */

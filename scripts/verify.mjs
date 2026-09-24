@@ -4,7 +4,8 @@
  * (шкала, сетка, роли цветов, акцент, форма, ритм, движение, паспорт образца,
  * фактура), а не картинки.
  *
- *   node verify.mjs <спецификация.json> <адрес своей страницы> [--strict] [--help]
+ *   node verify.mjs <спецификация.json> <адрес своей страницы> [--strict]
+ *                   [--ignore <файл> | --no-ignore] [--help]
  *
  *   адрес — http://, https://, file:// или путь к существующему файлу страницы
  *   (C:\w\site\index.html, site\index.html) — по тому же правилу, что у extract;
@@ -12,6 +13,8 @@
  *
  *   --strict  уровни шкалы, которых нет на странице, и предупреждения (??) —
  *             тоже расхождения
+ *   --ignore <файл>  список отступлений из другого файла (вместо <спецификация>.ignore)
+ *   --no-ignore      без списка отступлений — увидеть всё, что он прячет
  *
  * Строки: ok — совпало; !! — расхождение (код выхода 1); ?? — предупреждение:
  * чего у образца нет, а у вас есть (форма, поля, аккордеон) — не ошибка, если
@@ -20,35 +23,50 @@
  * Отступления, принятые сознательно (раздел «Что не переносим»), перечислить
  * в <спецификация>.ignore — по одному ключу на строку, например: scale.h1.fontFamily
  *
+ * h1, nav, контейнер и акцент на обеих страницах берутся одним правилом (extract):
+ * самый крупный h1 первого экрана, меню шапки, обёртка секций, цвет действий. Какой
+ * элемент взят с каждой стороны — в блоке «Откуда взято» под строками сверки.
+ * Спецификация, снятая extract до 2026-09-24.2 (нет scaleFrom и actions), — WARN:
+ * h1, nav, контейнер и акцент в ней по старым правилам, переснять.
+ *
  * Сила зерна здесь не сверяется: у своей плитки другая σ, чем у файла образца,
  * поэтому opacity не обязана совпадать. Силу мерить texture.mjs compare
  * (скилл site-rework). Здесь — есть ли слой и тот же ли режим наложения.
  */
 import fs from 'node:fs';
-import { extract, roles, motionSummary, dist, seenColor, accentInfo } from './extract.mjs';
+import { extract, roles, motionSummary, dist, seenColor, accentInfo, levelSource, containerNote } from './extract.mjs';
 import { parseArgs, pageAddress } from './lib.mjs';
 
 const HELP = `Сверка своей страницы со спецификацией design-reference.
 
-  node verify.mjs <спецификация.json> <адрес страницы> [--strict]
+  node verify.mjs <спецификация.json> <адрес страницы> [--strict] [--ignore <файл> | --no-ignore]
 
   адрес — http://, https://, file:// или путь к файлу страницы (C:\\w\\site\\index.html)
-  --strict  отсутствующие уровни шкалы и предупреждения ?? — тоже расхождения
-  --help, -h  эта справка
+  --strict          отсутствующие уровни шкалы и предупреждения ?? — тоже расхождения
+  --ignore <файл>   отступления из этого файла (по умолчанию <спецификация>.ignore)
+  --no-ignore       без списка отступлений — показать всё, что он прячет
+  --help, -h        эта справка
 
 Отступления — в <спецификация>.ignore, по ключу на строку (scale.h1.fontFamily).
-Код выхода 1 — есть расхождения.`;
+Под строками — «Откуда взято»: какой h1, меню, обёртка и цвет действий взяты
+у образца и у вас. Код выхода 1 — есть расхождения.`;
 
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['strict', 'help', 'h'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['strict', 'no-ignore', 'help', 'h'], optional: ['ignore'] });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 if (pos.length < 2) { console.error('Нужно: node verify.mjs <спецификация.json> <адрес страницы> [--strict] (--help — справка)'); process.exit(1); }
+if ('ignore' in opt && (typeof opt.ignore !== 'string' || !opt.ignore.trim())) { console.error('--ignore без значения: нужно --ignore <файл>'); process.exit(1); }
+if (opt.ignore && opt['no-ignore']) { console.error('--ignore и --no-ignore вместе — выберите одно'); process.exit(1); }
 const spec = JSON.parse(fs.readFileSync(pos[0], 'utf8'));
-const ignoreFile = pos[0].replace(/\.json$/, '.ignore');
-const ignore = fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
+const ignoreFile = opt['no-ignore'] ? null : opt.ignore || pos[0].replace(/\.json$/, '.ignore');
+if (opt.ignore && !fs.existsSync(opt.ignore)) { console.error(`Нет файла отступлений: ${opt.ignore}`); process.exit(1); }
+const ignore = ignoreFile && fs.existsSync(ignoreFile) ? fs.readFileSync(ignoreFile, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
 /* адрес — тем же правилом, что у extract: путь к файлу → file:///…, без схемы — сказать до браузера */
 let page;
 try { page = pageAddress(pos[1]); } catch (e) { console.error(e.message); process.exit(1); }
-const mine = await extract(page.url, { light: true, source: page.source });
+/* акцент образца взят с наведения — у своей страницы тоже нужно наведение, иначе сравнивать нечего */
+const aa = accentInfo(spec.desktop);
+const mine = await extract(page.url, { light: true, states: aa.source === 'hover', source: page.source });
+const oldSpec = !spec.desktop.scaleFrom || !spec.desktop.actions;
 
 const rows = [];
 /* level: 'ok' | 'bad' | 'warn' */
@@ -82,8 +100,9 @@ for (const k of Object.keys(ra)) {
   if (k === 'accent' || !ra[k]) continue;
   add(`color.${k}`, ra[k], rb[k] || 'не выявлено', !!rb[k] && dist(seenColor(ra[k], ra.background), seenColor(rb[k], rb.background)) <= 10);
 }
-const aa = accentInfo(spec.desktop), ab = accentInfo(mine.desktop);
-if (aa.value) add('color.accent', aa.value, ab.value || 'нет', !!ab.value && dist(seenColor(aa.value, ra.background), seenColor(ab.value, rb.background)) <= 10);
+const ab = accentInfo(mine.desktop);
+/* старая спецификация: её акцент — самый заметный насыщенный цвет (бывает фон шапки), а не цвет действий */
+if (aa.value) add('color.accent', aa.value + (aa.old ? ' (старое правило — переснять)' : ''), ab.value || 'нет', !!ab.value && dist(seenColor(aa.value, ra.background), seenColor(ab.value, rb.background)) <= 10);
 else if (aa.status === 'нет') {
   /* у образца насыщенного цвета на экране нет — свой «акцент по умолчанию» (жёлтая кнопка) не добавлять */
   add('color.accent', 'нет (у образца акцента нет)', ab.value ? `${ab.value} — ${ab.status}${ab.note ? ', ' + ab.note : ''}` : 'нет', !(ab.value && ab.status === 'подтверждён'));
@@ -130,6 +149,21 @@ for (const r of rows) {
   const mark = r.level === 'ok' ? '  ok ' : r.level === 'warn' ? ' ??  ' : ' !!  ';
   console.log(`${mark} ${r.key.padEnd(w)}  ${String(r.want).padEnd(28)} ${r.level === 'ok' ? '' : '→ у вас: ' + r.got}`);
 }
+
+/* откуда взято: одна и та же роль с обеих сторон — видно, что сравнивались одинаковые элементы */
+const src = (d, lvl) => levelSource(d, lvl) || (d.scaleFrom ? 'не найден' : 'не записано (старый json)');
+const acc = (a) => (a.value ? `${a.value} — ${a.note}` : a.note);
+console.log('\nОткуда взято:');
+for (const [label, a, b] of [
+  ['h1', src(spec.desktop, 'h1'), src(mine.desktop, 'h1')],
+  ['nav', src(spec.desktop, 'nav'), src(mine.desktop, 'nav')],
+  ['mobile.h1', src(spec.mobile, 'h1'), src(mine.mobile, 'h1')],
+  ['mobile.nav', src(spec.mobile, 'nav'), src(mine.mobile, 'nav')],
+  ['container', containerNote(spec.desktop), containerNote(mine.desktop)],
+  ['mobile.container', containerNote(spec.mobile), containerNote(mine.mobile)],
+  ['accent', acc(aa), acc(ab)],
+]) console.log(`  ${label.padEnd(16)} образец: ${a}\n  ${''.padEnd(16)} у вас:   ${b}`);
+if (oldSpec) console.log(`\nWARN спецификация снята extract до 2026-09-24.2 (${(spec.tool && spec.tool.version) || 'версия не записана'}): h1, nav, контейнер и акцент в ней по старым правилам (самый частый h1, все ссылки nav и header, самая частая ширина, доля всего снимка) — переснимите extract, иначе расхождения по ним ложные`);
 if (ta) console.log('\nСилу зерна сверять числом: node ~/.claude/skills/site-rework/scripts/texture.mjs compare <образец> <ваша страница>');
-console.log(`\nСверено ${rows.length}, расхождений ${rows.filter((r) => r.level === 'bad').length}, предупреждений ${warns.length}` + (ignore.length ? `, пропущено по списку: ${ignore.length}` : '') + (opt.strict && warns.length ? ' (--strict: предупреждения считаются расхождениями)' : ''));
+console.log(`\nСверено ${rows.length}, расхождений ${rows.filter((r) => r.level === 'bad').length}, предупреждений ${warns.length}` + (ignore.length ? `, пропущено по списку: ${ignore.length} (${ignoreFile})` : '') + (opt['no-ignore'] ? ' (--no-ignore: список отступлений не применялся)' : '') + (opt.strict && warns.length ? ' (--strict: предупреждения считаются расхождениями)' : ''));
 process.exit(bad.length ? 1 : 0);
