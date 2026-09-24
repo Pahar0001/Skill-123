@@ -18,10 +18,12 @@ description: Автономная переработка существующе�
 Git Bash `~` раскрывается сам, в PowerShell 5.1 — нет, там писать
 `$HOME/.claude/skills/site-rework/scripts/…`. У каждого скрипта `--help`
 печатает все флаги и ничего не запускает; `-h` — то же у всех, включая
-`extract.mjs` и `verify.mjs` скилла design-reference. Экраны: у `discover` и `shots` `--viewport` и `--viewports`
-— синонимы, списком через запятую; `runtime`, `a11y`, `perf` и `taste`
-понимают оба, но экран за запуск один (список — ошибка); `texture` и
-`cliche` — только `--viewport` (списком), `--viewports` молча пропускают.
+`extract.mjs` и `verify.mjs` скилла design-reference. Экраны: у `discover`, `shots`,
+`texture` и `cliche` `--viewport` и `--viewports` — синонимы, списком через
+запятую (оба сразу с разными списками — ошибка); `runtime`, `a11y`, `perf` и
+`taste` понимают оба, но экран за запуск один (список — ошибка). `--strict` —
+код 1 при итоговом FAIL у `discover`, `shots`, `a11y`, `perf`, `texture`; у
+`runtime` и `cliche` FAIL и так даёт код 1 (у `runtime` `--no-fail` даёт 0).
 
 **Папка прогона** без `--out` берётся из адреса проверяемой страницы, а не
 из журнала: `~/.claude/site-rework/runs/<slug адреса>`; у `localhost` и
@@ -102,7 +104,11 @@ FAIL, снимок, замер — `state.mjs set … --evidence <файл[#ша
 сам отвергает доказательство с FAIL, старше правки сайта или лежащее в
 папке сайта, VERIFIED нескольким задачам одним вызовом (`set 1,2 …`) и
 протокол целиком, уже подтвердивший другую задачу (второй раз — только с
-`#шагом`). NA — только с причиной (`--note`); отчёт считает раздельно:
+`#шагом`). Каждый протокол помнит, каким кодом снят (поле `generator`:
+скрипт и `lib.mjs`, коммит, незакоммиченные правки); `state.mjs set` и `show`
+пишут WARN «протокол снят другой версией скрипта — перепрогнать», если скрипт
+с тех пор менялся, — отметка ставится, но такое доказательство перепрогнать
+до отчёта. NA — только с причиной (`--note`); отчёт считает раздельно:
 «проверено N, неприменимо M, без доказательства K, устарело S».
 Поля журнала: `impl` — TODO / DOING / DONE / BLOCKED / DROPPED; `runtime`,
 `visual`, `mobile`, `perf` — NOT_CHECKED / VERIFIED / FAILED / NEEDS_WORK / NA;
@@ -235,7 +241,7 @@ node ~/.claude/skills/site-rework/scripts/state.mjs <папка> set <id> visual
 ```
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
 node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click ... --edit ... --select ...   # и то же с --viewport mobile --tag controls-mobile
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click "<кнопка>" --edit "<поле с маской>" --select "<список>=<вариант>"   # селекторы свои; и то же с --viewport mobile --tag controls-mobile
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag state --css --hover-all --nav
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-320 --viewport mobile-s --scroll
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна

@@ -57,8 +57,8 @@ Restricted — отказ). Coverr, Videezy, Vecteezy, Freepik — не встр
 `UNSPLASH_APP_NAME` — имя приложения из кабинета Unsplash, идёт в utm ссылок
 подписи), `PIXABAY_API_KEY`, `SI_API_KEY` (Smithsonian в профиле
 `art`), `MEDIA_CONTACT` (контакт для User-Agent по правилам Wikimedia и AIC;
-личные данные сами не подставляются). Без ключей работают Commons, Mixkit,
-музеи кроме Smithsonian, Openverse. У Unsplash кадр не пережимается у себя:
+личные данные сами не подставляются). Без ключей работают Mixkit, Openverse
+и музеи, кроме Smithsonian; Commons и AIC — только с `MEDIA_CONTACT`. У Unsplash кадр не пережимается у себя:
 pick выдаёт разметку со ссылками `images.unsplash.com` по его правилам API,
 сообщает Unsplash о скачивании (`download_location`) и помечает подпись
 **обязательной**: лицензия Unsplash подписи не требует, а правила API требуют —
@@ -68,6 +68,8 @@ unsplash.com и заведённый через `import --license unsplash`, п�
 
 Без ключей крупный кадр первого экрана — в основном Commons, видео — Commons
 (шумная выдача, чаще CC BY) и Mixkit поштучно; Openverse — только карточки.
+Без ключей и без `MEDIA_CONTACT` остаются Mixkit поштучно, Openverse и музеи
+без контакта — для первого экрана этого почти всегда мало.
 `media.mjs doctor` перечисляет незаданные ключи отдельным блоком «WARN: не
 заданы ключи (N из 5) … — чем грозит»: по строке на ключ и подсказки, откуда
 тогда брать кадры. Итог OK — только когда ответили все пробы и заданы все
@@ -75,11 +77,19 @@ unsplash.com и заведённый через `import --license unsplash`, п�
 видео-петле этого мало, а в блоке есть `PEXELS_API_KEY`, — один раз попросить
 у пользователя бесплатный ключ (pexels.com/api → Your API Key) и положить в `.env`.
 
-`MEDIA_CONTACT` не задан — `media.mjs` пишет WARN, но Commons и AIC всё
-равно запрашивает, с User-Agent без контакта, а политика Wikimedia контакт
-требует (запросы без него могут блокировать, оригиналы Commons и так чаще
-отвечают 429). До поиска на Commons спросить у пользователя адрес сайта или
-рабочую почту для таких писем; самому почту из git или профиля не брать.
+`MEDIA_CONTACT` не задан — Commons (фото, видео, копии `thumb.wikimedia`) и
+AIC пропускаются без единого запроса: их правила требуют контакт в
+User-Agent. `doctor` и `search` пишут `SKIP <источник> … нет MEDIA_CONTACT`,
+вердикт search остаётся OK, в `manifest.json` у источника
+`status: {state: 'skip', no_contact: true}`. `pick` кадра Commons/AIC и
+`import` адреса с Wikimedia/AIC без контакта — FAIL до сети (import советует
+скачать файл в браузере и передать путь). Если без Commons кадров мало —
+спросить у пользователя адрес сайта или рабочую почту для таких писем и
+записать `MEDIA_CONTACT=…` в `.env`; самому почту из git или профиля не брать.
+
+`--run <адрес>` у search и import — папка прогона по тому же правилу, что у
+остальных скриптов (`lib.slugFromUrl`, с портом и путём:
+`http://localhost:4177/` → `runs/localhost-4177`); без `--run` — `runs/media/…`.
 
 **Отбор — глазами по листу-контакту** (`<папка>/sheet-1.jpg`): номер,
 источник, реальный размер файла, лицензия, флаги `people?`, `brand?`,
@@ -169,7 +179,10 @@ playsinline preload="metadata" poster>` с webm и mp4 и заметку про
    анимированную плитку (спрайт, GIF, WebP) — шаблон её не использует.
    Детерминированно (тот же `--seed` — побайтно тот же файл), серая
    непрозрачная плитка 256 px, 16 уровней, σ 78.35; `--check файл` проверяет
-   готовую плитку по всем кадрам.
+   готовую плитку по всем кадрам. `--mode alpha` — светлые и тёмные зёрна с
+   прозрачностью (только PNG и WebP, GIF её не держит; 16 уровней альфы, σ и
+   среднее в самопроверке — как плитка видна на сером 128); шаблон
+   `templates/grain.css` рассчитан на серую плитку.
 3. **Слой по шаблону** `templates/grain.css`:
    ```
    node ~/.claude/skills/site-rework/scripts/texture.mjs <папка>/texture/texture.json --css <сайт>/grain.css --tokens <сайт>/site.tokens.css

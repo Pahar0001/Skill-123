@@ -901,7 +901,7 @@ async function overflowPass(browser, url, name, vp, opt) {
     const scroll = await scrollThrough(page, { pause: 250 });
     const overflow = await findOverflow(page);
     const panels = await evaluateWith(page, () => [...document.body.querySelectorAll('*')].filter((el) => { const s = getComputedStyle(el); if (s.position !== 'fixed' && s.position !== 'sticky') return false; const r = el.getBoundingClientRect(); return r.width >= innerWidth * 0.3 && r.height >= 20 && r.height < innerHeight * 0.6 && eff(el) > 0.05; }).slice(0, 6).map((el) => { const r = el.getBoundingClientRect(); return { el: sig(el), place: r.top + r.height / 2 < innerHeight / 2 ? 'сверху' : 'снизу', height: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; }), null, DEPS).catch(() => []);
-    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
+    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, viewH: scroll.viewH, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
   } finally { await page.close().catch(() => {}); }
 }
 
@@ -1054,7 +1054,7 @@ function writeSummary(url, run, per, design, order, extra) {
     if (p.log.failedRequests.length) L.push(...p.log.failedRequests.slice(0, 4).map((f) => `    - ${f.reason}: ${f.url}`));
     L.push(`    - переполнение по ширине: **${p.overflow.verdict}** — ${p.overflow.summary}`);
     if (p.scroll.stuck) L.push('    - **WARN** прокрутка: страница выше окна, но не прокрутилась (прокрутку держит сайт или заставка) — появления и снимки недостоверны');
-    else if (!p.scroll.reachedBottom) L.push(`    - **WARN** прокрутка: не доехали до низа (дошли до ${p.scroll.maxScrollY} из ${p.scroll.pageHeight - p.viewport.height}px)${p.scroll.capped ? `, остановились на пределе ${p.scroll.screens} шагов` : ''} — нижние блоки могли не появиться`);
+    else if (!p.scroll.reachedBottom) L.push(`    - **WARN** прокрутка: не доехали до низа (дошли до ${p.scroll.maxScrollY} из ${p.scroll.pageHeight - (p.scroll.viewH ?? p.viewport.height)}px)${p.scroll.capped ? `, остановились на пределе ${p.scroll.screens} шагов` : ''} — нижние блоки могли не появиться`);
     for (const n of p.notes || []) L.push(`    - шаг не сработал: ${n}`);
   }
   for (const [v, err] of Object.entries(extra.failed || {})) L.push(`- ${v}: **FAIL экран не снялся** — ${String(err).replace(/\n/g, ' ').slice(0, 200)}; разведка по нему не делалась`);
@@ -1255,7 +1255,7 @@ for (const v of order) {
   const p = good[v];
   if (p.overflow.verdict !== 'OK') verdicts.push([p.overflow.verdict, `переполнение ${v}: ${p.overflow.summary}`]);
   if (p.scroll.stuck) verdicts.push(['WARN', `прокрутка ${v}: страница не прокручивается — появления и снимки недостоверны`]);
-  else if (!p.scroll.reachedBottom) verdicts.push(['WARN', `прокрутка ${v}: не доехали до низа (${p.scroll.maxScrollY} из ${p.scroll.pageHeight - p.viewport.height}px)`]);
+  else if (!p.scroll.reachedBottom) verdicts.push(['WARN', `прокрутка ${v}: не доехали до низа (${p.scroll.maxScrollY} из ${p.scroll.pageHeight - (p.scroll.viewH ?? p.viewport.height)}px)`]);
   for (const x of p.motion.hoverConflicts) verdicts.push(['WARN', `${v}: наведение перебито удерживающей анимацией — ${x.target} ${x.anim} держит ${x.props.join(', ')}`]);
   for (const dg of (p.texture && p.texture.diagnosis) || []) verdicts.push(['WARN', `фактура ${v}: ${dg}`]);
 }

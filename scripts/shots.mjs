@@ -70,12 +70,18 @@
  * стал невидим на месте (прозрачность 0, visibility:hidden) — WARN «пропал после прокрутки — проверить,
  * задумано ли», в shots.json вид области gone: подсказка «листайте ↓» прячется после первой
  * прокрутки нарочно, а остальные отличия пропавшего (класс, прозрачность) уже не видны. Но пропавшая
- * подписанная ссылка или кнопка (сама или внутри пропавшего: «Оставить заявку», пункты шапки, поле
- * формы) — FAIL «пропала ссылка или кнопка первого экрана» (вид stuck, lost: true): это потеря
- * управления; стрелка «↓» или значок без подписи (до 3 знаков) — подсказка, WARN. Удалённый узел,
- * на месте которого живой компонент поставил новый (карусель, которая рисует только текущий слайд;
- * «бегущие слова» через replaceWith), — живое, не пропажа: бывший родитель ещё на странице и он или
- * предок до 5 уровней (кроме body и html) менялся при наблюдении.
+ * подписанная ссылка или кнопка (сама или внутри пропавшего: «Оставить заявку», пункты шапки) —
+ * FAIL «пропала ссылка или кнопка первого экрана» (вид stuck, lost: true), пропавшее поле формы
+ * (input, select, textarea) — FAIL «пропало поле формы первого экрана» (ещё и lostField: true): это
+ * потеря управления; стрелка «↓» или значок без подписи (до 3 знаков) — подсказка, WARN. Удалённый
+ * узел, на месте которого живой компонент поставил новый (карусель, которая рисует только текущий
+ * слайд; «бегущие слова» через replaceWith), — живое, не пропажа («узел заменён новым — компонент
+ * меняется сам»): бывший родитель ещё на странице (не body и не html), при наблюдении сам менял детей
+ * (вставка и удаление, не атрибуты) и среди его детей есть новый, которого при загрузке не было, того
+ * же вида (тег и общий постоянный класс). Смена атрибутов у родителя или предков (style от rAF,
+ * переключаемый класс) заменой не считается: такой узел пропал, и судится как пропажа. Так же новый
+ * узел на месте пропавшего — живое, только если его (или предка до 5 уровней) вставил родитель, который
+ * сам менял детей при наблюдении; иначе это подмена прокруткой («на его месте новый: …»).
  * Только проявилось (прозрачность 0 → 1, текст первого экрана виден лишь после прокрутки) — WARN
  * с вырезкой по коробкам; если проявление включил класс у предка (.hero.in), предок назван у потомка.
  * Без живого фона оценка та же: смена класса у контейнера без видимого следа, когда все видимые
@@ -105,7 +111,7 @@
  * Остальное — области, в которых перечисляются элементы и что у них изменилось (класс, цвет, прозрачность):
  *   FAIL «состояние не сбрасывается» — у того, что осталось на экране, изменились класс, цвет, фон,
  *        рамка, сдвиг или появился новый элемент (подсвеченный пункт меню, раскрытая шапка, всплывшее
- *        сообщение), или пропала подписанная ссылка или кнопка;
+ *        сообщение), или пропала подписанная ссылка, кнопка или поле формы;
  *   WARN — только пропало или ушло за экран без подписанных ссылок и кнопок («пропал после прокрутки —
  *        проверить, задумано ли»), только проявление (прозрачность 0 → 1), только холст и видео, только
  *        то, что меняется само (карусель), или причина по стилям не видна (смотреть вырезку).
@@ -201,6 +207,9 @@ function rememberFirstInPage() {
     if (m.size >= 5000) break;
   }
   window.__rwFirst = m;
+  /* что уже было на странице при загрузке (весь документ, не только первый экран): «новый» узел для liveGone
+     и replacedBy — тот, которого тогда не было */
+  for (const el of document.querySelectorAll('*')) el.__rwOld = true;
   /* классы body и html — чтобы назвать причину, если проявление или подсветку включил класс на них */
   window.__rwFirstRoot = { body: document.body ? document.body.getAttribute('class') || '' : '', html: document.documentElement.getAttribute('class') || '' };
   return { count: m.size, media };
@@ -222,7 +231,13 @@ function watchLiveInPage(ms) {
         if (m.type === 'attributes') {
           mark(m.target);
           if (m.attributeName === 'class') { const A = new Set(String(m.oldValue || '').split(/\s+/).filter(Boolean)), B = new Set(String(m.target.getAttribute('class') || '').split(/\s+/).filter(Boolean)); for (const c of A) if (!B.has(c)) toggled.add(c); for (const c of B) if (!A.has(c)) toggled.add(c); }
-        } else if (m.type === 'characterData') mark(m.target.parentElement); else { mark(m.target); for (const x of m.addedNodes) mark(x); }
+        } else if (m.type === 'characterData') mark(m.target.parentElement);
+        else {
+          /* сменились дети: у родителя своя метка __rwKids — по ней liveGone узнаёт, что на место удалённого
+             узла компонент сам ставит новые (смена атрибутов у родителя такой метки не даёт) */
+          mark(m.target); if (m.target.nodeType === 1) m.target.__rwKids = true;
+          for (const x of m.addedNodes) mark(x);
+        }
       }
       const now = performance.now(); if (now - last > 500) bursts++; last = now;
       if (bursts >= 2) { clearTimeout(timer); timer = setTimeout(finish, 300); }
@@ -369,33 +384,58 @@ function stateDiffInPage() {
     if (el.__rwMoved && !t.__rwMoved) t.__rwMoved = el.__rwMoved;
     return t;
   };
-  /* удалённый узел, который заменил живой компонент: бывший родитель (у вложенного в удалённое поддерево —
-     родитель корня этого поддерева) ещё на странице, и он или предок до 5 уровней менялся, пока страница
-     стояла на месте (метка __rwLive из watchLiveInPage: слайд или слово заменялись и при наблюдении).
-     body и html не в счёт: туда вставляют счётчики и всплывающие окна, о самом узле это ничего не говорит */
+  /* «того же вида»: тот же тег и общий постоянный класс (slide у div.slide.s1 и div.slide.s3) или у обоих
+     постоянных классов нет; классы, которые переключались сами (active, on), не в счёт — как в liveTestInPage */
+  const toggled = window.__rwToggled || new Set();
+  const fam = (e) => [...e.classList].filter((c) => !toggled.has(c));
+  const sameKind = (x, y) => { if (x.tagName !== y.tagName) return false; const fx = fam(x), fy = fam(y); return (!fx.length && !fy.length) || fx.some((c) => fy.includes(c)); };
+  /* вставлен после загрузки в родителя, у которого при наблюдении сами менялись дети */
+  const byLive = (x) => !x.__rwOld && !!x.parentElement && !!x.parentElement.__rwKids;
+  /* удалённый узел, на месте которого живой компонент поставил новый (карусель, рисующая только текущий слайд;
+     «бегущие слова» через replaceWith). Бывший родитель (у вложенного в удалённое поддерево — родитель корня
+     этого поддерева) ещё на странице, при наблюдении сам менял детей (метка __rwKids из watchLiveInPage —
+     только childList, не атрибуты), и среди его детей есть новый, которого при загрузке не было, того же вида,
+     что корень удалённого (div.sl на месте div.sl, span.w на месте span.w). Смена атрибутов у родителя или
+     предков (style от rAF, переключаемый класс) и новые дети другого вида (слово рядом с кнопкой) — не замена:
+     узел просто пропал, дальше обычная логика пропажи (lostCtl). body и html не в счёт: туда вставляют
+     счётчики и всплывающие окна, о самом узле это ничего не говорит */
   const liveGone = (el, a) => {
     if (el.isConnected) return false;
     let root = el; while (root.parentElement) root = root.parentElement;
     const first = window.__rwFirst; const b = root === el ? a : first && first.get(root);
-    const p = b && b.p; if (!p || !p.isConnected) return false;
-    for (let e = p, k = 0; e && k < 5; e = e.parentElement, k++) { if (e === document.body || e === document.documentElement) break; if (e.__rwLive) return true; }
+    const p = b && b.p; if (!p || !p.isConnected || p === document.body || p === document.documentElement || !p.__rwKids) return false;
+    for (const c of p.children) if (!c.__rwOld && sameKind(c, root)) return true;
     return false;
   };
+  /* новый узел на месте пропавшего — от живого компонента: он сам или предок до 5 уровней (кроме body и html)
+     вставлен после загрузки в родителя, который при наблюдении сам менял детей. Новый узел внутри предка,
+     у которого менялись только атрибуты, — подмена, сделанная прокруткой, а не живое */
+  const liveNew = (e) => { for (let x = e, k = 0; x && k < 5; x = x.parentElement, k++) { if (x === document.body || x === document.documentElement) break; if (byLive(x)) return true; } return false; };
   /* в пропавшем есть ссылки или кнопки — чтобы у «пропал после прокрутки» было видно, что пропало управление */
   const CTL = 'a[href], button, input, select, textarea, [role=button], [role=link]';
   const hasCtl = (el) => { try { return el.matches(CTL) || !!el.querySelector(CTL); } catch { return false; } };
   /* пропала подписанная ссылка или кнопка (сам элемент или потомок): кнопка «Оставить заявку», пункты
      шапки, поле формы — это потеря управления, FAIL. Стрелка «↓» или значок без подписи (до 3 знаков) —
-     подсказка, как «листайте ↓», пропажа остаётся WARN. Возвращает подпись первой такой или '' */
+     подсказка, как «листайте ↓», пропажа остаётся WARN. Возвращает { text: что пропало, field: только поля }
+     или null. Поле (input, select, textarea) подписывается «поле», с подписью из aria-label, <label>,
+     placeholder или name; ссылка или кнопка — своим текстом */
+  const fieldLabel = (c) => { let t = c.getAttribute('aria-label') || ''; try { if (!t && c.labels && c.labels.length) t = text(c.labels[0]); } catch { /* без labels */ } return (t || c.getAttribute('placeholder') || c.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, 24); };
   const lostCtl = (el) => {
+    let field = '', ctl = '';
     try {
       for (const c of [...(el.matches(CTL) ? [el] : []), ...el.querySelectorAll(CTL)]) {
         if (c.matches('input[type=hidden]')) continue;
-        if (/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName)) return sig(c);
-        const t = text(c); if (t.length > 3) return `«${t.slice(0, 24)}»`;
+        /* input type=submit, button, reset, image — кнопка с подписью в value, а не поле */
+        const btnInput = c.tagName === 'INPUT' && /^(submit|button|reset|image)$/i.test(c.getAttribute('type') || '');
+        if (/^(INPUT|SELECT|TEXTAREA)$/.test(c.tagName) && !btnInput) { if (!field) { const l = fieldLabel(c); field = `${sig(c)}${l ? ` «${l}»` : ''}`; } }
+        else if (!ctl) { const t = btnInput ? (c.value || c.getAttribute('aria-label') || c.getAttribute('alt') || '').trim() : text(c); if (t.length > 3) ctl = `«${t.slice(0, 24)}»`; }
+        if (field && ctl) break;
       }
     } catch { /* узел без matches */ }
-    return '';
+    if (field && ctl) return { text: `пропали поле ${field} и ссылка или кнопка ${ctl}`, field: false };
+    if (field) return { text: `пропало поле ${field}`, field: true };
+    if (ctl) return { text: `пропала ссылка или кнопка ${ctl}`, field: false };
+    return null;
   };
   /* пропал не «только»: на его месте при загрузке теперь стоит видимый элемент, которого при загрузке не
      было (перерисовали с другим текстом, подменили блок), — это видимая подмена, не пропажа.
@@ -419,16 +459,16 @@ function stateDiffInPage() {
      (lost) — потеря управления, тоже не «только пропало»: такое идёт в залипшее, FAIL */
   const fate = (el, a, res, isLive, known) => {
     const { gone, load, loadPart } = res;
-    if (load) return { extra: ['двигалось само при загрузке'], live: true, gone: !!gone, lost: false };
+    if (load) return { extra: ['двигалось само при загрузке'], live: true, gone: !!gone, lost: false, lostField: false };
     const lg = liveGone(el, a);
-    const nw = gone && !lg ? replacedBy(el, a, known) : null; const nwLive = !!nw && isLive(nw);
+    const nw = gone && !lg ? replacedBy(el, a, known) : null; const nwLive = !!nw && liveNew(nw);
     const extra = loadPart.length ? [`(${loadPart.join(', ')} — двигалось само при загрузке)`] : [];
-    let lost = false;
+    let lost = false, lostField = false;
     if (lg || nwLive) extra.push('узел заменён новым — компонент меняется сам');
     else if (nw) extra.push(`на его месте новый: ${sig(nw)} «${text(nw).slice(0, 24)}»`);
-    else if (gone && hasCtl(el)) { const l = lostCtl(el); lost = !!l; extra.push(l ? `пропала ссылка или кнопка ${l}` : 'в нём ссылка или кнопка без подписи'); }
+    else if (gone && hasCtl(el)) { const l = lostCtl(el); lost = !!l; lostField = !!l && l.field; extra.push(l ? l.text : 'в нём ссылка или кнопка без подписи'); }
     const live = isLive(el) || lg || nwLive;
-    return { extra, live, gone: !!gone && !nw && !lost, lost: lost && !live };
+    return { extra, live, gone: !!gone && !nw && !lost, lost: lost && !live, lostField: lostField && !live };
   };
   diffOf.snap = snap; diffOf.raw = raw; diffOf.pick = pick; diffOf.fate = fate;
   return diffOf;
@@ -530,7 +570,7 @@ function explainInPage(regions) {
       if (!d.length || (gone && a.o <= 0.05)) continue;
       /* удалён, а на месте — новый узел живого компонента: живое; новый, но не живой — подмена, не пропажа */
       const f = diffOf.fate(el, a, res, isLive, first);
-      raw.push({ el, added, removed, visual, sig: sig(el), text: txt(el), diffs: d.concat(f.extra), appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, left: !!gone, load, live: f.live });
+      raw.push({ el, added, removed, visual, sig: sig(el), text: txt(el), diffs: d.concat(f.extra), appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, ...(f.lostField ? { lostField: true } : {}), left: !!gone, load, live: f.live });
     }
     swaps(raw);
     /* проявление, включённое классом у контейнера (.hero.in → h1 проявился): смена класса без видимого
@@ -599,7 +639,7 @@ function maskedChangesInPage(rects) {
     /* удалён, а на месте — новый узел живого компонента: живое; новый, но не живой — подмена, не пропажа
        (поверх живого места новый элемент иначе не виден: сверяются только элементы первого снимка) */
     const f = diffOf.fate(el, a, res, isLive, first);
-    raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: d.concat(why ? [`после смены класса у предка ${why}`] : [], f.extra), cause: why, appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, load, live: f.live, rect: clip(on ? r : was) });
+    raw.push({ el, added, removed, sig: sig(el), text: txt(el), diffs: d.concat(why ? [`после смены класса у предка ${why}`] : [], f.extra), cause: why, appeared: !gone && a.o <= 0.05 && o > 0.5, gone: f.gone, lost: f.lost, ...(f.lostField ? { lostField: true } : {}), load, live: f.live, rect: clip(on ? r : was) });
   }
   swaps(raw);
   /* внешние: потомок залипшего не повторяется; потомок проявившегося — если и сам только проявился */
@@ -718,10 +758,12 @@ async function checkReturn(page, ctx, { file, cropFile }) {
     const kind = stuck.length || e.newEls.length ? 'stuck' : gone.length ? 'gone' : real.some((c) => c.live) || e.liveHits ? 'live' : real.length ? 'carousel' : e.changed.length ? 'appeared' : e.media.length ? 'media' : 'unknown';
     /* в выводе (первые 4) — сначала залипшее, потом пропавшее, проявившееся, живое и переключение карусели */
     const lost = kind === 'stuck' && !e.newEls.length && stuck.every((c) => c.lost);
-    return { ...g, kind, ...(lost ? { lost } : {}), changed: e.changed.slice().sort((p, q) => rankChange(p) - rankChange(q)), top: e.top, media: e.media };
+    /* все пропавшие — поля формы: подпись «пропало поле», а не «ссылка или кнопка» */
+    const lostField = lost && stuck.every((c) => c.lostField);
+    return { ...g, kind, ...(lost ? { lost } : {}), ...(lostField ? { lostField } : {}), changed: e.changed.slice().sort((p, q) => rankChange(p) - rankChange(q)), top: e.top, media: e.media };
   });
   /* залипшее поверх живого места — отдельными областями по коробке элемента */
-  for (const c of maskedStuck.slice(0, 6)) regions.push({ ...c.rect, pixels: null, kind: 'stuck', ...(c.lost ? { lost: true } : {}), masked: true, changed: [c], top: [], media: masked.media });
+  for (const c of maskedStuck.slice(0, 6)) regions.push({ ...c.rect, pixels: null, kind: 'stuck', ...(c.lost ? { lost: true } : {}), ...(c.lost && c.lostField ? { lostField: true } : {}), masked: true, changed: [c], top: [], media: masked.media });
   /* проявившееся и пропавшее поверх живого места — каждое одной областью по общей рамке их коробок */
   for (const [kind, list] of [['appeared', maskedAppeared], ['gone', maskedGone]]) {
     if (!list.length) continue;
@@ -742,7 +784,7 @@ function printReturn(label, st) {
   if (st.note) { console.log(`  WARN первый экран после ${label}: ${st.note}`); return; }
   console.log(`  ${st.verdict.padEnd(4)} ${st.verdict === 'FAIL' ? `состояние не сбрасывается (после ${label})` : `первый экран после ${label} отличается`}: ${st.share}% пикселей${st.crop ? `, вырезка ${st.crop}` : ''}${maskNote}`);
   for (const g of st.regions) {
-    const what = g.kind === 'stuck' ? (g.lost ? `пропала ссылка или кнопка первого экрана и наверху не вернулась${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.masked ? `залипло поверх живого места (${g.media.join(', ')}): по пикселям не видно, по стилям — да` : 'залипло') : g.kind === 'gone' ? `пропал после прокрутки — проверить, задумано ли${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.kind === 'live' ? 'меняется само (карусель, часы, вступление при загрузке) — не залипание' : g.kind === 'carousel' ? 'переключение между соседями (карусель, за наблюдение не сменилась) — не залипание, проверить вырезку' : g.kind === 'appeared' ? `проявилось только после прокрутки (при загрузке пусто)${g.masked ? `, поверх живого места (${g.media.join(', ')}) — по стилям` : ''}` : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
+    const what = g.kind === 'stuck' ? (g.lost ? `${g.lostField ? 'пропало поле формы первого экрана и наверху не вернулось' : 'пропала ссылка или кнопка первого экрана и наверху не вернулась'}${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.masked ? `залипло поверх живого места (${g.media.join(', ')}): по пикселям не видно, по стилям — да` : 'залипло') : g.kind === 'gone' ? `пропал после прокрутки — проверить, задумано ли${g.masked ? ` (поверх живого места ${g.media.join(', ')} — по стилям)` : ''}` : g.kind === 'live' ? 'меняется само (карусель, часы, вступление при загрузке) — не залипание' : g.kind === 'carousel' ? 'переключение между соседями (карусель, за наблюдение не сменилась) — не залипание, проверить вырезку' : g.kind === 'appeared' ? `проявилось только после прокрутки (при загрузке пусто)${g.masked ? `, поверх живого места (${g.media.join(', ')}) — по стилям` : ''}` : g.kind === 'media' ? `холст или видео (${g.media.join(', ')})` : 'причина по стилям не видна — смотреть вырезку';
     const list = g.changed.length ? g.changed.slice(0, 4).map((c) => `${c.sig}${c.text ? ` «${c.text}»` : ''}: ${c.diffs.join(', ')}`).join(' | ') : g.top.slice(0, 3).join(' | ');
     console.log(`       x${g.x} y${g.y} ${g.w}×${g.h}: ${what} — ${list}`);
   }
@@ -800,7 +842,7 @@ try {
         const how = await fullPageShot(page, full, { mode: fullMode }); fullHow.add(how);
         const h = await heightOf(page);
         const errors = page.log.console.filter((c) => c.type === 'error').length + page.log.errors.length;
-        const scrollNote = sc.stuck ? 'страница не прокручивается — снимки окна и появления недостоверны' : !sc.reachedBottom ? `до низа не доехали: ${sc.maxScrollY} из ${sc.pageHeight - (vp.height || 0)} px` : '';
+        const scrollNote = sc.stuck ? 'страница не прокручивается — снимки окна и появления недостоверны' : !sc.reachedBottom ? `до низа не доехали: ${sc.maxScrollY} из ${sc.pageHeight - (sc.viewH ?? vp.height ?? 0)} px` : '';
         if (scrollNote) warns++;
         /* масштаб каждого файла — для diff.mjs */
         const segFiles = (sc.shots || []).map((s) => s.file);
@@ -810,7 +852,7 @@ try {
         /* производные — тоже с экраном: state.mjs по cssWidth/viewport не принимает снимок не того экрана */
         for (const st of [stale, staleUp]) if (st && st.crop) files[st.crop] = { kind: 'вырезка', scale: dpr, cssWidth: vp.width, dpr, viewport: name };
         if (sc.sheet) files[sc.sheet] = { kind: 'лист', scale: null, cssWidth: vp.width, dpr, viewport: name };
-        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, firstState: { elements: firstInfo ? firstInfo.count : 0, loadMotion }, consoleErrors: errors });
+        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, viewH: sc.viewH, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, firstState: { elements: firstInfo ? firstInfo.count : 0, loadMotion }, consoleErrors: errors });
         console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}, вся страница — ${how}${errors ? `, ошибок в консоли ${errors}` : ''}`);
         if (scrollNote) console.log(`  WARN прокрутка — ${scrollNote}`);
         printReturn('прокрутки до низа и прыжка наверх', stale);

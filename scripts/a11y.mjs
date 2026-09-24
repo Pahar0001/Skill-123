@@ -72,7 +72,11 @@
  * страницы мерится вместе со всем текстом (строки «контраст» выше); сверх того страница ставится ещё
  * на несколько высот, не больше 8: сначала по одной на каждый фон секций, которого закреплённый текст
  * наверху не касался (для каждой полосы такого текста — сверху, снизу), затем на остальные секции по
- * порядку. Секции — дети body и обёрток во всю высоту страницы (не fixed и не absolute); фон секции —
+ * порядку. Секции — дети body и обёрток во всю высоту страницы (не fixed и не absolute) шириной от
+ * половины меньшей из ширин: видимой области (visualViewport) и clientWidth корня. Не от innerWidth:
+ * у страницы шире экрана окно раскладки шире вдвое и больше (820 px при экране 320), а у уменьшенной
+ * страницы без initial-scale шире и видимая область (1020 px при секциях 320) — секции во всю
+ * ширину экрана не проходили, выходило «секций с другим фоном нет, одна высота посередине»; фон секции —
  * свой цвет или картинка, иначе крупная (от половины площади) картинка или блок с фоном внутри,
  * иначе «фон страницы». Секций с другим фоном нет — одна высота посередине страницы (сайт мог сменить
  * шапку после прокрутки). На каждой высоте — пауза и ожидание переходов (сайт перекрашивает шапку по
@@ -90,8 +94,16 @@
  * window.scrollTo этот сдвиг не сбрасывает: шапка на всех высотах оставалась «вне окна», и FAIL
  * прозрачной шапки становился OK (мерилась нижняя панель, которую сдвиг показал). Поэтому перед
  * каждой высотой и перед замером закреплённого текста на верху страницы видимая область
- * возвращается на место (scrollIntoView корня; на обычной странице сдвига нет — ничего не
- * делается). Худшие 10 %
+ * возвращается в исходное положение (на месте — ничего не делается). Исходное положение — начало
+ * страницы, а у страницы с письмом справа налево (dir=rtl) шире экрана на телефоне — scrollX −500 при
+ * сдвиге видимой области 0,0: сброс к началу корня уносил там видимую область на 500 px, закреплённая
+ * шапка уходила со снимка, и FAIL прозрачной шапки становился WARN «замеров 0». Запоминается сразу
+ * после открытия страницы только отрицательный scrollX (он бывает лишь у dir=rtl); сдвиг видимой
+ * области, который страница сделала сама при загрузке (фокус на кнопке баннера cookie, autofocus,
+ * адрес с #якорем), исходным не считается и сбрасывается. Возврат — scrollTo по горизонтали,
+ * сдвиг видимой области — scrollIntoView корня (исходное место — начало страницы) или временного
+ * невидимого блока на исходном месте (dir=rtl). Не вернулась — в JSON viewReset.failed, в выводе
+ * «видимая область N раз не вернулась на исходное место», и OK этой строки становится WARN. Худшие 10 %
  * пикселей против нормы AA, зерно учитывается как выше. Шапка с mix-blend-mode (difference —
  * «белый текст, который над светлым становится чёрным») мерится смешанным цветом: multiply, screen,
  * overlay, hard-light, darken, lighten, difference, exclusion, color-dodge, color-burn считаются по
@@ -426,7 +438,11 @@ function sectionsInPage() {
   const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null;
   const cur = sc ? sc.scrollTop : scrollY;
   const docH = sc ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-  const viewH = sc ? sc.clientHeight : innerHeight; const vw = innerWidth;
+  /* ширина экрана для отбора секций — меньшая из ширины видимой области и clientWidth корня, а не
+     innerWidth: у страницы шире экрана окно раскладки 820 px при экране и секциях 320 (половина — 410,
+     секции не проходили), у уменьшенной без initial-scale видимая область 1020 px при секциях 320 */
+  const viewH = sc ? sc.clientHeight : innerHeight;
+  const vw = Math.min(...[innerWidth, window.visualViewport ? window.visualViewport.width : 0, document.documentElement.clientWidth].filter((w) => w > 0));
   const skip = /^(SCRIPT|STYLE|LINK|META|NOSCRIPT|TEMPLATE|BR)$/;
   const kids = (n) => [...n.children].filter((c) => {
     if (skip.test(c.tagName) || c.hasAttribute('data-rw-grain')) return false;
@@ -545,18 +561,58 @@ function fixedStateInPage({ ids }) {
   return { at, iw: VW, ox: VX, oy: VY, items: out };
 }
 
-/* видимая область на место. scrollIntoView (замер текста на картинке) на странице с контентом шире
-   экрана сдвигает видимую область внутри окна раскладки (visualViewport.offsetLeft/offsetTop: 390,516 на
-   телефоне), а window.scrollTo — и lib.scrollToY — этот сдвиг не сбрасывают: на всех следующих высотах
-   шапка выходила «вне окна». Сбрасывает его scrollIntoView корня (заодно scrollX и scrollY — в 0).
-   Сдвига нет и вбок не прокручено (обычная страница) — ничего не делает: прокрутка прежняя */
-function resetViewInPage() {
-  const vv = window.visualViewport;
-  const need = (vv && (Math.abs(vv.offsetLeft) > 0.5 || Math.abs(vv.offsetTop) > 0.5)) || Math.abs(scrollX) > 0.5;
-  if (need) document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
-  return need;
+/* исходное положение видимой области — снимается сразу после открытия страницы, до всякой прокрутки.
+   Запоминается только отрицательный scrollX окна раскладки (так бывает лишь у dir=rtl: у страницы с
+   письмом справа налево шире экрана на телефоне scrollX −500, и это покой, а не сдвиг); сдвиг видимой
+   области внутри окна раскладки не запоминается — в покое он 0, 0 и у dir=rtl. Иначе запоминался
+   сдвиг, который страница сделала сама при загрузке (фокус на кнопке закреплённого баннера cookie,
+   autofocus, адрес с #якорем, scrollIntoView: offsetTop 888 или 61, offsetLeft 500), resetView
+   возвращал видимую область туда же, прозрачная шапка на всех высотах оставалась «вне окна», и её
+   FAIL становился WARN «замеров 0» или ложным OK по баннеру. У обычной страницы — 0, 0, 0 */
+function viewRestInPage() {
+  return { sx: Math.min(0, scrollX), ol: 0, ot: 0 };
 }
-const resetView = (page) => page.evaluate(resetViewInPage).catch(() => false);
+
+/* видимая область на исходное место (viewRestInPage). scrollIntoView (замер текста на картинке) на
+   странице с контентом шире экрана сдвигает видимую область внутри окна раскладки
+   (visualViewport.offsetLeft/offsetTop: 390,516 на телефоне), а window.scrollTo — и lib.scrollToY — этот
+   сдвиг не сбрасывают: на всех следующих высотах шапка выходила «вне окна». Сбрасывать — к исходному
+   положению, а не к началу корня: у dir=rtl шире экрана в покое scrollX −500, и scrollIntoView корня
+   уносил видимую область на 500 px вбок — шапка уходила со снимка. Порядок: уже на месте — ничего;
+   scrollTo по горизонтали (и наверх — высоту потом ставит scrollToY); сдвиг видимой области остался —
+   scrollIntoView корня, если исходное место — начало страницы (как раньше, без правки DOM), иначе
+   временного невидимого блока размером с видимую область на исходном месте (блок тут же убирается).
+   Возвращает, чем сброшено: false — не понадобилось, иначе способ и совпало ли с исходным */
+function resetViewInPage({ rest }) {
+  const vv = window.visualViewport; const r = rest || { sx: 0, ol: 0, ot: 0 };
+  const now = () => ({ sx: scrollX, ol: vv ? vv.offsetLeft : 0, ot: vv ? vv.offsetTop : 0 });
+  const same = (a) => Math.abs(a.sx - r.sx) <= 0.5 && Math.abs(a.ol - r.ol) <= 0.5 && Math.abs(a.ot - r.ot) <= 0.5;
+  if (same(now())) return false;
+  scrollTo({ left: r.sx, top: 0, behavior: 'instant' });
+  if (same(now()) || !vv) return { how: 'scrollTo', ok: same(now()) };
+  /* исходное место видимой области в координатах документа: левый верх — (r.sx + r.ol, r.ot) */
+  if (Math.abs(r.sx + r.ol) <= 0.5 && Math.abs(r.ot) <= 0.5) {
+    document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+    if (same(now())) return { how: 'корень', ok: true };
+  }
+  const d = document.createElement('div'); const set = (k, v) => d.style.setProperty(k, v, 'important');
+  for (const [k, v] of [['position', 'absolute'], ['display', 'block'], ['margin', '0'], ['padding', '0'], ['border', '0'], ['transform', 'none'], ['visibility', 'hidden'], ['pointer-events', 'none'], ['width', `${vv.width}px`], ['height', `${vv.height}px`], ['left', '0px'], ['top', '0px']]) set(k, v);
+  (document.body || document.documentElement).appendChild(d);
+  try {
+    /* содержащий блок может быть не корнем (body{position:relative}) — положение поправляется по замеру */
+    const q = d.getBoundingClientRect();
+    set('left', `${r.sx + r.ol - scrollX - q.left}px`); set('top', `${r.ot - scrollY - q.top}px`);
+    d.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+  } finally { d.remove(); }
+  return { how: 'блок', ok: same(now()) };
+}
+/* rest — исходное положение (заполняется сразу после открытия); resets, failed, how — для протокола */
+const viewReset = { rest: null, resets: 0, failed: 0, how: {} };
+const resetView = async (page) => {
+  const r = await page.evaluate(resetViewInPage, { rest: viewReset.rest }).catch(() => null);
+  if (r) { viewReset.resets++; viewReset.how[r.how] = (viewReset.how[r.how] || 0) + 1; if (!r.ok) viewReset.failed++; }
+  return r;
+};
 
 /* ---------- закреплённый текст на прокрутке: высоты и замер ---------- */
 const FX_MAX_POS = 8, FX_LIMIT = 40;
@@ -774,6 +830,10 @@ let dom, focus, reveal, sc, grain = null, fx = null; const imgContrast = { measu
 try {
   const page = await openPage(browser, url, vp);
   await forceInstantScroll(page);
+  /* исходное положение видимой области — до всякой прокрутки: к нему, а не к началу страницы, её
+     возвращает resetView (у dir=rtl шире экрана это scrollX −500; сдвиг видимой области при
+     загрузке — фокус, autofocus, #якорь — исходным не считается) */
+  viewReset.rest = await page.evaluate(viewRestInPage).catch(() => null);
   await evaluateWith(page, markHiddenInPage, null, {}).catch(() => 0);
   sc = await scrollThrough(page, { pause: 250 });
   await scrollToY(page, 0); await settleAnimations(page, 3000); await sleep(300);
@@ -888,6 +948,7 @@ else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered
 if (fx && !fx.none) {
   const T = 'контраст закреплённого текста на прокрутке';
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
+  const vrTxt = viewReset.failed ? `; видимая область ${viewReset.failed} раз из ${viewReset.resets} не вернулась на исходное место (сдвинута замером текста на картинке) — снимки могли лечь не под текстом, смотреть глазами` : '';
   if (fx.error) L('WARN', `${T}: не измерен`, fx.error);
   else if (!fx.positions.length) L('OK', `${T}: ${fx.items.length} элементов`, 'страница в один экран — других высот нет (верх страницы — в строках контраста выше)');
   else {
@@ -899,9 +960,10 @@ if (fx && !fx.none) {
       const groups = new Map();
       for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
       const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
-      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}`);
-    } else if (!fx.measured) L('WARN', head, 'ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами');
-    else { const w = fx.worst; L('OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`); }
+      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${vrTxt}`);
+    } else if (!fx.measured) L('WARN', head, `ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами${vrTxt}`);
+    /* видимая область не вернулась на исходное место — снимки могли быть не там, где шапка: не OK, а WARN */
+    else { const w = fx.worst; L(viewReset.failed ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})${vrTxt}`); }
   }
 }
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
@@ -945,6 +1007,6 @@ if (dom.iframesNoTitle) L('WARN', `iframe без title: ${dom.iframesNoTitle}`);
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 const file = path.join(outDir, `${tag}.json`);
-writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, focus, lines, verdict });
+writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, viewReset, focus, lines, verdict });
 console.log(`Сохранено: ${file}`);
 if (opt.strict && verdict === 'FAIL') { console.log('Код выхода 1: вердикт FAIL (--strict)'); process.exitCode = 1; }

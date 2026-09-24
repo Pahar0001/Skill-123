@@ -26,7 +26,10 @@
  *   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
  *                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste.
  *   --viewport <list>  экраны через запятую (пресеты lib.mjs или ШxВ@плотность). По умолчанию —
- *                      экраны из базы, без базы — desktop. Сравнивать можно только одинаковые экраны.
+ *                      экраны из базы, без базы — desktop (в режиме baseline — desktop,mobile).
+ *                      Сравнивать можно только одинаковые экраны. --viewports — то же самое (как в
+ *                      discover, a11y, perf): оба сразу с разными списками — ошибка; повтор экрана
+ *                      в списке снимается один раз. Флаг без списка или неизвестный экран — код 2.
  *   --run <папка>      папка прогона (синоним --out): там ищется authorship-decisions.json, туда
  *                      пишутся cliche/cliche.json и снимки. По умолчанию — папка, найденная от файла
  *                      базы вверх (до 3 уровней), где лежит state.json или authorship-decisions.json;
@@ -36,6 +39,7 @@
  *   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в
  *                      stdout вместо текста.
  *   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
+ *   --strict           принимается для единообразия с другими скриптами: FAIL и так даёт код 1.
  *   --help, -h, --h    эта справка.
  *
  * Как сравнивается (исправление по аудиту A12):
@@ -64,8 +68,8 @@
  *   Обоснование снимает только «НЕТ У ДОНОРА». Запрет снимает только пользователь
  *   (taste.mjs add --by user --verdict accepted …).
  *
- * Коды выхода: 0 — OK или WARN; 1 — FAIL; 2 — неверные аргументы или файл; 3 — страница не
- * открылась или упал браузер.
+ * Коды выхода: 0 — OK или WARN; 1 — FAIL; 2 — неверные аргументы (нет адреса, флаг без значения,
+ * неизвестный экран) или файл; 3 — страница не открылась или упал браузер.
  *
  * Детектор врёт в обе стороны. Известные ложные срабатывания прототипа учтены: «небо» bureau.ru
  * (стопка из 10 градиентных слоёв одного размера — считается только видимый слой и только если
@@ -80,7 +84,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, evaluateWith,
-  EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
+  EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
 } from './lib.mjs';
 import { tasteDir, activeBans, readJournal, baselineResult, conflictsWith } from './taste.mjs';
 
@@ -149,7 +153,9 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste.
   --viewport <list>  экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android или
-                     ШxВ@плотность). По умолчанию — экраны из базы, без базы — desktop.
+                     ШxВ@плотность). По умолчанию — экраны из базы, без базы — desktop
+                     (baseline — desktop,mobile). --viewports — то же самое; оба сразу
+                     с разными списками — ошибка (код 2).
   --run <папка>      папка прогона (синоним --out): там authorship-decisions.json, туда
                      cliche/cliche.json и снимки. По умолчанию — папка с state.json или
                      authorship-decisions.json от файла базы вверх (до 3 уровней), иначе
@@ -158,6 +164,7 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
   --shot             снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche-<экран>.png
   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в stdout.
   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
+  --strict           как у других скриптов; FAIL и без него даёт код 1.
   --help, -h, --h    эта справка.
 
 Пометки: есть у донора · НЕТ У ДОНОРА · размножено ×N · ЗАПРЕЩЁН пользователем · ВОПРОС пользователю.
@@ -171,7 +178,8 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
 Обоснования: <run>/authorship-decisions.json — { "правило": { "блок": "почему" } }; снимают только
 «НЕТ У ДОНОРА». Запрет снимает только пользователь (taste.mjs add --by user --verdict accepted).
 
-Коды выхода: 0 — OK/WARN, 1 — FAIL, 2 — неверные аргументы или файл, 3 — страница не открылась.
+Коды выхода: 0 — OK/WARN, 1 — FAIL, 2 — неверные аргументы (нет адреса, флаг без значения,
+неизвестный экран) или файл, 3 — страница не открылась.
 Список правил с весами: node cliche.mjs rules`;
 
 /* ======================================================================
@@ -755,7 +763,7 @@ async function shotMarks(page, r, file) {
    ====================================================================== */
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'help', 'h'], values: ['baseline', 'viewport', 'run', 'out', 'decisions'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'] });
   const isUrl = (s) => /^(https?|file):/i.test(String(s));
   /* «--taste http://…» — адрес, а не папка журнала */
   if (typeof opt.taste === 'string' && isUrl(opt.taste)) { pos.push(opt.taste); opt.taste = true; }
@@ -772,6 +780,13 @@ if (isMain) {
     process.exit(0);
   }
   if (!pos.length) { console.log(HELP); process.exit(2); }
+  /* --viewports — синоним --viewport (как в discover, a11y, perf): раньше молча пропускался, и прогон шёл
+     на экранах по умолчанию. Без списка, с неизвестным экраном или оба с разными списками — код 2
+     (неверные аргументы), а не 1, как у pickViewports: 1 у cliche — это FAIL шаблонности */
+  for (const k of ['viewport', 'viewports']) if (opt[k] === true || (typeof opt[k] === 'string' && (!opt[k].trim() || opt[k].startsWith('--')))) die(`--${k}: нужен список экранов через запятую, например desktop,mobile`);
+  if (opt.viewport !== undefined && opt.viewports !== undefined && String(opt.viewport).trim() !== String(opt.viewports).trim()) die(`заданы и --viewport ${opt.viewport}, и --viewports ${opt.viewports} — это один флаг, оставьте один`);
+  const vpSpec = opt.viewport ?? opt.viewports;
+  if (vpSpec) { const bad = vpSpec.split(',').map((x) => x.trim()).filter((x) => x && !parseViewport(x)); if (bad.length) die(`неизвестные экраны: ${bad.join(', ')} — есть desktop, laptop, tablet, mobile, mobile-s, android или ШxВ@плотность (320x568@2)`); }
 
   const baselineMode = cmd === 'baseline';
   const url = baselineMode ? pos[1] : pos[0];
@@ -786,8 +801,10 @@ if (isMain) {
     baseJson = readJson(baseFile);
     if (!baseJson || !(baseJson.viewports || baseJson.rules)) die(`${baseFile}: это не результат cliche.mjs (нет viewports/rules)`);
   }
-  const vpList = opt.viewport && opt.viewport !== true ? String(opt.viewport) : baselineMode ? 'desktop,mobile' : baseJson && baseJson.viewports ? Object.keys(baseJson.viewports).join(',') : 'desktop';
-  const vps = pickViewports(vpList);
+  const vpList = vpSpec || (baselineMode ? 'desktop,mobile' : baseJson && baseJson.viewports ? Object.keys(baseJson.viewports).join(',') : 'desktop');
+  const vpSeen = new Set();
+  const vps = pickViewports(vpList).filter(([n]) => !vpSeen.has(n) && vpSeen.add(n));
+  if (!vps.length) die('пустой список экранов');
 
   /* журнал вкуса и обоснования */
   let bans = null; let tdir = null;
