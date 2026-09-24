@@ -329,7 +329,11 @@ function domInPage({ isMobile, map }) {
     return false;
   };
   let clippedCount = 0;
-  const allText = [...document.body.querySelectorAll('*')].filter((el) => { if (el instanceof SVGElement || !ownText(el) || !V(el)) return false; if (clipped(el)) { clippedCount++; return false; } return true; });
+  /* sr-only — текст для экранного диктора, на экране его нет: обрезан своим clip rect(0 0 0 0) или
+     clip-path inset(50%), или коробка тоньше 3 px (у legend.sr-only к 1 px ширины добавляются поля
+     браузера, и проверка «коробка до 2×2» его пропускала — «перекрыт span, смотреть глазами») */
+  const srOnly = (el) => { const s = getComputedStyle(el); if (/rect\(0(px)?,? 0(px)?/.test(s.clip) || /inset\(50%\)/.test(s.clipPath)) return true; if (s.display === 'contents') return false; const r = el.getBoundingClientRect(); return r.width <= 2 || r.height <= 2; };
+  const allText = [...document.body.querySelectorAll('*')].filter((el) => { if (el instanceof SVGElement || !ownText(el) || !V(el) || srOnly(el)) return false; if (clipped(el)) { clippedCount++; return false; } return true; });
   /* контраст — у всего текста (раньше молча у первых 600: бледная подпись в конце каталога не мерилась);
      предел TEXT_LIMIT только от зависания на гигантских страницах, и тогда вывод говорит «N из M (обрезано)» — WARN */
   const TEXT_LIMIT = 5000;

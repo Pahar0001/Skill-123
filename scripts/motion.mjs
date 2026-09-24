@@ -599,8 +599,14 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
     if (ch.length <= 2 && contiguous && P.slice(last).every((x, j) => Math.abs(ys[last + j] - to) <= EPS[k] * 2)) {
       /* появление: изменилось за 1–2 шага у входа в экран и осталось */
       const tPrev = btop(P[first - 1]) / vh, tNow = btop(P[first]) / vh;
+      /* закреплённое на экране (кнопка «Наверх», плавающая кнопка) стоит на одном месте окна — важна не его высота
+         в окне, а где на странице оно меняется: у начала, у конца (подвал) или после N px прокрутки */
+      const syMax = Math.max(...P.map((x) => x.sy)); const sy0 = P[first - 1].sy, sy1 = P[first].sy;
+      const where = el.position === 'fixed'
+        ? `закреплён на экране; меняется при прокрутке ${Math.round(sy0)}–${Math.round(sy1)} px из ${Math.round(syMax)} (${syMax - sy1 < vh * 0.6 ? 'у конца страницы' : sy1 <= vh * 1.2 ? 'сразу после начала' : `${Math.round((sy1 / Math.max(1, syMax)) * 100)}% страницы`}${vis(0) ? ', виден с начала' : ', в начале скрыт'})`
+        : `верх блока между ${pct(Math.max(-0.2, Math.min(1.2, tPrev)))} и ${pct(Math.max(-0.2, Math.min(1.2, tNow)))} высоты экрана`;
       items.push({ kind: 'reveal', trigger: 'scroll', prop: k, from, to, props: [{ prop: NAMES[k], from: fmtV(k, from), to: fmtV(k, to) }],
-        scroll: { at: `верх блока между ${pct(Math.max(-0.2, Math.min(1.2, tPrev)))} и ${pct(Math.max(-0.2, Math.min(1.2, tNow)))} высоты экрана`, atPct: Math.round(((tPrev + tNow) / 2) * 100) }, step: P[first].s, visAtStart: vis(0) });
+        scroll: { at: where, atPct: Math.round(((tPrev + tNow) / 2) * 100), ...(el.position === 'fixed' ? { fixed: true, atPx: Math.round(sy1), ofPx: Math.round(syMax) } : {}) }, step: P[first].s, visAtStart: vis(0) });
       continue;
     }
     /* привязка к прокрутке: меняется несколько шагов подряд, почти линейно */
