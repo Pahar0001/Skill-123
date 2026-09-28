@@ -60,6 +60,11 @@ node scripts/motion.mjs selftest                                                
   скрытия — пустое место). Карта импортов (`importmap`) — раньше любого `modulepreload` и
   module-скрипта: Firefox иначе её отбрасывает, и 3D не запускается (у владельца VN3D — Firefox).
 - **Проверять в браузере пользователя**, не только в Chrome (`runtime.mjs --browser firefox`).
+- **Пункт с `source: атрибуты Tilda` точнее замера** (`tilda.mjs`, `tilda-motion-*.json`) — брать его числа; строки с
+  `plays: false` у донора на этом экране не играют (Tilda выключает появления на ширине < 1200, кроме `data-animate-mobile=y`)
+  — не переносить (`reference/donor-tilda.md`).
+- **Петля при входе в экран — это `loop`, а не `scroll-scrub`**: у Tilda это SBS `intoview` + `loop` (пульс кнопки, вращение 25 с);
+  замер прокруткой называет её «привязано к прокрутке». Проверять стоп-кадром: меняется без прокрутки — петля.
 
 ## Рецепты
 
@@ -217,6 +222,9 @@ const TYPE = 1000 / 16, ERASE = 1000 / 29, HOLD = 2600;          // из про�
 Из протокола: подвид, период, ключевые кадры. CSS `@keyframes` с `alternate` для парения,
 `linear infinite` для вращения. Вне экрана — `animation-play-state: paused` (IntersectionObserver).
 Покачивание (Framer loop: ±2–6° за несколько секунд) — `rotate` в `@keyframes` с `ease-in-out alternate`.
+У донора периоды разные (shapefest: 9.6–13.1 с у пяти картинок, 7.4 с у контейнера) и старт общий — поэтому
+вразнобой. Повторять так же: разные `animation-duration` и одна задержка, не `animation-delay` по порядку. В
+протоколе это одна строка ×N с `timing.periods` и `timing.ranges` — у каждого свой период и размах.
 
 ### `hover` — наведение
 Из протокола: `component` (card, button, link, nav) и что меняется: картинка в карточке крупнее
