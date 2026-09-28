@@ -84,7 +84,16 @@
  *   compare-<тип донора>, итог — худший вердикт.
  * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден или найден вид
  * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля).
- * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает.
+ * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает. Плюс Tilda-донор
+ * (fixtures/motion/tilda.html): петля SBS — loop, задержки 0/300/600, лента 0.68, на телефоне — только data-animate-mobile=y.
+ *
+ * Донор на Tilda (#allrecords с data-tilda-page-id): после прохода прокруткой снимается карта tilda.mjs, и её пункты
+ * (source «атрибуты Tilda») идут в инвентарь вместо замеров на тех же элементах (ключ recid:elemid по closest
+ * ('.t396__elem'), группа recid:g<id>, стандартный блок — по rec): в строке «замер совпал по виду» или «замер назвал
+ * «привязано к прокрутке» — верно по атрибутам Tilda: петля». Переносятся только пункты, которые играют у донора на
+ * этом экране (plays); остальное — заметкой «не переносить на этом экране» (на ширине < 1200 Tilda снимает появления,
+ * кроме data-animate-mobile=y). Служебное Tilda (проявление #allrecords, t-mbfix, полоса T360) — не движение.
+ * По клику ещё хуки Tilda: #menuopen — меню, #popup:<имя> — окно (clicks.mjs находит пару «ссылка → окно» в разметке).
  *
  * Код выхода: 0 — снято (и compare без FAIL); 1 — FAIL сверки, неверные аргументы, не открылась страница.
  */
@@ -94,15 +103,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
   scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
+  tildaInfo, IS_TILDA_SERVICE_FN,
 } from './lib.mjs';
 import { findClickTargets, SCREEN_POINT_FN } from './clicks.mjs';
+import { tildaSnapshot } from './tilda.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { pos, opt } = parseArgs(process.argv.slice(2), {
   flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'no-clicks', 'debug'],
   optional: ['viewport', 'out', 'tag', 'time', 'time-cap', 'hover', 'clicks', 'decisions', 'pages'],
-  commands: ['compare', 'selftest'],
+  commands: ['compare', 'selftest'], strict: true,
 });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (m) => { console.error(m); process.exit(1); };
@@ -340,6 +351,18 @@ function hotHashInPage() {
 function seriesOutInPage() {
   const S = window.__moS; const els = window.__moEls || []; const out = [];
   const at = new Map(els.map((e, k) => [e, k]));
+  /* Tilda: ключ элемента Zero Block (recid:elemid, группы recid:g<id> — как в tilda.mjs), блок появления и служебное —
+     чтобы замер сопоставить с пунктом из атрибутов Tilda (точнее замера) */
+  const root = document.getElementById('allrecords');
+  const TILDA = !!(root && root.hasAttribute('data-tilda-page-id')) || !!document.querySelector('.t-rec[data-record-type]');
+  const tkeyOf = (el) => {
+    if (!TILDA) return null;
+    const ab = el.closest('.t396__artboard'); const rid = ab ? ab.getAttribute('data-artboard-recid') : null; const keys = [];
+    const e = el.closest('.t396__elem'); if (e && rid) keys.push(`${rid}:${e.getAttribute('data-elem-id')}`);
+    for (let g = el.closest('.t396__group'); g && rid; g = g.parentElement ? g.parentElement.closest('.t396__group') : null) keys.push(`${rid}:g${g.getAttribute('data-group-id')}`);
+    const an = el.closest('[data-animate-style]'); const rec = el.closest('.t-rec');
+    return { keys, rec: rec ? rec.id : null, std: !!(an && !an.closest('.t396')), svc: svc(el) || el.id === 'allrecords' || el.classList.contains('t-records') || el.classList.contains('t360__bar') };
+  };
   for (const [i, h] of S.series) {
     if (h.rows.length < 2) continue;
     const el = els[i]; if (!el) continue;
@@ -347,7 +370,9 @@ function seriesOutInPage() {
     const p = el.parentElement;
     const cls = (el.getAttribute && el.getAttribute('class')) || '';
     const no = el.closest('[data-expect-not]');                    /* стенд: на этом блоке такого вида быть не должно */
+    const tk = tkeyOf(el);
     out.push({
+      ...(tk ? { tk } : {}),
       i, sig: sig(el), tag: el.tagName.toLowerCase(), cls: String(cls).slice(0, 120), id: el.id || '',
       parent: p ? sig(p) : '', pi: p && at.has(p) ? at.get(p) : -1, idx: p ? [...p.children].indexOf(el) : 0, siblings: p ? p.children.length : 0,
       ...(no ? { expectNot: no.dataset.expectNot } : {}),
@@ -1026,8 +1051,8 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
 }
 
 /* ---------- фаза кликов: меню, аккордеоны, вкладки, раскрывающиеся кнопки ---------- */
-const CLICK_SUB = { toggle: 'меню', accordion: 'аккордеон', tab: 'вкладки', disclosure: 'раскрытие' };
-const CLICK_RECIPE = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure' };
+const CLICK_SUB = { toggle: 'меню', accordion: 'аккордеон', tab: 'вкладки', disclosure: 'раскрытие', popup: 'окно' };
+const CLICK_RECIPE = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure', 'окно': 'click-popup' };
 const rgbHex = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c || ''); if (!m) return String(c || ''); if (m[4] !== undefined && Number(m[4]) === 0) return 'прозрачный'; return '#' + [m[1], m[2], m[3]].map((v) => Math.round(Number(v)).toString(16).padStart(2, '0')).join('').toUpperCase(); };
 
 /* Разбор одного клика: панель (самое крупное появившееся, иначе выросшее по высоте, иначе новый узел DOM),
@@ -1141,10 +1166,12 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
   const items = [], notes = [], tried = [];
   await scrollToY(page, 0); await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
   let found;
-  try { found = await findClickTargets(page); } catch (e) { notes.push(`поиск нажимаемого: ${String(e.message || e).slice(0, 120)}`); return { items, notes, tried }; }
+  try { found = await findClickTargets(page, { want: ['accordions', 'toggles', 'tabs', 'disclosures', 'hooks'] }); } catch (e) { notes.push(`поиск нажимаемого: ${String(e.message || e).slice(0, 120)}`); return { items, notes, tried }; }
   for (const e of found.errors || []) notes.push(`поиск нажимаемого: ${e}`);
   const targets = [];
   for (const x of found.toggles) targets.push({ type: 'toggle', sel: `[data-rw-ctog="${x.i}"]`, how: x.how, expect: x.expect });
+  /* хуки Tilda: #menuopen — меню (если это не тот же переключатель), #popup:<имя> — окно; пара «ссылка → окно» из разметки */
+  for (const h of found.hooks || []) if (!found.toggles.some((x) => x.selector === h.selector)) targets.push({ type: h.kind === 'меню' ? 'toggle' : 'popup', sel: `[data-rw-chook="${h.i}"]`, how: `Tilda ${h.href} → ${h.target ? `${h.target.code || '?'} ${h.target.rec || ''}`.trim() : 'окно в разметке не найдено'}`, expect: h.expect });
   for (const g of [...found.accordions.groups].sort((a, b) => b.count - a.count).slice(0, 2)) if (g.probe[0]) targets.push({ type: 'accordion', sel: `[data-rw-cacc="${g.probe[0].id}"]`, how: `${g.chevron || 'без значка'}, ответ ${g.how}`, count: g.count, expect: g.expect });
   for (const x of found.tabs) targets.push({ type: 'tab', sel: `[data-rw-ctab="${x.n}:t"]`, back: `[data-rw-ctab="${x.n}:c"]`, how: x.how, count: x.count, expect: x.expect });
   for (const x of found.disclosures) targets.push({ type: 'disclosure', sel: `[data-rw-cexp="${x.i}"]`, how: x.controls ? `aria-expanded, aria-controls=${x.controls}` : 'aria-expanded', expect: x.expect });
@@ -1194,17 +1221,97 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
       const waitShut = Math.min(2600, Math.max(1100, (it.timing.duration || 0) + 450));
       if (again && !again.skip) { await page.mouse.click(again.x, again.y).catch(() => {}); await sleep(waitShut); if ((await shut()) >= 0.8) closedBy = t.type === 'tab' ? 'клик по прежней вкладке' : 'повторный клик'; }
       if (!closedBy) { await page.keyboard.press('Escape').catch(() => {}); await sleep(waitShut); if ((await shut()) >= 0.8) closedBy = 'Escape'; }
+      /* Tilda: шторка T450 и окна закрываются своей кнопкой или подложкой, Escape не всегда; открытая шторка закрывала бы
+         точки нажатия следующих кликов («точку нажатия закрывает другой элемент») */
+      if (!closedBy) {
+        const hit = await page.evaluate(() => { const el = [...document.querySelectorAll('.t450__close, .t450__close_icon, .t450__overlay, .t-popup_show .t-popup__close, .t-popup_show a[href="#closepopup"], a[href="#closepopup"], .t-popup_show')].find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }); if (!el) return null; el.click(); return el.className && String(el.className).split(' ')[0] || el.tagName.toLowerCase(); }).catch(() => null);
+        if (hit) { await sleep(waitShut); if ((await shut()) >= 0.8) closedBy = `кнопка закрытия Tilda (${hit})`; }
+      }
       it.timing.note = [it.timing.note, closedBy ? `закрывается: ${closedBy}` : 'не закрылся ни повторным кликом, ни Escape'].filter(Boolean).join(', ');
       items.push(it);
     } catch (e) { notes.push(`клик (${sub}) ${t.sel}: ${String(e.message || e).slice(0, 100)}`); }
     await page.mouse.move(1, 1).catch(() => {});
   }
   if (!targets.length) notes.push('по клику раскрываться нечему: меню-бургера, аккордеонов, вкладок и [aria-expanded] не найдено');
-  return { items, notes, tried, found: { toggles: found.toggles.length, accordions: found.accordions.groups.length, tabs: found.tabs.length, disclosures: found.disclosures.length } };
+  return { items, notes, tried, found: { toggles: found.toggles.length, accordions: found.accordions.groups.length, tabs: found.tabs.length, disclosures: found.disclosures.length, ...(found.hooks && found.hooks.length ? { tildaHooks: found.hooks.length } : {}) } };
+}
+
+/* ---------- Tilda: пункты из атрибутов точнее замера ----------
+   Tilda-донор: движение Tilda лежит в атрибутах (вид, шаги, длительности, задержки, кривые, точка срабатывания,
+   повтор, экраны) — tilda.mjs переводит их в пункты схемы motion.json (source «атрибуты Tilda», plays — играет ли
+   у донора на этом экране). Замер на тех же элементах (ключ recid:elemid по closest('.t396__elem'), группа
+   recid:g<id>; стандартный блок — по rec) не выводится отдельно: пункт Tilda берёт его в «замер: …» (совпал по
+   виду или расходится — верно по атрибутам). Так уходят ложные «привязано к прокрутке» у петель SBS intoview+loop
+   (пульс, вращение 25 с), «параллакс» у появлений, пойманных на середине, и «по очереди +133 мс» вместо задержек
+   донора 0/300/600. Переносится только то, что играет (plays): на ширине < 1200 Tilda снимает появления, кроме
+   data-animate-mobile=y, — их нет и в замере телефона, а пункты с plays: false уходят в заметку (не переносить).
+   Служебное Tilda (#allrecords проявляется, t-mbfix, полоса T360) — не движение донора. */
+const SVC_SIG = /#allrecords|(^|\.)t-records(\.|$)|t-mbfix|t360__|#tildacopy|t-tildalabel/;
+function mergeTilda(final, snap, byI) {
+  const T = snap.motion || [];
+  const byKey = new Map(), byRec = new Map();
+  for (const m of T) {
+    for (const k of m.keys || (m.key ? [m.key] : [])) if (!byKey.has(k)) byKey.set(k, m);
+    if (m.rec && !m.key) { if (!byRec.has(m.rec)) byRec.set(m.rec, []); byRec.get(m.rec).push(m); }
+  }
+  const stat = { measuredReplaced: 0, measuredOff: 0, service: 0, added: 0, addedRows: 0, off: 0, appearNow: snap.platform.appearNow, vw: snap.vw };
+  const items = [], offSeen = [];
+  for (const f of final) {
+    const idx = f.is && f.is.length ? f.is : f.i !== undefined ? [f.i] : [];
+    const tks = idx.map((i) => (byI.get(i) || {}).tk).filter(Boolean);
+    /* вход при загрузке, закончившийся до первого снимка (проявление #allrecords за 0.5 с), — ряда замеров у элемента нет,
+       ключа тоже: служебное узнаётся по подписи, обёртка SBS — по id «sbs-<recid>-<elemid>» */
+    const fsig = (f.el && f.el.sig) || '';
+    if (!tks.length && SVC_SIG.test(fsig)) { stat.service++; continue; }
+    const sm = !tks.length && /#sbs-(\d+)-(\d+)/.exec(fsig); if (sm) tks.push({ keys: [`${sm[1]}:${sm[2]}`], rec: `rec${sm[1]}`, std: false, svc: false });
+    if (!tks.length) { items.push(f); continue; }
+    if (tks.every((t) => t.svc)) { stat.service++; continue; }
+    let m = null;
+    for (const t of tks) { for (const k of t.keys) if (byKey.has(k)) { m = byKey.get(k); break; } if (m) break; }
+    if (!m) for (const t of tks) if (t.std && byRec.has(t.rec)) { m = byRec.get(t.rec).find((x) => x.plays) || byRec.get(t.rec)[0]; break; }
+    if (!m) { items.push(f); continue; }
+    (m._measured = m._measured || []).push({ kind: f.kind, sub: f.sub, what: f.props.slice(0, 2).map((p) => `${p.prop} ${p.from}→${p.to}`).join('; '), stagger: f.timing && f.timing.stagger });
+    if (m.plays) stat.measuredReplaced++; else { stat.measuredOff++; offSeen.push(`${f.el ? f.el.sig : '?'} (${KIND_RU[f.kind] || f.kind})`); }
+  }
+  /* пункты Tilda, которые играют на этом экране, — одной строкой ×N при одинаковых виде, шагах и числах */
+  const groups = new Map();
+  for (const m of T) {
+    if (!m.plays) { stat.off += m.count || 1; continue; }
+    const k = [m.kind, m.sub || '', m.words || JSON.stringify(m.props), (m.timing && m.timing.duration) || '', ((m.timing && m.timing.delays) || []).join('/'), m.recipe || '', m.trigger, m.scroll ? m.scroll.from || m.scroll.at || '' : '', m.where || ''].join('|');
+    const g = groups.get(k);
+    if (g) { g.count += m.count || 1; for (const e of m.examples || [m.target]) if (g.examples.length < 3 && !g.examples.includes(e)) g.examples.push(e); g.keys.push(...(m.keys || (m.key ? [m.key] : []))); if (m._measured) g._measured.push(...m._measured); continue; }
+    groups.set(k, { ...m, count: m.count || 1, examples: [...(m.examples || [m.target])].slice(0, 3), keys: [...(m.keys || (m.key ? [m.key] : []))], _measured: [...(m._measured || [])] });
+  }
+  for (const g of groups.values()) {
+    const ms = g._measured; delete g._measured; delete g.id;
+    if (ms.length) {
+      const kinds = [...new Set(ms.map((x) => KIND_RU[x.kind] || x.kind))];
+      const same = ms.every((x) => x.kind === g.kind || (x.kind === 'entrance' && g.kind === 'reveal'));
+      const st = ms.find((x) => x.stagger);
+      g.check = same ? `замер совпал по виду (${kinds.join(', ')}); числа — из атрибутов Tilda${st && g.timing && g.timing.delays ? ` (замер: «по очереди +${st.stagger} мс» — у донора задержки ${g.timing.delays.join(' / ')} мс)` : ''}` : `замер назвал «${kinds.join('», «')}» (${ms[0].what}) — верно по атрибутам Tilda: ${KIND_RU[g.kind] || g.kind}${g.sub ? ` (${g.sub})` : ''}`;
+    }
+    if (g.keys.length > 40) g.keys = g.keys.slice(0, 40);
+    if (g.kind === 'click' && !g.recipe) g.recipe = 'click';
+    items.push({ ...g, tilda: true, cropSel: g.target, coefs: g.coefs || [], el: { sig: g.target, text: g.text || '' } });
+    stat.added += g.count; stat.addedRows++;
+  }
+  const info = `Tilda: движение из атрибутов (tilda.mjs) — точнее замера: строк ${stat.addedRows} (элементов ${stat.added}); замеров на тех же элементах заменено ${stat.measuredReplaced}${stat.service ? `; служебное Tilda (проявление #allrecords, t-mbfix, полоса T360) не в счёт: ${stat.service}` : ''}`;
+  const notes = [];
+  if (stat.off) {
+    const why = {}; for (const m of T.filter((x) => !x.plays)) why[m.playsBy] = (why[m.playsBy] || 0) + (m.count || 1);
+    notes.push(`Tilda на этом экране (${snap.vw}px) не играет: ${stat.off} — ${Object.entries(why).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${k} ×${n}`).join('; ')}. Не переносить на этом экране (reference/donor-tilda.md)`);
+  }
+  if (snap.vw < 1200) notes.push(`Tilda: на ширине < 1200 появления выключает сама Tilda (кроме Zero Block с data-animate-mobile=y) — пустой инвентарь телефона правда, а не сбой`);
+  if (stat.measuredOff) notes.push(`замер видел движение на ${stat.measuredOff} элементах, которые по атрибутам Tilda на этом экране не играют (${offSeen.slice(0, 3).join(', ')}) — в инвентарь не взяты; сверить глазами`);
+  return { items, stat, notes, info };
 }
 
 /* ---------- сборка ---------- */
 function describeTrigger(it) {
+  if (it.tilda || it.source === 'атрибуты Tilda') {
+    if (it.kind === 'loop') return `время, ${it.start || 'само'}${it.scroll && it.scroll.at ? ` (${it.scroll.at})` : ''}`;
+    if (it.kind === 'hover') return `наведение${it.hover && it.hover.trigger && it.hover.trigger.length ? ` на ${it.hover.trigger.slice(0, 2).join(', ')}` : ''}${it.hover && it.hover.reverse === false ? ', без обратного хода' : ''}`;
+  }
   if (it.kind === 'reveal') return `прокрутка: ${it.scroll.at}${it.cause ? `; ${it.cause}` : ''}`;
   if (it.kind === 'parallax') return `прокрутка: сдвиг = коэффициент × прокрутка${it.coefs && it.coefs.length > 1 ? ` (слои: ${it.coefs.join(', ')})` : ` (${it.scroll.coefficient})`}`;
   if (it.kind === 'scroll-linked') return it.scroll && it.scroll.from ? `прокрутка: ${it.scroll.from} → ${it.scroll.to} (${it.scroll.rangePx} px)` : `прокрутка${it.scroll && it.scroll.note ? `: ${it.scroll.note}` : ''}`;
@@ -1239,7 +1346,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     await waitForOverlay(page, 4000).catch(() => null);
     /* окно cookie закрыть до замеров: оно перекрывает первый экран на вырезках и ловит наведение */
     result.consent = consentNote(await closeConsent(page).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 100) })));
-    const deps = { sig: SIG_FN, screenPt: SCREEN_POINT_FN };
+    const deps = { sig: SIG_FN, screenPt: SCREEN_POINT_FN, svc: IS_TILDA_SERVICE_FN };
     result.libs = await evaluateWith(page, libsInPage, null, deps);
     let n = await evaluateWith(page, collectInPage, 5000, deps);
     /* под наблюдение попала малая доля элементов (у остальных коробка меньше 100 px²) — страница не дорисовалась:
@@ -1295,6 +1402,12 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
       const bottom = await page.evaluate(() => { const sc = window.__rwScroller; return sc && sc.isConnected ? sc.scrollTop : scrollY; });
       for (const k of [0.6, 1.4]) { await scrollToY(page, Math.max(0, bottom - vp.height * k)); await settle(); upSteps.push((await evaluateWith(page, sampleInPage, 'up', deps)).step); }
     }
+    /* Tilda: карта из атрибутов (tilda.mjs) — после прохода прокруткой: классы появлений уже расставлены, «играет ли»
+       — по ним; пункты из атрибутов точнее замера (сопоставляются по ключу recid:elemid, см. mergeTilda) */
+    let tsnap = null;
+    const tinfo = await tildaInfo(page);
+    if (tinfo.tilda) { try { tsnap = await tildaSnapshot(page, { scroll: false, viewport: vpName }); if (!tsnap.tilda) tsnap = null; } catch (e) { result.notes.push(`карта Tilda (tilda.mjs) не снялась: ${String(e.message || e).slice(0, 120)} — движение только по замеру`); } }
+
     /* 3. мышь по первому экрану (после прокрутки — вернуться наверх) */
     let mouse = null;
     if (doMouse) {
@@ -1549,27 +1662,29 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     /* строки без изменения («сдвиг X 0 px → 0 px»: дрожь меньше шага округления) — не движение */
     for (const it of final) it.props = it.props.filter((p) => !(p.from !== '' && p.from === p.to));
     for (let q = final.length - 1; q >= 0; q--) if (!final[q].props.length) final.splice(q, 1);
+    /* Tilda: пункты из атрибутов вместо замеров на тех же элементах; не играющее на этом экране — не движение донора */
+    if (tsnap) { const mt = mergeTilda(final, tsnap, byI); final.splice(0, final.length, ...mt.items); result.tilda = mt.stat; result.notes.push(...mt.notes); if (mt.stat.addedRows || mt.stat.measuredReplaced || mt.stat.service || mt.stat.off) say(mt.info); }
     /* номера, рецепты, вырезки */
-    let k = 0;
+    let k = 0; let tildaCrops = 0;
     const cropDir = path.join(out, 'motion', tag);
     if (crops) ensureDir(cropDir);
     for (const it of final) {
-      k++; it.id = `m${String(k).padStart(2, '0')}`; it.recipe = it.kind === 'click' ? CLICK_RECIPE[it.sub] || 'click' : RECIPE[it.kind] || it.kind;
+      k++; it.id = `m${String(k).padStart(2, '0')}`; it.recipe = it.tilda && it.recipe ? it.recipe : it.kind === 'click' ? CLICK_RECIPE[it.sub] || 'click' : RECIPE[it.kind] || it.kind;
       it.target = it.el.sig; it.text = it.el.text || ''; it.expect = it.el.expect ? it.el.expect.kind : (it.el.expectInside && it.el.expectInside[0]) || '';
-      if (crops && (it.i !== undefined || it.hover !== undefined)) {
+      if (crops && (it.i !== undefined || it.hover !== undefined || (it.cropSel && tildaCrops++ < 24))) {
         try {
           const box = await page.evaluate((ref) => {
-            const el = ref.hover !== undefined ? window.__moHover[ref.hover] : window.__moEls[ref.i]; if (!el || !el.isConnected) return null;
+            const el = ref.sel ? document.querySelector(ref.sel) : ref.hover !== undefined ? window.__moHover[ref.hover] : window.__moEls[ref.i]; if (!el || !el.isConnected) return null;
             el.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = el.getBoundingClientRect();
             const x = Math.max(0, r.left - 12), y = Math.max(0, r.top - 12);
             /* область снимка — в координатах документа (puppeteer 25), внутри окна */
             return { x: x + scrollX, y: y + scrollY, width: Math.max(8, Math.min(innerWidth - x, r.width + 24)), height: Math.max(8, Math.min(innerHeight - y, r.height + 24)) };
-          }, { i: it.cropI ?? it.i, hover: it.hover });
+          }, { i: it.cropI ?? it.i, hover: it.hover, sel: it.i === undefined && it.hover === undefined ? it.cropSel : undefined });
           if (box) { await sleep(250); const f = path.join(cropDir, `${it.id}.png`); await page.screenshot({ path: f, clip: box, captureBeyondViewport: false }); it.crop = path.relative(out, f).replace(/\\/g, '/'); }
         } catch (e) { /* без вырезки */ }
       }
       if (it.el.expectNot) it.expectNot = it.el.expectNot;
-      delete it.el; delete it._key; delete it.is; delete it.mk; delete it.cropI; if (!it.coefs.length) delete it.coefs;
+      delete it.el; delete it._key; delete it.is; delete it.mk; delete it.cropI; delete it.cropSel; delete it.tilda; if (!it.coefs || !it.coefs.length) delete it.coefs;
     }
     result.items = final;
     result.stats = { steps: { time: timeIdx.length, scroll: scrollIdx.length, up: upSteps.length, timeMs: timeObs, timeBaseMs: timeMs, peeks }, slowUnresolved: perEl.filter((x) => unresolved(x.cls)).length || undefined, observed: n, inDom: all, changed: data.series.length, events: ev.ev.length, waapi: ev.waapi.length, classChanges: ev.cls.length, capped: ev.capped, seconds: round((Date.now() - t0) / 1000, 1) };
@@ -1585,13 +1700,16 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
 function mdTable(res) {
   const L = [`# Движение: ${res.url} (${res.viewport} ${res.size})`, '',
     `Снято ${res.takenAt.slice(0, 16).replace('T', ' ')} · motion.mjs · за ${res.stats ? res.stats.seconds : '?'} с${res.stats && res.stats.steps.timeMs > res.stats.steps.timeBaseMs + 500 ? ` · окно «время» ${round(res.stats.steps.timeMs / 1000, 1)} с (продлено ради медленного движения)` : ''} · окно cookie: ${res.consent || '—'} · библиотеки: ${res.libs.libs && res.libs.libs.length ? res.libs.libs.join(', ') : 'не видно'} · «меньше движения»: ${res.libs.reducedRule ? 'правило есть' : 'НЕТ'}${res.libs.smoothCss ? ' · html{scroll-behavior:smooth}' : ''}`, '',
+    ...(res.tilda ? [`Tilda-донор: пункты «атрибуты Tilda» — из атрибутов (tilda.mjs), точнее замера; на этом экране (${res.tilda.vw}px) появления: ${res.tilda.appearNow}; не играет у донора и не перенесено: ${res.tilda.off}. Переносить то, что играет у донора на этом экране; выключенное Tilda на телефоне у нас на телефоне не делать.`, ''] : []),
     '| № | вид | где | запуск | что меняется | параметры | как повторить |', '|---|---|---|---|---|---|---|'];
   for (const it of res.items) {
     /* одинаковый эффект у разных элементов — назвать и остальные (до двух) */
-    const others = [...new Set((it.examples || []).map(pattern))].filter((x) => x !== pattern(it.target)).slice(0, 2);
+    const tl = it.source === 'атрибуты Tilda'; /* у пунктов Tilda селектор — по ключу (#recN [data-elem-id]), шаблон подписи его портит */
+    const others = [...new Set((it.examples || []).map(tl ? String : pattern))].filter((x) => x !== (tl ? it.target : pattern(it.target))).slice(0, 2);
     const where = `\`${it.target}\`${it.count > 1 ? ` ×${it.count}` : ''}${others.length ? ` (и ${others.map((x) => `\`${x}\``).join(', ')})` : ''}${it.members && it.count > 1 && it.parent ? ` · соседи в \`${it.parent}\`` : ''}${it.text ? ` «${it.text.slice(0, 28)}»` : ''}${it.crop ? ` [вырезка](${it.crop})` : ''}`;
-    const what = it.props.map((p) => `${p.prop}${p.from || p.to ? `: ${p.from} → ${p.to}` : ''}`).join('; ');
-    const par = describeTiming(it) + (it.coefs && it.coefs.length > 1 ? `; слои: ${it.coefs.join(', ')}` : '') + (it.source ? ` · ${it.source}` : '');
+    /* у пункта Tilda — шаги словами (SBS в 3–7 шагов: «старт … → за 400 мс прозрачность 0 → …»), у замера — свойства */
+    const what = it.words || it.props.map((p) => `${p.prop}${p.from || p.to ? `: ${p.from} → ${p.to}` : ''}`).join('; ');
+    const par = describeTiming(it) + (it.coefs && it.coefs.length > 1 ? `; слои: ${it.coefs.join(', ')}` : '') + (it.source ? ` · ${it.source}` : '') + (it.check ? ` · ${it.check}` : '');
     L.push(`| ${it.id} | ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''}${it.component ? `, ${it.component}` : ''} | ${where} | ${describeTrigger(it)} | ${what.replace(/\|/g, '/')} | ${par.replace(/\|/g, '/')} | \`${it.recipe}\` |`);
   }
   if (!res.items.length) L.push('| — | движения не найдено | | | | | |');
@@ -1723,6 +1841,32 @@ if (cmd === 'selftest') {
   }
   const st = res.stats.steps;
   console.log(`\n${mdTable(res)}`);
+  /* Tilda-донор: fixtures/motion/tilda.html (скрипты Tilda заменены маленькой имитацией с теми же именами файлов) —
+     пункты из атрибутов точнее замера: петля SBS ниже первого экрана — loop (замер: «привязано к прокрутке»),
+     задержки появлений 0/300/600 (замер: «по очереди +300»), лента 0.68 (замер: 0.521), на телефоне — только
+     data-animate-mobile=y, служебное — не движение */
+  let tbad = 0, tn = 0;
+  {
+    const [vpn, tvp] = resolveViewport(vpList(opt.viewport)[0]);
+    const turl = pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'tilda.html')).href;
+    const tr = await inventory(turl, vpn, { out, tag: 'selftest-tilda', ...phases, timeMs: Math.min(phases.timeMs, 3000), doHover: false, doMouse: false, doClicks: false, crops: false, quiet: true });
+    writeJson(path.join(out, 'motion', 'selftest-tilda.json'), tr);
+    const T = (ok, what, got) => { tn++; if (!ok) tbad++; console.log(`${ok ? 'OK  ' : 'FAIL'} Tilda ${what}: ${got}`); };
+    const K = (id) => tr.items.filter((i) => (i.keys || [i.key]).includes(`20:${id}`));
+    const show = (l) => l.map((i) => `${i.id} ${KIND_RU[i.kind] || i.kind}${i.sub ? ` (${i.sub})` : ''} ${i.target}${i.count > 1 ? ` ×${i.count}` : ''} · ${describeTiming(i).slice(0, 90)}${i.check ? ` · ${i.check}` : ''}`).join('; ') || 'нет';
+    console.log(`\nTilda-донор (${vpn}): ${turl}`);
+    if (tvp.width >= 1200) {
+      const lp = K(201); T(lp.length === 1 && lp[0].kind === 'loop' && lp[0].sub === 'пульс' && lp[0].source === 'атрибуты Tilda' && !tr.items.some((i) => i.source !== 'атрибуты Tilda' && /scroll-linked|parallax/.test(i.kind) && /pulse|sbs/.test(i.target || '')), 'петля SBS intoview + loop ниже первого экрана — loop из атрибутов, не «привязано к прокрутке»', show(lp));
+      const rv = K(203).filter((i) => i.kind === 'reveal');
+      T(rv.length === 1 && (rv[0].timing.delays || []).join('/') === '0/300/600' && rv[0].count === 3 && !rv[0].timing.stagger && !tr.items.some((i) => i.kind === 'reveal' && i.source !== 'атрибуты Tilda'), 'задержки появлений как у донора 0/300/600, не «по очереди +N»', show(rv));
+      const sc = K(205); T(sc.length === 1 && sc[0].kind === 'scroll-linked' && sc[0].scroll.coefficient === 0.68, 'SBS scroll — лента 340 px на 500 px, коэффициент 0.68 из атрибутов', show(sc));
+    } else {
+      const src = tr.items.filter((i) => i.source === 'атрибуты Tilda');
+      T(src.length === 1 && K(206).length === 1 && tr.items.length === 1, 'телефон: играет только data-animate-mobile=y', show(tr.items));
+      T(!!tr.tilda && tr.tilda.off >= 5, 'телефон: выключенное Tilda — заметкой, не в инвентаре', `не играет у донора ${tr.tilda ? tr.tilda.off : '?'}`);
+    }
+    T(!tr.items.some((i) => /allrecords|t-mbfix/.test(i.target || '')) && !!tr.tilda && tr.tilda.service >= 1, 'служебное (#allrecords проявляется, t-mbfix) — не движение донора', `служебных замеров снято ${tr.tilda ? tr.tilda.service : '?'}`);
+  }
   /* клики на телефоне со страницей шире экрана: видимое окно увеличено ×1.25 (Emulation.setPageScaleFactor — так
      бывает после прохода discover, scale 1.056), окно раскладки больше видимого. Точка из getBoundingClientRect
      должна попадать (сдвиг на offset, без «× scale»), меню в шапке — нажаться или честно «за краем экрана» */
@@ -1743,8 +1887,8 @@ if (cmd === 'selftest') {
       await page.close();
     } finally { await br.close().catch(() => {}); }
   }
-  console.log(`${bad || wrong || wide ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad}; запретов и счётов ×N не выполнено ${wrong}; кликов ×1.25 мимо ${wide} · окно «время» ${round(st.timeMs / 1000, 1)} с (базовое ${round(st.timeBaseMs / 1000, 1)}) · ${path.join(out, 'motion', 'selftest.json')}`);
-  bad += wrong + wide;
+  console.log(`${bad || wrong || wide || tbad ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad}; запретов и счётов ×N не выполнено ${wrong}; кликов ×1.25 мимо ${wide}; Tilda ${tn - tbad}/${tn} · окно «время» ${round(st.timeMs / 1000, 1)} с (базовое ${round(st.timeBaseMs / 1000, 1)}) · ${path.join(out, 'motion', 'selftest.json')}`);
+  bad += wrong + wide + tbad;
   process.exit(bad ? 1 : 0);
 }
 

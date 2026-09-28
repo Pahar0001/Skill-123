@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд motion.mjs: Tilda</title>
+<!--
+  Tilda-донор для motion.mjs selftest: разметка и атрибуты как у опубликованной Tilda, а скрипты tilda/*.js —
+  маленькая замена tilda-animation-2.0 и -sbs-1.0 (имена те же, чтобы tilda.mjs верил классам после прокрутки):
+  появления по классу t-animate_started при входе в экран с задержкой data-animate-delay, SBS intoview с повтором —
+  CSS-анимация на обёртке tn-atom__sbs-anim-wrapper, SBS scroll — сдвиг от прокрутки; на ширине < 1200 появления
+  сняты (кроме data-animate-mobile="y"), как делает Tilda. Что ждём (motion.mjs selftest, раздел Tilda):
+    20:201  пульс SBS intoview + loop ниже первого экрана — петля из атрибутов, а не «привязано к прокрутке»
+    20:202–204  fadeinup 1200 мс, сдвиг 100, задержки 0 / 300 / 600 — одной строкой с задержками донора
+    20:205  SBS scroll: 340 px на 500 px прокрутки — коэффициент 0.68
+    20:206  zoomin с data-animate-mobile="y" — единственное, что играет на телефоне
+    #allrecords проявляется при загрузке, .t-mbfix сдвигается — служебное, не движение донора
+-->
+<style>
+  html, body { margin: 0; font-family: Arial, sans-serif; }
+  #allrecords { transition: opacity .3s; }
+  .t-rec { position: relative; }
+  .hero { height: 1100px; background: #f2efe8; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .t396__artboard { position: relative; height: 900px; overflow: hidden; background: #fff; }
+  .t396__elem { position: absolute; }
+  .tn-atom { display: block; }
+  .t396__elem.t-animate { opacity: 0; transition: opacity 1.2s cubic-bezier(.19,1,.22,1), transform 1.2s cubic-bezier(.19,1,.22,1); }
+  .t396__elem.t-animate[data-animate-style="fadeinup"] { transform: translateY(100px); }
+  .t396__elem.t-animate[data-animate-style="zoomin"] { transform: scale(.9); transition-duration: 1s; }
+  .t396__elem.t-animate.t-animate_started { opacity: 1; transform: none; }
+  @keyframes sbs-20-201 { 0% { transform: scale(1); animation-timing-function: ease-out; } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+  .tn-atom__sbs-anim-wrapper.t-sbs-anim_started.pulse { animation: sbs-20-201 1.4s linear infinite; }
+  .t-mbfix { position: fixed; left: 0; top: 0; width: 1px; height: 1px; transition: transform .1s; }
+  .end { height: 900px; background: #f2efe8; }
+</style>
+</head>
+<body class="t-body">
+<div id="allrecords" class="t-records" data-tilda-page-id="2000" data-tilda-project-id="3" data-tilda-lazy="yes" style="opacity:0">
+
+<div id="rec10" class="r t-rec" data-record-type="123"><div class="t123"><div class="hero">Первый экран</div></div></div>
+
+<div id="rec20" class="r t-rec" data-record-type="396"><div class="t396">
+<div class="t396__artboard" data-artboard-recid="20" data-artboard-screens="320,1200" data-artboard-height="900" data-artboard-upscale="grid">
+  <div class="t396__elem tn-elem" data-elem-id="201" data-elem-type="shape" data-animate-sbs-event="intoview" data-animate-sbs-trg="1" data-animate-sbs-trgofst="0" data-animate-sbs-loop="loop" data-animate-sbs-opts="[{'ti':0,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','ea':''},{'ti':700,'mx':0,'my':0,'sx':1.2,'sy':1.2,'op':1,'ro':0,'bl':'0','ea':'easeOut'},{'ti':700,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','ea':''}]" style="left:60px;top:60px;width:120px;height:120px">
+    <div class="tn-atom" style="width:120px;height:120px;background:#e85d2c;border-radius:50%"></div>
+  </div>
+  <div class="t396__elem tn-elem t-animate" data-elem-id="202" data-elem-type="text" data-animate-style="fadeinup" data-animate-duration="1.2" data-animate-distance="100" style="left:60px;top:260px;width:320px;height:60px"><div class="tn-atom">Первая строка появления</div></div>
+  <div class="t396__elem tn-elem t-animate" data-elem-id="203" data-elem-type="text" data-animate-style="fadeinup" data-animate-duration="1.2" data-animate-distance="100" data-animate-delay="0.3" style="left:60px;top:340px;width:320px;height:60px"><div class="tn-atom">Вторая строка появления</div></div>
+  <div class="t396__elem tn-elem t-animate" data-elem-id="204" data-elem-type="text" data-animate-style="fadeinup" data-animate-duration="1.2" data-animate-distance="100" data-animate-delay="0.6" style="left:60px;top:420px;width:320px;height:60px"><div class="tn-atom">Третья строка появления</div></div>
+  <div class="t396__elem tn-elem" data-elem-id="205" data-elem-type="shape" data-animate-sbs-event="scroll" data-animate-sbs-trg="1" data-animate-sbs-trgofst="0" data-animate-sbs-opts="[{'di':'0','mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','fi':''},{'di':500,'mx':340,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','fi':''}]" style="left:20px;top:560px;width:60px;height:60px"><div class="tn-atom" style="width:60px;height:60px;background:#333"></div></div>
+  <div class="t396__elem tn-elem t-animate" data-elem-id="206" data-elem-type="shape" data-animate-style="zoomin" data-animate-mobile="y" style="left:60px;top:700px;width:80px;height:80px"><div class="tn-atom" style="width:80px;height:80px;background:#2c7be8"></div></div>
+</div>
+</div></div>
+
+<div id="rec30" class="r t-rec" data-record-type="123"><div class="t123"><div class="end"></div></div></div>
+</div>
+<div class="t-mbfix"></div>
+<script src="tilda/tilda-animation-2.0.min.js"></script>
+<script src="tilda/tilda-animation-sbs-1.0.min.js"></script>
+</body>
+</html>

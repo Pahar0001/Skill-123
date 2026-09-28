@@ -17,14 +17,26 @@
  * пользоваться motion.mjs). Перед кликом точка берётся заново: наведение сдвигает видимое окно.
  *
  * Метки в странице: data-rw-cacc (пункт аккордеона), data-rw-ctog (меню), data-rw-ctab
- * («n:t» — вкладка, на которую нажать, «n:c» — активная, к ней вернуться), data-rw-cexp.
+ * («n:t» — вкладка, на которую нажать, «n:c» — активная, к ней вернуться), data-rw-cexp, data-rw-chook.
+ *
+ * Tilda (#allrecords с data-tilda-page-id или блоки .t-rec[data-record-type]): служебное конструктора
+ * (IS_TILDA_SERVICE_FN: плашка Made on Tilda, t-mbfix, полоса T360) и обрезанное артбордом Zero Block
+ * (внутри .t396__artboard: CLIP_SHARE_FN < 0.05 или спрятано обрезкой overflow — элементы других
+ * брейкпоинтов и вынесенные за край, текст автолейаута .tn-molecule) не нажимается и не считается;
+ * пункт аккордеона — не обёртка Tilda (блок .t-rec, #t-footer/footer.t-records, артборд). Так уходят
+ * ложные «свои аккордеоны» (madeon footer.t-records ×7, zero.tilda.cc div.t396__artboard ×6 и
+ * div.tn-molecule ×13); бегущая строка T1003 и магазин — как слайдер. Хуки окон и меню (want 'hooks'):
+ * ссылка a[href^="#popup:"] → окно [data-tooltip-hook="<href>"] (T1093, T702…), a[href="#menuopen"] →
+ * шторка T450/T451 — соответствие из разметки, не эвристикой; нажимает их motion.mjs.
  *
  *   node clicks.mjs selftest    стенд fixtures/clicks/index.html: desktop, mobile и mobile с увеличенным
- *                               видимым окном (scale 1.25); что ждём — data-expect у блоков
+ *                               видимым окном (scale 1.25); fixtures/clicks/tilda.html — desktop и mobile
+ *                               (артборды, автолейаут, подвал — не аккордеон; T668 — аккордеон; хуки);
+ *                               что ждём — data-expect у блоков
  */
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { evaluateWith, scrollToY, launch, openPage, pickViewports, EFFECTIVE_OPACITY_FN, SIG_FN, HEX_FN, sleep } from './lib.mjs';
+import { evaluateWith, scrollToY, launch, openPage, pickViewports, EFFECTIVE_OPACITY_FN, SIG_FN, HEX_FN, CLIP_SHARE_FN, IS_TILDA_SERVICE_FN, sleep } from './lib.mjs';
 
 /**
  * Точка из координат окна раскладки (getBoundingClientRect, elementFromPoint) — в координаты видимого
@@ -43,21 +55,31 @@ export const SCREEN_POINT_FN = `(x, y) => {
   return { x: cx, y: cy, off: cx < 1 || cy < 1 || cx > vv.width - 1 || cy > vv.height - 1 };
 }`;
 
-const DEPS = { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN, hex: HEX_FN, screenPt: SCREEN_POINT_FN };
+const DEPS = { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN, hex: HEX_FN, screenPt: SCREEN_POINT_FN, clip: CLIP_SHARE_FN, svc: IS_TILDA_SERVICE_FN };
 
 /* ---------- в странице ---------- */
 function clickTargetsInPage(arg) {
   const want = new Set((arg && arg.want) || ['accordions', 'toggles', 'tabs', 'disclosures']);
   const maxToggles = Math.max(1, Math.min(10, (arg && arg.maxToggles) || 3));
   const vw = innerWidth, vh = innerHeight, sy = scrollY;
-  for (const a of ['data-rw-cacc', 'data-rw-ctog', 'data-rw-ctab', 'data-rw-cexp']) for (const e of document.querySelectorAll(`[${a}]`)) e.removeAttribute(a);
+  for (const a of ['data-rw-cacc', 'data-rw-ctog', 'data-rw-ctab', 'data-rw-cexp', 'data-rw-chook']) for (const e of document.querySelectorAll(`[${a}]`)) e.removeAttribute(a);
   const csM = new Map(); const cs = (el, p) => { if (p) return getComputedStyle(el, p); let s = csM.get(el); if (!s) { s = getComputedStyle(el); csM.set(el, s); } return s; };
   const effM = new Map(); const E = (el) => { let v = effM.get(el); if (v === undefined) { v = eff(el); effM.set(el, v); } return v; };
   const rM = new Map(); const R = (el) => { let r = rM.get(el); if (!r) { r = el.getBoundingClientRect(); rM.set(el, r); } return r; };
   const txt = (el) => ((el && (typeof el.innerText === 'string' ? el.innerText : el.textContent)) || '').replace(/\s+/g, ' ').trim();
   const ownText = (el) => { let t = ''; for (const n of el.childNodes) if (n.nodeType === 3) t += ' ' + n.textContent; return t.replace(/\s+/g, ' ').trim(); };
   const sigNoId = (el) => el.tagName.toLowerCase() + (el.classList && el.classList.length ? '.' + [...el.classList].slice(0, 3).join('.') : '');
-  const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min; };
+  /* Tilda: служебное конструктора и обрезанное артбордом Zero Block — не нажимать и не считать */
+  const root0 = document.getElementById('allrecords');
+  const TILDA = !!(root0 && root0.hasAttribute('data-tilda-page-id')) || !!document.querySelector('.t-rec[data-record-type]');
+  const cutM = new Map();
+  const tildaCut = (el) => {
+    if (!TILDA) return false;
+    let v = cutM.get(el); if (v !== undefined) return v;
+    v = svc(el) ? 'service' : el.closest('.t396__artboard') && clip(el) < 0.05 ? 'clipped' : false;
+    cutM.set(el, v); return v;
+  };
+  const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min && !tildaCut(el); };
   const inConsent = (el) => !!el.closest('[data-rw-consent-box]');
   const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR|HEAD|TITLE)$/;
   const TAIL_GLYPH = /[\s›»>+＋−–—×✕✚▾▼▿▸▶⌄˅∨⌃^❯⟩〉⏷↓-]+$/;
@@ -135,7 +157,12 @@ function clickTargetsInPage(arg) {
       }
       return null;
     };
-    const SLIDER = '.swiper, .splide, .slick-slider, .glide, .flickity-enabled, .t-slds, [class*="carousel"], [class*="slider"], [aria-roledescription="carousel"]';
+    const SLIDER = '.swiper, .splide, .slick-slider, .glide, .flickity-enabled, .t-slds, .t1003, .t-store, .js-store, [class*="carousel"], [class*="slider"], [aria-roledescription="carousel"]';
+    /* Tilda: спрятанное обрезкой внутри артборда Zero Block — элементы других брейкпоинтов, вынесенные за край, текст
+       автолейаута (.tn-molecule); у Zero Block своих аккордеонов нет (раскрытие по клику — SBS click, оно прозрачностью).
+       Пункт — не обёртка Tilda: блок, подвал и шапка проекта, артборд целиком */
+    const TILDA_WRAP = '.t-records, #t-footer, #t-header, footer.t-records, .t-rec, .t396, .t396__artboard, .t396__carrier, .t396__filter';
+    const tildaHidden = (el) => TILDA && (!!tildaCut(el) || (!!el.closest('.t396__artboard') && hiddenHow(el) === 'обрезан overflow'));
     const prevQuestion = (h, item) => {
       for (let x = h; x && x !== item; x = x.parentElement) {
         for (let p = x.previousElementSibling; p; p = p.previousElementSibling) {
@@ -152,7 +179,7 @@ function clickTargetsInPage(arg) {
     const inLoop = (el) => { for (const t of loopEls) if (t.contains(el) || el.contains(t)) return true; return false; };
     const byItem = new Map();
     for (const el of everything) {
-      if (!hiddenHow(el) || (loopEls.size && inLoop(el))) continue;
+      if (!hiddenHow(el) || (loopEls.size && inLoop(el)) || tildaHidden(el)) continue;
       const par = el.parentElement; if (!par || par === document.body || hiddenHow(par)) continue;
       const tc = (el.textContent || '').replace(/\s+/g, ' ').trim(); if (tc.length < 30) continue;
       if (el.closest(ACC_EXCL) || el.closest('details') || el.closest(SLIDER) || fixedAnc(par)) continue;
@@ -161,7 +188,7 @@ function clickTargetsInPage(arg) {
       if (el.querySelector('img,video,iframe,canvas') && tc.length < 80) continue;
       let item = par, q = null;
       for (let d = 0; d < 6 && item && item !== document.body; d++) { if (cs(item).display !== 'contents') { q = questionIn(item, el); if (q) break; } item = item.parentElement; }
-      if (!q || !item || item === document.body || tc.startsWith(q)) continue;
+      if (!q || !item || item === document.body || tc.startsWith(q) || (TILDA && item.matches(TILDA_WRAP))) continue;
       let rec = byItem.get(item); if (!rec) byItem.set(item, rec = { item, q, hids: [] });
       rec.hids.push({ el, tc });
     }
@@ -294,7 +321,28 @@ function clickTargetsInPage(arg) {
     }
   } catch (e) { errors.push(`раскрывающиеся кнопки: ${String(e.message || e).slice(0, 120)}`); }
 
-  return { accordions, toggles, tabs, disclosures, errors };
+  /* --- хуки Tilda: ссылка → окно или меню по атрибуту data-tooltip-hook (соответствие точное, из разметки) --- */
+  const hooks = [];
+  if (want.has('hooks') && TILDA) try {
+    const codeOf = (r) => { if (!r) return null; for (const e of [r, ...r.querySelectorAll('[class]')].slice(0, 60)) { const c = [...e.classList].find((x) => /^t\d{2,4}$/.test(x)); if (c) return c.toUpperCase(); } return null; };
+    const byHref = new Map();
+    for (const a of document.querySelectorAll('a[href^="#popup:"], a[href="#menuopen"]')) {
+      const href = a.getAttribute('href'); const g = byHref.get(href) || { href, links: 0, a: null };
+      g.links++; if (!g.a && onScreen(a)) g.a = a; byHref.set(href, g);
+    }
+    for (const g of byHref.values()) {
+      if (!g.a || hooks.length >= 6) continue;
+      let t = null; try { t = document.querySelector(`[data-tooltip-hook="${g.href.replace(/"/g, '\\"')}"]`); } catch (e) { /* селектор */ }
+      const rec = t ? t.closest('.t-rec') : null; const i = hooks.length; g.a.setAttribute('data-rw-chook', String(i));
+      const ex = g.a.closest('[data-expect]'); const r = R(g.a);
+      hooks.push({ i, href: g.href, kind: g.href === '#menuopen' ? 'меню' : 'окно', links: g.links, sig: sig(g.a), selector: cssPath(g.a), text: txt(g.a).slice(0, 30), top: Math.round(r.top + sy),
+        target: t ? { rec: rec ? rec.id : null, code: codeOf(rec) || codeOf(t), sig: sig(t), anim: t.getAttribute('data-anim') || null } : null, expect: ex ? ex.dataset.expect : '' });
+    }
+  } catch (e) { errors.push(`хуки Tilda: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* что Tilda-правило убрало из поиска (служебное, обрезанное артбордом) — для заметки вызывающего */
+  const tilda = TILDA ? { service: [...cutM.values()].filter((v) => v === 'service').length, clipped: [...cutM.values()].filter((v) => v === 'clipped').length } : null;
+  return { accordions, toggles, tabs, disclosures, hooks, tilda, errors };
 }
 
 /** Найти, что раскрывается по клику. want — какие виды искать; maxToggles — сколько переключателей
@@ -496,6 +544,31 @@ async function selftest() {
           check(name, 'страница шире экрана', wide.iw > wide.vw, `окно раскладки ${wide.iw}, видимое ${wide.vw}`);
           check(name, 'бургер за краем экрана', edge.length === 1 && edge[0].probe && /за краем экрана/.test(edge[0].probe.skip || ''), ts(edge));
         } else check(name, 'бургер у правого края', edge.length === 1 && edge[0].probe && edge[0].probe.opens, ts(edge));
+      } finally { await page.close().catch(() => {}); }
+    }
+    /* Tilda: ложные «свои аккордеоны» из обрезанного артбордом (артборд, автолейаут, подвал проекта), T668,
+       хуки окон и меню, служебная плашка */
+    const turl = url.replace(/index\.html$/, 'tilda.html');
+    for (const [name, vp] of [['tilda desktop', desk], ['tilda mobile', mob]]) {
+      const page = await openPage(br, turl, vp, { settle: 0 });
+      try {
+        const found = await findClickTargets(page, { want: ['accordions', 'toggles', 'hooks'], maxToggles: 6 });
+        for (const e of found.errors) check(name, 'поиск', false, e);
+        const acc = found.accordions, touch = !!vp.hasTouch;
+        await probeAccordions(page, acc.groups, { touch });
+        await probeToggles(page, found.toggles, { touch });
+        const gs = (l) => l.map((g) => `${g.kind}×${g.count} ${g.sig} — ${accordionNote(g)}`).join('; ') || 'нет';
+        const falseAcc = acc.groups.filter((g) => /^not-acc/.test(g.expect || ''));
+        check(name, 'артборд, автолейаут, подвал проекта — не аккордеон', !falseAcc.length && !acc.groups.some((g) => /t396__artboard|tn-molecule|t-records/.test(g.sig)), gs(falseAcc.length ? falseAcc : acc.groups.filter((g) => /t396__artboard|tn-molecule|t-records/.test(g.sig))));
+        const t668 = acc.groups.filter((g) => g.expect === 'acc-tilda');
+        check(name, 'T668 — аккордеон, клик раскрывает', t668.length === 1 && t668[0].count === 3 && t668[0].status === 'подтверждён', gs(t668));
+        const H = (h) => (found.hooks || []).find((x) => x.href === h);
+        const hm = H('#menuopen'), hp = H('#popup:zayavka');
+        check(name, 'хуки из разметки: #menuopen → T450, #popup:zayavka → T1093 (ссылок 2)', !!hm && hm.target && hm.target.code === 'T450' && !!hp && hp.target && hp.target.code === 'T1093' && hp.links === 2 && hp.target.anim === 'fadein', JSON.stringify((found.hooks || []).map((x) => [x.href, x.target && x.target.code, x.links])));
+        const tm = found.toggles.filter((t) => t.expect === 'hook-menu');
+        check(name, '#menuopen — переключатель меню, клик открывает шторку', tm.length === 1 && tm[0].probe && tm[0].probe.opens, tm.map((t) => `${t.selector} ${JSON.stringify(t.probe || null)}`).join('; ') || 'нет');
+        const svcHit = [...acc.groups.filter((g) => g.expect === 'service'), ...found.toggles.filter((t) => t.expect === 'service'), ...(found.hooks || []).filter((x) => x.expect === 'service')];
+        check(name, 'плашка Made on Tilda — вне поиска', !svcHit.length && found.tilda && found.tilda.service >= 1, `служебных ${found.tilda && found.tilda.service}, обрезанных артбордом ${found.tilda && found.tilda.clipped}; попало: ${svcHit.length}`);
       } finally { await page.close().catch(() => {}); }
     }
   } finally { await br.close().catch(() => {}); }

@@ -39,7 +39,7 @@ node cliche.mjs --help
 
 Команды: `baseline`, `rules`.
 
-Неизвестный флаг — WARN, запуск идёт дальше.
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
@@ -131,7 +131,7 @@ node diff.mjs --help
 node discover.mjs <url> [--out <папка прогона>] [--viewports desktop,tablet,mobile]
 ```
 
-Неизвестный флаг — WARN, запуск идёт дальше.
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
@@ -306,7 +306,7 @@ node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/
 
 Команды: `compare`, `selftest`.
 
-Неизвестный флаг — WARN, запуск идёт дальше.
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
@@ -680,18 +680,18 @@ node tilda.mjs --help
 
 Команды: `pages`, `static`, `selftest`.
 
-Неизвестный флаг — WARN, запуск идёт дальше.
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
-| `--no-scroll` | переключатель | node tilda.mjs <адрес> [--out <папка>] [--viewport desktop,mobile] [--pages "тип=путь,…"] [--no-scroll] |
+| `--no-scroll` | переключатель | не проходить страницу прокруткой перед снимком |
 | `--selftest` | переключатель | node tilda.mjs selftest            (или --selftest) фикстуры fixtures/tilda — без сети |
-| `--limit` | со значением | node tilda.mjs pages <адрес> [--out <папка>] [--limit 100] [--pause 300] |
-| `--out` | со значением | node tilda.mjs <адрес> [--out <папка>] [--viewport desktop,mobile] [--pages "тип=путь,…"] [--no-scroll] |
-| `--pages` | со значением | node tilda.mjs <адрес> [--out <папка>] [--viewport desktop,mobile] [--pages "тип=путь,…"] [--no-scroll] |
+| `--limit` | со значением | --limit N, --pause мс    pages: сколько страниц запросить (до 300, по умолчанию 100) и пауза между ними |
+| `--out` | со значением | куда писать (по умолчанию папка прогона runs/<slug>); в ней — tilda/ |
+| `--pages` | со значением | --pages "тип=путь,…"     страницы от первого адреса (строка из tilda.mjs pages) |
 | `--pause` | со значением | node tilda.mjs pages <адрес> [--out <папка>] [--limit 100] [--pause 300] |
-| `--viewport` | со значением | node tilda.mjs <адрес> [--out <папка>] [--viewport desktop,mobile] [--pages "тип=путь,…"] [--no-scroll] |
-| `--viewports` | со значением | **нет в справке** |
+| `--viewport` | со значением | --viewport, --viewports  экраны через запятую (синонимы): desktop, mobile, tablet, mobile-s или ШxВ@плотность; |
+| `--viewports` | со значением | экраны через запятую (синонимы): desktop, mobile, tablet, mobile-s или ШxВ@плотность; |
 
 Коды выхода: 0 — снято (или «не Tilda» — сказано в выводе); 1 — неверные аргументы, страница не открылась, selftest с расхождениями.
 
@@ -741,7 +741,7 @@ node cyrillic-check.mjs --help | -h
 |---|---|---|
 | `--selftest` | переключатель | --selftest проверяет сам способ: Oswald должен дать «кириллица есть», Bebas Neue — «кириллицы |
 | `--chars` | со значением | --chars "<знаки>"  какие знаки проверить, кроме кириллицы: каждый — той же пробой шириной. |
-| `--css` | со значением | --css <адрес стилей> (один на все шрифты запуска). Существующий файл шрифта (.woff2, .woff, |
+| `--css` | со значением | --css <адрес стилей> (один на все шрифты запуска; проба идёт на адресе этих стилей — шрифты сайта |
 | `--lang` | со значением | язык сайта, по умолчанию ru; другой язык без --chars — только |
 
 ## design-reference/extract.mjs

@@ -10,6 +10,13 @@
  *   node tilda.mjs selftest            (или --selftest) фикстуры fixtures/tilda — без сети
  *   node tilda.mjs --help
  *
+ *   --viewport, --viewports  экраны через запятую (синонимы): desktop, mobile, tablet, mobile-s или ШxВ@плотность;
+ *                            по умолчанию desktop
+ *   --out <папка>            куда писать (по умолчанию папка прогона runs/<slug>); в ней — tilda/
+ *   --pages "тип=путь,…"     страницы от первого адреса (строка из tilda.mjs pages)
+ *   --no-scroll              не проходить страницу прокруткой перед снимком
+ *   --limit N, --pause мс    pages: сколько страниц запросить (до 300, по умолчанию 100) и пауза между ними
+ *
  * Браузерный проход (по умолчанию): страница → мгновенная прокрутка до низа (пауза 350 мс на шаг — Tilda
  * успевает запустить появления и догрузить ленивое) → снимок атрибутов и состояния. 18–25 с на экран.
  * Экраны списком (--viewport desktop,mobile), страницы — --pages от первого адреса («тип=путь»).
@@ -757,8 +764,11 @@ export async function tildaSnapshot(page, { scroll = true, viewport = null } = {
   if (scroll) { await forceInstantScroll(page); await scrollThrough(page, { pause: 350 }); await sleep(800); }
   const raw = await evaluateWith(page, tildaRawInPage, null, DEPS);
   if (!raw.tilda) return { tilda: false, url: raw.url };
-  if (before) raw.lazy.before = before;
+  /* «до и после прокрутки» — только когда прокручивали здесь: у вкладки, уже пройденной вызывающим (discover, motion:
+     scroll: false), «до» — это уже «после», и tildaSummary/mdSnap падали на lazy.after (undefined) */
+  if (before && scroll) raw.lazy.before = before;
   if (scroll) raw.lazy.after = await evaluateWith(page, lazyCountsInPage, null, DEPS).catch(() => null);
+  if (raw.lazy.before && !raw.lazy.after) delete raw.lazy.before;
   const snap = interpret(raw, { viewport });
   snap.raw = raw;
   return snap;
@@ -994,7 +1004,7 @@ async function selftest() {
 const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isCli) {
   const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-scroll', 'selftest'], values: ['out', 'viewport', 'viewports', 'pages', 'limit', 'pause'], commands: ['pages', 'static', 'selftest'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-scroll', 'selftest'], values: ['out', 'viewport', 'viewports', 'pages', 'limit', 'pause'], commands: ['pages', 'static', 'selftest'], strict: true });
   const die = (m) => { console.error(m); process.exit(1); };
   if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
   const cmd = opt.selftest ? 'selftest' : ['pages', 'static', 'selftest'].includes(pos[0]) ? pos.shift() : 'map';

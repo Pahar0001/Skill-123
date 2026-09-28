@@ -125,8 +125,10 @@ import {
   launch, openPage, scrollThrough, fullPageShot, pickViewports, parseArgs, runDir, writeJson, summarizeRequests, ensureDir, kb, sleep,
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
   waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE, closeConsent, consentNote,
+  EFFECTIVE_ZOOM_FN, CLIP_SHARE_FN, IS_TILDA_SERVICE_FN, TILDA_PH, tildaInfo, collectWarnings, takeWarnings, trackModule,
 } from './lib.mjs';
-import { findClickTargets, probeAccordions, probeToggles, accordionItems, accordionOk, accordionNote as accGroupNote } from './clicks.mjs';
+import { findClickTargets, probeAccordions, probeToggles, accordionItems, accordionOk, accordionNote as accGroupNote, SCREEN_POINT_FN } from './clicks.mjs';
+import { tildaSnapshot, tildaSummary, pageTypes as tildaPageTypes } from './tilda.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /* Видимый текст внутри элемента: потомок с самым длинным собственным текстом (у <a> Framer
@@ -138,7 +140,9 @@ const TEXT_EL_FN = `(el) => {
   const walk = (e, d) => { const t = own(e); if (t.length > n && eff(e) > 0.3 && parseFloat(getComputedStyle(e).fontSize) >= 6) { best = e; n = t.length; } if (d < 8) for (const k of e.children) walk(k, d + 1); };
   walk(el, 0); return best || el;
 }`;
-const DEPS = { sig: SIG_FN, hex: HEX_FN, eff: EFFECTIVE_OPACITY_FN, textEl: TEXT_EL_FN };
+/* zoom — итоговый CSS zoom (Tilda Zero Block при upscale=window: кегль на экране = computed × zoom); clip — видимая
+   доля после обрезки предками; svc — служебное Tilda; screenPt — точка окна раскладки → точка видимого окна (мышь) */
+const DEPS = { sig: SIG_FN, hex: HEX_FN, eff: EFFECTIVE_OPACITY_FN, textEl: TEXT_EL_FN, zoom: EFFECTIVE_ZOOM_FN, clip: CLIP_SHARE_FN, svc: IS_TILDA_SERVICE_FN, screenPt: SCREEN_POINT_FN, ph: TILDA_PH };
 
 /* =====================================================================
    Код, который выполняется внутри страницы (через evaluateWith: sig, hex, eff —
@@ -315,7 +319,17 @@ function inPage(arg) {
   const fam1 = (f) => String(f || '').split(',')[0].replace(/["']/g, '').trim();
   const r2 = (v) => Math.round(v * 100) / 100;
   const px = (v) => Math.round(v);
-  const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min; };
+  /* Tilda (arg.tilda — tildaInfo из Node): служебное конструктора (плашка Made on Tilda, t-mbfix, полоса T360) и
+     обрезанное артбордом Zero Block (заглушка «Zero Block», элементы других брейкпоинтов за краем) — не язык донора:
+     не видны ни секциям, ни палитре, ни типографике, ни кнопкам. Кегль — на экране: computed × zoom (Zero Block при
+     upscale=window масштабируется CSS zoom, getComputedStyle его не учитывает) */
+  const T = !!(arg && arg.tilda);
+  const cutM = new Map();
+  const tildaCut = (el) => { if (!T) return false; let v = cutM.get(el); if (v === undefined) { v = svc(el) ? 'service' : el.closest('.t396__artboard') && clip(el) < 0.05 ? 'clipped' : false; cutM.set(el, v); } return v; };
+  const zM = new Map(); const Z = (el) => { let v = zM.get(el); if (v === undefined) { v = zoom(el) || 1; zM.set(el, v); } return v; };
+  const fsz = (el, s) => (parseFloat((s || cs(el)).fontSize) || 0) * Z(el);
+  const zpx = (el, v) => { const n = parseFloat(v); const z = Z(el); return z !== 1 && Number.isFinite(n) && /px$/.test(String(v)) ? `${Math.round(n * z * 100) / 100}px` : v; };
+  const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min && !tildaCut(el); };
   const bump = (map, key, w = 1) => { if (key == null || key === '') return; map[key] = (map[key] || 0) + w; };
   const top = (map, n = 8) => Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, n).map(([value, weight]) => ({ value, weight: Math.round(weight) }));
   /* цвета: оттенки ближе ΔE 3 (на глаз не различить: #F8F8FF и #F7F7FF) — одной строкой, вес
@@ -397,6 +411,9 @@ function inPage(arg) {
     broken: imgs.filter((i) => i.complete && i.naturalWidth === 0 && i.src).length,
     oversized: imgs.filter((i) => { const r = R(i); return r.width > 0 && i.naturalWidth > r.width * devicePixelRatio * 2; }).map((i) => ({ src: (i.currentSrc || i.src).split('/').pop().slice(0, 60), natural: i.naturalWidth, shown: Math.round(R(i).width) })).slice(0, 8),
     formats, bgImages: bgUrlEls.length,
+    /* Tilda грузит картинки не loading=lazy, а по data-original и фонами .t-bgimg; до прокрутки на месте — заглушки /-/resize/20x/ */
+    ...(T ? { tildaLazy: { dataOriginal: document.querySelectorAll('[data-original]').length, bg: document.querySelectorAll('.t-bgimg').length, bgLoaded: document.querySelectorAll('.t-bgimg.loaded').length,
+      placeholders: [...document.querySelectorAll('.t-bgimg, img, [data-original]')].filter((e) => ph.test(e.tagName === 'IMG' ? (e.currentSrc || e.src || '') : cs(e).backgroundImage || '')).length } } : {}),
   };
   const media = { video: document.querySelectorAll('video').length, autoplayVideo: document.querySelectorAll('video[autoplay]').length, iframes: [...document.querySelectorAll('iframe')].map((f) => (f.src || '').slice(0, 80)), svgInline: document.querySelectorAll('svg').length, lottie: document.querySelectorAll('lottie-player, dotlottie-player, [data-lottie], [data-animation-path]').length };
   const dom = { nodes: document.getElementsByTagName('*').length, pageHeight: document.documentElement.scrollHeight, screens: Math.round(document.documentElement.scrollHeight / vh * 10) / 10, horizontalOverflow: document.documentElement.scrollWidth > vw + 1, htmlBytes: document.documentElement.outerHTML.length };
@@ -405,15 +422,15 @@ function inPage(arg) {
   const fam = {}, fg = {}, sizeW = {};
   for (const el of all) {
     const own = ownText(el); if (!own.length) continue;
-    const s = cs(el); const o = E(el); const fs = parseFloat(s.fontSize);
+    const s = cs(el); const o = E(el); const fs = fsz(el, s);
     if (fs < 6) continue; /* font-size:0 у обёрток Tilda */
     bump(fg, base(hex(s.color)), own.length * o * alphaOf(hex(s.color)));
     bump(fam, fam1(s.fontFamily), own.length);
-    if (own.length >= 20) bump(sizeW, fs, own.length);
+    if (own.length >= 20) bump(sizeW, Math.round(fs * 100) / 100, own.length);
   }
   const bodySizes = Object.entries(sizeW).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, n]) => ({ size: v + 'px', chars: n }));
   const bodyPx = bodySizes.length ? parseFloat(bodySizes[0].size) : parseFloat(cs(document.body).fontSize) || 16;
-  const fontOf = (el) => { const s = cs(el); return { family: fam1(s.fontFamily), size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight, transform: s.textTransform, letterSpacing: s.letterSpacing, style: s.fontStyle, text: txt(el).slice(0, 50) }; };
+  const fontOf = (el) => { const s = cs(el); return { family: fam1(s.fontFamily), size: zpx(el, s.fontSize), weight: s.fontWeight, lineHeight: zpx(el, s.lineHeight), transform: s.textTransform, letterSpacing: zpx(el, s.letterSpacing), style: s.fontStyle, text: txt(el).slice(0, 50) }; };
   const levels = {}; for (const lv of ['h1', 'h2', 'h3']) { const el = [...document.querySelectorAll(lv)].find((e) => onScreen(e)); if (el) levels[lv] = fontOf(el); }
 
   /* --- кнопки и призывы (D11): все, схлопнутые по стилю; образцы и иконки отдельно.
@@ -455,7 +472,7 @@ function inPage(arg) {
     const r = R(el); const sf = surfaceOf(el); const s = sf.s;
     const te = textEl(el); const ts = cs(te);
     const text = (txt(el) || el.value || '').slice(0, 50); const aria = (el.getAttribute('aria-label') || el.getAttribute('title') || '').slice(0, 50);
-    const fs = parseFloat(ts.fontSize) || 0; const ls = ts.letterSpacing === 'normal' ? 0 : parseFloat(ts.letterSpacing) || 0;
+    const fs = fsz(te, ts); const ls = ts.letterSpacing === 'normal' ? 0 : (parseFloat(ts.letterSpacing) || 0) * Z(te);
     const submit = (el.tagName === 'BUTTON' && el.type === 'submit' && !!el.form) || (el.tagName === 'INPUT' && el.type === 'submit');
     const rad = radiusOf(s, sf.pseudo ? r : R(sf.el));
     const area = r.width * r.height; const media = el.tagName === 'INPUT' ? 0 : mediaIn(el);
@@ -542,7 +559,7 @@ function inPage(arg) {
     const s = cs(el); if (!BLOCK.test(s.display) || /^(A|BUTTON|LABEL|SUMMARY|SELECT|OPTION|TEXTAREA|svg)$/i.test(el.tagName)) return false;
     if ([...el.children].some((k) => BLOCK.test(cs(k).display) && (k.textContent || '').trim().length > 20 && txt(k).length > 20)) return false;
     return txt(el).length >= 40;
-  }).map((el) => ({ text: txt(el), top: Math.round(R(el).top + sy), fs: parseFloat(cs(el).fontSize) }));
+  }).map((el) => ({ text: txt(el), top: Math.round(R(el).top + sy), fs: fsz(el) }));
   const paragraphs = textBlocks.map((b) => b.text);
   const voice = {
     firstScreen: textBlocks.filter((b) => b.top < vh).slice(0, 3).map((b) => b.text.slice(0, 220)),
@@ -551,8 +568,8 @@ function inPage(arg) {
   const social = [...new Set([...document.querySelectorAll('a[href]')].map((a) => a.href).filter((h) => /t\.me|vk\.com|instagram|wa\.me|whatsapp|youtube|max\.ru|dzen|ok\.ru/i.test(h)))].slice(0, 8);
   const heroText = (() => {
     const cands = all.filter((e) => R(e).top < vh && R(e).bottom > 0 && ownText(e).length > 3);
-    cands.sort((a, b) => parseFloat(cs(b).fontSize) - parseFloat(cs(a).fontSize));
-    return cands.slice(0, 3).map((e) => ({ el: sig(e), size: cs(e).fontSize, text: txt(e).slice(0, 120) }));
+    cands.sort((a, b) => fsz(b) - fsz(a));
+    return cands.slice(0, 3).map((e) => ({ el: sig(e), size: zpx(e, cs(e).fontSize), text: txt(e).slice(0, 120) }));
   })();
 
   /* --- палитра (C2): вес цвета = видимая площадь × итоговая прозрачность; вуали —
@@ -592,12 +609,14 @@ function inPage(arg) {
     return wrapper && kids.length ? unwrap(kids, depth + 1) : [el];
   });
   const header = document.querySelector('header'), footer = document.querySelector('footer');
-  const secEls = [...new Set([header, ...unwrap([...document.body.children], 0), footer].filter(Boolean))].filter((el) => cs(el).display !== 'none' && R(el).height > 40);
+  const secEls = [...new Set([header, ...unwrap([...document.body.children], 0), footer].filter(Boolean))].filter((el) => cs(el).display !== 'none' && R(el).height > 40 && !(T && svc(el)));
+  /* Tilda: код блока — первый класс вида t123 внутри rec (data-record-type 121 — это и T123, и T1003, и T851) */
+  const tCode = (el) => { if (!T) return null; const rec = el.matches('.t-rec') ? el : el.querySelector(':scope > .t-rec') || el.closest('.t-rec'); if (!rec) return null; for (const e of [rec, ...rec.querySelectorAll('[class]')].slice(0, 60)) { const c = [...e.classList].find((x) => /^t\d{2,4}$/.test(x)); if (c) return c.toUpperCase(); } return null; };
   const bigBg = bgUrlEls.filter((e) => R(e).width * R(e).height >= 10000);
   const mediaEls = [...document.querySelectorAll('img,picture,video,canvas')].filter((e) => onScreen(e) && R(e).width >= 40 && R(e).height >= 40);
   const sections = secEls.map((el) => {
     const s = cs(el), r = R(el); const h = el.querySelector('h1,h2,h3');
-    return { el: sig(el), top: Math.round(r.top + sy), height: Math.round(r.height), paddingTop: Math.round(parseFloat(s.paddingTop)), background: hex(s.backgroundColor), hasBgImage: /url\(/.test(s.backgroundImage), heading: h ? txt(h).slice(0, 50) : null, images: mediaEls.filter((m) => el.contains(m)).length + bigBg.filter((m) => el === m || el.contains(m)).length, ctas: ctaEls.filter((c) => el.contains(c)).length, textChars: txt(el).length, position: s.position };
+    return { el: sig(el), top: Math.round(r.top + sy), height: Math.round(r.height), paddingTop: Math.round(parseFloat(s.paddingTop)), background: hex(s.backgroundColor), hasBgImage: /url\(/.test(s.backgroundImage), heading: h ? txt(h).slice(0, 50) : null, ...(T ? { tilda: tCode(el) } : {}), images: mediaEls.filter((m) => el.contains(m)).length + bigBg.filter((m) => el === m || el.contains(m)).length, ctas: ctaEls.filter((c) => el.contains(c)).length, textChars: txt(el).length, position: s.position };
   });
 
   /* --- шапка и закреплённые панели (D16, D23, G1) --- */
@@ -665,6 +684,8 @@ function inPage(arg) {
   const techniques = { transforms: [], backdrop: surface.backdrop, bigText: [], clips: [], blendText: surface.blend.filter((b) => b.text), stroke: surface.textFx.filter((t) => t.stroke || t.clip) };
   for (const el of all) {
     const s = cs(el), r = R(el);
+    /* Tilda: текст и фигуры Zero Block, видимые меньше чем наполовину (обрезаны артбордом), — не подписной приём */
+    if (T && el.closest('.t396__artboard') && clip(el) < 0.5) continue;
     if (s.transform !== 'none' || (s.rotate && s.rotate !== 'none')) {
       const d = decompose(s.transform) || { rotate: 0, skew: 0, scale: 1, is3d: false };
       const extra = /(-?[\d.]+)deg/.exec(s.rotate || ''); if (extra && !/\b[xy]\b/.test(s.rotate)) d.rotate = Math.round((d.rotate + parseFloat(extra[1])) * 10) / 10;
@@ -672,11 +693,11 @@ function inPage(arg) {
         if (r.width * r.height >= 400 || ownText(el)) techniques.transforms.push({ el: sigNoId(el), rotate: d.rotate, skew: d.skew, scale: d.scale, is3d: d.is3d, w: px(r.width), h: px(r.height), moving: movingEl(el), firstScreen: r.top < vh && r.bottom > 0, text: txt(el).slice(0, 30) });
       }
     }
-    const own = ownText(el); const fs = parseFloat(s.fontSize);
+    const own = ownText(el); const fs0 = parseFloat(s.fontSize); const fs = fs0 * Z(el);
     if (own.length >= 2 && fs >= Math.max(48, bodyPx * 2.5)) {
       const range = document.createRange(); range.selectNodeContents(el); const tr = range.getBoundingClientRect();
-      const lh = s.lineHeight === 'normal' ? 'normal' : r2(parseFloat(s.lineHeight) / fs);
-      techniques.bigText.push({ el: sigNoId(el), fs: Math.round(fs), vw: r2(fs / vw * 100), lh, ls: s.letterSpacing === 'normal' ? 0 : r2(parseFloat(s.letterSpacing) / fs), fw: s.fontWeight, upper: s.textTransform === 'uppercase' || (own === own.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(own)), family: fam1(s.fontFamily), text: txt(el).slice(0, 40), widthShare: Math.round(tr.width / vw * 100), bleeds: tr.right > vw + 1 || tr.left < -1, firstScreen: r.top < vh && r.bottom > 0 });
+      const lh = s.lineHeight === 'normal' ? 'normal' : r2(parseFloat(s.lineHeight) / fs0);
+      techniques.bigText.push({ el: sigNoId(el), fs: Math.round(fs), ...(Z(el) !== 1 ? { zoom: Z(el), fsCss: fs0 } : {}), vw: r2(fs / vw * 100), lh, ls: s.letterSpacing === 'normal' ? 0 : r2(parseFloat(s.letterSpacing) / fs0), fw: s.fontWeight, upper: s.textTransform === 'uppercase' || (own === own.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(own)), family: fam1(s.fontFamily), text: txt(el).slice(0, 40), widthShare: Math.round(tr.width / vw * 100), bleeds: tr.right > vw + 1 || tr.left < -1, firstScreen: r.top < vh && r.bottom > 0 });
     }
     if (s.clipPath && s.clipPath !== 'none') {
       const cp = s.clipPath; let kind = cp.split('(')[0]; const angles = [];
@@ -773,7 +794,7 @@ function inPage(arg) {
     const b = el.closest('a,button,[role="button"]'); if (b && ctaSet.has(b)) return 'кнопки';
     if (b && cardSet.has(b)) return 'карточки-ссылки';
     if (el.closest('nav, header')) return 'навигация';
-    const fs = parseFloat(cs(el).fontSize);
+    const fs = fsz(el);
     if (el.closest('h1,h2,h3,h4,h5,h6') || fs >= bodyPx * 1.5) return 'заголовки';
     if (fs < Math.min(14, bodyPx * 0.9)) return 'подписи';
     return 'текст';
@@ -781,8 +802,8 @@ function inPage(arg) {
   const typeRoles = {};
   for (const el of all) {
     const t = ownText(el); if (t.length < 2 || !/[A-Za-zА-Яа-яЁё0-9]/.test(t) || inConsent(el)) continue;
-    const s = cs(el); const fs = parseFloat(s.fontSize); if (fs < 6) continue;
-    const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0; const em = r2(ls / fs);
+    const s = cs(el); const fs0 = parseFloat(s.fontSize); const fs = fs0 * Z(el); if (fs < 6) continue;
+    const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0; const em = r2(ls / fs0);
     const caps = s.textTransform === 'uppercase' || (t === t.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(t));
     const rl = roleOf(el); const row = typeRoles[rl] || (typeRoles[rl] = { total: 0, caps: 0, ls: {}, sizes: {}, weights: {}, families: {}, wide: [] });
     row.total++; if (caps) row.caps++; bump(row.ls, String(em)); bump(row.sizes, Math.round(fs)); bump(row.weights, s.fontWeight); bump(row.families, fam1(s.fontFamily));
@@ -869,7 +890,7 @@ function inPage(arg) {
     visual: {
       palette: { backgrounds: topColors(bg, 8), text: topColors(fg, 6), ctaBackgrounds: topColors(buttons.reduce((m, c) => { if (c.filled) bump(m, base(c.bg), c.w * c.h); return m; }, {}), 4) },
       accent, neutralFills, btnBoxes,
-      fonts: { used: top(fam, 5), heading: headingFont, body: bodyFont, bodySize: bodySizes.length ? bodySizes[0].size : cs(document.body).fontSize, bodySizes, levels, h1: h1s ? { size: h1s.fontSize, weight: h1s.fontWeight, lineHeight: h1s.lineHeight, transform: h1s.textTransform, family: fam1(h1s.fontFamily) } : null, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length, failed: [...document.fonts].filter((f) => f.status === 'error').length },
+      fonts: { used: top(fam, 5), heading: headingFont, body: bodyFont, bodySize: bodySizes.length ? bodySizes[0].size : cs(document.body).fontSize, bodySizes, levels, h1: h1s ? { size: zpx(h1, h1s.fontSize), weight: h1s.fontWeight, lineHeight: zpx(h1, h1s.lineHeight), transform: h1s.textTransform, family: fam1(h1s.fontFamily) } : null, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length, failed: [...document.fonts].filter((f) => f.status === 'error').length },
       radius: top(radius, 6), shadows: Object.keys(shadows).length, sections, firstScreen, panels,
     },
     surface, techniques, slots, mediaShare, passport, motion, interactive, inPageErrors,
@@ -884,7 +905,7 @@ async function textureModule() {
   if (texMod !== undefined) return texMod;
   const f = path.join(here, 'texture.mjs');
   if (!fs.existsSync(f)) { texMod = null; texNote = 'texture.mjs нет рядом — слои найдены запасным путём discover'; return null; }
-  try { texMod = await import(pathToFileURL(f).href); } catch (e) { texMod = null; texNote = `texture.mjs не загрузился (${String(e.message || e).slice(0, 120)}) — запасной путь discover`; }
+  try { trackModule(f); texMod = await import(pathToFileURL(f).href); } catch (e) { texMod = null; texNote = `texture.mjs не загрузился (${String(e.message || e).slice(0, 120)}) — запасной путь discover`; }
   return texMod;
 }
 
@@ -1033,7 +1054,19 @@ function hoverStateInPage(i) {
   a.scrollIntoView({ block: 'center', behavior: 'instant' });
   const r = a.getBoundingClientRect(); const x = r.left + Math.min(r.width / 2, 40), y = r.top + r.height / 2;
   const hit = document.elementFromPoint(x, y);
-  return { color: (hex(getComputedStyle(textEl(a)).color) || '').slice(0, 7), x: Math.round(x), y: Math.round(y), ok: !!hit && (a === hit || a.contains(hit)) };
+  /* мышь нажимает в координатах видимого окна: на телефоне у страницы шире экрана оно сдвинуто от окна раскладки */
+  const p = screenPt(x, y);
+  return { color: (hex(getComputedStyle(textEl(a)).color) || '').slice(0, 7), x: p.x, y: p.y, ok: !!hit && (a === hit || a.contains(hit)) && !p.off };
+}
+/* Точка наведения на карточку невидимого элемента data-rw-hid: центр карточки-хозяина — в координатах видимого окна */
+function hidPointInPage(id) {
+  const el = document.querySelector(`[data-rw-hid="${id}"]`); if (!el) return null;
+  el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  let host = el.closest('li, article, [class*="card"], [class*="item"], [class*="product"], [class*="col"]');
+  if (!host || host === el) { host = el.parentElement; for (let i = 0; i < 5 && host && host.getBoundingClientRect().height < 80; i++) host = host.parentElement; }
+  const r = (host || el).getBoundingClientRect();
+  const p = screenPt(r.left + r.width / 2, Math.max(2, Math.min(innerHeight - 2, r.top + r.height / 2)));
+  return { x: p.x, y: p.y, off: p.off };
 }
 async function probeLinkHover(page) {
   const list = await evaluateWith(page, hoverPickInPage, null, DEPS).catch(() => []);
@@ -1095,8 +1128,19 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     if (!found) { found = await evaluateWith(page, textureFallbackInPage, null, DEPS); found.source = 'discover (запасной путь)'; }
 
     const veilKeys = (found.layers || []).filter((L) => !L.pseudo && L.hide === 'visibility').map((L) => L.k);
-    const data = await evaluateWith(page, inPage, { veilKeys }, DEPS);
+    /* Tilda: признак до главного сбора (служебное и обрезанное артбордом — вне языка донора, кегль × zoom) */
+    const tinfo = await tildaInfo(page);
+    const data = await evaluateWith(page, inPage, { veilKeys, tilda: !!tinfo.tilda }, DEPS);
     for (const e of data.inPageErrors || []) notes.push(e);
+    /* Tilda: карта из атрибутов (tilda.mjs) — страница уже пройдена прокруткой; в json — выжимка, полная карта — tilda.mjs */
+    if (tinfo.tilda) {
+      try {
+        const snap = await tildaSnapshot(page, { scroll: false, viewport: name });
+        if (snap.tilda) data.tilda = { info: tinfo, summary: tildaSummary(snap), counts: snap.counts, blocks: snap.blocks.map((b) => b.code || '?'), appearNow: snap.platform.appearNow, animationOff: snap.platform.animationOff,
+          fonts: snap.platform.fonts, hooks: snap.hooks, lazy: snap.lazy, service: snap.service, artboards: snap.zero.artboards.map((a) => ({ recid: a.recid, screens: a.screens, res: a.res, upscale: a.upscale, zoom: a.zoomMeasured || a.zoomCalc, shown: a.shown })),
+          motion: snap.motion.map((m) => ({ id: m.id, kind: m.kind, sub: m.sub, plays: m.plays, key: m.key, count: m.count, delays: m.timing && m.timing.delays, duration: m.timing && m.timing.duration })) };
+      } catch (e) { notes.push(`разбор Tilda (tilda.mjs): ${String(e.message || e).slice(0, 120)}`); data.tilda = { info: tinfo, error: String(e.message || e).slice(0, 160) }; }
+    }
     /* аккордеоны, FAQ и меню — общее правило clicks.mjs, в том же состоянии страницы, что inPage (после
        прохода, наверху). Метки data-rw-cacc / data-rw-ctog остаются до кликов в конце. */
     const ck = await findClickTargets(page, { want: ['accordions', 'toggles'], maxToggles: 6 }).catch((e) => { notes.push(`аккордеоны и меню (clicks.mjs): ${String(e.message || e).slice(0, 120)}`); return null; });
@@ -1129,12 +1173,8 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
           const h = await page.$(`[data-rw-hid="${id}"]`); if (!h) continue;
           try {
             await page.mouse.move(1, 1); await sleep(60);
-            const pt = await h.evaluate((el) => {
-              el.scrollIntoView({ block: 'center', behavior: 'instant' });
-              let host = el.closest('li, article, [class*="card"], [class*="item"], [class*="product"], [class*="col"]');
-              if (!host || host === el) { host = el.parentElement; for (let i = 0; i < 5 && host && host.getBoundingClientRect().height < 80; i++) host = host.parentElement; }
-              const r = (host || el).getBoundingClientRect(); return { x: r.left + r.width / 2, y: Math.max(2, Math.min(innerHeight - 2, r.top + r.height / 2)) };
-            });
+            const pt = await evaluateWith(page, hidPointInPage, id, DEPS);
+            if (!pt || pt.off) continue;   /* точка за краем экрана (страница шире экрана) — не наводим */
             await page.mouse.move(pt.x, pt.y, { steps: 3 }); await sleep(500);
             tried++; if ((await h.evaluate(effOf)) > 0.5) shown++;
           } catch { /* элемент ушёл из DOM */ }
@@ -1531,9 +1571,37 @@ function rightsLines(per, order) {
     '- материалы донора (фото, иллюстрации, тексты, логотипы, файлы) не берём без законного получения — покупка лицензии или письменное разрешение правообладателя; свои кадры — законные бесплатные источники (media.mjs)',
   ];
 }
+/* Раздел «Tilda»: выжимка карты из атрибутов (tilda.mjs tildaSummary) и что это значит для остальных разделов */
+function tildaLines(d, m) {
+  const t = d.tilda; const L = ['## Tilda', ''];
+  if (t.error) { L.push(`- сайт на Tilda, но карта из атрибутов не снялась: ${t.error} — снять отдельно: \`tilda.mjs <адрес> --viewport desktop,mobile\``); return L; }
+  L.push('Конструктор Tilda: язык донора — в атрибутах и коде блоков, а не в замерах. Полная карта — `tilda.mjs <адрес> --viewport desktop,mobile` (`tilda/tilda-*.md`, движение с числами Tilda — `tilda-motion-*.json`), порядок — `reference/donor-tilda.md`. Tilda у нас только донор: сайты на Tilda не правим и не переносим.', '',
+    '- в разделах ниже кегли — на экране (computed × zoom Zero Block); служебное Tilda (плашка Made on Tilda, t-mbfix, полоса T360) и обрезанное артбордом (заглушка «Zero Block», элементы других брейкпоинтов за краем) в секции, палитру, типографику, кнопки и приёмы не входят', ...t.summary);
+  if (m && m.tilda && !m.tilda.error) L.push(`- телефон (${m.viewport.width}px): появления — ${m.tilda.appearNow}; движений в атрибутах ${m.tilda.counts.motion}, играет ${m.tilda.counts.motionPlays}. Tilda сама снимает появления на ширине < 1200, кроме Zero Block с data-animate-mobile=y: пустой инвентарь телефона — правда, а не сбой; у нас на телефоне этого движения тоже нет`);
+  return L;
+}
 function pagesLines(pg, shots, n) {
   const L = ['## Страницы сайта по типам', ''];
   const sm = pg.sitemap;
+  const tp = pg.tilda;
+  if (tp && tp.types) {
+    L.push(`Tilda: адреса плоские (/abuse, /choi…), по шаблону адреса вышло бы ${tp.byAddress} типов — поэтому типы по подписи блоков: коды T-блоков по порядку без T123 (HTML-вставки), одна подпись — один шаблон (доля общих кодов ≥ 0.8 и одинаковые первые три; \`tilda.mjs pages\`). Адресов найдено ${tp.found} (ссылки и sitemap.xml), запрошено ${tp.fetched}${tp.skipped ? `, сверх предела не запрошено ${tp.skipped}` : ''}${tp.products ? `, товаров /tproduct/ ${tp.products} (запрошен один)` : ''} — голый HTML без браузера, за ${tp.seconds} с.`, '',
+      '| тип | страниц | пример | подпись блоков |', '|---|---|---|---|',
+      ...tp.types.map((t) => `| \`${t.name}\`${t.self ? ' (эта страница)' : ''} | ${t.count} | ${t.example}${t.note ? ` (${t.note})` : ''} | ${t.signature.split(' ').slice(0, 16).join(' ')}${t.signature.split(' ').length > 16 ? ' …' : ''} |`), '',
+      `- строка для motion.mjs и tilda.mjs: \`--pages "${tp.pagesArg}"\``);
+    if (tp.errors && tp.errors.length) L.push(`- не открылись: ${tp.errors.join('; ')}`);
+  } else if (tp && tp.error) L.push(`- Tilda: типы по подписи блоков не сняты (${tp.error}) — ниже по шаблону адреса, у Tilda он даёт тип почти на каждую страницу; снять: \`tilda.mjs pages <адрес>\``, '');
+  if (tp && tp.types) {
+    if (shots && shots.length) {
+      L.push('', `### Снято по странице каждого типа (\`pages/\`, ${shots.length} из ${tp.types.filter((t) => !t.self).length})`, '');
+      for (const s of shots) {
+        if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
+        const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
+        L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px`, `  - заголовки: ${hs || 'нет видимых h1–h3'}`);
+      }
+    } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
+    return L;
+  }
   L.push(`Ссылки этой страницы (все экраны)${sm ? ` и ${sm.error ? `/sitemap.xml — не прочитан: ${sm.error}` : `/sitemap.xml — ${sm.count} адресов${sm.index ? ` (индекс: прочитано ${sm.index.read} из ${sm.index.maps} карт)` : ''}`}` : ''}, сгруппированные по шаблону адреса: первый сегмент пути и «*» на месте остальных. Якоря этой страницы (${pg.anchors}) и файлы — не типы. «По имени» — догадка по адресу, не вывод.`, '');
   const others = pg.types.filter((t) => t.key !== pg.self);
   if (!others.length) { L.push('- других страниц нет: сайт одностраничный (только якоря этой страницы)'); return L; }
@@ -1575,16 +1643,19 @@ function writeSummary(url, run, per, design, order, extra) {
     `- заставка при загрузке: ${d.overlay && d.overlay.hadOverlay ? `${d.overlay.overlay}, ${d.overlay.gone ? `ушла через ${d.overlay.waitedMs} мс${d.overlay.afterConsent ? ' (после закрытия окна согласия)' : ''}` : `НЕ ушла за ${d.overlay.waitedMs} мс — закрывает страницу`}` : 'нет'}`,
     consentLine(per, order),
     `- холсты: ${t.canvases.length ? t.canvases.slice(0, 6).map((c) => `${c.el} ${c.w}×${c.h} ${c.ctx}${c.ratioCss != null && c.ratioCss < 0.85 ? ` (буфер ${c.buffer} — размыт, ×${c.ratioCss})` : ''}`).join('; ') + (t.canvases.length > 6 ? `; ещё ${t.canvases.length - 6}` : '') : 'нет'} · видео: ${t.media.video} (автоплей ${t.media.autoplayVideo}) · iframe: ${t.media.iframes.length} · Lottie: ${t.media.lottie} · встроенных SVG: ${t.media.svgInline}`,
-    `- картинки: ${im.count}, ленивых ${im.lazy}, без alt ${im.noAlt}, битых ${im.broken}, фоновых ${im.bgImages} · форматы: ${Object.entries(im.formats).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}${im.oversized.length ? ` · грузятся крупнее, чем показаны: ${im.oversized.map((o) => `${o.src} ${o.natural}→${o.shown}`).join('; ')}` : ''}`,
+    `- картинки: ${im.count}, ленивых ${im.lazy}${im.tildaLazy ? ` (Tilda грузит по data-original: ${im.tildaLazy.dataOriginal}, фонов .t-bgimg загружено после прокрутки ${im.tildaLazy.bgLoaded} из ${im.tildaLazy.bg}, заглушек /-/resize/20x/ сейчас ${im.tildaLazy.placeholders})` : ''}, без alt ${im.noAlt}, битых ${im.broken}, фоновых ${im.bgImages} · форматы: ${Object.entries(im.formats).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}${im.oversized.length ? ` · грузятся крупнее, чем показаны: ${im.oversized.map((o) => `${o.src} ${o.natural}→${o.shown}`).join('; ')}` : ''}`,
     `- meta: title «${t.meta.title}» · description ${t.meta.description ? 'есть' : 'НЕТ'} · viewport ${t.meta.viewport || 'НЕТ'} · lang ${t.meta.lang || 'НЕТ'} · h1 на странице: ${t.meta.h1Count} · og:image ${t.meta.ogImage ? 'есть' : 'нет'} · favicon ${t.meta.favicon ? 'есть' : 'нет'}`,
     `- загрузка: ${d.timing ? `TTFB ${d.timing.ttfb} мс · FCP ${d.timing.fcp || '?'} мс · load ${d.timing.load} мс` : 'не измерена'} · передано ${d.resources.totalKb} КБ в ${d.resources.count} запросах: ${Object.entries(d.resources.byType).map(([k, v]) => `${k} ${v.count}/${Math.round(v.bytes / 1024)}КБ`).join(', ')}${d.resources.unknownSize ? ` · без размера ${d.resources.unknownSize}` : ''}`,
     `- самое тяжёлое: ${d.resources.largest.slice(0, 5).map((r) => `${shortName(r.url)} ${r.kb}КБ`).join('; ') || '—'}`, '');
+  if (d.tilda) L.push(...tildaLines(d, m && m !== d ? m : null), '');
 
   L.push('## Ошибки и сбои', '');
   for (const v of order) {
     const p = per[v]; const errs = p.log.consoleErrors.length + p.log.pageErrors.length;
     L.push(`- ${v}: консоль ${p.log.consoleErrors.length} ошибок, исключений ${p.log.pageErrors.length}, предупреждений ${p.log.consoleWarnings}, упавших запросов ${p.log.failedRequests.length}`);
-    if (errs) L.push(...[...p.log.consoleErrors.map((c) => c.text), ...p.log.pageErrors].slice(0, 6).map((e) => `    - ${e.replace(/\n/g, ' ').slice(0, 160)}`));
+    /* у Tilda-донора: jQuery-селектор из полной ссылки-якоря (#rec…) и сбои блоков — ошибки скриптов донора, не наши */
+    const donorErr = (e, exc) => (p.tilda && (exc || /#rec\d|t_onReady|tilda|unrecognized expression/i.test(e)) ? ' (ошибка скриптов донора Tilda — в итог не тянуть)' : '');
+    if (errs) L.push(...[...p.log.consoleErrors.map((c) => [c.text, false]), ...p.log.pageErrors.map((x) => [x, true])].slice(0, 6).map(([e, exc]) => `    - ${e.replace(/\n/g, ' ').slice(0, 160)}${donorErr(e, exc)}`));
     if (p.log.failedRequests.length) L.push(...p.log.failedRequests.slice(0, 4).map((f) => `    - ${f.reason}: ${f.url}`));
     L.push(`    - переполнение по ширине: **${p.overflow.verdict}** — ${p.overflow.summary}`);
     if (p.scroll.stuck) L.push('    - **WARN** прокрутка: страница выше окна, но не прокрутилась (прокрутку держит сайт или заставка) — появления и снимки недостоверны');
@@ -1631,8 +1702,11 @@ function writeSummary(url, run, per, design, order, extra) {
     `- радиусы: ${vis.radius.map((x) => `${x.value} ×${x.weight}`).join(', ') || 'нет'} · теней: ${vis.shadows}`,
     `- первый экран: h1 ${vis.firstScreen.h1AboveFold ? 'виден' : 'НЕ виден'} · кнопок ${vis.firstScreen.ctasAboveFold} · крупное медиа ${vis.firstScreen.hasHeroMedia ? (vis.firstScreen.heroBgMedia ? 'есть (картинка-фон)' : 'есть') : 'нет'} · шапка ${vis.firstScreen.header ? `${vis.firstScreen.header.found}: ${vis.firstScreen.header.el} ${vis.firstScreen.header.height}px (${vis.firstScreen.header.shareOfScreen}% экрана, ${vis.firstScreen.header.position}, ${vis.firstScreen.header.place}${vis.firstScreen.header.bg ? `, фон ${vis.firstScreen.header.bg}` : ''}${vis.firstScreen.header.backdrop ? `, ${vis.firstScreen.header.backdrop}` : ''}${vis.firstScreen.header.radius ? `, радиус ${vis.firstScreen.header.radius}` : ''})` : 'не найдена'}`,
     `- самый крупный текст первого экрана: ${vis.firstScreen.text.map((x) => `«${x.text}» ${x.size}`).join(' · ')}`, '',
-    '### Секции сверху вниз', '', '| # | блок | высота | фон | заголовок | медиа | кнопок | текста |', '|---|---|---|---|---|---|---|---|',
-    ...vis.sections.map((s, i) => `| ${i + 1} | \`${s.el}\` | ${s.height} | ${s.background || (s.hasBgImage ? 'картинка' : '—')} | ${s.heading || '—'} | ${s.images} | ${s.ctas} | ${s.textChars} |`), '');
+    ...(vis.sections.some((s) => s.tilda !== undefined)
+      ? ['### Секции сверху вниз', '', '| # | блок | блок Tilda | высота | фон | заголовок | медиа | кнопок | текста |', '|---|---|---|---|---|---|---|---|---|',
+        ...vis.sections.map((s, i) => `| ${i + 1} | \`${s.el}\` | ${s.tilda || '—'} | ${s.height} | ${s.background || (s.hasBgImage ? 'картинка' : '—')} | ${s.heading || '—'} | ${s.images} | ${s.ctas} | ${s.textChars} |`), '']
+      : ['### Секции сверху вниз', '', '| # | блок | высота | фон | заголовок | медиа | кнопок | текста |', '|---|---|---|---|---|---|---|---|',
+        ...vis.sections.map((s, i) => `| ${i + 1} | \`${s.el}\` | ${s.height} | ${s.background || (s.hasBgImage ? 'картинка' : '—')} | ${s.heading || '—'} | ${s.images} | ${s.ctas} | ${s.textChars} |`), '']));
   if (m && m !== d) {
     const mf = m.visual.firstScreen;
     L.push('### Мобильный экран', '', `- высота ${m.tech.dom.pageHeight}px (${m.tech.dom.screens} экранов) · секций ${m.visual.sections.length} · шапка ${mf.header ? `${mf.header.el} ${mf.header.height}px, ${mf.header.shareOfScreen}%, ${mf.header.place}` : '—'} · h1 ${mf.h1AboveFold ? 'виден' : 'НЕ виден'} · кнопок на первом экране ${mf.ctasAboveFold}`,
@@ -1691,7 +1765,7 @@ function writeSummary(url, run, per, design, order, extra) {
     : `Фактура: блок \`--grain-*\` в \`design/${tt.file}\` не дописан — ${tt.why}.`);
   else if (!design && extra.texResults && extra.texResults.length) L.push('', 'Фактура: блок `--grain-*` — в разделе «Фактура» выше (дизайн-системы нет, дописывать некуда).');
   L.push('');
-  const pg = extra.pages; const moreTypes = pg ? pg.types.filter((x) => x.key !== '/').length : 0;
+  const pg = extra.pages; const moreTypes = pg ? (pg.tilda && pg.tilda.types ? pg.tilda.types.filter((x) => !x.self).length : pg.types.filter((x) => x.key !== '/').length) : 0;
   L.push('## Что дальше', '', '1. Открыть снимки и заполнить визуальный разбор по `reference/discovery.md` (язык дизайна, иерархия, приём, что сохранить). «Паспорт донора» и «Подписные приёмы» — рамка для своих решений.', '2. Прогнать `runtime.mjs` по всему, что зависит от JS: меню (селектор — в «Мобильном экране»), формы, слайдеры, холсты, появления.', '3. Составить матрицу «менять / не трогать» и план по приоритетам P0–P5 (`reference/analysis.md`).',
     ...(moreTypes ? [`4. Режим донора: у сайта ${moreTypes} других типов страниц (раздел «Страницы сайта по типам»)${extra.pageShots && extra.pageShots.length ? ' — открыть снимки из pages/' : ' — снять по одной странице каждого типа: тот же запуск с `--pages-shots N`'}, в analysis.md составить «тип страницы донора → что там → аналог у нас → совет» и спросить пользователя, какие страницы нужны, до плана.`] : []), '');
   return L.join('\n');
@@ -1700,7 +1774,7 @@ function writeSummary(url, run, per, design, order, extra) {
 /* =====================================================================
    Запуск
    ===================================================================== */
-const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'viewport', 'scheme', 'tag', 'pages-shots'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'keep-consent', 'no-clicks', 'no-pages', 'strict', 'help', 'h'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { values: ['out', 'viewports', 'viewport', 'scheme', 'tag', 'pages-shots'], flags: ['no-design', 'light', 'no-320', 'no-hover', 'no-texture', 'no-texture-module', 'keep-consent', 'no-clicks', 'no-pages', 'strict', 'help', 'h'], strict: true });
 /* справка — первой, до любых проверок и побочных эффектов; короткий -h parseArgs отдаёт позиционным */
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
@@ -1723,6 +1797,8 @@ const vpSpec = opt.viewports != null ? opt.viewports : opt.viewport;
 const viewports = pickViewports(vpSpec); /* неизвестный экран: pickViewports печатает список и выходит с кодом 1 */
 if (!viewports.length) argFail(`Неизвестные экраны: ${vpSpec}`);
 const has320 = viewports.some(([, vp]) => vp.width <= 320);
+/* WARN из lib (свой стиль не вставился: строгий CSP) — собирать, а не печатать посреди «· desktop … ок»: в вердикт и discovery.json */
+collectWarnings();
 const run = ensureDir(runDir(opt, url));
 const tag = String(opt.tag || 'discover');
 const shotsDir = ensureDir(path.join(run, tag));
@@ -1758,10 +1834,26 @@ try {
     process.stdout.write('· страницы по типам (ссылки и sitemap.xml) … ');
     const sm = await fetchSitemap(urlObj).catch((e) => ({ url: null, error: String(e.message || e).slice(0, 80), urls: [] }));
     pages = pageTypes(url, goodNow, Object.keys(goodNow), sm);
-    console.log(`${pages.types.filter((t) => t.key !== pages.self).length} типов${sm ? (sm.error ? `, sitemap.xml: ${sm.error}` : `, sitemap.xml: ${sm.urls.length} адресов`) : ''}`);
+    const byAddr = pages.types.filter((t) => t.key !== pages.self).length;
+    console.log(`${byAddr} типов${sm ? (sm.error ? `, sitemap.xml: ${sm.error}` : `, sitemap.xml: ${sm.urls.length} адресов`) : ''}`);
+    /* Tilda: адреса плоские (/abuse, /choi…) — шаблон адреса даёт тип на каждую страницу; типы — по подписи блоков
+       (коды T-блоков по порядку, из голого HTML, без браузера: tilda.mjs pages) */
+    const isTilda = Object.values(goodNow).some((p) => p.tilda && p.tilda.info && p.tilda.info.tilda);
+    if (isTilda && /^https?:$/.test(urlObj.protocol)) {
+      process.stdout.write('· типы страниц Tilda по подписи блоков (голый HTML, по одной) … ');
+      const t0p = Date.now();
+      try {
+        const tp = await tildaPageTypes(url, { limit: 100, pause: 300 });
+        const selfPath = (() => { const p = urlObj.pathname.replace(/\/+$/, ''); return p || '/'; })();
+        pages.tilda = { found: tp.found, fetched: tp.fetched, skipped: tp.skipped, products: tp.products, errors: tp.errors.slice(0, 6), pagesArg: tp.pagesArg, byAddress: byAddr, seconds: Math.round((Date.now() - t0p) / 1000),
+          types: tp.types.map((t) => ({ name: t.name, count: t.count, example: new URL(t.example, url).href, examples: t.examples, signature: t.signature, note: t.note || null, self: t.paths.includes(selfPath) })) };
+        console.log(`${pages.tilda.types.length} типов по подписи блоков (по адресам было ${byAddr}; запрошено ${tp.fetched} из ${tp.found}, ${pages.tilda.seconds} с)`);
+      } catch (e) { console.log(`сбой: ${String(e.message || e).slice(0, 120)}`); pages.tilda = { error: String(e.message || e).slice(0, 160), byAddress: byAddr }; }
+    }
     if (pagesShotsN > 0) {
       const [vpName, vp] = viewports[0];
-      pageShots = await shootPages(browser, pages.types.filter((t) => t.key !== pages.self), pagesShotsN, vpName, vp, ensureDir(path.join(run, 'pages')), opt);
+      const toShoot = pages.tilda && pages.tilda.types ? pages.tilda.types.filter((t) => !t.self).map((t) => ({ key: t.name, example: t.example })) : pages.types.filter((t) => t.key !== pages.self);
+      pageShots = await shootPages(browser, toShoot, pagesShotsN, vpName, vp, ensureDir(path.join(run, 'pages')), opt);
     }
   }
 } finally { await browser.close().catch(() => {}); }
@@ -1778,10 +1870,10 @@ const paletteColors = [...new Set(order.flatMap((v) => { const p = good[v].visua
 const shares = await pixelShares(shotFiles, paletteColors).catch(() => null);
 const texResults = order.map((v) => good[v].texture).filter((t) => t && t.source === 'texture.mjs');
 
-const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN };
+const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN, warnings: takeWarnings() };
 const textureSource = opt['no-texture-module'] ? 'discover (запасной путь, --no-texture-module)' : texNote || 'texture.mjs';
 const save = (design) => {
-  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null });
+  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null, warnings: extra.warnings });
   fs.writeFileSync(path.join(run, 'discovery.md'), writeSummary(url, run, good, design, order, extra));
 };
 
@@ -1797,10 +1889,12 @@ if (!opt['no-design']) {
     const root = findModuleRoot('puppeteer-core');
     if (root && !process.env.DESIGN_REF_PROJECT) process.env.DESIGN_REF_PROJECT = root;
     try {
+      trackModule(extractPath);
       const mod = await import(pathToFileURL(extractPath).href);
       const designDir = ensureDir(path.join(run, 'design'));
       const data = await mod.extract(url, { shotsDir: null, light: !!opt.light });
-      fs.writeFileSync(path.join(designDir, 'site.json'), JSON.stringify(data, null, 1));
+      /* протокол — через writeJson: поле generator (какой discover и какой extract сняли спецификацию); verify его не читает */
+      writeJson(path.join(designDir, 'site.json'), data);
       const css = mod.tokensCss(data);
       fs.writeFileSync(path.join(designDir, 'site.tokens.css'), css);
       design = path.join(designDir, 'site');
@@ -1818,10 +1912,12 @@ if (design) {
   const tt = extra.textureTokens;
   console.log(tt.written ? `· фактура → design/site.tokens.css: блок --grain-* (${tt.grain === 'есть' ? `зерно есть, opacity ${tt.opacity}, ${tt.blend}` : `зерна ${tt.grain}, opacity 0`}${tt.replaced ? ', прежний блок заменён' : ''})` : `· фактура: блок --grain-* в design/site.tokens.css не дописан — ${tt.why}`);
 }
+extra.warnings = [...extra.warnings, ...takeWarnings()];
 save(design);
 
 /* вердикты в консоль */
 const verdicts = [];
+for (const w of extra.warnings) verdicts.push(['WARN', w]);
 for (const [v, err] of Object.entries(failed)) verdicts.push(['FAIL', `экран ${v} не снялся: ${String(err).replace(/\n/g, ' ')}`]);
 for (const v of order) {
   const p = good[v];

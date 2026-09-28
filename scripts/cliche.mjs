@@ -68,6 +68,12 @@
  *   без картинки — часть сетки. Перед замером страница проходится до низа, картинки, которые прокрутка
  *   запустила, догружаются (до 4 с); ещё не загруженная <img> считается по атрибутам width/height.
  *
+ * Tilda-донор: служебное конструктора (плашка Made on Tilda, t-mbfix, полоса T360 — IS_TILDA_SERVICE_FN) и обрезанное
+ *   артбордом (заглушка «Zero Block») — вне индекса; кегли и радиусы — на экране, computed × zoom (Zero Block при
+ *   upscale=window: madeon 40 → 48 px); ленивые — по data-original и .t-bgimg (loading=lazy у Tilda нет).
+ * Слова-пустышки (copy-buzz) — общий словарь copy-rules.mjs (buzzSource) с границами слова: «лучш» внутри «улучшим» не
+ *   ловится. WARN из lib (свой стиль не вставился) — в вердикт экрана и json (warnings), а не посреди вывода.
+ *
  * Вердикт экрана:
  *   FAIL — есть ЗАПРЕЩЁН; правило веса 3 «НЕТ У ДОНОРА» без записи в authorship-decisions.json;
  *          «размножено» больше ×2 у правила веса 2–3 (обоснование этого не снимает — снизить частоту);
@@ -99,10 +105,15 @@ import { fileURLToPath } from 'node:url';
 import {
   launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, scrollToY, evaluateWith, hexColors,
   EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
+  EFFECTIVE_ZOOM_FN, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings,
 } from './lib.mjs';
 import { tasteDir, activeBans, bansElsewhere, readJournal, baselineResult, conflictsWith, runKey } from './taste.mjs';
 /* общий словарь пустых оценок (copy-buzz) — один на cliche.mjs и copy.mjs; английские слова — здесь */
-import { BUZZ, buzzSource } from './copy-rules.mjs';
+import { buzzSource } from './copy-rules.mjs';
+/* словарь в страницу — исходником RegExp для evaluateWith (buzz). Границы слова (?<![\p{L}\d])…(?![\p{L}\d]):
+   «лучш» не ловится внутри «улучшим», «уникальн» — внутри «неуникальный»; свои основы — те, что жили в cliche */
+const BUZZ_EXTRA = ['погрузит\\S*', 'откройте для себя', 'новый уровень', 'supercharg\\S*', 'elevate', 'unlock', 'seamless\\S*', 'empower\\S*', 'effortless\\S*', 'next-level'];
+const BUZZ_RE = `new RegExp(${JSON.stringify(buzzSource({ extra: BUZZ_EXTRA }))}, 'giu')`;
 
 /* ---------- каталог: вес 3 — сильный признак, 2 — средний, 1 — слабый; id совпадают с reference/authorship.md ---------- */
 export const RULES = {
@@ -207,7 +218,9 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
 
 /* ======================================================================
    В странице: всё, что считается по вычисленным стилям.
-   Зависимости (evaluateWith): eff — итоговая непрозрачность, hex — любой CSS-цвет в #RRGGBB[AA].
+   Зависимости (evaluateWith): eff — итоговая непрозрачность, hex — любой CSS-цвет в #RRGGBB[AA], zoom — итоговый
+   CSS zoom (Tilda Zero Block при upscale=window: кегль и радиус на экране = computed × zoom), svc — служебное Tilda
+   (плашка Made on Tilda, t-mbfix, полоса T360 — вне индекса), buzz — словарь пустых оценок (copy-rules.mjs).
    ====================================================================== */
 function inPage(RULE_IDS) {
   const vw = innerWidth, vh = innerHeight;
@@ -215,6 +228,9 @@ function inPage(RULE_IDS) {
   const found = Object.fromEntries(RULE_IDS.map((id) => [id, { items: [], info: {} }]));
   const cs = (el, p) => getComputedStyle(el, p);
   const px = (v) => parseFloat(v) || 0;
+  const zM = new Map(); const Z = (el) => { let v = zM.get(el); if (v === undefined) { v = zoom(el) || 1; zM.set(el, v); } return v; };
+  /* кегль на экране: computed × zoom (у Tilda Zero Block при upscale=window computed мельче экрана: madeon 40 → 48 px) */
+  const fpx = (el) => { const v = px(cs(el).fontSize); const z = Z(el); return z === 1 ? v : Math.round(v * z * 100) / 100; };
   const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }; };
   /* какая доля элемента не обрезана предками с overflow hidden/clip: заглушка Tilda «Zero Block»
      лежит в артборде шириной 0 с overflow:hidden — в DOM она есть, на экране её нет */
@@ -228,7 +244,8 @@ function inPage(RULE_IDS) {
     }
     return (Math.max(0, R - L) * Math.max(0, B - T)) / Math.max(1, r.width * r.height);
   };
-  const visible = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; return eff(el) > 0.05 && clipShare(el) > 0.1; };
+  /* служебное Tilda — не язык страницы: вне индекса; обрезанное артбордом (заглушка «Zero Block») отсекает clipShare */
+  const visible = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; return eff(el) > 0.05 && clipShare(el) > 0.1 && !svc(el); };
   const sel = (el) => {
     const part = (e) => {
       if (e.id && !/^\d|rec\d/.test(e.id)) return '#' + CSS.escape(e.id);
@@ -254,7 +271,7 @@ function inPage(RULE_IDS) {
   const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
   const isUpper = (el, t) => cs(el).textTransform === 'uppercase' || (/[A-ZА-ЯЁ]/.test(t) && t === t.toUpperCase());
   const lsEm = (el) => { const s = cs(el); const ls = s.letterSpacing === 'normal' ? 0 : px(s.letterSpacing); return ls / (px(s.fontSize) || 16); };
-  const radius = (el) => { const s = cs(el); const r = s.borderTopLeftRadius; if (r.endsWith('%')) return Math.min(el.offsetWidth, el.offsetHeight) * parseFloat(r) / 100; return px(r); };
+  const radius = (el) => { const s = cs(el); const r = s.borderTopLeftRadius; return (r.endsWith('%') ? Math.min(el.offsetWidth, el.offsetHeight) * parseFloat(r) / 100 : px(r)) * Z(el); };
   const hasBorderAll = (s) => ['Top', 'Right', 'Bottom', 'Left'].every((k) => px(s['border' + k + 'Width']) >= 0.9 && s['border' + k + 'Style'] !== 'none');
   const shadows = (s) => {
     if (!s.boxShadow || s.boxShadow === 'none') return [];
@@ -291,11 +308,11 @@ function inPage(RULE_IDS) {
   const isPill = (e) => { const r = e.getBoundingClientRect(); return radius(e) >= Math.min(r.height, r.width) / 2 - 1.5; };
 
   /* ===== типографика ===== */
-  const headings = vis.filter((e) => /^H[1-3]$/.test(e.tagName) || (px(cs(e).fontSize) >= 40 && textOf(e).length > 1 && textOf(e).length < 120 && ownText(e).length > 1));
+  const headings = vis.filter((e) => /^H[1-3]$/.test(e.tagName) || (fpx(e) >= 40 && textOf(e).length > 1 && textOf(e).length < 120 && ownText(e).length > 1));
   const caps = []; let spacedAll = 0; const spacedEx = [];
   for (const e of vis) {
     const t = ownText(e); if (t.length < 2) continue;
-    const s = cs(e); const fs = px(s.fontSize);
+    const s = cs(e); const fs = fpx(e);
     if (lsEm(e) >= 0.05 && /[A-Za-zА-Яа-яЁё]/.test(t)) { spacedAll++; if (spacedEx.length < 5) spacedEx.push(`«${t.slice(0, 24)}» ${fs}px ${lsEm(e).toFixed(2)}em`); }
     if (t.length > 48 || fs > 14.5 || !isUpper(e, t) || lsEm(e) < 0.07) continue;
     if (e.closest('button, [role=button], nav') || buttonLike.includes(e.closest('a'))) continue;
@@ -303,11 +320,11 @@ function inPage(RULE_IDS) {
   }
   const eyebrowSet = new Set();
   for (const h of headings) {
-    const hfs = px(cs(h).fontSize); if (hfs < 28) continue;
+    const hfs = fpx(h); if (hfs < 28) continue;
     let prev = h.previousElementSibling; while (prev && !visible(prev)) prev = prev.previousElementSibling;
     if (!prev || /^H[1-6]$/.test(prev.tagName)) continue;
     const t = textOf(prev); if (t.length < 2 || t.length > 60) continue;
-    const pfs = px(cs(prev).fontSize);
+    const pfs = fpx(prev);
     const cand = [prev, ...prev.querySelectorAll('*')].find((x) => ownText(x).length > 1) || prev;
     if (pfs <= 15 && hfs / pfs >= 2.2 && isUpper(cand, t) && lsEm(cand) >= 0.06) {
       eyebrowSet.add(prev);
@@ -320,13 +337,13 @@ function inPage(RULE_IDS) {
   found['caps-microlabel'].info = { spacedAll, spacedExamples: spacedEx, capsSmall: caps.length };
   if (capsRest.length >= 4) {
     const byCtx = {}; capsRest.forEach((e) => { byCtx[ctx(e)] = (byCtx[ctx(e)] || 0) + 1; });
-    capsRest.forEach((e) => add('caps-microlabel', e, `«${ownText(e).slice(0, 30)}» ${px(cs(e).fontSize)}px ${lsEm(e).toFixed(2)}em · ${ctx(e)}`));
+    capsRest.forEach((e) => add('caps-microlabel', e, `«${ownText(e).slice(0, 30)}» ${fpx(e)}px ${lsEm(e).toFixed(2)}em · ${ctx(e)}`));
     found['caps-microlabel'].info.byContext = byCtx;
   }
   const hs3 = vis.filter((e) => /^H[1-3]$/.test(e.tagName));
   found['heading-colon'].info = { headings: hs3.length, midColon: hs3.filter((h) => /[:：]\s*\S/.test(textOf(h))).length };
   for (const h of hs3) { const t = textOf(h); if (/[:：]\s*$/.test(t)) add('heading-colon', h, `«${t.slice(0, 40)}» ${h.tagName.toLowerCase()}`); }
-  for (const h of vis.filter((e) => /^H[12]$/.test(e.tagName) && px(cs(e).fontSize) >= 40)) {
+  for (const h of vis.filter((e) => /^H[12]$/.test(e.tagName) && fpx(e) >= 40)) {
     const hs = cs(h);
     for (const c of h.querySelectorAll('em, i, span')) { const s = cs(c); if (s.fontStyle === 'italic' && /serif|georgia|times|playfair|instrument|garamond|fraunces/i.test(s.fontFamily) && s.fontFamily !== hs.fontFamily) add('italic-serif-accent', c, `«${textOf(c).slice(0, 30)}»`); }
   }
@@ -334,7 +351,7 @@ function inPage(RULE_IDS) {
   const fonts = { heading: {}, text: {}, button: {}, small: {} };
   for (const e of vis) {
     const t = ownText(e); if (t.length < 2 || !/[A-Za-zА-Яа-яЁё0-9]/.test(t)) continue;
-    const s = cs(e); const fs = px(s.fontSize); if (fs < 6) continue;
+    const s = cs(e); const fs = fpx(e); if (fs < 6) continue;
     const fam = s.fontFamily.split(',')[0].replace(/["']/g, '').trim(); if (!fam) continue;
     const b = e.closest('a, button, [role=button], input[type=submit]');
     const role = b && buttonLike.includes(b) ? 'button' : (e.closest('h1, h2, h3, h4, h5, h6') || fs >= 28) ? 'heading' : fs < 13 ? 'small' : 'text';
@@ -366,8 +383,8 @@ function inPage(RULE_IDS) {
     if (new Set(widths).size === 1 && new Set(xs).size === 1 && fields.length >= 3) signs.push(`${fields.length} поля столбиком одной ширины ${widths[0]}px`);
     const submit = [...form.querySelectorAll('button, input[type=submit]')].filter(visible).pop();
     if (submit && isPill(boxOf(submit))) { const sb = col(cs(boxOf(submit)).backgroundColor); signs.push(`отправка — пилюля ${Math.round(submit.getBoundingClientRect().height)}px «${textOf(submit).slice(0, 24)}»` + (sb && sb.a > 0.5 && chroma(sb) >= 90 ? `, акцент ${hexOf(sb)}` : '')); }
-    const opt = [...form.querySelectorAll('*')].find((e) => /не\s*обязательн|необязательн|optional/i.test(ownText(e)) && px(cs(e).fontSize) <= 13);
-    if (opt) signs.push(`«${ownText(opt)}» ${px(cs(opt).fontSize)}px`);
+    const opt = [...form.querySelectorAll('*')].find((e) => /не\s*обязательн|необязательн|optional/i.test(ownText(e)) && fpx(e) <= 13);
+    if (opt) signs.push(`«${ownText(opt)}» ${fpx(opt)}px`);
     if (signs.length >= 3) add('form-kit', form, `${signs.length} из 5: ` + signs.join('; '));
   }
 
@@ -506,8 +523,8 @@ function inPage(RULE_IDS) {
   const numEls = vis.filter((e) => /^(0?[1-9]|1[0-9])[.)]?$/.test(ownText(e)) && !e.closest('a, button, nav, [class*=pag]') && !e.matches('input, option'));
   const byGrand = new Map();
   numEls.forEach((e) => { const g = e.parentElement && e.parentElement.parentElement; if (!g) return; if (!byGrand.has(g)) byGrand.set(g, []); byGrand.get(g).push(e); });
-  for (const [, list] of byGrand) { const ns = list.map((e) => parseInt(ownText(e), 10)); if (list.length >= 3 && ns.slice(1).every((n, i) => n === ns[i] + 1)) list.forEach((e) => add('numbered-steps', e.parentElement, `«${ownText(e)}» ${px(cs(e).fontSize)}px`)); }
-  const statEls = vis.filter((e) => /^[+~≈>]?\d[\d\s.,]*\s?(\+|%|×|x|k|K|м|млн|тыс\.?|лет|год|₽|\$|ч|мин)?\+?$/.test(ownText(e)) && px(cs(e).fontSize) >= 28 && !e.closest('button, a'));
+  for (const [, list] of byGrand) { const ns = list.map((e) => parseInt(ownText(e), 10)); if (list.length >= 3 && ns.slice(1).every((n, i) => n === ns[i] + 1)) list.forEach((e) => add('numbered-steps', e.parentElement, `«${ownText(e)}» ${fpx(e)}px`)); }
+  const statEls = vis.filter((e) => /^[+~≈>]?\d[\d\s.,]*\s?(\+|%|×|x|k|K|м|млн|тыс\.?|лет|год|₽|\$|ч|мин)?\+?$/.test(ownText(e)) && fpx(e) >= 28 && !e.closest('button, a'));
   const statGroups = new Map();
   statEls.forEach((e) => { const g = e.parentElement && e.parentElement.parentElement; if (!g) return; if (!statGroups.has(g)) statGroups.set(g, []); statGroups.get(g).push(e); });
   for (const [, list] of statGroups) if (list.length >= 3) list.forEach((e) => add('stat-row', e.parentElement, `«${ownText(e)}»`));
@@ -528,8 +545,8 @@ function inPage(RULE_IDS) {
     if (/translate(X|3d)?\(\s*-?\d/.test(kf) && t.getBoundingClientRect().width >= vw * 0.5 && eff(t) > 0.05) { const box = t.closest('[class*=ticker], [class*=marquee], [class*=running]') || t.parentElement; add('marquee', box, `«${textOf(t).slice(0, 50)}»`); }
   }
   /* первый экран */
-  const h1 = vis.find((e) => e.tagName === 'H1') || headings.slice().sort((a, b) => px(cs(b).fontSize) - px(cs(a).fontSize))[0];
-  if (h1) { const r = h1.getBoundingClientRect(); if (r.top + scrollY < vh && cs(h1).textAlign === 'center' && Math.abs(r.left + r.width / 2 - vw / 2) < vw * 0.05) add('centered-hero', h1, `h1 по центру, ${px(cs(h1).fontSize)}px`); }
+  const h1 = vis.find((e) => e.tagName === 'H1') || headings.slice().sort((a, b) => fpx(b) - fpx(a))[0];
+  if (h1) { const r = h1.getBoundingClientRect(); if (r.top + scrollY < vh && cs(h1).textAlign === 'center' && Math.abs(r.left + r.width / 2 - vw / 2) < vw * 0.05) add('centered-hero', h1, `h1 по центру, ${fpx(h1)}px`); }
   const heroBtns = buttonLike.filter((b) => b.getBoundingClientRect().top + scrollY < vh && b.getBoundingClientRect().height >= 36 && !b.closest('nav, header, [class*=nav], [class*=menu], [class*=floating]'));
   const byParent = new Map(); heroBtns.forEach((b) => { const p = b.parentElement; if (!byParent.has(p)) byParent.set(p, []); byParent.get(p).push(b); });
   for (const [p, list] of byParent) if (list.length >= 2) { const fills = list.map((b) => { const bg = col(cs(boxOf(b)).backgroundColor); return bg && bg.a > 0.5 ? 'залитая' : 'контурная'; }); add('hero-two-ctas', p, list.map((b, i) => `«${textOf(b).slice(0, 22)}» ${fills[i]}`).join(' + ')); }
@@ -558,7 +575,7 @@ function inPage(RULE_IDS) {
   /* подвал */
   const footer = document.querySelector('footer') || sections[sections.length - 1];
   for (const e of vis) {
-    const fs = px(cs(e).fontSize); const t = ownText(e); const r = e.getBoundingClientRect();
+    const fs = fpx(e); const t = ownText(e); const r = e.getBoundingClientRect();
     if (fs >= Math.max(vw * 0.11, 72) && t && t.split(/\s+/).length <= 2 && r.width >= vw * 0.5 && r.top + scrollY > docH * 0.6) add('giant-footer-word', e, `«${t}» ${Math.round(fs)}px`);
   }
   if (footer) {
@@ -584,20 +601,20 @@ function inPage(RULE_IDS) {
   const secOf = (e) => { const s = e.closest('section, footer, header, form, main > *, [class*=section], .t-rec'); return s ? sel(s) : 'страница'; };
   const demo = vis.filter((e) => {
     const t = ownText(e); if (t.length < 2 || t.length > 160 || !DEMO_RE.test(t)) return false;
-    const s = cs(e); const fs = px(s.fontSize); const bg = col(s.backgroundColor);
+    const s = cs(e); const fs = fpx(e); const bg = col(s.backgroundColor);
     const badge = t.length <= 24 && ((bg && bg.a > 0.3) || hasBorderAll(s));
     return fs <= 13 || badge;
   });
   const demoSecs = new Set(demo.map(secOf));
   found['demo-badges'].info = { total: demo.length, sections: demoSecs.size };
-  if (demo.length >= 3 && demoSecs.size >= 2) demo.forEach((e) => add('demo-badges', e, `«${ownText(e).slice(0, 40)}» ${px(cs(e).fontSize)}px · ${secOf(e)}`));
-  const fine = vis.filter((e) => { const t = ownText(e); return t.length >= 2 && /[A-Za-zА-Яа-яЁё]/.test(t) && px(cs(e).fontSize) < 12; });
+  if (demo.length >= 3 && demoSecs.size >= 2) demo.forEach((e) => add('demo-badges', e, `«${ownText(e).slice(0, 40)}» ${fpx(e)}px · ${secOf(e)}`));
+  const fine = vis.filter((e) => { const t = ownText(e); return t.length >= 2 && /[A-Za-zА-Яа-яЁё]/.test(t) && fpx(e) < 12; });
   found['fine-print'].info = { total: fine.length, chars: fine.reduce((a, e) => a + ownText(e).length, 0) };
-  if (fine.length >= 5) fine.forEach((e) => add('fine-print', e, `«${ownText(e).slice(0, 30)}» ${px(cs(e).fontSize)}px`));
+  if (fine.length >= 5) fine.forEach((e) => add('fine-print', e, `«${ownText(e).slice(0, 30)}» ${fpx(e)}px`));
 
   /* ===== тексты ===== */
   const bodyText = textOf(document.body);
-  const BUZZ = /(уникальн\S*|инновацион\S*|премиальн\S*|эксклюзивн\S*|погрузит\S*|откройте для себя|новый уровень|идеальн\S*|вдохновля\S*|supercharg\S*|elevate|unlock|seamless\S*|empower\S*|effortless\S*|next-level)/gi;
+  const BUZZ = buzz;
   (bodyText.match(BUZZ) || []).slice(0, 20).forEach((w) => found['copy-buzz'].items.push({ sel: 'текст', note: w }));
   vis.filter((e) => /^([^\s.!]+\.\s){2,}[^\s.!]+\.$/.test(ownText(e))).forEach((e) => add('copy-triad', e, `«${ownText(e)}»`));
 
@@ -634,7 +651,10 @@ function cssRules(cssText) {
 function waitImagesInPage(ms) {
   return new Promise((res) => {
     const shown = [...document.images].filter((i) => i.getClientRects().length > 0 && (i.currentSrc || i.getAttribute('src')));
-    const done = () => res({ images: shown.length, lazy: shown.filter((i) => i.loading === 'lazy').length, pending: shown.filter((i) => !i.complete).length });
+    /* Tilda грузит не loading=lazy, а по data-original и фонами .t-bgimg (до прокрутки — заглушки /-/resize/20x/) */
+    const T = document.querySelector('.t-rec[data-record-type], #allrecords[data-tilda-page-id]');
+    const tilda = T ? { dataOriginal: document.querySelectorAll('[data-original]').length, bg: document.querySelectorAll('.t-bgimg').length, bgLoaded: document.querySelectorAll('.t-bgimg.loaded').length } : null;
+    const done = () => res({ images: shown.length, lazy: shown.filter((i) => i.loading === 'lazy').length, pending: shown.filter((i) => !i.complete).length, ...(tilda ? { tilda } : {}) });
     const wait = shown.filter((i) => !i.complete);
     if (!wait.length) { done(); return; }
     let left = wait.length; const one = () => { if (--left <= 0) done(); };
@@ -729,7 +749,7 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
     /* картинки, которые прокрутка запустила (ленивые), — догрузить до замера сеток */
     const images = await page.evaluate(waitImagesInPage, 4000).catch(() => null);
     const inline = await page.evaluate(() => [...document.querySelectorAll('style:not([data-rw])')].map((s) => s.textContent).join('\n'));
-    const found = await evaluateWith(page, inPage, Object.keys(RULES), { eff: EFFECTIVE_OPACITY_FN, hex: HEX_FN });
+    const found = await evaluateWith(page, inPage, Object.keys(RULES), { eff: EFFECTIVE_OPACITY_FN, hex: HEX_FN, zoom: EFFECTIVE_ZOOM_FN, svc: IS_TILDA_SERVICE_FN, buzz: BUZZ_RE });
     const css = cssRules(cssTexts.join('\n') + '\n' + inline);
     const P = found.page; delete found.page;
     const hoverLinks = P.hoverLinks || []; delete P.hoverLinks;
@@ -875,6 +895,7 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
   if (!base) warn.push('нет --baseline: вердикт только по запретам и весу 3');
   else if (!baseExact) warn.push(`база снята на другом экране (${base.viewport}) — частоты и доли неточны`);
   if (result.open && result.open.stuck) warn.push('страница не прокрутилась — появления и нижние блоки недостоверны');
+  for (const w of result.warnings || []) warn.push(`свой стиль: ${w}`);
   result.index = index;
   result.reasons = { fail, warn };
   result.verdict = fail.length ? 'FAIL' : warn.length ? 'WARN' : 'OK';
@@ -940,7 +961,9 @@ async function shotMarks(page, r, file) {
    ====================================================================== */
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'], optional: ['taste', 'json'], commands: ['baseline', 'rules'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'], optional: ['taste', 'json'], commands: ['baseline', 'rules'], strict: true });
+  /* WARN из lib (свой стиль не вставился) — собирать, а не печатать посреди вывода: в вердикт экрана и json */
+  collectWarnings();
   const isUrl = (s) => /^(https?|file):/i.test(String(s));
   /* «--taste http://…» — адрес, а не папка журнала */
   if (typeof opt.taste === 'string' && isUrl(opt.taste)) { pos.push(opt.taste); opt.taste = true; }
@@ -1024,6 +1047,8 @@ if (isMain) {
       try { r = await measureViewport(browser, url, vpName, vp, { keepPage: !!opt.shot && !baselineMode }); }
       catch (e) { fatal = `${vpName}: страница не открылась или упала — ${String(e && e.message || e).slice(0, 200)}. Для медленного донора подождать и повторить`; break; }
       const page = r._page; delete r._page;
+      /* WARN из lib (свой стиль не вставился: строгий CSP) — в вердикт этого экрана и json, а не посреди вывода */
+      const lw = takeWarnings(); if (lw.length) r.warnings = lw;
       if (!baselineMode) {
         const base = baseJson ? baselineResult(baseJson, vpName, vp) : null;
         const exact = !base || base.viewport === vpName;
@@ -1045,7 +1070,8 @@ if (isMain) {
         log(`  кнопок ${pe.buttons}, пилюль ${pe.pills}; скругления ${JSON.stringify(r.rules['uniform-radius'].info.hist)}; разрядка у ${r.page.spacedAll}; мелкий текст <12px: ${r.page.fine}; акцент: ${ac.length ? ac.map(accentText).join(', ') : 'нет'}${hoverNote(ai.hover)}`);
         log(`  гарнитуры — ${Object.entries(r.page.fonts).filter(([, m]) => Object.keys(m).length).map(([k, m]) => `${ROLE_RU[k]}: ${topFam(m)}`).join('; ')}`);
         const im = r.open.images;
-        if (im) log(`  картинок ${im.images}, ленивых ${im.lazy}${im.pending ? `, не догрузились к замеру ${im.pending} — сетки с ними считались по атрибутам width/height` : ', все догружены'}`);
+        if (im) log(`  картинок ${im.images}, ленивых ${im.lazy}${im.tilda ? ` (Tilda data-original ${im.tilda.dataOriginal}, фонов .t-bgimg загружено ${im.tilda.bgLoaded} из ${im.tilda.bg})` : ''}${im.pending ? `, не догрузились к замеру ${im.pending} — сетки с ними считались по атрибутам width/height` : ', все догружены'}`);
+        if (r.warnings) for (const w of r.warnings) log(`  WARN свой стиль: ${w}`);
       }
       results[vpName] = r;
     }

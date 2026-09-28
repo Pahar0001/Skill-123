@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд clicks.mjs: Tilda</title>
+<!--
+  Tilda для правила scripts/clicks.mjs (node clicks.mjs selftest — desktop и mobile). Разметка — как у Tilda:
+  #allrecords с data-tilda-page-id, блоки .t-rec, Zero Block (.t396__artboard с overflow:hidden, элементы
+  .t396__elem, автолейаут .tn-molecule), подвал проекта footer#t-footer.t-records, плашка #tildacopy.
+  У блоков data-expect — что ждём:
+    not-acc-artboard  три артборда: заголовок, svg-значок и длинный текст за нижним краем артборда (элемент
+                      другого брейкпоинта) — было «свой div.t396__artboard ×3, клик не раскрыл» (zero.tilda.cc ×6)
+    not-acc-molecule  три автолейаута: видимая строка, svg и текст ниже высоты автолейаута — было
+                      «свой div.tn-molecule ×3» (zero.tilda.cc ×13)
+    not-acc-footer    подвал проекта: строка со знаком «›» и два текста за краем артборда — было
+                      «свой footer.t-records ×2» (madeon ×7)
+    acc-tilda         стандартный аккордеон T668 ×3 (aria-expanded) — остаётся аккордеоном, клик раскрывает
+    hook-popup        ссылка #popup:zayavka → окно T1093 [data-tooltip-hook="#popup:zayavka"]
+    hook-menu         ссылка #menuopen → шторка T450 [data-tooltip-hook="#menuopen"]
+    service           плашка Made on Tilda со значком и ссылкой — не аккордеон, не меню, не хук
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; color: #111; background: #fff; }
+  .t-rec { position: relative; }
+  .t396__artboard { position: relative; height: 180px; overflow: hidden; background: #f3f1ec; margin: 0 0 16px; }
+  .t396__elem { position: absolute; }
+  .tn-atom { display: block; }
+  .t396__elem svg { width: 20px; height: 20px; display: block; }
+  .tn-molecule { overflow: hidden; height: 40px; width: 300px; background: #fff; }
+  .tn-molecule .tn-atom { height: 40px; line-height: 40px; display: flex; justify-content: space-between; align-items: center; }
+  .top { padding: 12px 16px; display: flex; gap: 24px; }
+  .t668__wrapper { border-bottom: 1px solid #ccc; max-width: 360px; margin: 0 16px; }
+  .t668__trigger-button { display: flex; justify-content: space-between; align-items: center; width: 100%; height: 52px; border: 0; background: none; font: inherit; cursor: pointer; padding: 0; text-align: left; }
+  .t668__trigger-button svg { width: 16px; height: 16px; }
+  .t668__content { display: none; padding: 0 0 12px; }
+  .t668__content.open { display: block; }
+  .t-popup { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 50; }
+  .t-popup.t-popup_show { display: block; }
+  .t-popup__container { background: #fff; width: 300px; margin: 80px auto; padding: 24px; }
+  .t450 { position: fixed; top: 0; left: -300px; width: 280px; height: 100%; background: #fff; transition: left .3s; z-index: 40; }
+  .t450.t450__menu_show { left: 0; }
+  #tildacopy { padding: 24px 16px; text-align: center; font-size: 13px; }
+  #tildacopy svg { width: 18px; height: 18px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div id="allrecords" class="t-records" data-tilda-page-id="1000" data-tilda-lazy="yes">
+
+<div id="rec1" class="r t-rec" data-record-type="215">
+  <div class="top t215"><a href="#menuopen" data-expect="hook-menu">Меню</a><a href="#popup:zayavka" data-expect="hook-popup">Оставить заявку</a><a href="#popup:zayavka">Заявка ещё раз</a></div>
+</div>
+
+<div data-expect="not-acc-artboard">
+  <div id="rec10" class="r t-rec" data-record-type="396"><div class="t396"><div class="t396__artboard rendered" data-artboard-recid="10" data-artboard-screens="320,1200" data-artboard-height="180">
+    <div class="t396__elem tn-elem" data-elem-id="1" data-elem-type="text" style="left:16px;top:24px;width:300px"><div class="tn-atom">Первый экран: студия</div></div>
+    <div class="t396__elem tn-elem" data-elem-id="2" data-elem-type="shape" style="left:320px;top:28px"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" stroke="#111" fill="none"/></svg></div>
+    <div class="t396__elem tn-elem" data-elem-id="3" data-elem-type="text" style="left:16px;top:240px;width:320px"><div class="tn-atom">Длинный текст другого брейкпоинта: на этом экране он стоит ниже края артборда.</div></div>
+  </div></div></div>
+  <div id="rec11" class="r t-rec" data-record-type="396"><div class="t396"><div class="t396__artboard rendered" data-artboard-recid="11" data-artboard-screens="320,1200" data-artboard-height="180">
+    <div class="t396__elem tn-elem" data-elem-id="1" data-elem-type="text" style="left:16px;top:24px;width:300px"><div class="tn-atom">Второй экран: услуги</div></div>
+    <div class="t396__elem tn-elem" data-elem-id="2" data-elem-type="shape" style="left:320px;top:28px"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" stroke="#111" fill="none"/></svg></div>
+    <div class="t396__elem tn-elem" data-elem-id="3" data-elem-type="text" style="left:16px;top:240px;width:320px"><div class="tn-atom">Ещё один длинный текст за краем артборда — элемент широкого экрана.</div></div>
+  </div></div></div>
+  <div id="rec12" class="r t-rec" data-record-type="396"><div class="t396"><div class="t396__artboard rendered" data-artboard-recid="12" data-artboard-screens="320,1200" data-artboard-height="180">
+    <div class="t396__elem tn-elem" data-elem-id="1" data-elem-type="text" style="left:16px;top:24px;width:300px"><div class="tn-atom">Третий экран: работы</div></div>
+    <div class="t396__elem tn-elem" data-elem-id="2" data-elem-type="shape" style="left:320px;top:28px"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5" stroke="#111" fill="none"/></svg></div>
+    <div class="t396__elem tn-elem" data-elem-id="3" data-elem-type="text" style="left:16px;top:240px;width:320px"><div class="tn-atom">Третий длинный текст, вынесенный дизайнером за нижний край артборда.</div></div>
+  </div></div></div>
+</div>
+
+<div id="rec20" class="r t-rec" data-record-type="396" data-expect="not-acc-molecule"><div class="t396"><div class="t396__artboard rendered" data-artboard-recid="20" data-artboard-screens="320,1200" data-artboard-height="180" style="height:180px">
+  <div class="t396__elem tn-elem" data-elem-id="1" data-elem-type="text" style="left:16px;top:8px;width:320px"><div class="tn-molecule"><div class="tn-atom"><span>Доставка по городу</span><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5" stroke="#111" fill="none"/></svg></div><div class="tn-atom">Текст автолейаута ниже его высоты: на экране его не видно, он не ответ на вопрос.</div></div></div>
+  <div class="t396__elem tn-elem" data-elem-id="2" data-elem-type="text" style="left:16px;top:64px;width:320px"><div class="tn-molecule"><div class="tn-atom"><span>Оплата картой</span><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5" stroke="#111" fill="none"/></svg></div><div class="tn-atom">Второй текст автолейаута ниже его высоты: обрезан, это не спрятанный ответ.</div></div></div>
+  <div class="t396__elem tn-elem" data-elem-id="3" data-elem-type="text" style="left:16px;top:120px;width:320px"><div class="tn-molecule"><div class="tn-atom"><span>Возврат товара</span><svg viewBox="0 0 20 20"><path d="M8 5l5 5-5 5" stroke="#111" fill="none"/></svg></div><div class="tn-atom">Третий текст автолейаута ниже его высоты: он обрезан самим автолейаутом.</div></div></div>
+</div></div></div>
+
+<div id="rec40" class="r t-rec" data-record-type="668" data-expect="acc-tilda"><div class="t668">
+  <h2 style="margin:24px 16px 8px;font-size:22px">Вопросы о заказе</h2>
+  <div class="t668__accordion">
+    <div class="t668__wrapper"><button class="t668__trigger-button" aria-expanded="false">Как оформить заказ?<svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#111" fill="none"/></svg></button><div class="t668__content">Заказ принимаем по телефону и через форму: перезваниваем в течение часа.</div></div>
+    <div class="t668__wrapper"><button class="t668__trigger-button" aria-expanded="false">Сколько ждать доставку?<svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#111" fill="none"/></svg></button><div class="t668__content">По городу привозим на следующий день, в область — за два-три дня.</div></div>
+    <div class="t668__wrapper"><button class="t668__trigger-button" aria-expanded="false">Можно ли вернуть товар?<svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#111" fill="none"/></svg></button><div class="t668__content">Вернуть можно в течение двух недель, если сохранена упаковка и чек.</div></div>
+  </div>
+</div></div>
+
+<div id="rec50" class="r t-rec" data-record-type="1093"><div class="t1093"><div class="t-popup" data-tooltip-hook="#popup:zayavka" data-anim="fadein" data-anim-timeout="0.3"><div class="t-popup__container">Окно заявки <a href="#closepopup">Закрыть</a></div></div></div></div>
+<div id="rec60" class="r t-rec" data-record-type="450"><div class="t450" data-tooltip-hook="#menuopen"><a href="#rec10">Студия</a><br><a href="#rec11">Услуги</a><br><a href="#rec12">Работы</a><br><a href="#rec40">Вопросы</a></div></div>
+
+</div>
+
+<footer id="t-footer" class="t-records" data-expect="not-acc-footer">
+  <div id="rec30" class="r t-rec" data-record-type="396"><div class="t396"><div class="t396__artboard rendered" data-artboard-recid="30" data-artboard-screens="320,1200" data-artboard-height="120" style="height:120px">
+    <div class="t396__elem tn-elem" data-elem-id="1" data-elem-type="text" style="left:16px;top:300px;width:320px"><div class="tn-atom">Реквизиты студии для широкого экрана: стоят ниже края артборда.</div></div>
+    <div class="t396__elem tn-elem" data-elem-id="2" data-elem-type="text" style="left:16px;top:360px;width:320px"><div class="tn-atom">Адрес и часы работы для широкого экрана: тоже ниже края артборда.</div></div>
+  </div></div></div>
+  <div style="padding:12px 16px;display:flex;gap:12px;align-items:center">© 2026 Студия <svg viewBox="0 0 20 20" style="width:20px;height:20px"><circle cx="10" cy="10" r="9" fill="#111"/></svg></div>
+</footer>
+<div id="tildacopy" class="t-tildalabel" data-expect="service"><a href="https://tilda.cc/"><svg viewBox="0 0 18 18"><circle cx="9" cy="9" r="8" fill="#111"/></svg> Made on Tilda — это служебная плашка конструктора, а не часть сайта</a></div>
+
+<script>
+  /* T668: клик раскрывает ответ и переключает aria-expanded; окно и шторка — по хукам, как у Tilda */
+  document.querySelectorAll('.t668__trigger-button').forEach((b) => b.addEventListener('click', () => { const c = b.nextElementSibling; const open = !c.classList.contains('open'); c.classList.toggle('open', open); b.setAttribute('aria-expanded', String(open)); }));
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]'); if (!a) return; const h = a.getAttribute('href');
+    if (h === '#closepopup') { e.preventDefault(); document.querySelectorAll('.t-popup_show').forEach((p) => p.classList.remove('t-popup_show')); return; }
+    const t = document.querySelector('[data-tooltip-hook="' + h + '"]'); if (!t) return; e.preventDefault();
+    if (t.classList.contains('t-popup')) t.classList.add('t-popup_show'); else t.classList.toggle('t450__menu_show');
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { document.querySelectorAll('.t-popup_show').forEach((p) => p.classList.remove('t-popup_show')); document.querySelectorAll('.t450__menu_show').forEach((p) => p.classList.remove('t450__menu_show')); } });
+</script>
+</body>
+</html>
