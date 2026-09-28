@@ -99,6 +99,11 @@ td { padding: 2px 12px; text-align: right; }
   <table id="t-prop"><tr><td>1 111 ₽</td></tr><tr><td>8 888 ₽</td></tr><tr><td>10 490 ₽</td></tr></table>
   <table id="t-tab" class="tab"><tr><td>1 111 ₽</td></tr><tr><td>8 888 ₽</td></tr><tr><td>10 490 ₽</td></tr></table>
 </section>
+
+<section>
+  <!-- свой текст и строки во вложенных блоках (ХОЛСТ: «Холст<br><span>на вашей<br>стене</span>»); текст для читалки не в счёт -->
+  <h2 id="h2-mixed">Холст<span style="display:block">на вашей</span><span style="display:block">стене<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"> только для читалки экрана</span></span></h2>
+</section>
 <script>
 /* .fit: ширина блока — ширина начала строки (data-fit) + 4 px, чтобы остальное ушло на вторую строку в любом браузере */
 document.fonts.ready.then(() => {

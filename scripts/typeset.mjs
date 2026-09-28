@@ -192,7 +192,15 @@ function linesFactory() {
     for (const [o, l] of map) if (!l.some((n) => n && n.nodeType === 3 && /\S/.test(n.nodeValue))) map.delete(o);
     return map;
   }
-  /* весь текст под el, включая вложенные блоки (заголовок, разложенный по строкам-span) */
+  /* не видно на экране: прозрачное, visibility: hidden, текст только для читалки (clip, clip-path, коробка тоньше 3 px с обрезкой) */
+  const unseen = (e) => {
+    const s = cs(e);
+    if (s.visibility === 'hidden' || s.visibility === 'collapse' || parseFloat(s.opacity) === 0) return true;
+    if (/rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)/.test(s.clip) || /inset\(\s*(50|100)%/.test(s.clipPath || '')) return true;
+    if (/hidden|clip/.test(s.overflow)) { const q = e.getBoundingClientRect(); if (q.width < 3 || q.height < 3) return true; }
+    return false;
+  };
+  /* весь видимый текст под el, включая вложенные блоки (заголовок, разложенный по строкам-span) */
   function deepNodes(el) {
     const out = [];
     const walk = (e) => {
@@ -200,7 +208,7 @@ function linesFactory() {
         if (c.nodeType === 3) { out.push(c); continue; }
         if (c.nodeType !== 1) continue;
         if (c.tagName === 'BR') { out.push(c); continue; }
-        const k = kind(c); if (k === 'skip') continue;
+        const k = kind(c); if (k === 'skip' || unseen(c)) continue;
         if (k === 'own') { out.push(null); walk(c); out.push(null); } else walk(c);
       }
     };
@@ -393,10 +401,13 @@ async function measureInPage(o) {
     const b = add(el, m);
     for (const n of nodes) if (n && n.nodeType === 3 && /\S/.test(n.nodeValue) && n.parentElement) n.parentElement.setAttribute('data-ts-t', b.id);
   }
-  /* заголовок, чей текст разложен по вложенным блокам (span-строки): меряется целиком, вложенные — его части */
+  /* заголовок, чей текст разложен по вложенным блокам (span-строки): меряется целиком, вложенные — его части.
+     И когда у заголовка есть свой текст («Холст<span display:block>на вашей</span>…»): иначе мерилась одна
+     его строка, а на экране их четыре */
   for (const h of document.querySelectorAll(HEAD_SEL)) {
-    if (byEl.has(h)) continue;
-    const inner = blocks.filter((b) => !b.partOf && h.contains(b.el)); if (!inner.length) continue;
+    const own = byEl.get(h); if (own && own.composite) continue;
+    const nested = blocks.filter((b) => !b.partOf && b.el !== h && h.contains(b.el)); if (!nested.length) continue;
+    const inner = own && !own.partOf ? [own, ...nested] : nested;
     let m; try { m = lines(h, null, { deep: true }); } catch (e) { continue; }
     if (!m || !m.lines.length) continue;
     const b = add(h, m, { composite: true, inner: inner.map((x) => x.id) });
@@ -1360,6 +1371,7 @@ const SELFTEST = {
     ['#p-hybreak: разрыв «3D-|принтере.» — hyphen-break', (a) => { const it = a.items('hyphen-break', 'p-hybreak'); return [it.some((x) => /3D-\|принтере/.test(x.note)), it.map((x) => x.note).join('; ') || 'нет']; }],
     ['#p-lead: строка начинается с тире — lead', (a) => { const b = a.byEl('p-lead'); return [b && b.lead.some((x) => x.word === '—') && a.st('lead', 'p-lead') === 'WARN', b ? `lead ${b.lead.map((x) => x.word).join(',') || 'нет'}` : 'нет']; }],
     ['#p-num: «500 | ₽» — num-unit', (a) => { const b = a.byEl('p-num'); return [b && b.numSplit.some((x) => x.pair === '500 | ₽'), b ? `num ${b.numSplit.map((x) => x.pair).join(',') || 'нет'}` : 'нет']; }],
+    ['#h2-mixed: свой текст и строки во вложенных блоках — 3 строки целиком, текст для читалки не в счёт', (a) => { const b = a.byEl('h2-mixed'); return [b && b.composite && b.lines.length === 3 && !/читалки/.test(b.text), b ? `composite ${!!b.composite}, строк ${b.lines.length}, «${b.text}»` : 'нет блока']; }],
     ['#h2-far: заголовок дальше от своего текста — proximity WARN', (a) => [a.st('proximity', 'h2-far') === 'WARN', a.st('proximity', 'h2-far')]],
     ['первый экран: h1, лид и кнопка найдены, кнопка видна, ось совпала', (a) => { const h = a.d.hero; return [h.h1 && /#h1/.test(h.h1.sig) && h.lede && /#lede/.test(h.lede.sig) && h.cta && /#cta/.test(h.cta.sig) && h.cta.visible && h.axis && h.axis.ok, `h1 ${h.h1 && h.h1.sig}, лид ${h.lede && h.lede.sig}, кнопка ${h.cta && h.cta.sig} видна ${h.cta && h.cta.visible}, ось ${h.axis && h.axis.ok}`]; }, 'layout'],
     ['вырезки: первый экран и висячие', (a) => { const c = a.res.lines.filter((l) => l.rule === 'hang').flatMap((l) => l.items.map((x) => x.crop)).filter(Boolean); return [c.length > 0, `вырезок hang ${c.length}`]; }],
