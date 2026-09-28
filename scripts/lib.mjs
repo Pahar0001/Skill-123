@@ -38,6 +38,8 @@ async function loadSiteRework() {
 }
 /** Модуль lib.mjs скилла site-rework или null. */
 export const SR = await loadSiteRework();
+/** Модуль clicks.mjs скилла site-rework (что раскрывается по клику: аккордеоны Framer и др.) или null. */
+export const CLICKS = SR ? await import(pathToFileURL(path.join(path.dirname(SR_LIB), 'clicks.mjs')).href).catch(() => null) : null;
 
 /* ---------- модули ---------- */
 const OWN_ROOT = path.join(os.homedir(), '.claude', 'site-rework');

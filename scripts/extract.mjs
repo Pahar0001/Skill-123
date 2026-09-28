@@ -54,8 +54,12 @@
  * - шкала body — только собственный видимый текст (без style/script),
  *   кегль ≥ 6px, вес = длина текста, в блоках от 40 знаков; сверяется с самым
  *   крупным абзацем (bodyProbe);
- * - h1 — самый крупный видимый h1 первого экрана (на первом экране h1 нет —
- *   самый крупный на странице); h2–h4 — самый частый стиль своего тега;
+ * - h1 — самый крупный видимый h1 первого экрана; на первом экране h1 нет — самый
+ *   крупный заголовок первого экрана любым тегом (h2–h6, role=heading, текст от 24px
+ *   и от 1.4 основного), с пометкой откуда; нет и его — h1 не снят; h2–h4 — самый
+ *   частый стиль своего тега;
+ * - аккордеоны без details и класса accordion (Framer, Tilda) — правило clicks.mjs
+ *   site-rework (вопрос, значок, спрятанный ответ), подтверждение кликом (не в --light);
  * - nav — меню шапки: nav вверху первого экрана (сначала внутри header), затем
  *   закреплённое меню (position: fixed), затем ссылки шапки; ссылки-кнопки с
  *   заливкой не в счёт; какой элемент взят — scaleFrom.nav;
@@ -69,13 +73,13 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  SR, launch, sleep, parseArgs, slugFromUrl, legacySlugs, pageAddress, die, loadSharp, evaluateWith, gotoRetry,
+  SR, CLICKS, launch, sleep, parseArgs, slugFromUrl, legacySlugs, pageAddress, die, loadSharp, evaluateWith, gotoRetry,
   scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
-export const VERSION = 'extract 2026-09-24.2';
+export const VERSION = 'extract 2026-09-28';
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 /** Старое правило (json до extract 2026-09-24.2): доля пикселей всех снимков окна, с которой насыщенный цвет — акцент. */
@@ -360,15 +364,37 @@ function inPage() {
     underlines.push({ id, value: c, el: sig(a), text: textOf(a).slice(0, 40), first: onFirst(a), w: Math.round(r.width), h: Math.round(r.height) });
   }
 
-  /* h1 — самый крупный видимый h1 первого экрана (на Framer-странице h1 бывает двадцать: подписи, подвал);
-     на первом экране h1 нет — самый крупный на странице */
+  /* h1 — самый крупный видимый h1 первого экрана (на Framer-странице h1 бывает двадцать: подписи, подвал).
+     На первом экране h1 нет — самый крупный заголовок первого экрана любым тегом (h2–h6, role=heading или
+     текст от 24px и от 1.4 основного, не в меню, ссылке-кнопке или кнопке): у товара shapefest название —
+     не h1, а крупный h1 ниже — слово плашки «All Access» 90px. Нет и его — h1 не снят (from.el null) */
   const pickH1 = () => {
+    const bodyPx = (() => { const b = top(bodyVotes, 1)[0]; return b ? parseFloat(JSON.parse(b.value).fontSize) : 16; })(); /* bodyVotes считаются ниже, до вызова */
     const list = [...document.querySelectorAll('h1')].filter((h) => allSet.has(h) && shown(h) && clipShare(h) > 0.5).map((h) => ({ h, p: carrier(h) })).filter((x) => x.p);
-    if (!list.length) return null;
     const fsz = (x) => parseFloat(getComputedStyle(x.p).fontSize);
     list.sort((a, b) => (onFirst(b.h) - onFirst(a.h)) || (fsz(b) - fsz(a)) || (docTop(a.h) - docTop(b.h)));
-    const { h, p } = list[0], first = onFirst(h);
-    return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first, of: list.length, how: list.length === 1 ? 'единственный видимый h1' : first ? 'самый крупный h1 первого экрана' : 'самый крупный h1 (на первом экране h1 нет)' } };
+    if (list.length && onFirst(list[0].h)) {
+      const { h, p } = list[0];
+      return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: list.length, how: list.length === 1 ? 'единственный видимый h1' : 'самый крупный h1 первого экрана' } };
+    }
+    const below = list.length ? `; h1 ниже первого экрана не взят: «${textOf(list[0].h).slice(0, 30)}» ${Math.round(fsz(list[0]))}px` : '';
+    const NOT_HEAD = 'nav, [role="navigation"], button, [role="button"], a[class*="btn"], a[class*="button"], label, select, option';
+    const heads = [];
+    for (const el of all) {
+      if (!onFirst(el) || !shown(el) || clipShare(el) <= 0.5 || el.closest(NOT_HEAD)) continue;
+      const tagged = /^H[2-6]$/.test(el.tagName) || el.getAttribute('role') === 'heading';
+      const p = tagged ? carrier(el) : (ownText(el).length >= 3 ? el : null); if (!p) continue;
+      const px = parseFloat(getComputedStyle(p).fontSize);
+      if (!tagged && !(px >= 24 && px >= bodyPx * 1.4)) continue;
+      if (tagged && !(px >= bodyPx * 1.15)) continue;
+      const a = el.closest('a[href]'); if (a && filledSet.has(a)) continue;
+      heads.push({ h: el, p, px });
+    }
+    heads.sort((a, b) => (b.px - a.px) || (docTop(a.h) - docTop(b.h)));
+    if (!heads.length) return { p: null, from: { el: null, how: `на первом экране нет ни h1, ни крупного заголовка — h1 не снят${below}` } };
+    const { h, p } = heads[0];
+    const tag = h.getAttribute('role') === 'heading' ? 'role=heading' : h.tagName.toLowerCase();
+    return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: 0, tag, how: `на первом экране h1 нет — самый крупный заголовок первого экрана (${tag})${below}` } };
   };
 
   /* меню (nav) — одна и та же роль на любой странице: nav вверху первого экрана (сначала внутри header, выше —
@@ -423,7 +449,7 @@ function inPage() {
   for (const [b, keys] of blockKeys) { const L = blockLen.get(b); if (!bodyProbe || L > bodyProbe.chars) bodyProbe = { el: sig(b), chars: L, key: topKey(keys) }; }
   if (bodyProbe) { const { key, ...rest } = bodyProbe; bodyProbe = { ...rest, ...JSON.parse(key) }; }
   for (const [name, sel] of Object.entries(levels)) {
-    if (name === 'h1') { const x = pickH1(); if (x) { scale.h1 = JSON.parse(keyOf(getComputedStyle(x.p))); scaleFrom.h1 = x.from; } continue; }
+    if (name === 'h1') { const x = pickH1(); if (x.p) scale.h1 = JSON.parse(keyOf(getComputedStyle(x.p))); scaleFrom.h1 = x.from; continue; }
     if (name === 'nav') { const x = pickMenu(); scaleFrom.nav = x.from; if (x.style) scale.nav = x.style; continue; }
     let votes = bodyVotes;
     if (sel) {
@@ -666,7 +692,18 @@ export function darkSource(cs) {
   return null;
 }
 
-async function measure(browser, url, viewport, { shotsDir, tag, withStates, scheme = 'light', pixels = false, readCss = false }) {
+/* Аккордеоны без details и класса accordion (Framer, Tilda): правило clicks.mjs site-rework — вопрос,
+   значок и спрятанный ответ; 'probe' — подтвердить кликом (раскрывает, второй клик закрывает), 'find' —
+   только найти. В паспорт: элементы по селектору + пункты «своих» групп, не отвергнутых кликом. */
+function accordionPassport(data, acc) {
+  const P = data.passport; if (!P) return;
+  if (!acc) { P.accordions = { source: CLICKS ? 'не искались' : 'нет site-rework — только details и класс accordion', groups: [] }; return; }
+  const own = acc.groups.filter((g) => CLICKS.accordionOk(g) && !g.inClass);
+  P.components.accordion = (P.components.accordion || 0) + own.reduce((a, g) => a + g.count, 0);
+  P.accordions = { source: 'clicks.mjs (site-rework)', details: acc.details, byClass: acc.byClass, groups: acc.groups.map((g) => ({ sig: g.sig, kind: g.kind, how: g.how, chevron: g.chevron, count: g.count, status: g.status || 'не проверен', opened: g.opened, tried: g.tried, closed: g.closed, questions: g.questions, inClass: g.inClass })) };
+}
+
+async function measure(browser, url, viewport, { shotsDir, tag, withStates, scheme = 'light', pixels = false, readCss = false, clicks = null }) {
   const page = guardPage(await browser.newPage());
   /* таблицы стилей с чужого домена CSSOM не читает — тёмную тему в них ищем по тексту ответа */
   const cssTexts = [];
@@ -689,6 +726,8 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
     data.motion.scrollReveal = revealBefore.map((b, i) => { const a = after.find((x) => x.i === i); return a && (a.opacity !== b.opacity || a.transform !== b.transform) ? { ...b, becomes: { opacity: a.opacity, transform: a.transform } } : null; }).filter(Boolean).slice(0, 20);
     data.scroll = { steps: pass.screens, pageHeight: pass.pageHeight, maxScrollY: pass.maxScrollY, reachedBottom: pass.reachedBottom, stuck: !!pass.stuck };
     data.tool = { goto: gotoInfo };
+    let acc = null;
+    if (clicks && CLICKS) { try { acc = (await CLICKS.findClickTargets(page, { want: ['accordions'] })).accordions; } catch (e) { data.tool.clicksError = String(e.message || e).slice(0, 120); } }
     if (readCss) {
       page.off('response', onResp);
       /* читаемые таблицы CSSOM уже проверил — значит, найденное в тексте пришло из нечитаемой */
@@ -709,6 +748,9 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
     if (pixels) data.actions.pixels = await checkActions(page, data.actions);
     if (shotsDir) data.fullShot = await fullShot(page, path.join(shotsDir, `${tag}-full.png`));
     if (withStates) data.states = await states(page, pixels ? loadSharp() : null);
+    /* клики — последними: раскрывают пункты */
+    if (acc && clicks === 'probe' && acc.groups.length) { try { await CLICKS.probeAccordions(page, acc.groups, { touch: !!viewport.hasTouch }); } catch (e) { data.tool.clicksError = String(e.message || e).slice(0, 120); } }
+    if (clicks) accordionPassport(data, acc);
     return data;
   } finally { page.off('response', onResp); await page.close().catch(() => {}); }
 }
@@ -725,8 +767,8 @@ export async function extract(url, { shotsDir = null, light = false, pixels = tr
   const br = browser || await launch();
   try {
     if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
-    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: states == null ? !light : !!states, pixels, readCss: !light });
-    const mobile = await measure(br, url, MOBILE, { shotsDir, tag: 'mobile', withStates: false });
+    const desktop = await measure(br, url, DESKTOP, { shotsDir, tag: 'desktop', withStates: states == null ? !light : !!states, pixels, readCss: !light, clicks: light ? 'find' : 'probe' });
+    const mobile = await measure(br, url, MOBILE, { shotsDir, tag: 'mobile', withStates: false, clicks: 'find' });
     let dark = null, darkReason = null;
     const why = darkSource(desktop.colorScheme);
     if (light) darkReason = 'не снималась (--light)';
@@ -997,6 +1039,16 @@ export function spacingModule(d) {
   return { by8: share(8), by4: share(4), by5: share(5) };
 }
 
+/** Аккордеоны без details (Framer и др.): как найдены и подтверждены ли кликом. json до 2026-09-28 — ничего. */
+function accordionLines(a) {
+  if (!a) return [];
+  if (!a.groups || !a.groups.length) return a.source && !/clicks/.test(a.source) ? [`- свои аккордеоны (без details): ${a.source}`] : [];
+  return a.groups.map((g) => {
+    const st = g.status === 'подтверждён' ? `клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.status === 'не проверен' ? 'кликом не проверялся' : `${g.status} — не считается`;
+    return `- ${g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} \`${g.sig}\` ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}, ${st}${g.questions && g.questions[0] ? ` — «${g.questions[0].slice(0, 50)}»` : ''}`;
+  });
+}
+
 const COMPONENT_NAMES = { form: 'форма', input: 'поля ввода', textarea: 'многострочное поле', select: 'выпадающий список', checkbox: 'флажки и переключатели', accordion: 'аккордеон', tabs: 'вкладки', dialog: 'окно поверх страницы', video: 'видео', iframe: 'встроенная страница (iframe)', canvas: 'холст (canvas)' };
 export function passportLines(d) {
   const p = d.passport; if (!p) return ['- паспорт не снят (json старой версии)'];
@@ -1010,6 +1062,7 @@ export function passportLines(d) {
     `- радиусы: ${(p.radius || []).join(', ') || 'нет'}`,
     `- есть: ${has.join(', ') || 'ничего из списка'}`,
     `- нет: ${not.join(', ') || '—'} — проектировать из языка образца, а не по умолчанию`,
+    ...accordionLines(p.accordions),
   ];
 }
 
@@ -1165,7 +1218,7 @@ export function summaryLines(data) {
   out.push(`OK   роли: ${Object.entries(r).map(([k, v]) => `${k} ${v || '—'}`).join(', ')}`);
   const lv = (x, k) => (x.scale[k] ? `${x.scale[k].fontSize}/${x.scale[k].fontWeight} ${x.scale[k].fontFamily}` : 'нет');
   if (d.scaleFrom) {
-    out.push(`OK   h1: ${lv(d, 'h1')} — ${levelSource(d, 'h1') || 'h1 не найден'}`);
+    out.push(`${d.scale.h1 ? 'OK  ' : 'WARN'} h1: ${lv(d, 'h1')} — ${levelSource(d, 'h1') || 'h1 не найден'}`);
     out.push(`OK   меню (nav): ${lv(d, 'nav')} — ${levelSource(d, 'nav') || 'не найдено'}; на узком: ${lv(m, 'nav')}${m.scaleFrom && m.scaleFrom.nav && !m.scaleFrom.nav.el ? ` (${m.scaleFrom.nav.how})` : ''}`);
     out.push(`OK   контейнер: ${containerNote(d)}; на узком: ${containerNote(m)}`);
   }
@@ -1173,7 +1226,10 @@ export function summaryLines(data) {
   if (m.scale.body && parseFloat(m.scale.body.fontSize) < 6) out.push(`FAIL основной текст на узком экране ${m.scale.body.fontSize}`);
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
   out.push(`OK   тёмная тема: ${darkLine(data)}`);
-  if (!data.tool || !data.tool.siteRework) out.push('WARN site-rework рядом нет — запасной путь: без ожидания картинок на снимках, прозрачность без теневого DOM');
+  const pa = d.passport && d.passport.accordions;
+  if (pa && pa.groups && pa.groups.length) out.push(`OK   аккордеоны без details: ${pa.groups.map((g) => `${g.sig} ×${g.count} (${g.status})`).join('; ')}`);
+  if (d.tool && d.tool.clicksError) out.push(`WARN поиск аккордеонов: ${d.tool.clicksError}`);
+  if (!data.tool || !data.tool.siteRework) out.push('WARN site-rework рядом нет — запасной путь: без ожидания картинок на снимках, прозрачность без теневого DOM, свои аккордеоны (Framer, Tilda) не ищутся');
   return out;
 }
 
@@ -1195,15 +1251,51 @@ const HELP = `Съём дизайн-системы со страницы.
   --light         без состояний наведения/фокуса и без тёмной темы
   --no-pixels     не подтверждать акцент пикселями коробок кнопок и ссылок
   --force         перезаписать существующую <имя>.md
+  --selftest      самопроверка на стендах fixtures/extract (h1, аккордеон Framer)
   --help, -h      эта справка
 
 Переменные: DESIGN_REF_PROJECT / SITE_REWORK_PROJECT — папка с puppeteer-core;
 CHROME_PATH — свой браузер; DESIGN_REF_NO_SR=1 — без помощников site-rework.`;
+/**
+ * Самопроверка на стендах fixtures/extract/*.html: ожидания в <meta name="expect-h1"> («32px 700 …» —
+ * размер и вес h1 шкалы; «не снят» — h1 шкалы нет) и <meta name="expect-accordion"> (пунктов в паспорте).
+ * Код 0 — всё совпало.
+ */
+async function selftest() {
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'extract');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.html')).sort();
+  let bad = 0; const br = await launch();
+  try {
+    for (const f of files) {
+      const html = fs.readFileSync(path.join(dir, f), 'utf8');
+      const meta = (n) => { const m = new RegExp(`<meta name="${n}" content="([^"]*)"`).exec(html); return m ? m[1] : null; };
+      const data = await extract(pathToFileURL(path.join(dir, f)).href, { browser: br, light: false, pixels: false, source: f });
+      const d = data.desktop, h1 = d.scale.h1, from = levelSource(d, 'h1') || '—';
+      const eh = meta('expect-h1');
+      if (eh) {
+        const [size, weight] = eh.split(' ');
+        const ok = size === 'не' ? !h1 : !!h1 && h1.fontSize === size && String(h1.fontWeight) === weight;
+        if (!ok) bad++;
+        console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} h1: ждали ${eh}; снято ${h1 ? `${h1.fontSize}/${h1.fontWeight}` : 'нет'} — ${from}`);
+      }
+      const ea = meta('expect-accordion');
+      if (ea !== null) {
+        const n = d.passport.components.accordion || 0, ok = n === Number(ea);
+        if (!ok) bad++;
+        console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} аккордеон: ждали ${ea}; в паспорте ${n}${accordionLines(d.passport.accordions).map((l) => '\n       ' + l.slice(2)).join('')}`);
+      }
+    }
+  } finally { await br.close().catch(() => {}); }
+  console.log(`${bad ? 'FAIL' : 'OK'}: стендов ${files.length}, расхождений ${bad}${CLICKS ? '' : ' (site-rework рядом нет — свои аккордеоны не ищутся)'}`);
+  return bad ? 1 : 0;
+}
+
 const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isCli) {
   try {
-    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h'], optional: ['out', 'name'] });
+    const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['no-shots', 'light', 'no-pixels', 'force', 'help', 'h', 'selftest'], optional: ['out', 'name'] });
     if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
+    if (opt.selftest) process.exit(await selftest());
     if (!pos[0]) { console.error('Нужен адрес: node extract.mjs <url> [--out docs/design] [--name slug] [--no-shots] (--help — все флаги)'); process.exit(1); }
     for (const k of ['out', 'name']) if (k in opt && (typeof opt[k] !== 'string' || !opt[k].trim())) { console.error(`--${k} без значения: нужно --${k} <${k === 'out' ? 'папка' : 'имя'}>`); process.exit(1); }
     if (opt.name && /[\\/]/.test(opt.name)) { console.error(`--name — имя файлов, а не путь (${opt.name}); папка задаётся --out`); process.exit(1); }

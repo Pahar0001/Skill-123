@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>extract — стенд: товар без h1 на первом экране и аккордеон как у Framer</title>
+<!-- Стенд для `extract.mjs --selftest` (как страница товара shapefest):
+     - на первом экране h1 нет, название товара — div 32px/700 в карточке покупки;
+     - ниже первого экрана — крупный h1 плашки «All Access» 90px: его брать нельзя;
+     - FAQ — «свой» аккордеон: div-пункты с вопросом и svg-шевроном, ответ в обёртке height:0 +
+       overflow:hidden, раскрывается кликом (скрипт меняет высоту), details и класса accordion нет.
+     Ожидания — в meta name="expect-…": их читает selftest. -->
+<meta name="expect-h1" content="32px 700 крупный заголовок">
+<meta name="expect-accordion" content="5">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1d1d24; background: #fff; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+  header { display: flex; gap: 24px; align-items: center; height: 72px; }
+  header a { color: inherit; text-decoration: none; font-size: 15px; }
+  .buy { display: grid; grid-template-columns: 1.4fr 1fr; gap: 40px; padding: 40px 0 80px; }
+  .gallery { height: 560px; border-radius: 24px; background: linear-gradient(135deg, #cfd8ff, #f2e6ff); }
+  .card { padding: 32px; border-radius: 24px; border: 1px solid #e3e3ea; }
+  .card__title { font-size: 32px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 16px; }
+  .card p { margin: 0 0 24px; }
+  .card a { display: inline-block; padding: 14px 28px; border-radius: 12px; background: #6a4ee1; color: #fff; text-decoration: none; }
+  .text { padding: 80px 0; font-size: 18px; }
+  .plate { margin: 40px 0; padding: 80px 40px; border-radius: 40px; background: #0d0d12; color: #fff; }
+  .plate h1 { margin: 0; font: 800 90px/1 system-ui, sans-serif; }
+  .faq { padding: 80px 0 160px; }
+  .faq h2 { font-size: 40px; margin: 0 0 32px; }
+  .q { border: 1px solid #e3e3ea; border-radius: 16px; margin-bottom: 12px; cursor: pointer; }
+  .q__row { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; font-weight: 600; }
+  .q__row svg { width: 16px; height: 16px; transition: transform .3s ease; }
+  .q.open .q__row svg { transform: rotate(90deg); }
+  .q__body { height: 0; overflow: hidden; transition: height .35s cubic-bezier(.2,.7,.2,1); }
+  .q__body div { padding: 0 24px 20px; color: #55555f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a href="#">Logo</a><a href="#">Каталог</a><a href="#">Тарифы</a><a href="#">Лицензия</a></header>
+  <section class="buy">
+    <div class="gallery"></div>
+    <div class="card">
+      <div class="card__title">3D-набор «Уютный дом»</div>
+      <p>Тридцать объектов в одном стиле: мебель, растения, свет. Файлы для любых редакторов.</p>
+      <a href="#buy">Купить набор</a>
+    </div>
+  </section>
+  <section class="text">
+    <p>Набор собран для интерфейсов и презентаций: каждый объект есть в трёх ракурсах и двух освещениях, а цвета подобраны так, чтобы объекты сочетались между собой без правки. Файлы лежат в привычных форматах, их можно вставить в любой редактор и сразу использовать в работе.</p>
+  </section>
+  <section class="plate"><h1>All Access</h1><p>Все наборы сразу и новые каждый месяц.</p></section>
+  <section class="faq">
+    <h2>Frequently asked questions</h2>
+    <div class="q" data-framer-name="FAQ item"><div class="q__row">Можно ли использовать в коммерческих проектах?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="q__body"><div>Да, лицензия разрешает коммерческое использование в сайтах, приложениях и рекламе без ограничений по тиражу.</div></div></div>
+    <div class="q" data-framer-name="FAQ item"><div class="q__row">В каких форматах файлы?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="q__body"><div>PNG с прозрачным фоном в двух размерах, исходники Blender и glTF для веба и приложений.</div></div></div>
+    <div class="q" data-framer-name="FAQ item"><div class="q__row">Будут ли обновления?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="q__body"><div>Да, новые объекты добавляются в набор бесплатно для всех, кто его уже купил раньше.</div></div></div>
+    <div class="q" data-framer-name="FAQ item"><div class="q__row">Можно ли вернуть деньги?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="q__body"><div>Если файлы не открываются, напишите нам в течение двух недель, и мы вернём оплату полностью.</div></div></div>
+    <div class="q" data-framer-name="FAQ item"><div class="q__row">Как получить счёт для компании?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="q__body"><div>Укажите реквизиты при оформлении заказа, и счёт придёт на почту вместе с файлами набора.</div></div></div>
+  </section>
+</div>
+<script>
+  for (const q of document.querySelectorAll('.q')) q.addEventListener('click', () => {
+    const b = q.querySelector('.q__body'); const open = q.classList.toggle('open');
+    b.style.height = open ? b.scrollHeight + 'px' : '0px';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>extract — стенд: первый экран без заголовка</title>
+<!-- Стенд для `extract.mjs --selftest`: первый экран — картинка с мелкой подписью, ни h1, ни крупного
+     текста; ниже — h1 60px. Ждём «h1 не снят» (а не h1 ниже первого экрана) и ни одного аккордеона:
+     спрятанный текст меню телефона и слайдер — не аккордеон. -->
+<meta name="expect-h1" content="не снят">
+<meta name="expect-accordion" content="0">
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; }
+  .hero { height: 100vh; background: linear-gradient(160deg, #2b2f3a, #6b7280); position: relative; }
+  .hero small { position: absolute; left: 24px; bottom: 24px; color: #fff; font-size: 13px; }
+  main { max-width: 900px; margin: 0 auto; padding: 80px 20px 400px; }
+  h1 { font-size: 60px; margin: 0 0 24px; }
+  .drawer { position: fixed; right: 0; top: 0; width: 280px; height: 100vh; overflow: hidden; transform: translateX(100%); background: #fff; }
+</style>
+</head>
+<body>
+<section class="hero"><small>Фото: мастерская, 2026</small></section>
+<main>
+  <h1>Мастерская керамики</h1>
+  <p>Мы делаем посуду вручную из местной глины и обжигаем её в дровяной печи. Каждая чашка немного отличается от соседней, и в этом весь смысл ручной работы, которую мы любим и показываем гостям.</p>
+</main>
+<nav class="drawer"><a href="#a">Каталог мастерской и все изделия</a><p>Меню открывается кнопкой, этот текст спрятан за краем экрана и не является ответом.</p></nav>
+</body>
+</html>
