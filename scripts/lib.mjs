@@ -19,7 +19,7 @@
  * SIG_FN, evaluateWith, gotoRetry (переход с повторами), scrollThrough (проход
  * с onStep), screenSegment и segmentPositions (снимки окна с ожиданием картинок),
  * fullPageShot (склейка длинных страниц), parseArgs, findModuleRoot, slugFromUrl (имя
- * файлов для file://).
+ * файлов для file://), capSlug и SLUG_MAX (предел длины имени — общий с site-rework).
  * Без него работают запасные варианты ниже — грубее (нет ожидания картинок,
  * нет теневого DOM в прозрачности); extract пишет это в json: tool.siteRework.
  * DESIGN_REF_NO_SR=1 — не подключать site-rework (проверка запасного пути).
@@ -27,6 +27,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
@@ -117,10 +118,13 @@ export function die(e) { console.error(String((e && e.message) || e)); process.e
  * Аргументы вида --out dir --name slug (и --out=dir); остальное — позиционные.
  * «--» — дальше только позиционные. flags — ключи, которые никогда не берут
  * значение (--no-shots url не съест адрес). С site-rework — его parseArgs (со всеми полями spec:
- * optional — ключи со значением, commands; неизвестный флаг там даёт WARN и не забирает адрес).
+ * optional — ключи со значением, commands; неизвестный флаг там даёт WARN и не забирает адрес;
+ * strict: true — ошибка с подсказкой и код 1; без site-rework strict не действует).
  */
-export function parseArgs(argv, { flags = [], values = [], optional = [], commands = [] } = {}) {
-  if (SR && SR.parseArgs) return SR.parseArgs(argv, { flags, values, optional, commands });
+export function parseArgs(argv, { flags = [], values = [], optional = [], commands = [], strict = false } = {}) {
+  /* справочник флагов site-rework (flags-doc.mjs): и с site-rework рядом, и без него */
+  if (process.env.RW_FLAGS_DUMP) { process.stdout.write('@@RW-FLAGS ' + JSON.stringify({ values, flags, optional, commands, strict: !!strict }) + '\n'); process.exit(0); }
+  if (SR && SR.parseArgs) return SR.parseArgs(argv, { flags, values, optional, commands, ...(strict ? { strict } : {}) });
   const pos = []; const opt = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -149,20 +153,33 @@ export function parseArgs(argv, { flags = [], values = [], optional = [], comman
  * Файл страницы (file:) — «file-» и две последние части пути, раскодированные
  * (кириллица остаётся): file:///C:/w/site/index.html → file-site-index-html;
  * с site-rework рядом — его же функцией. Прочие схемы (about:, data:) — хост и путь.
+ * Длиннее 60 знаков — начало и 8 знаков sha1 полного имени (capSlug, правило site-rework с 28.09.2026:
+ * путь к файлам короче 260 знаков, sharp его не обходит); { max: Infinity } — без предела (прежнее
+ * имя длинного адреса отдаёт legacySlugs).
  */
-export function slugFromUrl(url) {
+export function slugFromUrl(url, { max = SLUG_MAX } = {}) {
   const u = new URL(url);
   if (u.protocol === 'file:') {
-    if (SR && SR.slugFromUrl) return SR.slugFromUrl(url);
+    if (SR && SR.slugFromUrl && SR.capSlug) return SR.slugFromUrl(url, { max });
     let p = u.pathname; try { p = decodeURIComponent(p); } catch { /* как есть */ }
-    return ('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file';
+    return capSlug(('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file', max);
   }
-  if (!/^https?:$/.test(u.protocol)) return slugFromUrlOld(url);
+  if (!/^https?:$/.test(u.protocol)) return capSlug(slugFromUrlOld(url), max);
   const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const local = h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0';
   const port = u.port || (local ? (u.protocol === 'https:' ? '443' : '80') : '');
   const name = h === '::1' ? 'ip6-localhost' : h.includes(':') ? `ip6-${h}` : h.replace(/^www\./, '');
-  return (name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference';
+  return capSlug((name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'reference', max);
+}
+
+/* Предел имени — общий с site-rework (lib.capSlug): длинное имя — начало и 8 знаков sha1 полного.
+   Без site-rework — та же функция копией: иначе имена длинных адресов снова разойдутся. */
+const SLUG_MAX = (SR && SR.SLUG_MAX) || 60;
+export function capSlug(s, max = SLUG_MAX) {
+  if (SR && SR.capSlug) return SR.capSlug(s, max);
+  s = String(s);
+  if (s.length <= max) return s;
+  return s.slice(0, max - 9).replace(/-+$/, '') + '-' + crypto.createHash('sha1').update(s).digest('hex').slice(0, 8);
 }
 
 /** Имя по правилу до 24.09.2026 (без порта; у файлов — весь путь): extract подсказывает, если файлы под старым именем уже лежат в --out. */
@@ -174,10 +191,12 @@ export function slugFromUrlOld(url) {
 /**
  * Прежние имена файлов для адреса из pageAddress: без порта (http://localhost:4177/ →
  * localhost), у file:// — весь путь (c-w-site-index-html), у пути к файлу в Windows —
- * путь без буквы диска (w-site-index-html, так звал extract до 24.09.2026).
+ * путь без буквы диска (w-site-index-html, так звал extract до 24.09.2026); у адреса длиннее 60
+ * знаков — полное имя без предела (так звал extract до 28.09.2026).
  */
 export function legacySlugs(addr) {
   const out = new Set();
+  try { const full = slugFromUrl(addr.name || addr.url, { max: Infinity }); if (full !== slugFromUrl(addr.name || addr.url)) out.add(full); } catch { /* не адрес */ }
   try { out.add(slugFromUrlOld(addr.url)); } catch { /* не адрес */ }
   if (/^[a-z]:[\\/]/i.test(addr.source || '')) { try { out.add(slugFromUrlOld(addr.source)); } catch { /* не адрес */ } }
   return [...out];
