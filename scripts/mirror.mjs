@@ -33,8 +33,9 @@
  *
  * Адреса в HTML: картинки, видео, стили, обычные скрипты и ссылки — абсолютные, грузятся
  * с оригинала. Модульные скрипты, modulepreload, всё с атрибутом crossorigin, <use> в SVG
- * и шрифты из скачанных стилей того же сайта — от корня (/assets/…): с чужого адреса
- * браузер их не пустит (CORS), а serve.mjs --proxy отдаёт их с оригинала как свои.
+ * и все url() того же сайта в CSS (скачанные стили, <style>, style="…": шрифты, маски,
+ * картинки в переменных) — от корня (/assets/…): с чужого адреса браузер их не пустит
+ * (CORS), а serve.mjs --proxy отдаёт их с оригинала как свои.
  * Кодировка приводится к UTF-8 (страницы в windows-1251 перекодируются), <base> и
  * Content-Security-Policy из <meta> убираются, у скачанных стилей снимается integrity.
  *
@@ -78,9 +79,11 @@ const pages = opt.pages ? pagesFrom(opt.pages, base) : [base.href];
 if (!pages.includes(base.href)) pages.unshift(base.href);
 
 const FONT_EXT = /\.(woff2?|ttf|otf|eot)(\?|#|$)/i;
-/* url() и @import в CSS — абсолютные от адреса самого файла; шрифты того же сайта — от корня (CORS) */
+/* url() и @import в CSS: того же сайта — от корня, чужие — абсолютные. Шрифты, mask, shape-outside и
+   картинки в переменных (--src:url(…) → mask:var(--src)) с чужого адреса браузер не пускает без CORS
+   (Opara 28.09: 7 иконок-масок «blocked by CORS policy»), а serve --proxy отдаёт их с оригинала как свои */
 const absCss = (css, from, origin) => {
-  const fix = (u) => { try { const x = new URL(u.trim(), from); return x.origin === origin && FONT_EXT.test(x.pathname) ? x.pathname + x.search + x.hash : x.href; } catch { return u; } };
+  const fix = (u) => { try { const x = new URL(u.trim(), from); return x.origin === origin ? x.pathname + x.search + x.hash : x.href; } catch { return u; } };
   return css
     .replace(/url\(\s*(['"]?)(?!data:|#)([^'")]+)\1\s*\)/g, (m, q, u) => `url(${q}${fix(u)}${q})`)
     .replace(/@import\s+(['"])([^'"]+)\1/g, (m, q, u) => `@import ${q}${fix(u)}${q}`);
@@ -130,7 +133,8 @@ function prepareDoc({ html, pageUrl, source, stripScripts }) {
     }
     return out.join(', ');
   };
-  const cssUrls = (t) => t.replace(/url\(\s*(['"]?)(?!data:|#)([^'")]+)\1\s*\)/g, (m, q, u) => `url(${q}${abs(u)}${q})`).replace(/@import\s+(['"])([^'"]+)\1/g, (m, q, u) => `@import ${q}${abs(u)}${q}`);
+  /* url() во встроенных стилях и <style> — как в скачанных стилях (absCss): того же сайта — от корня */
+  const cssUrls = (t) => t.replace(/url\(\s*(['"]?)(?!data:|#)([^'")]+)\1\s*\)/g, (m, q, u) => `url(${q}${fromRoot(u)}${q})`).replace(/@import\s+(['"])([^'"]+)\1/g, (m, q, u) => `@import ${q}${fromRoot(u)}${q}`);
   /* <use> в SVG грузит только с того же адреса, что и страница */
   const isUse = (el) => el.localName === 'use' && el.namespaceURI === 'http://www.w3.org/2000/svg';
   const corsy = (el) => el.hasAttribute('crossorigin') || (el.localName === 'script' && (el.getAttribute('type') || '').trim().toLowerCase() === 'module') || (el.localName === 'link' && /(^|\s)modulepreload(\s|$)/i.test(el.getAttribute('rel') || ''));
@@ -276,7 +280,7 @@ fs.writeFileSync(mirrorMd, `# Зеркало ${base.href}
 Снято ${new Date().toLocaleString('sv-SE')}, экран ${vpName}. Это верстак, а не копия сайта.
 
 ${how}
-- Картинки, видео, стили, обычные скрипты и ссылки грузятся с оригинала по абсолютным адресам. Модульные скрипты, modulepreload, всё с атрибутом crossorigin, \`<use>\` в SVG и шрифты того же сайта из скачанных стилей записаны от корня (\`/assets/…\`): с чужого адреса браузер их не пустит (CORS), а \`serve.mjs --proxy\` отдаёт их с оригинала как свои. **Без --proxy они не загрузятся.**
+- Картинки, видео, стили, обычные скрипты и ссылки грузятся с оригинала по абсолютным адресам. Модульные скрипты, modulepreload, всё с атрибутом crossorigin, \`<use>\` в SVG и все url() того же сайта в CSS (скачанные стили, \`<style>\`, \`style="…"\`: шрифты, маски, картинки в переменных) записаны от корня (\`/assets/…\`): с чужого адреса браузер их не пустит (CORS), а \`serve.mjs --proxy\` отдаёт их с оригинала как свои. **Без --proxy они не загрузятся.**
 - Стили скачаны в \`css/\` и подключены локально: их можно править, но лучше переопределять в \`rework.css\`.
 - \`rework.css\` и \`rework.js\` подключены последними — все новые правки сюда и в HTML.
 - Файл в UTF-8 (исходная кодировка указана ниже). \`<base>\` и Content-Security-Policy из \`<meta>\` убраны.
