@@ -15,7 +15,15 @@ node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <�
 node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --pages "home=/,product=<путь>,collection=<путь>" --viewport desktop,mobile --out <папка> --tag donor   # всё движение числами: donor-home, donor-home-mobile, donor-product… одним запуском
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <донор> --out <папка> --tag donor --viewports desktop,mobile   # набор донора — база для typeset --baseline на этапе 4
 ```
+
+Спецификация донора несёт набор: «Набор: строка ~N знаков / M на телефоне, h1 в K строк» и `--measure` в
+токенах — абзацам `max-width: var(--measure)`. Длину строки и строки h1 сверяет `verify.mjs`; весь набор
+(висячие, одинокие, шрифт каждого знака) — `typeset.mjs --baseline`. Гарнитуры донора и свои —
+`cyrillic-check.mjs`: для ru он проверяет и знаки ₽№«»„“—–…Ёё Ż. «нет знаков: ₽» — у Google Fonts ₽ в
+latin-ext: подключить его или взять другую гарнитуру; свои подмножества — `--css <свои стили>` (сверка с
+unicode-range). Код выхода 2 — кириллица есть, знаков нет.
 
 **Все страницы донора, а не только главная.** Донор задаёт и структуру сайта:
 у shapefest.com, кроме главной, — страница набора (товар), коллекция (категория),
