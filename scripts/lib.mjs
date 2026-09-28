@@ -234,14 +234,26 @@ const setHidden = (o, k, v) => { try { Object.defineProperty(o, k, { value: v, e
    подняться, и проверка 3D покажет пустой холст там, где у людей всё работает.
    protocolTimeout — сколько ждать ответа страницы на одну команду: зависшая
    (нехватка памяти, бесконечный цикл) страница даёт ошибку через 90 с, а не
-   держит скрипт двадцать минут.
+   держит скрипт двадцать минут. Тяжёлой странице — SITE_REWORK_PROTOCOL_TIMEOUT=<мс>
+   (по умолчанию для всех скриптов сразу; явный параметр важнее).
+   Не запустился — ещё одна попытка через 3 с; в ошибке свободная память и место на диске
+   временной папки: 28.09 «Timed out after waiting 30000ms» было не от зависших chrome, а от
+   нехватки — 5 Chrome, свободно 2.5 ГБ ОЗУ, на C 0 байт (съел файл подкачки).
    browser: 'chrome' (по умолчанию) | 'edge' | 'firefox' (см. parseBrowser). Firefox запускается через
    WebDriver BiDi; scheme, reducedMotion и mobile нужны только ему (см. firefoxPrefs) — у Chrome и Edge
    это задаёт preparePage на каждой вкладке. У возвращённого браузера неперечисляемые поля: rwKind
    ('chrome' | 'edge' | 'firefox' — по тому, что запустилось: Edge запасным вместо Chrome — 'edge'),
    rwEngine ('chromium' | 'gecko'), rwName, rwVersion ('153.0.8010.53'), rwExe, rwEmulation
    (у Firefox — с какими scheme, reducedMotion, mobile он запущен). Сводка — browserInfo(browser). */
-export async function launch({ headless = true, protocolTimeout = 90000, browser = 'chrome', scheme = 'light', reducedMotion = false, mobile = false } = {}) {
+const envProtocolTimeout = () => { const ms = Number(process.env.SITE_REWORK_PROTOCOL_TIMEOUT); return ms > 0 ? ms : 90000; };
+/* «свободно ОЗУ 2.5 из 16 ГБ, на диске временной папки 0 МБ» — для ошибки запуска (statfsSync — Node ≥ 18.15) */
+function freeResources() {
+  const gb = (b) => (b / 2 ** 30).toFixed(1);
+  let disk = '';
+  try { const s = fs.statfsSync(os.tmpdir()); const free = s.bavail * s.bsize; disk = `, на диске временной папки ${free < 2 ** 30 ? `${Math.round(free / 2 ** 20)} МБ` : `${gb(free)} ГБ`} (${os.tmpdir()})`; } catch { /* старый Node */ }
+  return `свободно ОЗУ ${gb(os.freemem())} из ${gb(os.totalmem())} ГБ${disk}`;
+}
+export async function launch({ headless = true, protocolTimeout = envProtocolTimeout(), browser = 'chrome', scheme = 'light', reducedMotion = false, mobile = false } = {}) {
   const kind = parseBrowser(browser || 'chrome');
   if (!kind) throw new Error(`неизвестный браузер «${browser}» — есть chrome, firefox и edge`);
   const puppeteer = loadPuppeteer();
@@ -253,17 +265,20 @@ export async function launch({ headless = true, protocolTimeout = 90000, browser
   }
   const gecko = kind === 'firefox';
   let b;
-  try {
-    b = await puppeteer.launch(gecko
-      ? { browser: 'firefox', executablePath: exe, headless, protocolTimeout, extraPrefsFirefox: firefoxPrefs({ scheme, reducedMotion, mobile }) }
-      : { executablePath: exe, headless, protocolTimeout, args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'] });
-  } catch (e) {
-    /* «Timed out after 30000 ms while waiting for the WS endpoint…» со стеком puppeteer — назвать, что делать */
-    const why = String((e && e.message) || e).split('\n')[0].slice(0, 200);
-    const edge = /msedge/i.test(exe);
-    /* Edge 153 на части машин в безголовом режиме выходит сразу с кодом 0 и пустым выводом */
-    if (edge && /code:?\s*0\b/i.test(String((e && e.message) || e))) throw new Error(`Edge закрылся сразу после запуска без окна (код 0, ${exe}) — у Edge на части машин безголовый режим не работает; проверяйте в Chrome (по умолчанию) или задайте CHROME_PATH`);
-    throw new Error(`браузер не запустился (${exe}): ${why} — закройте зависшие процессы ${gecko ? 'firefox (запущенные проверками, не свой Firefox)' : edge ? 'msedge' : 'chrome'} или задайте ${gecko ? 'FIREFOX_PATH' : edge ? 'EDGE_PATH' : 'CHROME_PATH'} на другой ${gecko ? 'Firefox' : edge ? 'Edge' : 'Chrome'} и повторите`);
+  for (let attempt = 1; !b; attempt++) {
+    try {
+      b = await puppeteer.launch(gecko
+        ? { browser: 'firefox', executablePath: exe, headless, protocolTimeout, extraPrefsFirefox: firefoxPrefs({ scheme, reducedMotion, mobile }) }
+        : { executablePath: exe, headless, protocolTimeout, args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--allow-file-access-from-files'] });
+    } catch (e) {
+      /* «Timed out after 30000 ms while waiting for the WS endpoint…» со стеком puppeteer — назвать, что делать */
+      const why = String((e && e.message) || e).split('\n')[0].slice(0, 200);
+      const edge = /msedge/i.test(exe);
+      /* Edge 153 на части машин в безголовом режиме выходит сразу с кодом 0 и пустым выводом */
+      if (edge && /code:?\s*0\b/i.test(String((e && e.message) || e))) throw new Error(`Edge закрылся сразу после запуска без окна (код 0, ${exe}) — у Edge на части машин безголовый режим не работает; проверяйте в Chrome (по умолчанию) или задайте CHROME_PATH`);
+      if (attempt < 2) { await sleep(3000); continue; }
+      throw new Error(`браузер не запустился (${exe}) с ${attempt} попыток: ${why} — ${freeResources()}; мало памяти или места — закройте лишние браузеры и проверки, освободите диск; иначе закройте зависшие процессы ${gecko ? 'firefox (запущенные проверками, не свой Firefox)' : edge ? 'msedge' : 'chrome'} или задайте ${gecko ? 'FIREFOX_PATH' : edge ? 'EDGE_PATH' : 'CHROME_PATH'} на другой ${gecko ? 'Firefox' : edge ? 'Edge' : 'Chrome'} и повторите`);
+    }
   }
   let version = null; try { version = await b.version(); } catch { /* браузер без версии */ }
   const name = gecko ? 'Firefox' : /msedge/i.test(exe) ? 'Edge' : /chromium/i.test(exe) ? 'Chromium' : 'Chrome';
@@ -1440,6 +1455,66 @@ function overflowInPage({ tol, limit }) {
       panelCut.push({ sig: sig(par), panel: sig(p), text: clean(n.textContent), textLeft: Math.round(tr.left), textRight: Math.round(tr.right), panelLeft: Math.round(pr.left), panelRight: Math.round(pr.right) });
     }
   }
+  /* 4. текст перекрыт картинкой (WARN covered). Opara, 320 px: круг-фото героя перечёркивал метку
+     «Кофейня-пекарня · Рыбинск», а за край ничего не торчало — scrollWidth 320, проверка молчала.
+     Картинка, видео, холст, svg от 40 px против строк текста чужих элементов (не предков и не потомков
+     картинки); пересеклись — в центре пересечения elementsFromPoint: картинка в списке раньше текста —
+     она сверху, находка; ниже — фон под текстом, так задумано. Закреплённое (fixed/sticky) не в счёт:
+     наезжает при прокрутке по замыслу. Точка вне окна — окно на миг прокручивается к ней и сразу
+     обратно в одном синхронном вызове (события прокрутки увидят прежнее место); свой скроллер вместо
+     документа — такие точки пропускаются. Не видит: элементы с pointer-events:none (elementsFromPoint
+     их не отдаёт — ни картинку, ни текст), прозрачные поля PNG (попадание по коробке, не по пикселям). */
+  const covered = []; let coveredCount = 0;
+  {
+    const sx0 = scrollX, sy0 = scrollY; const vh = innerHeight;
+    const media = [];
+    for (const m of document.body.querySelectorAll('img, video, canvas, picture, svg')) {
+      const tag = m.tagName.toLowerCase();
+      if ((tag === 'svg' && m.ownerSVGElement) || (tag === 'picture' && m.querySelector('img'))) continue; /* вложенный svg; у picture считается его img */
+      const r = m.getBoundingClientRect(); if (r.width < 40 || r.height < 40) continue;
+      if (fixedChain(m) || op(m) <= 0.05) continue;
+      media.push({ el: m, l: r.left + sx0, t: r.top + sy0, r: r.right + sx0, b: r.bottom + sy0 });
+    }
+    const hits = []; const seen = new Set();
+    if (media.length) {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let nodes = 0;
+      for (let n = w.nextNode(); n && nodes < 6000 && hits.length < 400; n = w.nextNode()) {
+        if (!n.textContent.trim()) continue; const par = n.parentElement; if (!par || SKIP.test(par.tagName)) continue;
+        nodes++;
+        range.selectNodeContents(n); const lines = [...range.getClientRects()].filter((q) => q.width >= 1 && q.height >= 1);
+        if (!lines.length) continue;
+        let checked = null; /* видимость и закреплённость — только если строка вообще легла на картинку */
+        for (const q of lines) {
+          const L = q.left + sx0, T = q.top + sy0, R = q.right + sx0, B = q.bottom + sy0;
+          for (const m of media) {
+            const iw = Math.min(R, m.r) - Math.max(L, m.l), ih = Math.min(B, m.b) - Math.max(T, m.t);
+            if (iw < 4 || ih < Math.min(8, (B - T) / 2)) continue;
+            if (m.el === par || m.el.contains(par) || par.contains(m.el)) continue;
+            if (checked === null) checked = op(par) > 0.05 && !fixedChain(par);
+            if (!checked) break;
+            const key = `${media.indexOf(m)}|${sig(par)}|${n.textContent.slice(0, 40)}`; /* одна точка на пару картинка — текст, не на каждую строку */
+            if (seen.has(key)) continue; seen.add(key);
+            hits.push({ m, par, n, x: Math.max(L, m.l) + iw / 2, y: Math.max(T, m.t) + ih / 2 });
+          }
+          if (checked === false) break;
+        }
+      }
+    }
+    try {
+      for (const h of hits) {
+        let vy = h.y - scrollY;
+        if (vy < 0 || vy >= vh) { window.scrollTo({ left: sx0, top: Math.max(0, h.y - vh / 2), behavior: 'instant' }); vy = h.y - scrollY; }
+        const vx = h.x - scrollX;
+        if (vy < 0 || vy >= vh || vx < 0 || vx >= de.clientWidth) continue; /* не доехать: свой скроллер или точка вбок */
+        const list = document.elementsFromPoint(vx, vy);
+        const im = list.findIndex((e) => e === h.m.el || h.m.el.contains(e));
+        let it = list.indexOf(h.par); if (it < 0) it = list.findIndex((e) => h.par.contains(e));
+        if (im < 0 || it < 0 || im > it) continue; /* не видно одного из двух (pointer-events:none) или картинка под текстом */
+        coveredCount++;
+        if (covered.length < limit) covered.push({ sig: sig(h.par), text: clean(h.n.textContent), by: sig(h.m.el), x: Math.round(h.x), y: Math.round(h.y) });
+      }
+    } finally { if (scrollX !== sx0 || scrollY !== sy0) window.scrollTo({ left: sx0, top: sy0, behavior: 'instant' }); }
+  }
   /* только самые внешние нарушители: ребёнок торчащего блока торчит вместе с ним */
   const outer = out.filter((o) => !out.some((p) => p.el !== o.el && p.el.contains(o.el))).filter((o, i, a) => a.findIndex((x) => x.el === o.el) === i).map(({ el, ...rest }) => rest);
   const uniq = (list, key) => list.filter((x, i, a) => a.findIndex((y) => key(y) === key(x)) === i);
@@ -1456,7 +1531,8 @@ function overflowInPage({ tol, limit }) {
     vw, docScrollWidth: de.scrollWidth, bodyOverflowX: cs(document.body).overflowX, htmlOverflowX: cs(de).overflowX,
     docWider, sideScroll, wideCauses,
     count: outer.length, outer: outer.slice(0, limit), textWider: tw.slice(0, limit), textWiderCount: tw.length, panelCut: pc.slice(0, limit), panelCutCount: pc.length,
-    verdict: outer.length || sideScroll ? 'FAIL' : docWider || tw.length || pc.length ? 'WARN' : 'OK',
+    covered, coveredCount,
+    verdict: outer.length || sideScroll ? 'FAIL' : docWider || tw.length || pc.length || coveredCount ? 'WARN' : 'OK',
   };
 }
 
@@ -1473,6 +1549,9 @@ function overflowInPage({ tol, limit }) {
  * WARN textWider — текст шире своей блочной коробки (подпись вылезает из кнопки).
  * WARN panelCut — текст обрезан краем закреплённой панели (fixed/sticky с
  * overflow hidden/clip), и это не бесконечная анимация.
+ * WARN covered — текст перекрыт картинкой (img, video, canvas, svg от 40 px поверх строки
+ * чужого текста по elementsFromPoint; фон под текстом — не в счёт): [{ sig, text, by, x, y }],
+ * by — картинка, x/y — точка на странице; coveredCount — сколько всего пар.
  * Документ шире экрана (docWider) — причины в wideCauses, включая невидимые
  * (opacity 0) и целиком ушедшие вправо: FAIL, если вбок можно уехать
  * (sideScroll: overflow-x окна не hidden/clip), иначе WARN — полосы нет, но на
@@ -1480,7 +1559,7 @@ function overflowInPage({ tol, limit }) {
  * Прозрачное (итоговая opacity ≤ 0.05) в outer не считается; поэтому звать
  * после scrollThrough, когда блоки появления уже показаны.
  * Возвращает { verdict, vw, docScrollWidth, docWider, sideScroll, wideCauses[],
- * bodyOverflowX, htmlOverflowX, count, outer[], textWider[], panelCut[], summary }
+ * bodyOverflowX, htmlOverflowX, count, outer[], textWider[], panelCut[], covered[], summary }
  * — summary готовая строка для протокола.
  */
 export async function findOverflow(page, { tolerance = 1, limit = 20 } = {}) {
@@ -1492,6 +1571,7 @@ export async function findOverflow(page, { tolerance = 1, limit = 20 } = {}) {
   if (r.docWider) r.summary += ` · страница шире экрана на ${r.docScrollWidth - r.vw}px${r.sideScroll ? ', можно уехать вбок' : ' (полоса спрятана overflow-x)'}: ${r.wideCauses.slice(0, 3).map((o) => `${o.sig} до ${o.right}px${o.opacity <= 0.05 ? ' [невидимый]' : ''}`).join(' | ') || 'причина не найдена'}`;
   if (r.textWiderCount) r.summary += ` · текст шире коробки: ${r.textWider.slice(0, 3).map((t) => `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`).join(' | ')}`;
   if (r.panelCutCount) r.summary += ` · обрезано панелью: ${r.panelCut.slice(0, 3).map((t) => `${t.panel} «${t.text}» до ${t.textRight}px при краю ${t.panelRight}px`).join(' | ')}`;
+  if (r.coveredCount) r.summary += ` · текст перекрыт: ${r.covered.slice(0, 3).map((t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y})`).join(' | ')}${r.coveredCount > 3 ? ` и ещё ${r.coveredCount - 3}` : ''}`;
   return r;
 }
 
@@ -1799,47 +1879,76 @@ export function readJson(file, fallback = null) { try { return JSON.parse(fs.rea
 export const kb = (b) => `${Math.round((b || 0) / 1024)} КБ`;
 
 /* =====================================================================
-   Окно согласия cookie: найти и закрыть до снимков (discover, motion). Раньше жило в discover.mjs.
+   Окно согласия cookie, ворота-заставки и SITE_REWORK_DISMISS: найти и закрыть до снимков (discover,
+   motion, typeset — все, кто зовёт closeConsent). Раньше жило в discover.mjs.
    ===================================================================== */
 const CONSENT_DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN };
 /* В странице (или во фрейме согласия). Окно согласия — закреплённый блок, диалог или блок с именем
    cookie/consent/…, видимый, с текстом про cookie / consent / куки / персональные данные до 3000
    знаков, не шапка и не меню (ссылок не больше 8). Кнопка: принять → отклонить → закрыть; ссылка
    на другой адрес — никогда. Окно помечается data-rw-consent-box (его кнопки inPage не считает
-   кнопками сайта), ссылки на окно и кнопку — window.__rwConsentBox / __rwConsentBtn. */
+   кнопками сайта), ссылки на окно и кнопку — window.__rwConsentBox / __rwConsentBtn.
+   Слова кнопок — и на испанском, немецком, французском, итальянском: iubenda на virugroup.com
+   («Aceptar» / «Rechazar») находилась, но не закрывалась. Кнопка — ещё и div/span с cursor:pointer
+   или onclick и короткой надписью (конструкторы: «Хорошо» не <button>).
+   Ворота и заставки (kind 'ворота'): окно без слов про cookie, но с кнопкой «ENTER» / «I'm in» /
+   «Мне есть 18» — только закреплённое (fixed) или модальное; «Да», «Yes», «Войти» — только если оно
+   ещё и модальное или закрывает ≥ 30% экрана (иначе «Войти» в закреплённой шапке-div нажалось бы).
+   Кнопки остальной страницы не ищутся — только внутри найденного окна. Где не закрылось на разборе
+   28.09: forgeautomotive.co.uk «ENTER», arunnm.com «I'm in», brewwave «Вам исполнилось 18 лет?» — «Да».
+   Ворота целым экраном в потоке (не fixed) сюда не попадут — для них SITE_REWORK_DISMISS (closeConsent). */
 function consentInPage() {
   const TEXT = /cookie|consent|gdpr|куки|персональн\S* данн/i;
   const NAME = /cookie|consent|gdpr|onetrust|cookiebot|didomi|usercentrics|cky-|cc-window|cc-banner|termly|iubenda|klaro|osano/i;
-  const ACCEPT = /^(accept( all)?( cookies)?|accept (and|&) close|allow( all)?( cookies)?|i accept|agree( and (close|continue))?|i agree|got it!?|ok(ay)?!?|understood|continue|принять( все| всё)?( cookie| куки)?|принимаю|согласен|согласна|согласиться|соглашаюсь|я согласен|хорошо|понятно|ок|окей|разрешить( все)?)[.!]?$/i;
-  const REJECT = /^(reject( all)?( cookies)?|decline( all)?|deny( all)?|refuse|(use )?(only )?(necessary|essential)( cookies)?( only)?|отклонить( все)?|отказаться|запретить|только необходимые)[.!]?$/i;
-  const CLOSE = /^(close|dismiss|×|✕|✖|x|закрыть)$/i;
+  const ACCEPT = /^(accept( all)?( cookies)?|accept (and|&) close|allow( all)?( cookies)?|i accept|agree( and (close|continue))?|i agree|got it!?|ok(ay)?!?|understood|continue|принять( все| всё)?( cookie| куки)?|принимаю|согласен|согласна|согласиться|соглашаюсь|я согласен|хорошо|понятно|ок|окей|разрешить( все)?|aceptar( todo| todas)?( las cookies)?|acepto|akzeptieren|alle akzeptieren|alle cookies akzeptieren|accepter( tout| et fermer)?|tout accepter|j['’]accepte|accetta( tutto| tutti)?|accetto)[.!]?$/i;
+  const REJECT = /^(reject( all)?( cookies)?|decline( all)?|deny( all)?|refuse|(use )?(only )?(necessary|essential)( cookies)?( only)?|отклонить( все)?|отказаться|запретить|только необходимые|rechazar( todo| todas)?|ablehnen|alle ablehnen|refuser|tout refuser|continuer sans accepter|rifiuta( tutto| tutti)?)[.!]?$/i;
+  const CLOSE = /^(close|dismiss|×|✕|✖|x|закрыть|cerrar|schlie(ß|ss)en|fermer|chiudi)$/i;
+  /* ворота: STRONG — в любом закреплённом окне, WEAK — только в модальном или крупном */
+  const GATE_STRONG = /^(enter( (the )?(site|website))?|i['’]?m in|i am in|(yes,? )?i['’]?m (over |at least )?18( or older)?|(yes,? )?i am (over |at least )?18( or older)?|мне (уже )?(есть|исполнилось) 18( лет)?|(да,? )?мне есть 18|мне больше 18|я старше 18( лет)?|18\+|войти на сайт)[.!]?$/i;
+  const GATE_WEAK = /^(yes|да|войти|продолжить)[.!]?$/i;
+  const MODAL = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]';
   const cls = (el) => `${el.id || ''} ${typeof el.className === 'string' ? el.className : ''}`;
   const text = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
   const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && eff(el) > 0.05; };
+  const shareOf = (r) => Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / (innerWidth * innerHeight);
   const els = []; const walk = (root, d) => { for (const el of root.querySelectorAll('*')) { els.push(el); if (el.shadowRoot && d < 4) walk(el.shadowRoot, d + 1); } }; walk(document, 0);
-  const boxes = els.filter((el) => {
-    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|HEADER|NAV)$/.test(el.tagName)) return false;
+  /* boxes — окна согласия (как раньше), gates — закреплённые/модальные окна без слов про cookie до 600 знаков */
+  const boxes = []; const gates = [];
+  for (const el of els) {
+    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|HEADER|NAV)$/.test(el.tagName)) continue;
     const s = getComputedStyle(el);
-    const fixedish = s.position === 'fixed' || s.position === 'sticky' || el.matches('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
-    if ((!fixedish && !NAME.test(cls(el))) || !vis(el)) return false;
-    const t = text(el); return t.length > 0 && t.length <= 3000 && TEXT.test(t);
-  });
-  const outer = boxes.filter((b) => !boxes.some((o) => o !== b && o.contains(b)));
+    const modal = el.matches(MODAL);
+    const fixedish = s.position === 'fixed' || s.position === 'sticky' || modal;
+    if ((!fixedish && !NAME.test(cls(el))) || !vis(el)) continue;
+    const t = text(el); if (!t.length || t.length > 3000) continue;
+    if (TEXT.test(t)) boxes.push(el);
+    else if (t.length <= 600 && (s.position === 'fixed' || modal)) gates.push(el);
+  }
+  const outerOf = (list) => list.filter((b) => !list.some((o) => o !== b && o.contains(b)));
+  const outer = [...outerOf(boxes).map((box) => ({ box, kind: 'cookie' })), ...outerOf(gates).filter((g) => !boxes.some((b) => b.contains(g))).map((box) => ({ box, kind: 'ворота' }))];
   const label = (b) => String((b.tagName === 'INPUT' ? b.value : text(b)) || b.getAttribute('aria-label') || b.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
-  for (const box of outer) {
+  for (const { box, kind } of outer) {
     if (box.querySelectorAll('a[href]').length > 8 || box.querySelector('nav')) continue;
     const btns = []; const collect = (root, d) => { for (const b of root.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]')) btns.push(b); if (d < 3) for (const e of root.querySelectorAll('*')) if (e.shadowRoot) collect(e.shadowRoot, d + 1); };
     collect(box, 0); if (box.shadowRoot) collect(box.shadowRoot, 1);
-    const ok = btns.filter((b) => vis(b) && !b.disabled && !(b.tagName === 'A' && b.getAttribute('href') && !/^(#|javascript:)/i.test(b.getAttribute('href'))));
-    const pick = ok.find((b) => ACCEPT.test(label(b))) || ok.find((b) => REJECT.test(label(b))) || ok.find((b) => CLOSE.test(label(b)) || /close|dismiss|закрыть/i.test(b.getAttribute('aria-label') || ''));
-    const r = box.getBoundingClientRect(); const cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+    /* кнопка-div: cursor:pointer или onclick, надпись до 40 знаков, внутри нет настоящей кнопки; самая глубокая */
+    const divs = [...box.querySelectorAll('div, span, label, li, p')].filter((e) => { const t = text(e); return t && t.length <= 40 && !btns.some((b) => b === e || b.contains(e) || e.contains(b)) && (e.hasAttribute('onclick') || getComputedStyle(e).cursor === 'pointer'); });
+    const ok = [...btns, ...divs.filter((e) => !divs.some((o) => o !== e && e.contains(o)))].filter((b) => vis(b) && !b.disabled && !(b.tagName === 'A' && b.getAttribute('href') && !/^(#|javascript:)/i.test(b.getAttribute('href'))));
+    const r = box.getBoundingClientRect();
+    const modal = box.matches(MODAL); const fixed = modal || getComputedStyle(box).position === 'fixed';
+    const big = modal || shareOf(r) >= 0.3; /* «Да», «Войти» и общие «OK»/«Continue» вне cookie — только в таком */
+    const isGate = (b) => (fixed && GATE_STRONG.test(label(b))) || (big && GATE_WEAK.test(label(b)));
+    const pick = kind === 'cookie'
+      ? ok.find((b) => ACCEPT.test(label(b))) || ok.find(isGate) || ok.find((b) => REJECT.test(label(b))) || ok.find((b) => CLOSE.test(label(b)) || /close|dismiss|закрыть/i.test(b.getAttribute('aria-label') || ''))
+      : ok.find((b) => big && ACCEPT.test(label(b))) || ok.find(isGate);
+    if (kind !== 'cookie' && !pick) continue; /* закреплённое без кнопки входа — не ворота (шапка, чат, заставка загрузки) */
+    const cy = r.top + r.height / 2, cx = r.left + r.width / 2;
     const place = `${cy < innerHeight / 3 ? 'сверху' : cy > innerHeight * 2 / 3 ? 'снизу' : 'по центру'}${r.width >= innerWidth * 0.9 ? ' во всю ширину' : cx < innerWidth / 3 ? ' слева' : cx > innerWidth * 2 / 3 ? ' справа' : ''}`;
     box.setAttribute('data-rw-consent-box', '1'); window.__rwConsentBox = box; window.__rwConsentBtn = pick || null;
-    const vw = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)), vh = Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
     return {
-      box: sig(box), text: text(box).slice(0, 90), w: Math.round(r.width), h: Math.round(r.height), place, share: Math.round(vw * vh / (innerWidth * innerHeight) * 100),
+      kind, box: sig(box), text: text(box).slice(0, 90), w: Math.round(r.width), h: Math.round(r.height), place, share: Math.round(shareOf(r) * 100),
       buttons: ok.map(label).filter(Boolean).slice(0, 6), pick: pick ? label(pick) : null,
-      pickKind: pick ? (ACCEPT.test(label(pick)) ? 'принять' : REJECT.test(label(pick)) ? 'отклонить' : 'закрыть') : null,
+      pickKind: pick ? (ACCEPT.test(label(pick)) ? 'принять' : isGate(pick) ? 'войти' : REJECT.test(label(pick)) ? 'отклонить' : 'закрыть') : null,
     };
   }
   return null;
@@ -1853,11 +1962,85 @@ async function consentGone(fr, ms) {
   }
   return false;
 }
+/* SITE_REWORK_DISMISS — что нажать после загрузки, если скрипты сами не закрыли: заставка-ворота
+   целым экраном в потоке (не fixed), своя кнопка без знакомых слов. Список через «||»: CSS-селектор
+   или «text:Надпись» (без учёта регистра и пробелов; сначала точное совпадение надписи, потом
+   «содержит», не длиннее надписи на 20 знаков; из совпавших — кнопка или ссылка, иначе самый глубокий).
+   Пример: SITE_REWORK_DISMISS="text:ENTER||#age-gate .yes" (forgeautomotive.co.uk, 28.09). Только
+   основной документ, не фреймы. */
+function dismissSpecs() {
+  return String(process.env.SITE_REWORK_DISMISS || '').split('||').map((s) => s.trim()).filter(Boolean)
+    .map((s) => (/^text:/i.test(s) ? { raw: s, text: s.slice(5).trim() } : { raw: s, sel: s })).filter((s) => s.sel || s.text);
+}
+/* в странице: найти и запомнить в window.__rwDismissEl → { sig, label } | { error } | null */
+function dismissInPage(spec) {
+  const text = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && eff(el) > 0.05; };
+  let el = null;
+  if (spec.sel) {
+    let list; try { list = [...document.querySelectorAll(spec.sel)]; } catch (e) { return { error: `неверный селектор (${String(e.message || e).slice(0, 80)})` }; }
+    el = list.find(vis) || null;
+  } else {
+    const want = spec.text.replace(/\s+/g, ' ').trim().toLowerCase();
+    const all = []; const walk = (root, d) => { for (const e of root.querySelectorAll('*')) { all.push(e); if (e.shadowRoot && d < 4) walk(e.shadowRoot, d + 1); } }; walk(document, 0);
+    const lab = (e) => String((e.tagName === 'INPUT' ? e.value : text(e)) || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const cand = all.filter((e) => !/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|HEAD|HTML|BODY)$/.test(e.tagName));
+    let same = cand.filter((e) => lab(e) === want && vis(e));
+    if (!same.length) same = cand.filter((e) => { const l = lab(e); return l.includes(want) && l.length <= want.length + 20 && vis(e); });
+    const deep = same.filter((e) => !same.some((o) => o !== e && e.contains(o)));
+    el = same.find((e) => e.matches('button, a, [role="button"], input')) || deep[0] || null;
+  }
+  if (!el) return null;
+  window.__rwDismissEl = el;
+  return { sig: sig(el), label: text(el).slice(0, 40) || el.getAttribute('aria-label') || '' };
+}
+async function dismissGone(page, ms) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    const shown = await evaluateWith(page, () => { const e = window.__rwDismissEl; if (!e || !e.isConnected) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && eff(e) > 0.05; }, null, CONSENT_DEPS).catch(() => null);
+    if (shown === false) return true; /* null — страница ушла на другой адрес, смотрит вызывающий */
+    await sleep(150);
+  }
+  return false;
+}
+/* нажать всё из SITE_REWORK_DISMISS → [{ spec, found, sig, label, gone, nav, why }] (пусто — переменной нет) */
+async function runDismiss(page) {
+  const out = [];
+  for (const spec of dismissSpecs()) {
+    const f = await withDeadline(evaluateWith(page, dismissInPage, spec, CONSENT_DEPS), 10000, 'поиск SITE_REWORK_DISMISS').catch((e) => ({ error: String(e.message || e).slice(0, 100) }));
+    if (!f || f.error) { out.push({ spec: spec.raw, found: false, why: f ? f.error : 'не найдено на странице' }); continue; }
+    const here = () => page.url().split('#')[0]; const url0 = here(); /* href="#…" — не переход */
+    await page.evaluate(() => { const e = window.__rwDismissEl; if (e && e.isConnected) e.click(); }).catch(() => {});
+    let gone = await dismissGone(page, 2500);
+    if (!gone && here() === url0) { /* настоящий клик мышью: click() из скрипта слушают не все */
+      const pt = await page.evaluate(() => { const e = window.__rwDismissEl; if (!e || !e.isConnected) return null; e.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = e.getBoundingClientRect(); return r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; }).catch(() => null);
+      if (pt) { await page.mouse.click(pt.x, pt.y).catch(() => {}); gone = await dismissGone(page, 2500); }
+    }
+    let nav = null;
+    if (here() !== url0) { nav = page.url(); gone = true; await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => {}); }
+    out.push({ spec: spec.raw, found: true, sig: f.sig, label: f.label, gone, nav });
+  }
+  if (out.some((d) => d.found)) { await page.mouse.move(1, 1).catch(() => {}); await sleep(300); }
+  return out;
+}
+
 /* Найти и закрыть окно согласия: основной документ, потом фреймы CMP. click: false — только найти и
-   пометить (--keep-consent). → { found, closed, box, place, w, h, share, buttons, pick, pickKind,
-   frame, why, waitedMs } или { found: false } */
+   пометить (--keep-consent). → { found, closed, kind ('cookie' | 'ворота' | 'dismiss'), box, place, w, h,
+   share, buttons, pick, pickKind, frame, why, waitedMs, dismiss? } или { found: false, dismiss? }.
+   Сначала SITE_REWORK_DISMISS (и при --keep-consent: переменную задали явно), потом окно согласия —
+   оно могло появиться только после ворот. dismiss — что нажато по переменной; окна согласия не было,
+   а по переменной нажато — found: true, kind 'dismiss' (попадает в отчёт там же, где окно согласия). */
 const CONSENT_FRAME = /consent|cookie|cmp|privacy|sourcepoint|quantcast|onetrust|didomi|trustarc|usercentrics|cookiebot|iubenda/i;
 export async function closeConsent(page, { click = true } = {}) {
+  const dismiss = await runDismiss(page).catch((e) => [{ spec: process.env.SITE_REWORK_DISMISS, found: false, why: String(e.message || e).slice(0, 100) }]);
+  const res = await closeConsentAuto(page, { click });
+  if (!dismiss.length) return res;
+  if (res.found) return { ...res, dismiss };
+  const hit = dismiss.find((d) => d.found);
+  if (!hit) return { ...res, dismiss };
+  return { found: true, closed: hit.gone, kind: 'dismiss', box: hit.sig, pick: hit.label || hit.spec, pickKind: 'SITE_REWORK_DISMISS', dismiss, why: hit.gone ? null : `нажали «${hit.label || hit.spec}», осталось на экране` };
+}
+async function closeConsentAuto(page, { click = true } = {}) {
   const main = page.mainFrame();
   const frames = [main, ...page.frames().filter((f) => f !== main && CONSENT_FRAME.test(f.url()))];
   for (const fr of frames) {
@@ -1880,8 +2063,11 @@ export async function closeConsent(page, { click = true } = {}) {
   return { found: false };
 }
 export function consentNote(c) {
-  if (!c || !c.found) return c && c.error ? `проверка не прошла: ${c.error}` : 'не появлялось';
-  const where = `${c.box}, ${c.place}, ${c.w}×${c.h}${c.frame ? `, во фрейме ${c.frame}` : ''}`;
-  if (c.closed) return `закрыто кнопкой «${c.pick}» (${where})${c.late ? ' — появилось позже, после прокрутки: на снимках прокрутки оно есть, замеры сняты без него' : ''}`;
-  return `**не закрыто** — ${c.why || 'причина неизвестна'} (${where}${c.buttons && c.buttons.length ? `; кнопки в окне: ${c.buttons.map((b) => `«${b}»`).join(', ')}` : ''}) — закрывает ${c.share}% экрана на снимках`;
+  const dn = c && c.dismiss && c.dismiss.length ? `SITE_REWORK_DISMISS: ${c.dismiss.map((d) => (d.found ? `«${d.spec}» — нажато ${d.sig}${d.label ? ` «${d.label}»` : ''}${d.nav ? `, перешли на ${d.nav}` : d.gone ? ', исчезло' : ', **осталось на экране**'}` : `«${d.spec}» — ${d.why}`)).join('; ')}` : '';
+  const tail = dn ? ` · ${dn}` : '';
+  if (!c || !c.found) return (c && c.error ? `проверка не прошла: ${c.error}` : 'не появлялось') + tail;
+  if (c.kind === 'dismiss') return `${dn}${c.late ? ' — после прокрутки' : ''}`;
+  const where = `${c.kind === 'ворота' ? 'ворота-заставка, ' : ''}${c.box}, ${c.place}, ${c.w}×${c.h}${c.frame ? `, во фрейме ${c.frame}` : ''}`;
+  if (c.closed) return `закрыто кнопкой «${c.pick}» (${where})${c.late ? ' — появилось позже, после прокрутки: на снимках прокрутки оно есть, замеры сняты без него' : ''}${tail}`;
+  return `**не закрыто** — ${c.why || 'причина неизвестна'} (${where}${c.buttons && c.buttons.length ? `; кнопки в окне: ${c.buttons.map((b) => `«${b}»`).join(', ')}` : ''}) — закрывает ${c.share}% экрана на снимках${tail}`;
 }

@@ -304,10 +304,13 @@ node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папк
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click "<кнопка>" --edit "<поле с маской>" --select "<список>=<вариант>"   # селекторы свои; и то же с --viewport mobile --tag controls-mobile
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag state --css --hover-all --nav
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-320 --viewport mobile-s --scroll
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-360 --viewport android --scroll   # самый массовый Android; правило «≤360» живёт и здесь
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-mobile --viewport mobile
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-desktop --viewport desktop   # меню, телефон в шапке, подписи — на телефоне скрыты
 node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after --viewports desktop,mobile,mobile-s --baseline <папка>/typeset/donor-desktop.json   # без донора — без --baseline; открыть typeset/after-*/00-hero.png и вырезки
-node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after-ff --viewports desktop,mobile --browser firefox   # браузер пользователя: переносы, text-wrap: pretty, строки первого экрана (Firefox ломает их иначе)
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after-wide --viewports 1920x1080@1,laptop,tablet,android   # правки кегля в vw и колонок: на 1440 три строки, на 1920 — снова четыре (Opara 28.09)
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after-ff --viewports desktop,mobile,mobile-s --browser firefox   # браузер пользователя: переносы, text-wrap: pretty, строки первого экрана (Firefox ломает их иначе)
 node ~/.claude/skills/site-rework/scripts/copy.mjs lint <url> --out <папка> --tag after --pages <те же> --taste   # тексты: FAIL — выдуманный факт или заполнитель; протокол — доказательство задач content
 node ~/.claude/skills/site-rework/scripts/copy.mjs pairs <папка>/copy/before.json <папка>/copy/after.json --md   # «Тексты "было → стало"» в отчёт
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
@@ -322,7 +325,15 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 после прогона `checks --journal <папка>/journal.sh`; visual — руками после взгляда.
 Открыть глазами все `after/*` на desktop, tablet, mobile, вырезки 1:1
 изменённых компонентов и все `diff/*.png`: изменения только там, где
-планировались; что должно было сохраниться — сохранилось.
+планировались; что должно было сохраниться — сохранилось. Если высота страницы изменилась,
+`diff` окон прокрутки сравнивает разные места — смотреть first и full, а разделы — по снимкам глазами.
+Правило в `rework.css` против правила оригинала — сверить специфичность: `.a img` проигрывает
+`.a img:nth-child(1)` (Opara: снимки на 320 «уменьшены», а на деле прежние и наехали на метку).
+Текст из данных (база, API, json) перезаписывает HTML — правка файла до экрана не доходит;
+проверять набор по `typeset`, а не по файлу.
+Заставки и ворота («ENTER», 18+), которые скрипты не закрыли сами: `SITE_REWORK_DISMISS="селектор||text:Надпись"`;
+тяжёлая страница — `SITE_REWORK_PROTOCOL_TIMEOUT=<мс>` (по умолчанию 90000). Не больше 2–3 браузерных
+проверок одновременно — на этой машине кончались память и диск C.
 
 Условие выхода из цикла: все P0–P2 VERIFIED по runtime, visual и mobile с
 доказательствами новее последней правки; автопроверки состояния без FAIL;
