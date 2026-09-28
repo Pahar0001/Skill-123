@@ -74,7 +74,7 @@ export const wb = (src, flags = 'giu') => new RegExp(`(?<![\\p{L}\\d])(?:${src})
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const clip = (s, n = 160) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 /* пробелы любого рода (и неразрывный) → один обычный */
-export const collapse = (s) => String(s ?? '').replace(/[\s   ​]+/g, ' ').trim();
+export const collapse = (s) => String(s ?? '').replace(/[\s\u00a0\u202f\u2009\u200b]+/g, ' ').trim();
 export const words = (s) => String(s).match(/[\p{L}\d]+(?:[-’'][\p{L}\d]+)*/gu) || [];
 
 /* юридический текст: только заполнители (и донор) — переписывать его без владельца и юриста нельзя */
@@ -240,7 +240,7 @@ const WORDNUM = { одн: 1, дв: 2, тр: 3, четыр: 4, пят: 5, шес�
 
 /** Сравнимая запись заявления: без пробелов, строчными, тире → «-», ё → е, «руб.» → ₽. */
 export function norm(s) {
-  return String(s).toLowerCase().replace(/[\s   ]+/g, '').replace(/[–—−]/g, '-').replace(/ё/g, 'е')
+  return String(s).toLowerCase().replace(/[\s\u00a0\u202f\u2009]+/g, '').replace(/[–—−]/g, '-').replace(/ё/g, 'е')
     .replace(/руб\p{L}*\.?|р\./gu, '₽');
 }
 /* подписи заявления: «вид|единица|число» для каждого числа — чтобы «1 000–20 000 ₽» сошлось с «от 1 000 до 20 000 ₽» */
@@ -248,7 +248,7 @@ function sigsOf(kind, raw) {
   const t = String(raw).toLowerCase().replace(/ё/g, 'е');
   if (kind === 'guarantee' || kind === 'rank') return [`${kind}|${norm(t).slice(0, 7)}`];
   const mult = /тыс/.test(t) ? 1000 : /млн/.test(t) ? 1e6 : 1;
-  const flat = t.replace(/(\d)[\s  ](?=\d{3}(?!\d))/g, '$1');
+  const flat = t.replace(/(\d)[\s\u00a0\u202f](?=\d{3}(?!\d))/g, '$1');
   const nums = [...flat.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => String(parseFloat(m[0].replace(',', '.')) * mult));
   /* «две недели», «двадцать минут»: самая длинная основа из WORDNUM в начале слова */
   if (!/\d/.test(t)) for (const w of t.match(/\p{L}+/gu) || []) {
@@ -524,7 +524,7 @@ export function indexOf(found, nWords) {
 export const LOCK_RES = [
   /\{\{[\s\S]*?\}\}/g, /\{%[\s\S]*?%\}/g, /<%[\s\S]*?%>/g, /\$\{[^}]*\}/g, /\[\[[\s\S]*?\]\]/g,
   /(?:https?:\/\/|www\.)[^\s«»"<]+/g, /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g,
-  /(?:\+7|(?<!\d)8)[\s ]*\(?\d{3,5}\)?[\s -]*\d{1,3}[\s -]*\d{2}[\s -]*\d{2}(?!\d)/g,
+  /(?:\+7|(?<!\d)8)[\s\u00a0]*\(?\d{3,5}\)?[\s\u00a0-]*\d{1,3}[\s\u00a0-]*\d{2}[\s\u00a0-]*\d{2}(?!\d)/g,
   /(?<!\d)\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?(?!\d)/g,
   /(?<![\w-])[\w-]+\.(?:html|css|js|mjs|json|png|jpe?g|webp|avif|svg|pdf|zip)(?![\w])/gi,
 ];
@@ -548,7 +548,7 @@ export const TYPO_RULES = ['short-word', 'particle', 'dash', 'range', 'digits', 
 /**
  * Типограф прогона: run = { text, locked: Set, role }. → { ops: [{ i, to, rule }], why: [{ rule, note }] }.
  * i — индекс символа в run.text, to — сырая строка вместо него ('' — удалить).
- * nbsp — чем писать неразрывный пробел ('&nbsp;' в HTML, ' ' в простом тексте);
+ * nbsp — чем писать неразрывный пробел ('&nbsp;' в HTML, '\u00a0' в простом тексте);
  * raw(a, b) — исходник символов [a, b) (перенос строки переезжает перед коротким словом как есть).
  * В <title> (role title) пробелы не трогаются: вкладка не переносит строки — только кавычки, тире, «…».
  */
@@ -586,14 +586,14 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
   for (const m of s.matchAll(/(?<![.?!…])\.\.\.(?!\.)/g)) { const i = m.index; if (ok(i) && ok(i + 1) && ok(i + 2)) { set(i, '…', 'ellipsis'); set(i + 1, '', 'ellipsis'); set(i + 2, '', 'ellipsis'); } }
 
   /* тире между словами: « - », « – », « -- », « — » → неразрывный пробел + «—»; «10 - 20» — диапазон, решает человек */
-  for (const m of s.matchAll(/(?<=\S)([ \t\r\n ]+)(--|[-–—])(?=[ \t\r\n])/g)) {
+  for (const m of s.matchAll(/(?<=\S)([ \t\r\n\u00a0]+)(--|[-–—])(?=[ \t\r\n])/g)) {
     const a = m.index; const b = a + m[1].length; const d = b;
     const prev = s[a - 1]; const next = s.slice(d + m[2].length).trimStart()[0] || '';
     if (/\d/.test(prev) && /\d/.test(next)) continue;
     if (!ok(d)) continue;
     if (m[2] === '--') { if (!ok(d + 1)) continue; set(d, '—', 'dash'); set(d + 1, '', 'dash'); }
     else if (m[2] !== '—') set(d, '—', 'dash');
-    if (!m[1].includes(' ')) bindWs(a, b, 'dash');
+    if (!m[1].includes('\u00a0')) bindWs(a, b, 'dash');
   }
   /* тире в начале прогона (реплика, пункт) */
   { const m = /^([ \t\r\n]*)([-–—])([ \t]+)(?=\S)/.exec(s); if (m) { const d = m[1].length; if (ok(d)) { if (m[2] !== '—') set(d, '—', 'dash'); bindWs(d + 1, d + 1 + m[3].length, 'dash'); } } }
@@ -626,7 +626,7 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
 
   /* разряды: «20 000» → «20&nbsp;000» — только там, где пробел уже стоит */
   for (const m of s.matchAll(/(?<![\d.,])(\d{1,3})( )(?=\d{3}(?!\d))/g)) { const a = m.index + m[1].length; if (ok(a)) set(a, nbsp, 'digits'); }
-  for (const m of s.matchAll(/(?<=\d{3})( )(?=\d{3}(?!\d))/g)) { const a = m.index; if (ok(a) && /\d[  ]\d{3}$/.test(s.slice(Math.max(0, a - 5), a))) set(a, nbsp, 'digits'); }
+  for (const m of s.matchAll(/(?<=\d{3})( )(?=\d{3}(?!\d))/g)) { const a = m.index; if (ok(a) && /\d[ \u00a0]\d{3}$/.test(s.slice(Math.max(0, a - 5), a))) set(a, nbsp, 'digits'); }
 
   /* число и следующее слово, ₽, %, °; не к союзам «и, или, а, но» */
   for (const m of s.matchAll(/(?<=\d)([ \t\r\n]+)(?=[\p{L}₽%°$€])/gu)) {
@@ -640,12 +640,12 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
   /* сокращения: «г. Рыбинск», «ул. Ленина», «т. е.», «и т. д.»; «2026 г. Мы…» — после числа вперёд не привязывать */
   for (const m of s.matchAll(/(?<=^|[\s(«„])(т|г|ул|д|кв|пр|пер|стр|с|им|руб|тыс|см|рис|гл|ст|обл|пос|ч|мин|р)\.([ \t\r\n]+)(?=[\p{L}\d])/giu)) {
     const before = s.slice(0, m.index);
-    if (/\d[\s ]*$/.test(before) && /^(г|р|руб|тыс|см|ч|мин|с|ст)$/i.test(m[1])) continue;
+    if (/\d[\s\u00a0]*$/.test(before) && /^(г|р|руб|тыс|см|ч|мин|с|ст)$/i.test(m[1])) continue;
     const a = m.index + m[1].length + 1; if (ok(a)) bindWs(a, a + m[2].length, 'abbr');
   }
   /* инициалы: «А. С. Пушкин», «Пушкин А. С.» */
   for (const m of s.matchAll(/(?<=(?:^|[\s(«])[А-ЯЁA-Z]\.)([ \t]+)(?=[А-ЯЁA-Z](?:\.|[а-яёa-z]))/gu)) { const a = m.index; if (ok(a)) bindWs(a, a + m[1].length, 'initials'); }
-  for (const m of s.matchAll(/(?<=[А-ЯЁ][а-яё]+)([ \t]+)(?=[А-ЯЁ]\.[\s ]?[А-ЯЁ]\.)/gu)) { const a = m.index; if (ok(a)) bindWs(a, a + m[1].length, 'initials'); }
+  for (const m of s.matchAll(/(?<=[А-ЯЁ][а-яё]+)([ \t]+)(?=[А-ЯЁ]\.[\s\u00a0]?[А-ЯЁ]\.)/gu)) { const a = m.index; if (ok(a)) bindWs(a, a + m[1].length, 'initials'); }
 
   /* частицы «бы», «ли», «же» — к предыдущему слову */
   for (const m of s.matchAll(/(?<=\p{L})([ \t\r\n]+)(?=(?:же|ж|ли|ль|бы|б)(?![\p{L}\d]))/giu)) { const a = m.index; if (ok(a) && !L.has(a - 1) && !L.has(a + m[1].length)) bindWs(a, a + m[1].length, 'particle'); }
@@ -659,7 +659,7 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
     if (L.has(m.index)) continue;                            /* само слово в коде или шаблоне («Ctrl - C» в <kbd>) */
     /* частица после слова держится за него («здесь~же за», «смогу~ли напечатать»), вперёд её не тянем —
        и во втором проходе, когда перед ней уже неразрывный пробел (иначе типограф не идемпотентен) */
-    if (/^(?:же|ж|ли|ль|бы|б)$/iu.test(w) && /\p{L}[ \t\r\n ]+$/u.test(s.slice(Math.max(0, m.index - 8), m.index))) continue;
+    if (/^(?:же|ж|ли|ль|бы|б)$/iu.test(w) && /\p{L}[ \t\r\n\u00a0]+$/u.test(s.slice(Math.max(0, m.index - 8), m.index))) continue;
     const a = m.index + w.length; if (!ok(a)) continue;
     bindWs(a, a + m[2].length, 'short-word', m.index);
   }
@@ -671,7 +671,7 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
      склейки коротких слов и частиц с конца цепочки; телефоны и числа не трогаем */
   const maxRun = /^h[12]$/.test(run.role) ? 14 : /^h[3-6]$|^button$/.test(run.role) ? 18 : 26;
   const soft = new Set(['short-word', 'particle']);
-  const isNb = (i) => { const o = ops.get(i); return o ? o.to === nbsp || o.to === ' ' : s[i] === ' '; };
+  const isNb = (i) => { const o = ops.get(i); return o ? o.to === nbsp || o.to === '\u00a0' : s[i] === '\u00a0'; };
   const isGone = (i) => { const o = ops.get(i); return !!o && o.to === ''; };
   const segments = () => {
     const out = []; let st = 0;
@@ -694,7 +694,7 @@ export function typographRun(run, { nbsp = '&nbsp;', raw = null } = {}) {
 
   let list = [...ops.values()];
   /* <title>: пробелы не трогаем — вкладка и выдача поиска строки не переносят */
-  if (run.role === 'title') list = list.filter((o) => !/[\s ]/.test(s[o.i]));
+  if (run.role === 'title') list = list.filter((o) => !/[\s\u00a0]/.test(s[o.i]));
   return { ops: list, why };
 }
 
@@ -710,7 +710,7 @@ function quotes(s, ok, set, why) {
     if (ch === '»' || (ch === '”' && lat > cyr)) { depth = Math.max(0, depth - 1); continue; }
     if (ch !== '"' || !ok(i)) continue;
     const prev = i ? s[i - 1] : ' ';
-    const opening = i === 0 || /[\s (\[{«„—–\-/]/.test(prev);
+    const opening = i === 0 || /[\s\u00a0(\[{«„—–\-/]/.test(prev);
     if (opening) { depth++; plan.push([i, depth === 1 ? o1 : o2]); }
     else { if (depth === 0) { why.push({ rule: 'quotes', note: 'кавычка закрывает, а открытой нет — прогон без замены кавычек' }); return; } plan.push([i, depth === 1 ? c1 : c2]); depth--; }
   }

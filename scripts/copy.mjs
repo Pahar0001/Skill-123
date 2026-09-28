@@ -130,10 +130,10 @@ const EXCLUDE = new Set(['script', 'style', 'pre', 'textarea', 'svg', 'math', 't
 const CODE = new Set(['code', 'kbd', 'samp', 'var', 'tt']);
 /* граница прогона: блок, кнопка, подпись; в режиме адреса ещё data-copy-b (блочный по вычисленному стилю) */
 const BLOCK = new Set(('address article aside blockquote body button caption dd details dialog div dl dt fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html label legend li main nav ol optgroup option output p section select summary table tbody td tfoot th thead title tr ul img input').split(' '));
-const NAMED = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…', thinsp: ' ', ensp: ' ', emsp: ' ', shy: '­', copy: '©', reg: '®', trade: '™', times: '×', minus: '−', deg: '°', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', bdquo: '„', sbquo: '‚', numero: '№', middot: '·', bull: '•', larr: '←', rarr: '→', uarr: '↑', darr: '↓', zwnj: '‌', zwj: '‍', NonBreakingSpace: ' ', rub: '₽', euro: '€', sect: '§', plusmn: '±', frac12: '½' };
+const NAMED = { nbsp: '\u00a0', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…', thinsp: '\u2009', ensp: ' ', emsp: ' ', shy: '­', copy: '©', reg: '®', trade: '™', times: '×', minus: '−', deg: '°', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', bdquo: '„', sbquo: '‚', numero: '№', middot: '·', bull: '•', larr: '←', rarr: '→', uarr: '↑', darr: '↓', zwnj: '‌', zwj: '‍', NonBreakingSpace: '\u00a0', rub: '₽', euro: '€', sect: '§', plusmn: '±', frac12: '½' };
 const OPAQUE = '￼';   /* неизвестная сущность и строчный код — «предмет», не буква и не пробел */
 const ASTRAL = '';   /* символ вне BMP (эмодзи) в тексте типографа: один знак на исходный отрезок */
-const PARA = ' ';     /* граница пункта в тексте проверки (см. runsOf) */
+const PARA = '\u2029';     /* граница пункта в тексте проверки (см. runsOf) */
 
 /** Токены: { type: text|tag|comment|decl|raw|rcdata, s, e, name?, close?, attrs? } — s/e по исходной строке. */
 export function tokenize(html) {
@@ -283,7 +283,7 @@ export function runsOf(html, toks = tokenize(html)) {
     if (t.type === 'tag') {
       if ((t.name === 'br' || t.name === 'wbr') && !t.close) {
         /* перенос не рвёт предложение: виртуальный знак нулевой длины, типограф его не трогает */
-        if (cur) { cur.chars.push(t.name === 'br' ? '\n' : '​'); cur.real.push(t.name === 'br' ? '\n' : ''); cur.spans.push([t.s, t.s]); cur.lockIdx.push(cur.chars.length - 1); if (t.name === 'br') { cur.lint += ' '; cur.wsAfterWord = true; } }
+        if (cur) { cur.chars.push(t.name === 'br' ? '\n' : '\u200b'); cur.real.push(t.name === 'br' ? '\n' : ''); cur.spans.push([t.s, t.s]); cur.lockIdx.push(cur.chars.length - 1); if (t.name === 'br') { cur.lint += ' '; cur.wsAfterWord = true; } }
         continue;
       }
       const openIdx = t.close ? findLast(stack, (x) => x.name === t.name) : -1;
@@ -406,7 +406,7 @@ export function typographHtml(html, { nbsp = '&nbsp;' } = {}) {
   return { out: applyOps(html, runs, ops), ops, runs, perRun, notes };
 }
 /** Типограф простой строки (тексты из базы и панели). */
-export function typographText(text, { nbsp = ' ', role = 'text' } = {}) {
+export function typographText(text, { nbsp = '\u00a0', role = 'text' } = {}) {
   const s = String(text); const res = typographRun({ text: s, locked: lockedOf(s), role }, { nbsp, raw: (a, b) => s.slice(a, b) });
   const m = new Map(res.ops.map((o) => [o.i, o.to]));
   let out = ''; for (let i = 0; i < s.length; i++) out += m.has(i) ? m.get(i) : s[i];
@@ -721,10 +721,10 @@ function printPairs(pages, opt, say) {
 /* =====================================================================
    fix --typograph
    ===================================================================== */
-const showNb = (s) => String(s).replace(/ |&nbsp;|&#160;|&#xa0;/gi, '~').replace(/\s+/g, ' ').trim();
+const showNb = (s) => String(s).replace(/\u00a0|&nbsp;|&#160;|&#xa0;/gi, '~').replace(/\s+/g, ' ').trim();
 function typoFile(file, opt, say) {
   const t0 = Date.now(); const html = fs.readFileSync(file, 'utf8');
-  const nbsp = opt.nbsp === 'char' ? ' ' : '&nbsp;';
+  const nbsp = opt.nbsp === 'char' ? '\u00a0' : '&nbsp;';
   const r1 = typographHtml(html, { nbsp }); const inv = sameMarkup(html, r1.out); const r2 = typographHtml(r1.out, { nbsp });
   const byRule = {}; for (const o of r1.ops) byRule[o.rule] = (byRule[o.rule] || 0) + 1;
   const ok = inv.ok && r2.ops.length === 0;
@@ -832,8 +832,8 @@ async function main(argv) {
       if (!target || args.length > 1) { console.error('Нужно: node copy.mjs fix --typograph <файл|папка|-> (одна цель; подробно: --help)'); return 1; }
       if (target === '-') {
         const src = await readStdin();
-        if (opt.html) { const r = typographHtml(src, { nbsp: opt.nbsp === 'char' ? ' ' : '&nbsp;' }); const inv = sameMarkup(src, r.out); if (!inv.ok) { console.error(`FAIL  разметка изменилась бы: ${inv.why}`); return 1; } process.stdout.write(r.out); return 0; }
-        const r = typographText(src, { nbsp: opt.nbsp === 'entity' ? '&nbsp;' : ' ', role: opt.role || 'text' });
+        if (opt.html) { const r = typographHtml(src, { nbsp: opt.nbsp === 'char' ? '\u00a0' : '&nbsp;' }); const inv = sameMarkup(src, r.out); if (!inv.ok) { console.error(`FAIL  разметка изменилась бы: ${inv.why}`); return 1; } process.stdout.write(r.out); return 0; }
+        const r = typographText(src, { nbsp: opt.nbsp === 'entity' ? '&nbsp;' : '\u00a0', role: opt.role || 'text' });
         process.stdout.write(r.out); for (const n of r.notes) console.error(`WARN  ${n.note}`);
         return 0;
       }
@@ -982,7 +982,7 @@ async function selftest(opt) {
     say(t2.ops.length === 0, `типограф: повторный проход ничего не меняет (${t2.ops.length})`);
     say(sameMarkup(tin, t1.out).ok, 'типограф: разметка, атрибуты, script/style/pre/code/textarea и комментарии не тронуты');
     say(t1.out.includes('{{V}}') && t1.out.includes('{{ price - 1 }}'), 'типограф: {{V}} и {{ price - 1 }} на месте');
-    say(typographText('Кружка 1 500 ₽ - в "Глине"').out === 'Кружка 1 500 ₽ — в «Глине»', 'типограф строки (stdin): неразрывный пробел знаком, тире, ёлочки');
+    say(typographText('Кружка 1 500 ₽ - в "Глине"').out === 'Кружка 1\u00a0500\u00a0₽\u00a0— в\u00a0«Глине»', 'типограф строки (stdin): неразрывный пробел знаком, тире, ёлочки');
   }
 
   /* 5. командная строка: показ по умолчанию, запись только явно, справка, неизвестный флаг, протокол */
@@ -1011,7 +1011,7 @@ async function selftest(opt) {
     const r10 = node(['lint', path.join(FIXTURES, 'pairs-after.html'), '--run', runDirT, '--quiet']);
     say(r10.status === 1 && /FAIL/.test(r10.stdout) && /5 000 ₽|copy-unverified/.test(r10.stdout) && /сайт «до»/.test(r10.stdout), 'lint --run: снимок «до» и facts.json из папки прогона подхватываются сами; новая цена без источника — FAIL');
     const r11 = node(['fix', '--typograph', '-'], 'Приходи в 10:00-19:00, скидка 20 %');
-    say(r11.status === 0 && r11.stdout === 'Приходи в 10:00–19:00, скидка 20 %', `fix --typograph - (stdin) → «${showNb(r11.stdout)}»`);
+    say(r11.status === 0 && r11.stdout === 'Приходи в\u00a010:00–19:00, скидка 20\u00a0%', `fix --typograph - (stdin) → «${showNb(r11.stdout)}»`);
   }
 
   /* 6. связи: taste.mjs знает правила copy-*, cliche.mjs загружается с общим словарём */
