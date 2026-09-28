@@ -698,7 +698,7 @@ export function darkSource(cs) {
 function accordionPassport(data, acc) {
   const P = data.passport; if (!P) return;
   if (!acc) { P.accordions = { source: CLICKS ? 'не искались' : 'нет site-rework — только details и класс accordion', groups: [] }; return; }
-  const own = acc.groups.filter((g) => CLICKS.accordionOk(g) && !g.inClass);
+  const own = acc.groups.filter((g) => CLICKS.accordionOk(g) && !g.inClass && !g.native);   /* details уже посчитаны селектором */
   P.components.accordion = (P.components.accordion || 0) + own.reduce((a, g) => a + g.count, 0);
   P.accordions = { source: 'clicks.mjs (site-rework)', details: acc.details, byClass: acc.byClass, groups: acc.groups.map((g) => ({ sig: g.sig, kind: g.kind, how: g.how, chevron: g.chevron, count: g.count, status: g.status || 'не проверен', opened: g.opened, tried: g.tried, closed: g.closed, questions: g.questions, inClass: g.inClass })) };
 }
@@ -1045,7 +1045,7 @@ function accordionLines(a) {
   if (!a.groups || !a.groups.length) return a.source && !/clicks/.test(a.source) ? [`- свои аккордеоны (без details): ${a.source}`] : [];
   return a.groups.map((g) => {
     const st = g.status === 'подтверждён' ? `клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.status === 'не проверен' ? 'кликом не проверялся' : `${g.status} — не считается`;
-    return `- ${g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} \`${g.sig}\` ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}, ${st}${g.questions && g.questions[0] ? ` — «${g.questions[0].slice(0, 50)}»` : ''}`;
+    return `- ${g.kind === 'details' ? 'аккордеон на details' : g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} \`${g.sig}\` ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}, ${st}${g.questions && g.questions[0] ? ` — «${g.questions[0].slice(0, 50)}»` : ''}`;
   });
 }
 
@@ -1227,7 +1227,7 @@ export function summaryLines(data) {
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
   out.push(`OK   тёмная тема: ${darkLine(data)}`);
   const pa = d.passport && d.passport.accordions;
-  if (pa && pa.groups && pa.groups.length) out.push(`OK   аккордеоны без details: ${pa.groups.map((g) => `${g.sig} ×${g.count} (${g.status})`).join('; ')}`);
+  if (pa && pa.groups && pa.groups.length) out.push(`OK   аккордеоны (проверка кликом): ${pa.groups.map((g) => `${g.kind === 'details' ? 'details' : g.kind === 'aria-expanded' ? 'aria-expanded' : 'свой'} ${g.sig} ×${g.count} — ${g.status}`).join('; ')}`);
   if (d.tool && d.tool.clicksError) out.push(`WARN поиск аккордеонов: ${d.tool.clicksError}`);
   if (!data.tool || !data.tool.siteRework) out.push('WARN site-rework рядом нет — запасной путь: без ожидания картинок на снимках, прозрачность без теневого DOM, свои аккордеоны (Framer, Tilda) не ищутся');
   return out;
