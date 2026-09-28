@@ -101,6 +101,8 @@ import {
   EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
 } from './lib.mjs';
 import { tasteDir, activeBans, bansElsewhere, readJournal, baselineResult, conflictsWith, runKey } from './taste.mjs';
+/* общий словарь пустых оценок (copy-buzz) — один на cliche.mjs и copy.mjs; английские слова — здесь */
+import { BUZZ, buzzSource } from './copy-rules.mjs';
 
 /* ---------- каталог: вес 3 — сильный признак, 2 — средний, 1 — слабый; id совпадают с reference/authorship.md ---------- */
 export const RULES = {

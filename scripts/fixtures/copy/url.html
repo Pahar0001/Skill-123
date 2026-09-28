@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Стенд режима адреса</title></head>
+<body>
+<!-- режим адреса: текст вставляет JS (в файле его нет), блочность — по вычисленному display, скрытое — visible:false -->
+<main>
+  <div id="app"></div>
+  <p><b>Прийти</b><span style="display:block">Часы работы</span></p>
+  <div style="display:none"><p>Скрытое меню для телефона</p></div>
+</main>
+<script>document.getElementById('app').innerHTML = '<p>Мы — команда профессионалов.</p>';</script>
+</body>
+</html>

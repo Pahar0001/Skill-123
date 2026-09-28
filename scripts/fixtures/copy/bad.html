@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Кофейня "Зерно" - лучший кофе в городе</title>
+<meta name="description" content="Откройте для себя мир кофе!" data-expect="copy-cliche copy-exclaim">
+<link rel="stylesheet" href="/assets/site.css?v={{V}}">
+<style>.x::before{content:"не трогать - стиль"}</style>
+</head>
+<body>
+<!-- стенд: у каждого блока data-expect — правила, которые copy.mjs обязан найти (WARN или FAIL);
+     data-expect="" — ничего; data-expect-note — подсказки (NOTE), которые тоже должны найтись.
+     Факты сверяются с facts.json рядом: «бесплатно», «5000 гостей» и «100%» там нет — FAIL -->
+<header>
+  <nav><a href="/">Главная</a> <a href="#menu">Меню</a></nav>
+</header>
+<main>
+  <section class="hero">
+    <h1 data-expect="copy-not-just">Зерно — это не просто кофейня, а место силы</h1>
+    <p class="lead" data-expect="copy-cliche copy-buzz">Погрузитесь в атмосферу уюта и откройте для себя уникальный вкус свежеобжаренного кофе.</p>
+    <a class="btn" href="#form" data-expect="copy-cta">Узнать больше</a>
+    <img src="hero.jpg" alt="Лучший кофе с собой" data-expect="copy-buzz">
+  </section>
+
+  <section>
+    <h2 data-expect="copy-heading copy-rhetoric">Почему выбирают нас?</h2>
+    <p data-expect="copy-triad">Быстро. Вкусно. Недорого.</p>
+    <p data-expect="copy-cliche">Мы — команда профессионалов с индивидуальным подходом к каждому гостю.</p>
+    <p data-expect="copy-kanc copy-unverified" data-expect-note="copy-passive">Обжарка зерна осуществляется нашими бариста, а заказ оформляется в течение дня. Данный сервис является бесплатным.</p>
+    <p data-expect="copy-rhetoric">Хотите начать утро правильно? Мы знаем как.</p>
+    <p data-expect="copy-reveal">Секрет прост: свежая обжарка каждую неделю.</p>
+    <p data-expect="copy-exclaim copy-emoji">Скидка для студентов! ☕🔥</p>
+    <p data-expect="copy-vy">Мы ждём Вас каждый день и ценим Ваше время.</p>
+    <p data-expect="copy-dash">Кофе — это ритуал — и мы — его хранители.</p>
+    <p data-expect="copy-vague-time copy-excuse">Оставьте заявку — это ни к чему не обязывает, мы перезвоним в ближайшее время.</p>
+    <p data-expect="copy-calque copy-jargon">Мы предложим решение под ваш кейс и настроим лендинг с высокой конверсией.</p>
+    <p data-expect="copy-retell">Ниже вы найдёте наше меню и цены.</p>
+    <p data-expect="copy-gender">Если вы уже выбрал(а) напиток, нажмите кнопку.</p>
+    <p data-expect="copy-caps">ТОЛЬКО СЕГОДНЯ ДВОЙНОЙ ЭСПРЕССО</p>
+    <p data-expect="copy-todo">Работаем с 8:00 до [уточнить: часы закрытия].</p>
+    <p data-expect="copy-todo">Заголовок страницы: {{TITLE}}</p>
+    <p data-expect="copy-unverified">Более 5000 довольных гостей и гарантия 100% свежести.</p>
+    <p data-expect="copy-quotes">Наш фирменный напиток "Ореховый раф" готовим на кешью.</p>
+    <p data-expect="copy-cliche copy-buzz">Уютная и неповторимая атмосфера станет идеальным выбором для встречи.</p>
+    <p data-expect="copy-not-just">Сайт, который работает на бизнес, а не просто открывается.</p>
+    <p data-expect="copy-long">Мы привозим зерно из небольших ферм Эфиопии и Колумбии, обжариваем его у себя в цеху на Волжской набережной, раскладываем по пакетам вручную и отправляем заказы по городу курьером каждый день.</p>
+    <p data-expect="" data-expect-note="copy-self-name">Сайт кофейни сделала студия из Рыбинска.</p>
+    <p data-expect="">Мы открываемся в семь утра по будням.</p>
+    <p data-expect="copy-repeat">Мы открываемся в семь утра по будням.</p>
+    <p data-expect=""><span aria-hidden="true" data-expect-note="copy-emoji-icon">☕</span> Кофе с собой в своей кружке</p>
+  </section>
+
+  <!-- пропуски черновика, найденные сводом разборов сайтов (wf2/synthesis.md §1.3) -->
+  <section>
+    <p data-expect="copy-buzz">Вкуснейшее пиво и свежайший хлеб к нему.</p>
+    <p data-expect="copy-unverified copy-jargon">Мы в Топ-5 инфлюенс агентств России.</p>
+    <p data-expect="copy-jargon">Делаем лэндинги и считаем KPI, UGC и ROMI.</p>
+    <p data-expect="copy-cliche copy-calque">Небольшая команда профессионалов с богатым бэкграундом.</p>
+    <p data-expect="copy-cliche">Оптимальный выбор для рациональных автовладельцев.</p>
+    <p data-expect="copy-cliche">Созданы экспертами для тех, кто ценит дорогу.</p>
+    <label data-expect="" data-expect-note="copy-filler">Комментарий (необязательно) <input name="note"></label>
+  </section>
+
+  <!-- подсказки (NOTE): в вердикт не идут, но найтись должны -->
+  <section>
+    <p data-expect="" data-expect-note="copy-nominal">Обеспечение сохранности отправления берём на себя.</p>
+    <p data-expect="" data-expect-note="copy-jargon-mild">Хостинг и домен остаются у нас.</p>
+    <p data-expect="" data-expect-note="copy-rhythm">Мы печём хлеб каждое утро. Мы варим кофе весь день. Мы ставим музыку по вечерам. Мы моем окна по средам. Мы ждём гостей до ночи. Мы знаем гостей по именам.</p>
+    <p data-expect="" data-expect-note="copy-repeat-fact">Со своей кружкой кофе дешевле на 20 ₽.</p>
+    <p data-expect="">Чай в своей кружке тоже дешевле на 20 ₽.</p>
+    <p data-expect="">Какао в своей кружке — на 20 ₽ дешевле.</p>
+  </section>
+
+  <section>
+    <h2 data-expect="copy-heading">Работает без вас</h2>
+    <h3 data-expect="copy-heading">Наши услуги:</h3>
+    <p data-expect="">Варим, печём и привозим.</p>
+  </section>
+
+  <section>
+    <h2 data-expect="">Вопросы</h2>
+    <details><summary data-expect="">Хотите взять кофе с собой?</summary><p data-expect="">Да, стаканы на 250 и 350 мл.</p></details>
+  </section>
+
+  <form>
+    <label data-expect="">Телефон <input name="phone" placeholder="+7 999 000-00-00"></label>
+    <button type="submit" data-expect="copy-cta">Отправить</button>
+    <input type="submit" value="Далее" data-expect="copy-cta">
+  </form>
+</main>
+<footer>
+  <p data-expect="">Сведения на сайте не являются публичной офертой.</p>
+</footer>
+<script>const s = "не трогать - код"; if (a < b) { console.log('x - y'); }</script>
+</body>
+</html>

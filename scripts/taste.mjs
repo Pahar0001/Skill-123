@@ -179,13 +179,17 @@ export function conflictsWith(bans, donorResult) {
   return Object.entries(bans).filter(([r, b]) => donorResult.rules[r] && donorResult.rules[r].count > 0 && !b.allowedFor.includes(url)).map(([rule, ban]) => ({ rule, ban, donorCount: donorResult.rules[rule].count }));
 }
 
-/* Известные id правил — из каталога cliche.mjs (читаем текст, чтобы не импортировать скрипт). */
+/* Известные id правил — из каталогов cliche.mjs (вёрстка) и copy-rules.mjs (тексты, правила copy-*);
+   читаем текст, чтобы не импортировать скрипты. Нет ни одного файла — проверка выключена (null). */
 function knownRules() {
-  try {
-    const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'cliche.mjs'), 'utf8');
-    const ids = new Set([...src.matchAll(/^\s*'?([a-z0-9-]+)'?\s*:\s*\{\s*w:\s*\d/gm)].map((m) => m[1]));
-    return ids.size ? ids : null;
-  } catch { return null; }
+  const ids = new Set();
+  for (const f of ['cliche.mjs', 'copy-rules.mjs']) {
+    try {
+      const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), f), 'utf8');
+      for (const m of src.matchAll(/^\s*'?([a-z0-9-]+)'?\s*:\s*\{\s*w:\s*\d/gm)) ids.add(m[1]);
+    } catch { /* файла нет — правила из другого каталога */ }
+  }
+  return ids.size ? ids : null;
 }
 
 /* Цитата пользователя не должна быть нашим выводом: числа σ, «у донора N», «×N» — повод перепроверить. */
@@ -289,7 +293,7 @@ function cli() {
     if (e.by === 'self' && quote) { console.error('FAIL  --quote у записи --by self: цитата бывает только у слов пользователя'); process.exit(1); }
     const known = knownRules();
     const unknown = known ? e.rules.filter((r) => !known.has(r)) : [];
-    if (unknown.length) { console.error(`FAIL  неизвестные правила: ${unknown.join(', ')} (список: node cliche.mjs rules)`); process.exit(1); }
+    if (unknown.length) { console.error(`FAIL  неизвестные правила: ${unknown.join(', ')} (список: node cliche.mjs rules; тексты — node copy.mjs rules)`); process.exit(1); }
     if (e.by === 'user' && looksLikeOwnConclusion(quote)) console.error('WARN  цитата похожа на вывод из замеров, а не на слова пользователя — проверьте, что это дословно его текст');
     const src = str('img');
     if (src && !fs.existsSync(src)) { console.error(`FAIL  нет файла ${src}`); process.exit(1); }
