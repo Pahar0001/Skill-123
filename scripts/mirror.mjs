@@ -44,7 +44,7 @@
  * MIRROR.md (как снято, таблица страниц, ограничения; перезаписывается). HTML и css/,
  * которые правили после прошлого снятия, перед перезаписью сохраняются рядом как
  * <имя>.<время>.bak.html / .bak.css (WARN в консоли).
- * Смотреть: node serve.mjs <папка>/mirror --proxy <адрес оригинала>.
+ * Смотреть: node serve.mjs <папка>/mirror --proxy <адрес страницы> (путь — папка для относительных адресов).
  * Код выхода: 0 — все страницы сняты; 1 — ошибка в аргументах или хотя бы одна страница
  * не снялась (остальные сохранены). Вердикты в консоли: OK / WARN / FAIL.
  *
@@ -290,12 +290,12 @@ ${how}
 |---|---|---|---|---|---|---|
 ${report.map((r) => r.error ? `| ${r.file} | ${r.url} | FAIL | — | — | — | ${r.error.replace(/\|/g, '/').slice(0, 160)} |` : `| ${r.file} | ${r.url} | ${r.how} | ${r.status || '—'} | ${r.charset} | ${r.sheets} (${r.local}) | ${r.warn.join('; ').replace(/\|/g, '/') || '—'} |`).join('\n')}
 
-Смотреть: \`node ~/.claude/skills/site-rework/scripts/serve.mjs "${outDir}" --proxy ${base.origin}\`.
+Смотреть: \`node ~/.claude/skills/site-rework/scripts/serve.mjs "${outDir}" --proxy ${base.href}\`.
 Снимки «до» для сравнения снимать с этого же адреса до правок (shots.mjs --tag before), «после» — с него же.
 
 Перенос на настоящий сайт: \`rework.css\` → в стили сайта, \`rework.js\` → в скрипты, правки HTML — по diff между этим файлом и свежим зеркалом.
 ${notes.length ? '\nЗамечания:\n' + notes.map((n) => `- ${n}`).join('\n') + '\n' : ''}`);
 for (const n of notes) console.log(`WARN ${n}`);
 console.log(`\n${fails ? 'FAIL' : lines.some((l) => l.st === 'WARN') || notes.length ? 'WARN' : 'OK'}: снято ${ok.length} из ${pages.length} · ${outDir}`);
-console.log(`Смотреть: node serve.mjs "${outDir}" --proxy ${base.origin}`);
+console.log(`Смотреть: node serve.mjs "${outDir}" --proxy ${base.href}`);
 process.exit(fails ? 1 : 0);

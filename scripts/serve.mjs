@@ -17,10 +17,13 @@
  *           127.x.x.x и ::1 — «Только эта машина», иначе WARN «папку видят другие устройства».
  *           Затем сервер сам подключается к своим адресам: не подключился ни к одному (на части
  *           машин к ::1 — EACCES, и --host ::1 делает сервер недоступным) — WARN с подсказкой.
- * --proxy   адрес оригинала (http или https; путь отбрасывается — берётся только сайт,
- *           https://site.ru/news/x → https://site.ru). Всё, чего нет в папке (API, формы,
- *           картинки по относительным адресам), и запросы кроме GET/HEAD уходят на
- *           оригинал — зеркало перестаёт сыпать 404 в консоль. Передаются метод, тело,
+ * --proxy   адрес оригинала (http или https) — лучше адрес самой страницы зеркала. Всё, чего
+ *           нет в папке (API, формы, картинки по относительным адресам), и запросы кроме
+ *           GET/HEAD уходят на оригинал от корня сайта — зеркало перестаёт сыпать 404 в консоль.
+ *           Путь страницы (https://site.ru/sites/coffee/ → папка /sites/coffee/) — запасной:
+ *           GET/HEAD, на который оригинал от корня ответил 404, спрашивается ещё раз от этой
+ *           папки. Зеркало лежит в корне, и относительный адрес, который скрипт страницы собрал
+ *           на ходу (img/photo.jpg), приходит от корня, а у оригинала живёт в папке страницы. Передаются метод, тело,
  *           Content-Type и Range; редирект на сам оригинал переписывается в локальный
  *           путь; ответа ждём до 60 с, иначе 502.
  * --no-compress  отдавать как есть, без сжатия (как до 24.09.2026) — например, чтобы увидеть
@@ -88,13 +91,16 @@ if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) die(`нет пап
 const rootReal = fs.realpathSync.native(root);
 const port = opt.port === undefined ? 4173 : Number(opt.port);
 if (!Number.isInteger(port) || port < 1 || port > 65535) die(`--port: целое число 1…65535, а не «${opt.port}»`);
-let proxy = null;
+let proxy = null, proxyDir = '/';
 if (opt.proxy !== undefined) {
   let u; try { u = new URL(String(opt.proxy)); } catch { /* ниже */ }
   if (opt.proxy === true || !u || !/^https?:$/.test(u.protocol)) die(`--proxy: адрес оригинала вида https://site.ru, а не «${opt.proxy === true ? '' : opt.proxy}»`);
-  /* страница просит ресурсы от корня сайта (/assets/…), поэтому оригинал — только адрес сайта без пути */
+  /* страница просит ресурсы от корня сайта (/assets/…), поэтому оригинал — адрес сайта; путь страницы
+     запоминается как её папка: зеркало лежит в корне, и относительный адрес, который скрипт страницы
+     собирает на ходу (img/photo.jpg), приходит от корня — у оригинала он живёт в папке страницы */
   proxy = u.origin;
-  if (u.pathname.replace(/\/+$/, '') || u.search) console.log(`WARN --proxy: беру адрес сайта ${u.origin}, путь «${u.pathname}${u.search}» отброшен — запросы страницы идут от корня`);
+  proxyDir = u.pathname.replace(/[^/]*$/, '') || '/';
+  if (u.search) console.log(`WARN --proxy: запрос «${u.search}» отброшен — он у каждого адреса свой`);
 }
 if (opt.host === true || (opt.host !== undefined && !String(opt.host).trim())) die('--host без адреса: --host 0.0.0.0 или --host 127.0.0.1');
 /* адрес без скобок: [::1] → ::1. localhost — оба адреса этой машины, как без --host */
@@ -168,7 +174,18 @@ async function proxyTo(req, res, target) {
     const body = chunks.length && !['GET', 'HEAD'].includes(req.method) ? Buffer.concat(chunks) : undefined;
     const headers = { 'user-agent': req.headers['user-agent'] || 'site-rework-mirror', accept: req.headers.accept || '*/*' };
     for (const k of ['content-type', 'range', 'accept-language']) if (req.headers[k]) headers[k] = req.headers[k];
-    const r = await fetch(target, { method: req.method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(60000) });
+    let r = await fetch(target, { method: req.method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(60000) });
+    /* 404 от корня — тот же путь от папки страницы (--proxy с путём): так у оригинала разрешается
+       относительный адрес, который скрипт страницы собрал уже в зеркале. Opara 28.09: img/photo-about1.jpg
+       из базы → /img/… 404, у оригинала — /sites/coffee/img/… 200 */
+    if (r.status === 404 && proxyDir !== '/' && ['GET', 'HEAD'].includes(req.method)) {
+      const u = new URL(target);
+      if (!u.pathname.startsWith(proxyDir)) {
+        const alt = proxy + proxyDir + u.pathname.replace(/^\/+/, '') + u.search;
+        const r2 = await fetch(alt, { method: req.method, headers, redirect: 'manual', signal: AbortSignal.timeout(60000) }).catch(() => null);
+        if (r2 && r2.status !== 404) { r = r2; target = alt; }
+      }
+    }
     const h = { 'cache-control': 'no-store', 'x-proxied-from': target };
     for (const k of ['content-type', 'content-range', 'accept-ranges']) { const v = r.headers.get(k); if (v) h[k] = v; }
     const loc = r.headers.get('location');
