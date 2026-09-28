@@ -39,7 +39,10 @@
  *                      contactSheet, freezeMotion, FULLPAGE_NOTE
  *   проверки           findOverflow, canvasList, hexColors, effectiveOpacity
  *   код для страницы   SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN,
- *                      evaluateWith
+ *                      EFFECTIVE_ZOOM_FN, CLIP_SHARE_FN, evaluateWith
+ *   Tilda              TILDA_FN, TILDA_SERVICE, IS_TILDA_SERVICE_FN, TILDA_PH, PH_URL,
+ *                      tildaInfo — признак и выжимка, служебное конструктора, заглушки
+ *                      ленивой загрузки (разбор донора целиком — scripts/tilda.mjs)
  *   свой стиль         addStyleSafe, removeStyleSafe — <style>, а при строгом CSP
  *                      сконструированная таблица (document.adoptedStyleSheets)
  *   версия кода        codeVersion, scriptGenerator — поле generator в протоколах
@@ -523,6 +526,134 @@ export const EFFECTIVE_OPACITY_FN = `(el) => {
 
 /** Видим ли элемент глазом: есть размер и итоговая непрозрачность выше порога (по умолчанию 0.05). */
 export const VISIBLE_FN = `((eff) => (el, min = 0.05) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && eff(el) > min; })(${EFFECTIVE_OPACITY_FN})`;
+
+/**
+ * Итоговый CSS zoom элемента (1 — без масштаба): во сколько раз он на экране крупнее своих вычисленных
+ * размеров. getComputedStyle отдаёт кегль, отступы, радиусы и рамки БЕЗ zoom предков, а
+ * getBoundingClientRect (Chrome 128+) — уже с ним. Tilda при upscale=window масштабирует элементы
+ * Zero Block именно так: madeon.studio при 1440 — zoom 1.2, computed font-size 40px, на экране 48px.
+ * Все px из getComputedStyle, которые сравниваются с экраном, умножать на это число.
+ * Порядок: el.currentCSSZoom (Chrome 128+, Firefox 126+) → произведение computed zoom предков
+ * (старый Chrome) → у Tilda без zoom (масштаб transform-обёрткой .t396__scale-wrapper в старом
+ * Firefox) — tn['ab'+recid].scaleFactor, иначе window.tn_scale_factor. Округление до 4 знаков
+ * (1.2000000476837158 → 1.2). Исходник для eval внутри страницы:
+ *   evaluateWith(page, () => parseFloat(getComputedStyle(el).fontSize) * zoom(el), null, { zoom: EFFECTIVE_ZOOM_FN })
+ */
+export const EFFECTIVE_ZOOM_FN = `(el) => {
+  if (!el || el.nodeType !== 1) return 1;
+  let z = null;
+  try { if (typeof el.currentCSSZoom === 'number' && el.currentCSSZoom > 0) z = el.currentCSSZoom; } catch (e) { /* старый браузер */ }
+  if (z === null) { z = 1; for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const v = parseFloat(getComputedStyle(e).zoom); if (v > 0 && v !== 1) z *= v; } }
+  if (Math.abs(z - 1) < 0.002 && el.closest) {
+    const ab = el.closest('.t396__artboard_scale');
+    if (ab && el.closest('.t396__scale-wrapper')) {
+      const id = ab.getAttribute('data-artboard-recid'); const tn = window.tn || {};
+      const f = (tn['ab' + id] && tn['ab' + id].scaleFactor) || window.tn_scale_factor;
+      if (f > 0) z = f;
+    }
+  }
+  return Math.round(z * 10000) / 10000;
+}`;
+
+/**
+ * Доля коробки элемента, видимая после обрезки предками с overflow hidden/clip/scroll/auto
+ * (и clip-path у предка), 0…1. Закреплённый (fixed) элемент выходит из цепочки на первом fixed.
+ * 0 — обрезан целиком: заглушка «Zero Block» за краем артборда Tilda высотой 0, свёрнутое меню,
+ * элементы другого брейкпоинта за краем артборда. Коробки без размера — 0. Исходник для eval.
+ */
+export const CLIP_SHARE_FN = `(el) => {
+  if (!el || el.nodeType !== 1) return 0;
+  const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return 0;
+  let L = r.left, T = r.top, R = r.right, B = r.bottom;
+  if (getComputedStyle(el).position !== 'fixed') {
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const s = getComputedStyle(p); const cp = !!s.clipPath && s.clipPath !== 'none';
+      const cx = s.overflowX !== 'visible' || cp, cy = s.overflowY !== 'visible' || cp;
+      if (cx || cy) {
+        const q = p.getBoundingClientRect();
+        if (cx) { L = Math.max(L, q.left); R = Math.min(R, q.right); }
+        if (cy) { T = Math.max(T, q.top); B = Math.min(B, q.bottom); }
+        if (R <= L || B <= T) return 0;
+      }
+      if (s.position === 'fixed') break;
+    }
+  }
+  return Math.round(Math.max(0, R - L) * Math.max(0, B - T) / (r.width * r.height) * 1000) / 1000;
+}`;
+
+/* ---------- Tilda: признак, выжимка, служебное ---------- */
+
+/**
+ * Служебное конструктора Tilda — не язык донора: плашка «Made on Tilda» (#tildacopy, .t-tildalabel),
+ * служебная обёртка телефона .t-mbfix, полоса загрузки T360 (.t360__progress — её вставляет скрипт
+ * блока T360 в body), ссылка-пропуск, окно cookie конструктора. Не входит в палитру, шкалу, кнопки,
+ * секции, типографику и движение. Заглушки «Zero Block» за краем артборда — не селектор, а обрезка
+ * (CLIP_SHARE_FN = 0 внутри .t396__artboard).
+ */
+export const TILDA_SERVICE = '#tildacopy, .t-tildalabel, .t-mbfix, .t360__progress, .t-skiplink, #t-cookie';
+
+/** Служебное ли Tilda: (el) => true | false. Исходник для eval внутри страницы. */
+export const IS_TILDA_SERVICE_FN = `(el) => { try { return !!(el && el.nodeType === 1 && el.closest(${JSON.stringify(TILDA_SERVICE)})); } catch (e) { return false; } }`;
+
+/**
+ * Заглушка ленивой загрузки Tilda в адресе картинки: …/-/resize/20x/…, …/-/resizeb/20x/…, …/-/empty/…
+ * (thb.tildacdn.com, optim.tildacdn.com). До прокрутки у Tilda на месте фото и фонов — они.
+ */
+export const TILDA_PH = /\/-\/(resizeb?\/\d{1,2}x\d{0,2}|empty)\//i;
+/**
+ * Заглушка ленивой загрузки вообще: адрес Tilda (TILDA_PH) и обычные lqip, placeholder, blank, spacer,
+ * lazyload-картинки. Раньше жило в perf.mjs (mediaInPage); в evaluateWith передаётся как есть:
+ * { PH_URL } — RegExp подставляется литералом.
+ */
+export const PH_URL = /\/-\/(resizeb?\/\d{1,2}x\d{0,2}|empty)\/|(lqip|placeholder|blank|spacer|lazy[-_]?load)[^/]*\.(gif|png|jpe?g|webp)(\?|#|$)/i;
+
+/**
+ * Признак Tilda и выжимка — одна для discover, extract, cliche, motion и clicks. () => объект:
+ *   { tilda: false } — не Tilda; иначе
+ *   { tilda: true, pageId, projectId, alias, lazy (data-tilda-lazy=yes), animationOff (data-blocks-animationoff
+ *     =yes — Tilda не запускает появления нигде), vw, narrow (ширина < 1200: Tilda сама снимает все появления,
+ *     кроме элементов Zero Block с data-animate-mobile="y"; пошаговые SBS, параллакс и фиксация Zero Block без
+ *     этого атрибута тоже выключены при брейкпоинте артборда < 1200), appearNow ('все' | 'только Zero с
+ *     data-animate-mobile=y' | 'нет (data-blocks-animationoff)'), mobileY (элементов с data-animate-mobile=y),
+ *     artboards, upscaleWindow (артбордов с upscale=window), curResolution (брейкпоинт первого артборда
+ *     сейчас), scaleFactor (наибольший коэффициент масштаба Zero Block сейчас: tn['ab'+recid].scaleFactor,
+ *     tn_scale_factor; 1 — нет масштаба), madeOnTilda (есть плашка), service (узлов TILDA_SERVICE) }
+ * Признак: #allrecords.t-records с data-tilda-page-id, блоки .t-rec[data-record-type] или t_onReady.
+ * Исходник для eval внутри страницы: evaluateWith(page, () => tilda(), null, { tilda: TILDA_FN }).
+ */
+export const TILDA_FN = `() => {
+  const root = document.getElementById('allrecords') || document.querySelector('.t-records');
+  const tilda = !!(root && root.hasAttribute('data-tilda-page-id')) || !!document.querySelector('.t-rec[data-record-type]') || typeof window.t_onReady === 'function';
+  if (!tilda) return { tilda: false };
+  const ra = (n) => (root ? root.getAttribute(n) : null);
+  const vw = window.innerWidth;
+  const animationOff = ra('data-blocks-animationoff') === 'yes';
+  const mobileY = document.querySelectorAll('[data-animate-mobile="y"]').length;
+  const abs = [...document.querySelectorAll('.t396__artboard')];
+  const tn = window.tn || null; let scale = 1; let curRes = null; let win = 0;
+  for (const ab of abs) {
+    const id = ab.getAttribute('data-artboard-recid');
+    const screens = String(ab.getAttribute('data-artboard-screens') || '').split(',').map(Number).filter((n) => n > 0).sort((a, b) => a - b);
+    let res = null; for (const s of screens) if (vw >= s) res = s; if (res === null && screens.length) res = screens[0];
+    if (curRes === null) curRes = (tn && tn['ab' + id] && tn['ab' + id].curResolution) || res;
+    if (ab.getAttribute('data-artboard-upscale') === 'window') win++;
+    const f = tn && tn['ab' + id] && tn['ab' + id].scaleFactor; if (f > scale) scale = f;
+  }
+  if (window.tn_scale_factor > scale) scale = window.tn_scale_factor;
+  let service = 0; try { service = document.querySelectorAll(${JSON.stringify(TILDA_SERVICE)}).length; } catch (e) { /* селектор */ }
+  return {
+    tilda: true, pageId: ra('data-tilda-page-id'), projectId: ra('data-tilda-project-id'), alias: ra('data-tilda-page-alias'),
+    lazy: ra('data-tilda-lazy') === 'yes', animationOff, vw, narrow: vw < 1200,
+    appearNow: animationOff ? 'нет (data-blocks-animationoff)' : vw < 1200 ? 'только Zero с data-animate-mobile=y' : 'все', mobileY,
+    artboards: abs.length, upscaleWindow: win, curResolution: curRes, scaleFactor: Math.round(scale * 1000) / 1000,
+    madeOnTilda: !!document.querySelector('#tildacopy, .t-tildalabel'), service,
+  };
+}`;
+
+/** Выжимка Tilda для вкладки (TILDA_FN): { tilda: false } — не Tilda; ошибка страницы — тоже { tilda: false, error }. */
+export async function tildaInfo(page) {
+  try { return await evaluateWith(page, () => tilda(), null, { tilda: TILDA_FN }); } catch (e) { return { tilda: false, error: String((e && e.message) || e).slice(0, 120) }; }
+}
 
 /**
  * Выполнить функцию в странице с зависимостями, переданными исходниками, —

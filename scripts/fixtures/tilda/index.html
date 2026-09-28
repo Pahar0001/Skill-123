@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд tilda.mjs</title>
+<!-- Разметка Tilda без скриптов Tilda: атрибуты как у опубликованной страницы. Скрипт внизу — только масштаб
+     Zero Block при upscale=window (zoom = ширина окна / брейкпоинт, как t396__setGlobalScaleVariables) и window.tn.
+     «Играет ли» здесь решается правилами Tilda (скриптов анимации нет — свидетельства классов тоже). -->
+<style>
+  html, body { margin: 0; overflow-x: hidden; font-family: Arial, sans-serif; }
+  .t-rec { position: relative; }
+  .t-container { max-width: 1200px; margin: 0 auto; }
+  .t-col { margin: 0 20px; }
+  .t-title { font-size: 48px; font-weight: 700; }
+  .t-descr { font-size: 18px; }
+  .t-item { display: inline-block; width: 300px; height: 200px; margin: 20px; background: #eee; }
+  .t396__artboard { position: relative; overflow: hidden; }
+  .t396__elem { position: absolute; }
+  .tn-atom { font-size: 16px; }
+  .t-bgimg { width: 300px; height: 200px; background-size: cover; }
+  .t-popup { display: none; }
+  .t-tildalabel { padding: 20px; text-align: center; font-size: 13px; }
+</style>
+</head>
+<body class="t-body">
+<div id="allrecords" class="t-records" data-hook="blocks-collection-content-node" data-tilda-project-id="2" data-tilda-page-id="1" data-tilda-page-alias="stend" data-tilda-lazy="yes">
+
+<div id="rec10" class="r t-rec" data-record-type="30"> <!-- T030 -->
+  <div class="t030">
+    <div class="t-container"><div class="t-col t-col_10 t-prefix_1">
+      <div class="t-title t-animate" data-animate-style="fadeinup">Заголовок блока</div>
+      <div class="t-descr t-animate" data-animate-style="fadein">Текст блока, который проявляется. <a href="#popup:x">Заказать</a></div>
+    </div></div>
+  </div>
+</div>
+
+<div id="rec11" class="r t-rec" data-record-type="849"> <!-- T849 -->
+  <div class="t849"><div class="t-container">
+    <div class="t-item t-animate" data-animate-style="fadeinup" data-animate-chain="yes">Карточка 1</div>
+    <div class="t-item t-animate" data-animate-style="fadeinup" data-animate-chain="yes">Карточка 2</div>
+    <div class="t-item t-animate" data-animate-style="fadeinup" data-animate-chain="yes">Карточка 3</div>
+  </div></div>
+</div>
+
+<div id="rec20" class="r t-rec" data-record-type="396"> <!-- T396 -->
+<div class='t396'>
+<div class="t396__artboard" data-artboard-recid="20" data-artboard-screens="320,640,960,1200" data-artboard-height="700" data-artboard-valign="center" data-artboard-upscale="window" data-artboard-height-res-320="900" style="height:700px">
+  <div class='t396__elem tn-elem' data-elem-id='100' data-elem-type='text' data-field-top-value="60" data-field-left-value="40" data-field-width-value="800" data-field-fontsize-value="40" data-field-container-value="grid" data-field-axisx-value="left" data-field-axisy-value="top" data-field-top-res-320-value="20" data-field-left-res-320-value="10" data-field-width-res-320-value="300" data-field-fontsize-res-320-value="24" style="top:60px;left:40px;width:800px">
+    <h1 class='tn-atom' style="font-size:40px;margin:0">Крупный заголовок Zero Block</h1>
+  </div>
+  <div class='t396__elem tn-elem' data-elem-id='101' data-elem-type='shape' data-field-top-value="200" data-field-left-value="40" data-field-width-value="80" data-field-height-value="80" data-animate-sbs-event="intoview" data-animate-sbs-trg="1" data-animate-sbs-trgofst="0" data-animate-sbs-loop="loop" data-animate-sbs-opts="[{'ti':0,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','ea':''},{'ti':800,'mx':0,'my':0,'sx':1.1,'sy':1.1,'op':1,'ro':0,'bl':'0','ea':'easeOut'},{'ti':2000,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','ea':''}]" style="top:200px;left:40px;width:80px;height:80px">
+    <div class='tn-atom' style="background:#e85d2c;width:80px;height:80px"></div>
+  </div>
+  <div class='t396__elem tn-elem' data-elem-id='102' data-elem-type='shape' data-field-top-value="320" data-field-left-value="40" data-animate-sbs-event="scroll" data-animate-sbs-trg="1" data-animate-sbs-trgofst="0" data-animate-sbs-opts="[{'di':'0','mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','fi':''},{'di':500,'mx':340,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','fi':''}]" style="top:320px;left:40px;width:60px;height:60px">
+    <div class='tn-atom' style="background:#333;width:60px;height:60px"></div>
+  </div>
+  <div class='t396__elem tn-elem' data-elem-id='103' data-elem-type='shape' data-field-top-value="60" data-field-left-value="880" data-animate-sbs-event="hover" data-animate-sbs-trgels="100" data-animate-sbs-opts="[{'ti':0,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0,'bl':'0','ea':'','dt':0},{'ti':200,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':45,'bl':'0','ea':'easeInOut','dt':0}]" style="top:60px;left:880px;width:40px;height:40px">
+    <div class='tn-atom' style="font-size:40px">+</div>
+  </div>
+  <div class='t396__elem tn-elem' data-elem-id='104' data-elem-type='image' data-field-top-value="200" data-field-left-value="600" data-field-width-value="300" data-animate-prx="scroll" data-animate-prx-s="115" style="top:200px;left:600px;width:300px;height:446px">
+    <div class='tn-atom' style="background:#ccc;width:300px;height:446px"><div class="tn-atom__prx-wrapper"></div></div>
+  </div>
+  <div class='t396__elem tn-elem' data-elem-id='105' data-elem-type='image' data-field-top-value="200" data-field-left-value="950" data-field-width-value="120" data-animate-prx="scroll" style="top:200px;left:950px;width:120px;height:120px">
+    <div class='tn-atom' style="background:#bbb;width:120px;height:120px"></div>
+  </div>
+  <div class='t396__elem tn-elem t-animate' data-elem-id='106' data-elem-type='text' data-field-top-value="420" data-field-left-value="40" data-animate-style="fadeinup" data-animate-duration="1.2" data-animate-delay="0.3" data-animate-distance="100" style="top:420px;left:40px;width:400px">
+    <div class='tn-atom'>Текст с появлением снизу</div>
+  </div>
+  <div class='t396__elem tn-elem t-animate' data-elem-id='107' data-elem-type='shape' data-field-top-value="480" data-field-left-value="40" data-animate-style="zoomin" data-animate-mobile="y" style="top:480px;left:40px;width:60px;height:60px">
+    <div class='tn-atom' style="background:#e85d2c;width:60px;height:60px"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<div id="rec21" class="r t-rec" data-record-type="396"> <!-- T396 -->
+<div class='t396'>
+<div class="t396__artboard" data-artboard-recid="21" data-artboard-screens="320,480,640,960,1200" data-artboard-height="300" data-artboard-upscale="grid" style="height:300px">
+  <div class='t396__elem tn-elem' data-elem-id='100' data-elem-type='text' data-field-top-value="100" data-field-left-value="690" data-field-width-value="400" data-field-fontsize-value="34" data-field-container-value="grid" data-field-left-res-960-value="600" data-field-fontsize-res-960-value="33" data-field-left-res-320-value="20" data-field-fontsize-res-320-value="30" style="top:100px;left:810px;width:400px">
+    <div class='tn-atom' style="font-size:34px">Управляй каждой деталью</div>
+  </div>
+</div>
+</div>
+</div>
+
+<div id="rec22" class="r t-rec" data-record-type="396"> <!-- T396 -->
+<div class='t396'>
+<div class="t396__artboard" data-artboard-recid="22" data-artboard-screens="320,480,640,960,1200" data-artboard-height="0" style="height:0">
+  <div class='t396__elem tn-elem' data-elem-id='1470209944682' data-elem-type='text' data-field-top-value="20" data-field-left-value="0" data-field-fontsize-value="100" style="top:20px;left:0;width:660px">
+    <div class='tn-atom' style="font-size:100px;font-weight:700">Zero Block</div>
+  </div>
+</div>
+</div>
+</div>
+
+<div id="rec30" class="r t-rec" data-record-type="1093"> <!-- t1093 -->
+  <div class="t1093"><div class="t-popup" data-anim="fadein" data-anim-timeout="0.3" data-tooltip-hook="#popup:x" role="dialog" aria-modal="true"><div class="t-popup__container">Окно</div></div></div>
+</div>
+
+<div id="rec40" class="r t-rec" data-record-type="121" data-alias-record-type="851"> <!-- t851 -->
+  <div class="t851"><div class="t851__bg t-bgimg" data-original="https://static.tildacdn.com/tild1111/photo.jpg" style="background-image:url('https://thb.tildacdn.com/tild1111/-/resize/20x/photo.jpg')"></div></div>
+</div>
+
+</div>
+<div class="t-tildalabel" id="tildacopy"><a href="https://tilda.cc/" class="t-tildalabel__link"><div class="t-tildalabel__wrapper">Made on Tilda</div></a></div>
+<script>
+  /* масштаб Zero Block при upscale=window — как у Tilda: zoom = ширина окна / брейкпоинт артборда (3 знака) */
+  window.tn = {};
+  for (const ab of document.querySelectorAll('.t396__artboard')) {
+    const id = ab.getAttribute('data-artboard-recid');
+    const screens = ab.getAttribute('data-artboard-screens').split(',').map(Number).sort((a, b) => a - b);
+    let res = null; for (const s of screens) if (innerWidth >= s) res = s; if (res === null) res = screens[0];
+    const win = ab.getAttribute('data-artboard-upscale') === 'window';
+    const z = win ? parseFloat((innerWidth / res).toFixed(3)) : 1;
+    window.tn['ab' + id] = { curResolution: res, scaleFactor: z };
+    if (win) { ab.classList.add('t396__artboard_scale'); for (const el of ab.querySelectorAll('.t396__elem')) el.style.zoom = String(z); }
+  }
+</script>
+</body>
+</html>

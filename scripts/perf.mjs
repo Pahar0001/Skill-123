@@ -142,7 +142,7 @@ import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
-  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN,
+  forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, PH_URL,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
@@ -227,8 +227,8 @@ async function mediaInPage() {
   /* заглушка ленивой загрузки: крошечная картинка (≤ 64 px по стороне) в коробке от 200 px и признак
      ленивой загрузки — адрес заглушки (Tilda …/-/resize/20x/, …/-/empty/, lqip, placeholder, blank)
      или атрибут с настоящим адресом (data-original, data-src, data-bg…), который ещё не подставлен,
-     или класс lazy без loaded; без признаков — если картинка не больше 32 px (растянута в 6+ раз) */
-  const PH_URL = /\/-\/(resizeb?\/\d{1,2}x\d{0,2}|empty)\/|(lqip|placeholder|blank|spacer|lazy[-_]?load)[^/]*\.(gif|png|jpe?g|webp)(\?|#|$)/i;
+     или класс lazy без loaded; без признаков — если картинка не больше 32 px (растянута в 6+ раз).
+     PH_URL — из lib.mjs (подставляется evaluateWith) */
   const LAZY_ATTRS = ['data-original', 'data-src', 'data-lazy', 'data-lazy-src', 'data-bg', 'data-background', 'data-background-image', 'data-srcset', 'data-lazy-srcset', 'data-bgset'];
   const abs = (u) => { try { return new URL(String(u).trim().split(/[\s,]+/)[0], location.href).href; } catch (e) { return String(u); } };
   const lazyEvidence = (el, cur) => {
@@ -491,7 +491,7 @@ async function measure() {
     const lazyPass = await scrollThrough(page, { pause: 350, onStep: () => waitForMedia(page, { timeout: 1500 }) }).catch((e) => ({ error: String(e.message || e).slice(0, 120) }));
     await scrollToY(page, 0).catch(() => {}); await waitForMedia(page, { timeout: 3000 });
     const lazyMs = Date.now() - t1;
-    const media = await evaluateWith(page, mediaInPage, null, { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN }).catch((e) => ({ error: String(e.message || e).slice(0, 200), items: [], videos: [], checked: 0, notLoaded: 0 }));
+    const media = await evaluateWith(page, mediaInPage, null, { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN, PH_URL }).catch((e) => ({ error: String(e.message || e).slice(0, 200), items: [], videos: [], checked: 0, notLoaded: 0 }));
     media.lazyPass = { ms: lazyMs, steps: lazyPass.screens ?? null, error: lazyPass.error || null };
     const list = [...reqs.values()];
     /* вес — запрошенное до прокрутки замера (phase load); прокрутка замера и проход за ленивым — отдельно */
