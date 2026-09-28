@@ -69,7 +69,18 @@
  *   блок во всю ширину обёртки выше — не новая ширина; вес — высота обёртки;
  *   какие обёртки взяты — containerFrom;
  * - шрифты — по первой гарнитуре стека, стек хранится рядом;
- * - тёмная тема снимается, только если в CSS есть @media (prefers-color-scheme: dark).
+ * - тёмная тема снимается, только если в CSS есть @media (prefers-color-scheme: dark);
+ * - масштаб: все px из getComputedStyle (кегль, рамки, радиусы, тени, отступы) умножаются на итоговый
+ *   CSS zoom элемента (EFFECTIVE_ZOOM_FN site-rework: currentCSSZoom) — computed его не учитывает, а на
+ *   экране он есть. Tilda при upscale=window масштабирует Zero Block zoom = окно / брейкпоинт: madeon.studio
+ *   при 1440 — h1 40px в computed, 48px на экране. Без zoom (обычный сайт) числа прежние, байт в байт;
+ * - Tilda (признак TILDA_FN): служебное конструктора (TILDA_SERVICE: плашка Made on Tilda, t-mbfix, полоса
+ *   T360) и элементы Zero Block, обрезанные артбордом (заглушка «Zero Block», элементы за краем) — не язык
+ *   донора: вне палитры, шкалы, кнопок, секций; фон .t-bgimg с data-original (ленивая картинка ещё не
+ *   пришла) — не фон; контейнер — сетка Tilda (.t-container без полей колонок, сетка артборда: брейкпоинт
+ *   × zoom при upscale=window), элементы Zero Block и колонки .t-col — не кандидаты; меню — ещё и
+ *   закреплённые ссылки в любом месте окна (меню Zero Block — плавающая пилюля внизу) и классы меню Tilda.
+ *   Язык Tilda-донора точнее — site-rework/scripts/tilda.mjs (атрибуты, а не замер).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -79,7 +90,7 @@ import {
   scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
-export const VERSION = 'extract 2026-09-28';
+export const VERSION = 'extract 2026-09-28.2';
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 /** Старое правило (json до extract 2026-09-24.2): доля пикселей всех снимков окна, с которой насыщенный цвет — акцент. */
@@ -189,6 +200,17 @@ function inPage() {
   const mix = (c, b, a) => { const x = rgbOf(c), y = rgbOf(b); return '#' + x.map((v, i) => Math.round(v * a + y[i] * (1 - a)).toString(16).padStart(2, '0')).join('').toUpperCase(); };
   const bodyEls = [...document.body.querySelectorAll('*')];
 
+  /* масштаб: Z(el) — итоговый CSS zoom (px из getComputedStyle × zoom = на экране; без zoom — 1, числа прежние);
+     zs — px внутри строки ('10px', тень) × zoom. Tilda: служебное конструктора и элементы Zero Block, обрезанные
+     артбордом (заглушка «Zero Block» высотой артборда 0, элементы за краем) — не язык донора */
+  const TILDA = tilda(); const isTilda = !!TILDA.tilda;
+  const zM = new Map(); const Z = (el) => { if (!el) return 1; let v = zM.get(el); if (v === undefined) { v = zoom(el) || 1; zM.set(el, v); } return v; };
+  const zs = (v, z) => (z === 1 || v == null ? v : String(v).replace(/(-?\d*\.?\d+)px/g, (m, n) => `${Math.round(parseFloat(n) * z * 100) / 100}px`));
+  const zeroCut = new Map();
+  if (isTilda) for (const e of document.querySelectorAll('.t396__artboard .t396__elem')) zeroCut.set(e, clip(e) < 0.05);
+  const excluded = { service: 0, clipped: 0 };
+  const tildaOut = (el) => { if (!isTilda) return false; if (tsvc(el)) return 'service'; const z = el.closest('.t396__elem'); return z && zeroCut.get(z) ? 'clipped' : false; };
+
   /* фактура: полноэкранные слои с pointer-events:none (зерно, плёнка, виньетка) — не палитра */
   const texture = [], texEls = new Set();
   const isFixed = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return true; return false; };
@@ -236,7 +258,9 @@ function inPage() {
     const r = el.getBoundingClientRect();
     if (!(r.width > 0 && r.height > 0 && r.right > 0 && r.left < vw)) return false;
     if (r.bottom + scrollY <= 0 || r.top + scrollY >= docH) return false;
-    return effOf(el) > 0.05 && !underTex(el);
+    if (!(effOf(el) > 0.05 && !underTex(el))) return false;
+    const t = tildaOut(el); if (t) { excluded[t]++; return false; }
+    return true;
   });
   const allSet = new Set(all);
 
@@ -244,13 +268,13 @@ function inPage() {
   const passport = { textElements: 0, caps: 0, smallCapsTracked: 0, smallText: 0, tracking: {}, radius: [], components: {} };
   const gridInfo = [], containers = {};
   for (const el of all) {
-    const s = getComputedStyle(el), r = el.getBoundingClientRect(), o = effOf(el);
+    const s = getComputedStyle(el), r = el.getBoundingClientRect(), o = effOf(el), z = Z(el);
     const w = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
     const h = Math.max(0, Math.min(r.bottom + scrollY, docH) - Math.max(r.top + scrollY, 0));
-    /* цвет под картинкой-заливкой не виден */
-    const covered = /url\(/.test(s.backgroundImage) && (/^(repeat|round|space)$/.test(s.backgroundRepeat) || s.backgroundSize === 'cover');
+    /* цвет под картинкой-заливкой не виден; у Tilda фон .t-bgimg с data-original — подложка ленивой картинки (d1: #FFF705 под шумом) */
+    const covered = (/url\(/.test(s.backgroundImage) && (/^(repeat|round|space)$/.test(s.backgroundRepeat) || s.backgroundSize === 'cover')) || (isTilda && el.classList.contains('t-bgimg') && el.hasAttribute('data-original'));
     if (!covered) bump(bg, hex(s.backgroundColor), w * h * o);
-    const t = ownText(el), fs = parseFloat(s.fontSize);
+    const t = ownText(el), fs0 = parseFloat(s.fontSize), fs = fs0 * z;
     if (t.length && fs >= 6) {
       const col = hex(s.color);
       bump(fg, col, t.length * o);
@@ -262,7 +286,7 @@ function inPage() {
         bump(pairs, under + ' ' + seenC + ' ' + col, t.length);
       }
       passport.textElements++;
-      const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) / fs;
+      const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) / fs0;
       const caps = s.textTransform === 'uppercase' || (/[A-ZА-ЯЁ]{3}/.test(t) && t === t.toUpperCase());
       if (Math.abs(ls) >= 0.02) bump(passport.tracking, Math.round(ls * 100) / 100 + 'em');
       if (caps) passport.caps++;
@@ -270,11 +294,11 @@ function inPage() {
       if (fs < 12) passport.smallText++;
     }
     const bt = px(s.borderTopWidth), bb = px(s.borderBottomWidth);
-    if (bt > 0 || bb > 0) { bump(border, bt > 0 ? hex(s.borderTopColor) : hex(s.borderBottomColor), o); bump(bw, Math.max(bt, bb) + 'px'); }
-    if (s.borderTopLeftRadius !== '0px') bump(radius, s.borderTopLeftRadius);
-    if (s.boxShadow !== 'none') bump(shadow, s.boxShadow);
+    if (bt > 0 || bb > 0) { bump(border, bt > 0 ? hex(s.borderTopColor) : hex(s.borderBottomColor), o); bump(bw, (z === 1 ? Math.max(bt, bb) : Math.round(Math.max(bt, bb) * z * 100) / 100) + 'px'); }
+    if (s.borderTopLeftRadius !== '0px') bump(radius, zs(s.borderTopLeftRadius, z));
+    if (s.boxShadow !== 'none') bump(shadow, zs(s.boxShadow, z));
     for (const k of ['paddingTop', 'paddingBottom', 'paddingLeft', 'marginTop', 'marginBottom', 'rowGap', 'columnGap']) {
-      const v = px(s[k]); if (v >= 4 && v <= 320) bump(space, v);
+      const v = z === 1 ? px(s[k]) : Math.round(px(s[k]) * z * 100) / 100; if (v >= 4 && v <= 320) bump(space, v);
     }
     if (s.display.includes('grid')) {
       const cols = s.gridTemplateColumns.split(' ').filter((x) => x && x !== 'none').length;
@@ -294,8 +318,10 @@ function inPage() {
     video: outermost('video'), iframe: outermost('iframe'), canvas: outermost('canvas'),
   };
 
-  /* типографская шкала: стиль берётся у элемента, который несёт больше всего собственного текста */
-  const keyOf = (s) => JSON.stringify({ fontSize: s.fontSize, fontWeight: s.fontWeight, lineHeight: s.lineHeight === 'normal' ? 'normal' : Math.round(parseFloat(s.lineHeight) / parseFloat(s.fontSize) * 100) / 100, letterSpacing: s.letterSpacing === 'normal' ? '0' : Math.round(parseFloat(s.letterSpacing) / parseFloat(s.fontSize) * 1000) / 1000 + 'em', fontFamily: fam1(s.fontFamily), textTransform: s.textTransform });
+  /* типографская шкала: стиль берётся у элемента, который несёт больше всего собственного текста.
+     Кегль — на экране (× zoom носителя); межстрочный и разрядка — доли кегля, zoom на них не влияет */
+  const styleKey = (el) => keyOf(getComputedStyle(el), Z(el));
+  const keyOf = (s, z = 1) => JSON.stringify({ fontSize: zs(s.fontSize, z), fontWeight: s.fontWeight, lineHeight: s.lineHeight === 'normal' ? 'normal' : Math.round(parseFloat(s.lineHeight) / parseFloat(s.fontSize) * 100) / 100, letterSpacing: s.letterSpacing === 'normal' ? '0' : Math.round(parseFloat(s.letterSpacing) / parseFloat(s.fontSize) * 1000) / 1000 + 'em', fontFamily: fam1(s.fontFamily), textTransform: s.textTransform });
   const carrier = (el) => {
     const cnt = new Map(); const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let n; (n = w.nextNode());) { const p = n.parentElement; if (!p || SKIP.test(p.tagName)) continue; const l = n.textContent.trim().length; if (l) cnt.set(p, (cnt.get(p) || 0) + l); }
@@ -371,7 +397,7 @@ function inPage() {
   const pickH1 = () => {
     const bodyPx = (() => { const b = top(bodyVotes, 1)[0]; return b ? parseFloat(JSON.parse(b.value).fontSize) : 16; })(); /* bodyVotes считаются ниже, до вызова */
     const list = [...document.querySelectorAll('h1')].filter((h) => allSet.has(h) && shown(h) && clipShare(h) > 0.5).map((h) => ({ h, p: carrier(h) })).filter((x) => x.p);
-    const fsz = (x) => parseFloat(getComputedStyle(x.p).fontSize);
+    const fsz = (x) => parseFloat(getComputedStyle(x.p).fontSize) * Z(x.p);
     list.sort((a, b) => (onFirst(b.h) - onFirst(a.h)) || (fsz(b) - fsz(a)) || (docTop(a.h) - docTop(b.h)));
     if (list.length && onFirst(list[0].h)) {
       const { h, p } = list[0];
@@ -384,7 +410,7 @@ function inPage() {
       if (!onFirst(el) || !shown(el) || clipShare(el) <= 0.5 || el.closest(NOT_HEAD)) continue;
       const tagged = /^H[2-6]$/.test(el.tagName) || el.getAttribute('role') === 'heading';
       const p = tagged ? carrier(el) : (ownText(el).length >= 3 ? el : null); if (!p) continue;
-      const px = parseFloat(getComputedStyle(p).fontSize);
+      const px = parseFloat(getComputedStyle(p).fontSize) * Z(p);
       if (!tagged && !(px >= 24 && px >= bodyPx * 1.4)) continue;
       if (tagged && !(px >= bodyPx * 1.15)) continue;
       const a = el.closest('a[href]'); if (a && filledSet.has(a)) continue;
@@ -418,8 +444,30 @@ function inPage() {
       const l = [...document.body.querySelectorAll('a')].filter((a) => linkOk(a) && inBand(a));
       if (l.length >= 2) { let root = l[0].parentElement; while (root && root !== document.body && !l.every((a) => root.contains(a))) root = root.parentElement; pick = { root: root || document.body, links: l, how: 'ссылки вверху страницы' }; }
     }
-    if (!pick) return { style: null, from: { el: null, how: navs.some(inBand) || hdrs.some(inBand) ? 'меню шапки скрыто (бургер) или в нём меньше двух ссылок' : 'меню не найдено: нет nav и ссылок вверху страницы' } };
-    const votes = {}; for (const a of pick.links) bump(votes, keyOf(getComputedStyle(carrier(a))), 1);
+    /* закреплённые ссылки в любом месте окна (3+): меню, собранное в Zero Block Tilda, — отдельные закреплённые
+       элементы (streetwearbrands: плавающая пилюля внизу окна); группа — артборд или ближайший закреплённый предок */
+    if (!pick) {
+      const fixedOf = (a) => { for (let e = a; e && e !== document.body; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return e; return null; };
+      const groups = new Map();
+      for (const a of document.body.querySelectorAll('a')) {
+        if (!linkOk(a)) continue; const f = fixedOf(a); if (!f) continue;
+        const r = a.getBoundingClientRect(); if (r.top < 0 || r.bottom > vh || r.left < 0 || r.right > vw) continue;
+        const k = a.closest('.t396__artboard') || f; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a);
+      }
+      const best = [...groups.values()].sort((x, y) => y.length - x.length)[0];
+      if (best && best.length >= 3) {
+        let root = best[0].parentElement; while (root && root !== document.body && !best.every((a) => root.contains(a))) root = root.parentElement;
+        const cy = best.reduce((acc, a) => { const r = a.getBoundingClientRect(); return acc + r.top + r.height / 2; }, 0) / best.length;
+        pick = { root: root || document.body, links: best, how: `закреплённое меню (fixed) ${cy > vh * 2 / 3 ? 'внизу' : cy < vh / 3 ? 'вверху' : 'посередине'} окна` };
+      }
+    }
+    /* стандартные меню Tilda: T228/T456/T199 — верхние, T450 — шторка, T280 — на весь экран, T975 — нижняя панель телефона */
+    if (!pick && isTilda) {
+      pick = tryList([...document.querySelectorAll('.t228__list, .t450__menu, .t456__list, .t199__menu, .t280__menu, .t975')].filter((n) => allSet.has(n)), 'меню Tilda', () => true);
+      if (pick) { const c = [pick.root, ...(function* () { for (let e = pick.root.parentElement; e; e = e.parentElement) yield e; })()].map((e) => [...(e.classList || [])].find((x) => /^t\d{3,4}$/.test(x))).find(Boolean); pick.how = `меню Tilda${c ? ` (${c.toUpperCase()})` : ''}`; }
+    }
+    if (!pick) return { style: null, from: { el: null, how: navs.some(inBand) || hdrs.some(inBand) ? 'меню шапки скрыто (бургер) или в нём меньше двух ссылок' : 'меню не найдено: нет nav, ссылок вверху страницы и закреплённого меню' } };
+    const votes = {}; for (const a of pick.links) bump(votes, styleKey(carrier(a)), 1);
     const best = top(votes, 1)[0];
     return { style: best ? JSON.parse(best.value) : null, from: { el: sig(pick.root), how: pick.how, links: pick.links.length, texts: pick.links.slice(0, 6).map((a) => textOf(a).slice(0, 24)) } };
   };
@@ -438,25 +486,40 @@ function inPage() {
     const b = blockOf(p);
     let L = blockLen.get(b); if (L === undefined) { L = (b.innerText || '').replace(/\s+/g, ' ').trim().length; blockLen.set(b, L); }
     if (L < 40) continue;
-    const k = keyOf(s); bump(bodyVotes, k, t);
+    const k = keyOf(s, Z(p)); bump(bodyVotes, k, t);
     const bk = blockKeys.get(b) || {}; bump(bk, k, t); blockKeys.set(b, bk);
   }
   if (!Object.keys(bodyVotes).length) {
     /* длинных блоков нет — как раньше, по p и li, но собственным текстом */
-    for (const el of document.querySelectorAll('p, li')) { if (!allSet.has(el)) continue; const s = getComputedStyle(el); const t = ownText(el).length; if (t && parseFloat(s.fontSize) >= 6) bump(bodyVotes, keyOf(s), t); }
+    for (const el of document.querySelectorAll('p, li')) { if (!allSet.has(el)) continue; const s = getComputedStyle(el); const t = ownText(el).length; if (t && parseFloat(s.fontSize) >= 6) bump(bodyVotes, keyOf(s, Z(el)), t); }
   }
   let bodyProbe = null;
   for (const [b, keys] of blockKeys) { const L = blockLen.get(b); if (!bodyProbe || L > bodyProbe.chars) bodyProbe = { el: sig(b), chars: L, key: topKey(keys) }; }
   if (bodyProbe) { const { key, ...rest } = bodyProbe; bodyProbe = { ...rest, ...JSON.parse(key) }; }
   for (const [name, sel] of Object.entries(levels)) {
-    if (name === 'h1') { const x = pickH1(); if (x.p) scale.h1 = JSON.parse(keyOf(getComputedStyle(x.p))); scaleFrom.h1 = x.from; continue; }
+    if (name === 'h1') { const x = pickH1(); if (x.p) scale.h1 = JSON.parse(styleKey(x.p)); scaleFrom.h1 = x.from; continue; }
     if (name === 'nav') { const x = pickMenu(); scaleFrom.nav = x.from; if (x.style) scale.nav = x.style; continue; }
     let votes = bodyVotes;
     if (sel) {
       votes = {};
-      for (const el of document.querySelectorAll(sel)) { if (!allSet.has(el)) continue; const p = carrier(el); if (p) bump(votes, keyOf(getComputedStyle(p)), 1); }
+      for (const el of document.querySelectorAll(sel)) { if (!allSet.has(el)) continue; const p = carrier(el); if (p) bump(votes, styleKey(p), 1); }
     }
     const best = top(votes, 1)[0]; if (best) scale[name] = JSON.parse(best.value);
+  }
+  /* h1 мелкий (меньше 2× основного) — рядом самый крупный текст первого экрана: у Tilda T941 h1 — надстрочная строка
+     14px, а крупное «ВИТРИНА МАРКЕТ» 105px — не заголовок. Шкалу не меняет — только пометка откуда */
+  if (scale.h1 && scale.body && scaleFrom.h1 && parseFloat(scale.h1.fontSize) < 2 * parseFloat(scale.body.fontSize)) {
+    let big = null;
+    for (const el of all) {
+      if (!onFirst(el) || !shown(el) || el.closest('nav, [role="navigation"], button, [role="button"]')) continue;
+      if (ownText(el).length < 3) continue;
+      const v = parseFloat(getComputedStyle(el).fontSize) * Z(el);
+      if ((!big || v > big.px) && clipShare(el) > 0.5) big = { el, px: v };
+    }
+    if (big && big.px > parseFloat(scale.h1.fontSize) * 1.2) {
+      const bs = getComputedStyle(big.el);
+      scaleFrom.h1.biggest = { el: sig(big.el), text: textOf(big.el).slice(0, 40), fontSize: Math.round(big.px * 100) / 100 + 'px', fontWeight: bs.fontWeight, fontFamily: fam1(bs.fontFamily), body: scale.body.fontSize };
+    }
   }
 
   /* контейнер: блоки с центрированным содержимым уже окна (коробка без внутренних отступов: .wrap 1200 с полями
@@ -495,11 +558,17 @@ function inPage() {
     return lo <= L + 2 && hi >= R - 2;
   };
   const wrapBox = new Map();
+  /* Tilda: элементы Zero Block (абсолютные, в артборде) и колонки сетки .t-col — не обёртки; .t-container и сетка
+     артборда добавляются ниже как сетка Tilda */
+  const TILDA_GRID = '.t-col, [class*="t-col_"], .t-container, .t-container_flex';
   for (const el of all) {
     const s = getComputedStyle(el);
     if (/^inline|^contents$/.test(s.display) || /^(absolute|fixed)$/.test(s.position)) continue;
+    if (isTilda && (el.closest('.t396__artboard') || el.matches(TILDA_GRID))) continue;
     const r = el.getBoundingClientRect(); if (!(r.height > 80)) continue;
-    const L = r.left + px(s.paddingLeft) + px(s.borderLeftWidth), R = r.right - px(s.paddingRight) - px(s.borderRightWidth);
+    const z = Z(el);
+    const L = z === 1 ? r.left + px(s.paddingLeft) + px(s.borderLeftWidth) : r.left + (px(s.paddingLeft) + px(s.borderLeftWidth)) * z;
+    const R = z === 1 ? r.right - px(s.paddingRight) - px(s.borderRightWidth) : r.right - (px(s.paddingRight) + px(s.borderRightWidth)) * z;
     if (!(R - L > 320 && R - L < vw - 8 && L > 0 && Math.abs(L - (vw - R)) <= 2)) continue;
     if (isFixed(el) || inColumns(el) || !spans(el, L, R)) continue;
     wrapBox.set(el, { L, R });
@@ -512,8 +581,27 @@ function inPage() {
     if (up && wrapBox.has(up)) { const u = wrapBox.get(up); if (Math.abs(r.left - u.L) <= 2 && Math.abs(r.right - u.R) <= 2) continue; }
     wraps.push({ el, w: Math.round(b.R - b.L), h: r.height });
   }
+  /* сетка Tilda: .t-container 1200 (содержимое 1160: 12 колонок по 60, зазор 40, t-col_N = 100·N − 40) — ширина без полей
+     колонок; Zero Block — сетка артборда: брейкпоинт (upscale=grid) или брейкпоинт × zoom (upscale=window, растёт с окном) */
+  if (isTilda) {
+    for (const el of all) {
+      if (!el.matches('.t-container, .t-container_flex')) continue;
+      const r = el.getBoundingClientRect(); if (!(r.height > 80)) continue;
+      const col = [...el.children].find((k) => k.matches('.t-col, [class*="t-col_"]'));
+      const m = col ? Math.round(px(getComputedStyle(col).marginLeft) * Z(col) * 100) / 100 : 20;
+      wraps.push({ el, w: Math.round(r.width - 2 * m), h: r.height, how: `сетка Tilda: .t-container ${Math.round(r.width)} без полей колонок 2×${m}` });
+    }
+    for (const ab of document.querySelectorAll('.t396__artboard')) {
+      const r = ab.getBoundingClientRect(); if (!(r.height > 80 && r.width > 0)) continue;
+      const screens = String(ab.getAttribute('data-artboard-screens') || '').split(',').map(Number).filter((n) => n > 0).sort((a, b) => a - b); if (!screens.length) continue;
+      let res = null; for (const sc of screens) if (vw >= sc) res = sc; if (res === null) res = screens[0];
+      const up = ab.getAttribute('data-artboard-upscale') === 'window'; const el0 = ab.querySelector('.t396__elem');
+      const z = up ? (el0 ? Z(el0) : vw / res) : 1;
+      wraps.push({ el: ab, w: Math.round(Math.min(vw, res * z)), h: r.height, how: `сетка артборда Zero Block: брейкпоинт ${res}${up ? ` × zoom ${Math.round(z * 1000) / 1000} (upscale=window)` : ''}` });
+    }
+  }
   for (const x of wraps) bump(containers, x.w, x.h);
-  const containerFrom = wraps.sort((a, b) => b.h - a.h).slice(0, 8).map((x) => ({ value: x.w, el: sig(x.el), height: Math.round(x.h) }));
+  const containerFrom = wraps.sort((a, b) => b.h - a.h).slice(0, 8).map((x) => ({ value: x.w, el: sig(x.el), height: Math.round(x.h), ...(x.how ? { how: x.how } : {}) }));
 
   /* секции и ритм */
   let root = document.querySelector('main') || document.body;
@@ -570,6 +658,7 @@ function inPage() {
     sections, texture, passport,
     colorScheme: { darkMedia, lightDark, root: htmlS.colorScheme || 'normal', meta: metaScheme || null, unreadableSheets, unreadable },
     motion: { libs, scriptHints, transitions: top(trans, 10), running, keyframes: keyframes.slice(0, 30), sticky, reducedMotion },
+    tilda: isTilda ? (() => { let zMax = 1, zN = 0; for (const v of zM.values()) if (v !== 1) { zN++; if (v > zMax) zMax = v; } return { ...TILDA, excluded, zoom: { max: zMax, elements: zN } }; })() : undefined,
   };
 }
 
@@ -677,7 +766,12 @@ async function checkActions(page, actions) {
 }
 
 /* ---------- один проход по странице ---------- */
-const DEPS = { hex: HEX_SRC, eff: EFF_SRC, sig: SIG_SRC, layer: layerBg.toString() };
+/* масштаб и Tilda — из lib.mjs site-rework; без него — запасные: zoom через currentCSSZoom, Tilda не распознаётся */
+const ZOOM_SRC = (SR && SR.EFFECTIVE_ZOOM_FN) || `(el) => { try { const z = el && el.currentCSSZoom; return typeof z === 'number' && z > 0 ? Math.round(z * 10000) / 10000 : 1; } catch (e) { return 1; } }`;
+const CLIP_SRC = (SR && SR.CLIP_SHARE_FN) || '() => 1';
+const TILDA_SRC = (SR && SR.TILDA_FN) || '() => ({ tilda: false })';
+const TSVC_SRC = (SR && SR.IS_TILDA_SERVICE_FN) || '() => false';
+const DEPS = { hex: HEX_SRC, eff: EFF_SRC, sig: SIG_SRC, layer: layerBg.toString(), zoom: ZOOM_SRC, clip: CLIP_SRC, tilda: TILDA_SRC, tsvc: TSVC_SRC };
 const DARK_TEXT = /prefers-color-scheme\s*:\s*dark/i;
 const MOBILE_UA = (SR && SR.MOBILE_UA) || 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
@@ -828,7 +922,8 @@ export function themes(d) {
       muted = neutral.find((c) => c.value !== textC.value && dist(c.value, textC.value) > 25 && (lum(c.value) - lb) * (lum(c.value) - lt) < 0 && c.weight >= minW) || null;
       if (!muted) {
         const gray = colors.find((c) => sat(c.value) < 0.35 && c.value !== textC.value && dist(c.value, textC.value) > 25 && (lum(c.value) - lb) * (lum(c.value) - lt) < 0);
-        mutedWhy = gray ? `${gray.value} на ${bgC} — контраст ${contrast(gray.value, bgC).toFixed(1)} < 3` : 'серого между текстом и фоном нет';
+        /* причина — настоящая: серый с контрастом ≥ 3 отсеян весом, а не контрастом (madeon: «#636363 — контраст 6.0 < 3») */
+        mutedWhy = !gray ? 'серого между текстом и фоном нет' : contrast(gray.value, bgC) >= 3 ? `${gray.value} на ${bgC} — мало текста этим цветом (вес ${Math.round(gray.weight)} < ${Math.round(minW)})` : `${gray.value} на ${bgC} — контраст ${contrast(gray.value, bgC).toFixed(1)} < 3`;
       }
     } else mutedWhy = 'нет текста с контрастом ≥ 3';
     out[name] = { bg: bgC, text: textC ? textC.value : null, muted: muted ? muted.value : null, weight, share: Math.round(weight / total * 100) / 100, mutedWhy };
@@ -1066,6 +1161,18 @@ export function passportLines(d) {
   ];
 }
 
+/**
+ * Строка о Tilda для спецификации и сводки или null (не Tilda, json до extract 2026-09-28.2): масштаб Zero Block
+ * (кегли и размеры — с поправкой на zoom), что исключено как служебное, что Tilda делает с появлениями.
+ */
+export function tildaLine(data) {
+  const d = data.desktop, m = data.mobile, t = d && d.tilda; if (!t || !t.tilda) return null;
+  const z = (x) => (x && x.tilda && x.tilda.zoom && x.tilda.zoom.max > 1.001 ? `×${x.tilda.zoom.max} при ${x.viewport.width}px` : null);
+  const zz = [z(d), z(m)].filter(Boolean);
+  const ex = [t.madeOnTilda ? 'плашка Made on Tilda' : null, t.excluded && t.excluded.service ? `служебных узлов ${t.excluded.service}` : null, t.excluded && t.excluded.clipped ? `обрезанных артбордом узлов ${t.excluded.clipped} (заглушки «Zero Block», элементы за краем)` : null].filter(Boolean);
+  return `Tilda — ${zz.length ? `масштаб Zero Block ${zz.join(', ')} (upscale=window): кегли, отступы, радиусы и рамки даны на экране, computed × zoom` : 'масштаба Zero Block нет'}; служебное исключено из палитры, шкалы и кнопок: ${ex.join(', ') || 'нечего'}; появления: ${t.animationOff ? 'выключены проектом (data-blocks-animationoff)' : 'на ширине < 1200 Tilda выключает все, кроме data-animate-mobile=y'}. Язык донора точнее — site-rework/scripts/tilda.mjs`;
+}
+
 /** Строка про тёмную тему системы для спецификации и сводки. */
 function darkLine(data) {
   const dk = data.dark;
@@ -1083,7 +1190,7 @@ export function levelSource(d, lvl, code = false) {
   if (!f) return null;
   const q = (s) => (code ? `\`${s}\`` : s);
   if (!f.el) return f.how;
-  if (lvl === 'h1') return `${q(f.el)} «${f.text}» — ${f.how}${f.of > 1 ? ` (видимых h1: ${f.of})` : ''}`;
+  if (lvl === 'h1') { const b = f.biggest; return `${q(f.el)} «${f.text}» — ${f.how}${f.of > 1 ? ` (видимых h1: ${f.of})` : ''}${b ? `; h1 мелкий (${d.scale && d.scale.h1 ? d.scale.h1.fontSize : '?'} при основном ${b.body}) — самый крупный текст первого экрана: ${q(b.el)} «${b.text}» ${b.fontSize}/${b.fontWeight} ${b.fontFamily}` : ''}`; }
   return `${q(f.el)} — ${f.how}: ${(f.texts || []).join(', ')}${f.links > (f.texts || []).length ? ' …' : ''}`;
 }
 
@@ -1091,7 +1198,7 @@ export function levelSource(d, lvl, code = false) {
 export function containerNote(d) {
   const c = (d.containers || [])[0]; if (!c) return 'не выявлено';
   const from = (d.containerFrom || []).filter((x) => String(x.value) === String(c.value));
-  return `${c.value}px` + (from.length ? ` — ${from[0].el}${from.length > 1 ? ` и ещё ${from.length - 1}` : ''}, по высоте ${c.weight}px` : '');
+  return `${c.value}px` + (from.length ? ` — ${from[0].el}${from[0].how ? ` (${from[0].how})` : ''}${from.length > 1 ? ` и ещё ${from.length - 1}` : ''}, по высоте ${c.weight}px` : '');
 }
 
 const chg = (o) => Object.entries(o).map(([k, v]) => `${k} ${String(v.from).slice(0, 40)} → ${String(v.to).slice(0, 40)}`).join(', ') || 'без изменений';
@@ -1112,7 +1219,7 @@ function skeleton(data, slug) {
 
 Источник: ${data.source}
 Дата съёма: ${data.takenAt}${data.tool && data.tool.version ? ` · ${data.tool.version}` : ''}
-Сырые замеры: \`${slug}.json\` · переменные: \`${slug}.tokens.css\` · снимки: \`${slug}-shots/\`
+Сырые замеры: \`${slug}.json\` · переменные: \`${slug}.tokens.css\` · снимки: \`${slug}-shots/\`${tildaLine(data) ? `\nПлатформа: ${tildaLine(data)}` : ''}
 
 > Заготовка собрана скриптом. Цифры — замеры. Роли цветов, разделы «Приём»
 > и «Что берём себе» — дописать руками, посмотрев снимки.
@@ -1226,6 +1333,7 @@ export function summaryLines(data) {
   if (m.scale.body && parseFloat(m.scale.body.fontSize) < 6) out.push(`FAIL основной текст на узком экране ${m.scale.body.fontSize}`);
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
   out.push(`OK   тёмная тема: ${darkLine(data)}`);
+  if (tildaLine(data)) out.push(`OK   платформа: ${tildaLine(data)}`);
   const pa = d.passport && d.passport.accordions;
   if (pa && pa.groups && pa.groups.length) out.push(`OK   аккордеоны (проверка кликом): ${pa.groups.map((g) => `${g.kind === 'details' ? 'details' : g.kind === 'aria-expanded' ? 'aria-expanded' : 'свой'} ${g.sig} ×${g.count} — ${g.status}`).join('; ')}`);
   if (d.tool && d.tool.clicksError) out.push(`WARN поиск аккордеонов: ${d.tool.clicksError}`);
@@ -1251,7 +1359,7 @@ const HELP = `Съём дизайн-системы со страницы.
   --light         без состояний наведения/фокуса и без тёмной темы
   --no-pixels     не подтверждать акцент пикселями коробок кнопок и ссылок
   --force         перезаписать существующую <имя>.md
-  --selftest      самопроверка на стендах fixtures/extract (h1, аккордеон Framer)
+  --selftest      самопроверка на стендах fixtures/extract (h1, аккордеон Framer, масштаб Tilda)
   --help, -h      эта справка
 
 Переменные: DESIGN_REF_PROJECT / SITE_REWORK_PROJECT — папка с puppeteer-core;
@@ -1278,6 +1386,17 @@ async function selftest() {
         if (!ok) bad++;
         console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} h1: ждали ${eh}; снято ${h1 ? `${h1.fontSize}/${h1.fontWeight}` : 'нет'} — ${from}`);
       }
+      /* масштаб и Tilda (tilda-zoom.html): основной текст и меню — кегль на экране; служебные шрифты — не в палитре шрифтов */
+      const eb = meta('expect-body');
+      if (eb) { const b = d.scale.body, ok = !!b && b.fontSize === eb; if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} основной текст: ждали ${eb}; снято ${b ? `${b.fontSize}/${b.fontWeight} ${b.fontFamily}` : 'нет'}`); }
+      const en = meta('expect-nav');
+      if (en) {
+        const [size, ...rest] = en.split(' '); const how = rest.join(' '); const nv = d.scale.nav, fromN = d.scaleFrom && d.scaleFrom.nav;
+        const ok = !!nv && nv.fontSize === size && (!how || (fromN && String(fromN.how || '').includes(how))); if (!ok) bad++;
+        console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} меню: ждали ${en}; снято ${nv ? nv.fontSize : 'нет'} — ${levelSource(d, 'nav') || '—'}`);
+      }
+      const ef = meta('expect-no-font');
+      if (ef) { const used = (d.fonts.used || []).map((u) => fam1(u.value)); const hit = ef.split(',').map((x) => x.trim()).filter((x) => used.includes(x)); if (hit.length) bad++; console.log(`${hit.length ? 'FAIL' : 'OK  '} ${f} служебные шрифты вне палитры: ${hit.length ? `попали ${hit.join(', ')}` : `нет (${used.join(', ')})`}${d.tilda ? `; исключено: служебных узлов ${d.tilda.excluded.service}, обрезанных ${d.tilda.excluded.clipped}` : ''}`); }
       const ea = meta('expect-accordion');
       if (ea !== null) {
         const n = d.passport.components.accordion || 0, ok = n === Number(ea);

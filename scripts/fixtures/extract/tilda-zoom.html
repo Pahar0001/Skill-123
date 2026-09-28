@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд: Tilda Zero Block с upscale=window</title>
+<!-- Как у madeon.studio при 1440: Tilda ставит элементам Zero Block CSS zoom 1.2 (окно / брейкпоинт 1200), а computed
+     font-size его не учитывает (h1 40px в computed, 48px на экране). Меню — отдельные закреплённые элементы внизу окна
+     (streetwearbrands). Служебное: плашка Made on Tilda и заглушка «Zero Block», обрезанная артбордом высотой 0. -->
+<meta name="expect-h1" content="48px 400">
+<meta name="expect-body" content="20.4px">
+<meta name="expect-nav" content="14.4px закреплённое меню (fixed) внизу">
+<meta name="expect-no-font" content="TildaLabelFont, PlaceholderFont">
+<meta name="expect-accordion" content="0">
+<style>
+  html, body { margin: 0; background: #ffffff; color: #111111; font-family: Arial, sans-serif; }
+  .t396__artboard { position: relative; overflow: hidden; }
+  .t396__elem { position: absolute; zoom: 1.2; }
+  .tn-atom { font-family: Georgia, serif; }
+  .menu { position: fixed; bottom: 24px; zoom: 1.2; }
+  .menu a { font-family: Arial, sans-serif; font-size: 12px; color: #111111; text-decoration: none; text-transform: uppercase; }
+  .t-tildalabel { font-family: TildaLabelFont, Verdana, sans-serif; font-size: 22px; padding: 30px; text-align: center; background: #f4f4f4; }
+  .ph { font-family: PlaceholderFont, Arial, sans-serif; font-size: 100px; font-weight: 700; }
+</style>
+</head>
+<body class="t-body">
+<div id="allrecords" class="t-records" data-tilda-page-id="1" data-tilda-project-id="2" data-tilda-lazy="yes">
+  <div id="rec1" class="r t-rec" data-record-type="396"> <!-- T396 -->
+    <div class="t396"><div class="t396__artboard" data-artboard-recid="1" data-artboard-screens="320,640,960,1200" data-artboard-upscale="window" data-artboard-height="700" style="height:840px">
+      <div class="t396__elem tn-elem" data-elem-id="10" data-elem-type="text" style="top:40px;left:40px;width:900px">
+        <h1 class="tn-atom" style="font-size:40px;font-weight:400;line-height:1.1;margin:0">Разрабатываем сайты и создаём дизайн</h1>
+      </div>
+      <div class="t396__elem tn-elem" data-elem-id="11" data-elem-type="text" style="top:200px;left:40px;width:500px">
+        <div class="tn-atom" style="font-size:17px;line-height:1.24">Самое большое количество проектов мы делаем для тех, кому важно, чтобы сайт продавал, а не просто был.</div>
+      </div>
+      <div class="t396__elem tn-elem" data-elem-id="12" data-elem-type="text" style="top:320px;left:40px;width:500px">
+        <div class="tn-atom" style="font-size:17px;line-height:1.24">Мы ведём проект от первого созвона до запуска и остаёмся рядом после — правим, дополняем, считаем заявки.</div>
+      </div>
+      <div class="t396__elem tn-elem" data-elem-id="13" data-elem-type="text" style="top:440px;left:40px;width:500px">
+        <div class="tn-atom" style="font-size:17px;line-height:1.24">Каждый экран собираем вручную: сетка, шрифты и движение подчинены тому, что должен сделать посетитель.</div>
+      </div>
+    </div></div>
+  </div>
+  <div id="rec2" class="r t-rec" data-record-type="396"> <!-- T396 -->
+    <div class="t396"><div class="t396__artboard" data-artboard-recid="2" data-artboard-screens="320,640,960,1200" data-artboard-height="0" style="height:0">
+      <div class="t396__elem tn-elem" data-elem-id="1470209944682" data-elem-type="text" style="top:20px;left:0;width:660px">
+        <div class="tn-atom ph">Zero Block — заглушка конструктора за краем артборда</div>
+      </div>
+    </div></div>
+  </div>
+  <div id="rec3" class="r t-rec" data-record-type="396"> <!-- T396: меню из закреплённых элементов -->
+    <div class="t396"><div class="t396__artboard" data-artboard-recid="3" data-artboard-screens="320,640,960,1200" data-artboard-height="0" data-artboard-upscale="window" style="height:0;overflow:visible">
+      <div class="menu" style="left:400px"><a href="#services">Услуги</a></div>
+      <div class="menu" style="left:520px"><a href="#about">О нас</a></div>
+      <div class="menu" style="left:620px"><a href="#contacts">Контакты</a></div>
+      <div class="menu" style="left:760px"><a href="#jobs">Вакансии</a></div>
+    </div></div>
+  </div>
+  <div style="height:600px"></div>
+</div>
+<div class="t-tildalabel" id="tildacopy"><a href="https://tilda.cc/" class="t-tildalabel__link">Made on Tilda — плашка конструктора, текст длиннее сорока знаков для проверки</a></div>
+</body>
+</html>
