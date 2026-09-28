@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд clicks.mjs</title>
+<!--
+  Стенд правила scripts/clicks.mjs: node clicks.mjs selftest — desktop, mobile и mobile с увеличенным
+  видимым окном (visualViewport.scale 1.25: точка нажатия — сдвиг на offset, без умножения на scale).
+  У блоков data-expect — что ждём:
+    toggle       бургер из трёх полосок слева в шапке: клик открывает 4 ссылки, второй клик закрывает
+    toggle-edge  такой же бургер у правого края шапки (left 430 px): на desktop открывает, на mobile —
+                 «за краем экрана» (из-за него страница на телефоне шире экрана 390)
+    not-toggle   три полоски цветом oklch(… / 0) — прозрачные, не бургер
+    acc-own      свой аккордеон ×3: svg-значок, ответ обрезан overflow; клик раскрывает, второй закрывает
+    acc-hover    ответ показывается при наведении ×3 — «наведение, не аккордеон»
+    not-acc      бегущая строка (бесконечная анимация): карточки со значком и обрезанным текстом — не аккордеон
+    acc-details  details ×3 под «Частые вопросы» в самом низу: на телефоне видимое окно здесь сдвинуто
+                 от окна раскладки, и клик по getBoundingClientRect без пересчёта уходил мимо; свой курсор
+                 (закреплённый кружок за мышью) при наведении ещё раз сдвигает видимое окно — точку нажатия
+                 надо брать заново после наведения
+-->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { position: sticky; top: 0; z-index: 5; height: 64px; background: #fff; border-bottom: 1px solid #ddd; }
+  .logo { position: absolute; left: 76px; top: 18px; font-weight: 700; }
+  .bars { position: absolute; top: 10px; width: 44px; height: 44px; border: 0; padding: 0 10px; background: none; cursor: pointer; display: grid; align-content: center; gap: 6px; }
+  .bars i { display: block; height: 2px; background: #1b1b1b; }
+  .bars.left { left: 16px; }
+  .bars.ghost { left: 200px; }
+  .bars.ghost i { background: oklch(0.5 0.1 200 / 0); }
+  .bars.edge { left: 430px; }
+  .drawer { display: none; position: fixed; top: 64px; left: 0; width: 300px; z-index: 4; padding: 12px 16px; background: #fff; border: 1px solid #ddd; }
+  .drawer.open { display: grid; gap: 8px; }
+  main { padding: 8px 16px 24px; max-width: 760px; }
+  h2 { margin: 32px 0 12px; font-size: 22px; }
+  .qa { height: 52px; overflow: hidden; border-bottom: 1px solid #ddd; cursor: pointer; }
+  .qa.open { height: auto; }
+  .q, .hq { display: flex; justify-content: space-between; align-items: center; height: 52px; }
+  .q svg { width: 16px; height: 16px; flex: none; }
+  .a, .ha { padding: 0 0 16px; }
+  .hv { height: 52px; overflow: hidden; border-bottom: 1px solid #ddd; }
+  .hv:hover { height: auto; }
+  .hq b { width: 16px; text-align: center; }
+  .marquee { overflow: hidden; }
+  .track { display: flex; gap: 16px; width: max-content; animation: run 40s linear infinite; }
+  .card { flex: none; width: 240px; padding: 12px; background: #fff; border-radius: 8px; }
+  .card svg { width: 20px; height: 20px; display: block; }
+  .card p { margin: 6px 0 0; font-size: 14px; }
+  @keyframes run { to { transform: translateX(-50%); } }
+  .filler p { margin: 0 0 16px; }
+  details { border-bottom: 1px solid #ddd; padding: 12px 0; }
+  summary { cursor: pointer; }
+  footer { padding: 16px; font-size: 14px; color: #666; }
+  .cursor { position: fixed; left: 0; top: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: #e0a040; pointer-events: none; z-index: 70; }
+</style>
+</head>
+<body>
+<header>
+  <button class="bars left" data-expect="toggle"><i></i><i></i><i></i></button>
+  <span class="logo">Мастерская</span>
+  <button class="bars ghost" data-expect="not-toggle"><i></i><i></i><i></i></button>
+  <button class="bars edge" data-expect="toggle-edge"><i></i><i></i><i></i></button>
+</header>
+<nav class="drawer" id="drawer"><a href="#own">Как мы работаем</a><a href="#hover">Материалы</a><a href="#run">Что печатаем</a><a href="#faq">Частые вопросы</a></nav>
+<main>
+  <section id="own" data-expect="acc-own">
+    <h2>Как мы работаем</h2>
+    <div class="qa"><div class="q"><span>Сколько времени занимает заказ</span><svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#1b1b1b" stroke-width="2" fill="none"/></svg></div><div class="a">Обычно от трёх до пяти рабочих дней, в сезон распродаж на день-два дольше.</div></div>
+    <div class="qa"><div class="q"><span>Можно ли прислать свою модель</span><svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#1b1b1b" stroke-width="2" fill="none"/></svg></div><div class="a">Да, подойдут файлы STL и OBJ; перед печатью мы проверим толщину стенок.</div></div>
+    <div class="qa"><div class="q"><span>Как упаковывают фигурки</span><svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" stroke="#1b1b1b" stroke-width="2" fill="none"/></svg></div><div class="a">Каждая фигурка едет в отдельной коробке с мягкой вставкой, хрупкие детали — отдельно.</div></div>
+  </section>
+  <section id="hover" data-expect="acc-hover">
+    <h2>Материалы</h2>
+    <div class="hv"><div class="hq"><span>Пластик PLA</span><b>+</b></div><div class="ha">Биоразлагаемый пластик из кукурузного крахмала, без запаха при печати.</div></div>
+    <div class="hv"><div class="hq"><span>Пластик PETG</span><b>+</b></div><div class="ha">Прочнее и гибче PLA, выдерживает солнце и воду, подходит для улицы.</div></div>
+    <div class="hv"><div class="hq"><span>Фотополимер</span><b>+</b></div><div class="ha">Самые мелкие детали, до десятых долей миллиметра, для миниатюр и украшений.</div></div>
+  </section>
+  <section id="run" data-expect="not-acc">
+    <h2>Что печатаем</h2>
+    <div class="marquee"><div class="track">
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#c96"/></svg><b>Настольные игры</b><p>Фигурки героев, жетоны и органайзеры для коробок.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#69c"/></svg><b>Миниатюры</b><p>Армии для варгеймов и персонажи для ролевых игр.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#9c6"/></svg><b>Подарки</b><p>Именные брелоки, подставки и фигурки по фотографии.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#c69"/></svg><b>Запчасти</b><p>Ручки, заглушки и крепления, которых нет в продаже.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#cc6"/></svg><b>Макеты</b><p>Архитектурные макеты и прототипы изделий в масштабе.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#6cc"/></svg><b>Декор</b><p>Вазы, кашпо и светильники с узором, который не отлить.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#96c"/></svg><b>Косплей</b><p>Детали доспехов и реквизит, собранный из частей.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#c96"/></svg><b>Настольные игры</b><p>Фигурки героев, жетоны и органайзеры для коробок.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#69c"/></svg><b>Миниатюры</b><p>Армии для варгеймов и персонажи для ролевых игр.</p></div>
+      <div class="card"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="#9c6"/></svg><b>Подарки</b><p>Именные брелоки, подставки и фигурки по фотографии.</p></div>
+    </div></div>
+  </section>
+  <section class="filler">
+    <h2>О мастерской</h2>
+    <p>Мы печатаем на шести принтерах: четыре работают с пластиком, два — с фотополимером. Каждая модель перед печатью проходит проверку: толщина стенок, нависающие части, поддержки.</p>
+    <p>После печати фигурки шлифуются, грунтуются и, если нужно, красятся вручную. На покраску уходит от одного до трёх дней, в зависимости от числа деталей.</p>
+    <p>Заказы принимаем по почте и в мессенджерах, модели можно прислать своими файлами или заказать у нашего моделлера.</p>
+    <p>Небольшие заказы отправляем почтой и курьерскими службами, крупные — транспортной компанией с обрешёткой.</p>
+    <p>Для мастерских и клубов делаем серии от двадцати штук со скидкой, образец печатаем заранее.</p>
+    <div style="height: 1400px"></div>
+  </section>
+  <section id="faq" data-expect="acc-details">
+    <h2>Частые вопросы</h2>
+    <details><summary>Как оплатить заказ?</summary><p>Картой на сайте или переводом по счёту для юридических лиц, чек придёт на почту.</p></details>
+    <details><summary>Можно ли забрать самому?</summary><p>Да, из мастерской в центре города по договорённости, в любой будний день.</p></details>
+    <details><summary>Что если фигурка сломалась в дороге?</summary><p>Пришлите фотографию коробки и фигурки — напечатаем заново за наш счёт.</p></details>
+  </section>
+</main>
+<footer>Стенд clicks.mjs</footer>
+<div class="cursor"></div>
+<script>
+  for (const b of document.querySelectorAll('.bars.left, .bars.edge')) b.addEventListener('click', () => document.getElementById('drawer').classList.toggle('open'));
+  for (const q of document.querySelectorAll('.qa')) q.addEventListener('click', () => q.classList.toggle('open'));
+  const cur = document.querySelector('.cursor');
+  addEventListener('mousemove', (e) => { cur.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; });
+</script>
+</body>
+</html>

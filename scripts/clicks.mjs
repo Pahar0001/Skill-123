@@ -1,24 +1,54 @@
 /**
  * Что на странице раскрывается по клику: аккордеоны (details, [aria-expanded] и «свои» — Framer,
  * Tilda, Webflow), переключатели меню (бургер), вкладки (role=tab и ряды кнопок с одной активной),
- * раскрывающиеся кнопки ([aria-expanded="false"]). Одно правило для motion.mjs (движение по клику)
- * и extract.mjs скилла design-reference (паспорт: аккордеон). Правило аккордеона и меню — то же,
- * что в discover.mjs (там свой экземпляр внутри большого замера; меняете одно — поправьте другое).
+ * раскрывающиеся кнопки ([aria-expanded="false"]). Одно правило для discover.mjs (FAQ, паспорт,
+ * меню с селектором для runtime --click), motion.mjs (движение по клику) и extract.mjs скилла
+ * design-reference (паспорт: аккордеон). Меняете правило — прогоните все три (стенд, shapefest, VN3D).
  *
- *   const found = await findClickTargets(page, { want: ['accordions', 'toggles', 'tabs', 'disclosures'] });
- *   await probeAccordions(page, found.accordions.groups, { touch });   // подтверждение кликом
+ *   const found = await findClickTargets(page, { want: ['accordions', 'toggles', 'tabs', 'disclosures'], maxToggles: 3 });
+ *   await probeAccordions(page, found.accordions.groups, { touch });   // подтверждение кликом (details — последними)
+ *   await probeToggles(page, found.toggles, { touch });                // открывает ли меню ссылки (до 2 переключателей)
  *   accordionItems(found.accordions)                                  // details + подтверждённые пункты
+ *
+ * Точка нажатия — в координатах видимого окна (visualViewport): на телефоне у страницы шире экрана
+ * окно раскладки больше видимого, и клик по getBoundingClientRect уходит мимо; точка за краем экрана
+ * не нажимается («за краем экрана»), а не считается «клик не раскрыл». Пересчёт — SCREEN_POINT_FN
+ * (сдвиг на offsetLeft/offsetTop, без умножения на scale; исходник для evaluateWith, им же может
+ * пользоваться motion.mjs). Перед кликом точка берётся заново: наведение сдвигает видимое окно.
  *
  * Метки в странице: data-rw-cacc (пункт аккордеона), data-rw-ctog (меню), data-rw-ctab
  * («n:t» — вкладка, на которую нажать, «n:c» — активная, к ней вернуться), data-rw-cexp.
+ *
+ *   node clicks.mjs selftest    стенд fixtures/clicks/index.html: desktop, mobile и mobile с увеличенным
+ *                               видимым окном (scale 1.25); что ждём — data-expect у блоков
  */
-import { evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, sleep } from './lib.mjs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { evaluateWith, scrollToY, launch, openPage, pickViewports, EFFECTIVE_OPACITY_FN, SIG_FN, HEX_FN, sleep } from './lib.mjs';
 
-const DEPS = { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN };
+/**
+ * Точка из координат окна раскладки (getBoundingClientRect, elementFromPoint) — в координаты видимого
+ * окна, в которых нажимают page.mouse и page.touchscreen. На телефоне у страницы шире экрана окно
+ * раскладки больше видимого (стенд motion: innerWidth 469 при экране 390) и видимое сдвинуто
+ * (visualViewport.offsetTop 169): без пересчёта клик уходит на 169 px ниже. off — точка за краем экрана.
+ * Только сдвиг, без умножения на visualViewport.scale: мышь и касание в CDP — в CSS px от угла видимого
+ * окна, масштаб Chrome применяет сам. Проверено: после прохода discover у стенда motion scale 1.056, и
+ * клик по «(x − offset) × scale» уходил на 23 px ниже summary (details не раскрывался), по «x − offset» —
+ * раскрывал (24 → 88 px); selftest ловит это проходом с масштабом 1.25.
+ * Исходник для eval внутри страницы: evaluateWith(page, fn, arg, { screenPt: SCREEN_POINT_FN }).
+ */
+export const SCREEN_POINT_FN = `(x, y) => {
+  const vv = window.visualViewport; if (!vv) return { x: Math.round(x), y: Math.round(y), off: false };
+  const cx = Math.round(x - vv.offsetLeft), cy = Math.round(y - vv.offsetTop);
+  return { x: cx, y: cy, off: cx < 1 || cy < 1 || cx > vv.width - 1 || cy > vv.height - 1 };
+}`;
+
+const DEPS = { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN, hex: HEX_FN, screenPt: SCREEN_POINT_FN };
 
 /* ---------- в странице ---------- */
 function clickTargetsInPage(arg) {
   const want = new Set((arg && arg.want) || ['accordions', 'toggles', 'tabs', 'disclosures']);
+  const maxToggles = Math.max(1, Math.min(10, (arg && arg.maxToggles) || 3));
   const vw = innerWidth, vh = innerHeight, sy = scrollY;
   for (const a of ['data-rw-cacc', 'data-rw-ctog', 'data-rw-ctab', 'data-rw-cexp']) for (const e of document.querySelectorAll(`[${a}]`)) e.removeAttribute(a);
   const csM = new Map(); const cs = (el, p) => { if (p) return getComputedStyle(el, p); let s = csM.get(el); if (!s) { s = getComputedStyle(el); csM.set(el, s); } return s; };
@@ -53,8 +83,8 @@ function clickTargetsInPage(arg) {
   };
   const nameOf = (e) => [e.getAttribute('data-framer-name'), e.getAttribute('aria-label'), typeof e.className === 'string' ? e.className : '', e.id].filter(Boolean).join(' ');
 
-  /* --- аккордеоны: видимый вопрос, значок и спрятанный внутри ответ от 30 знаков (как discover) --- */
-  let accordions = { details: 0, groups: [], byClass: 0 };
+  /* --- аккордеоны: видимый вопрос, значок и спрятанный внутри ответ от 30 знаков --- */
+  let accordions = { details: 0, groups: [], byClass: 0, detailsNearFaq: 0, faq: null };
   if (want.has('accordions')) try {
     const hidM = new Map();
     const hiddenHow = (el) => {
@@ -165,22 +195,26 @@ function clickTargetsInPage(arg) {
       accordions.groups.push({ sig: sigNoId(d), kind: 'details', how: 'details/summary', chevron: chevronIn(sm, document.createElement('i')) || 'маркер details', count: list.length, flat: false, qMarks: list.filter((x) => /\?\s*$/.test(txt(x.querySelector('summary')))).length, inClass: false, native: true,
         top: Math.round(R(d).top + sy), questions: list.slice(0, 4).map((x) => txt(x.querySelector('summary')).slice(0, 80)), probe: [{ id, q: txt(sm).slice(0, 80), answer: answer.slice(0, 60) }], expect: ex ? ex.dataset.expect : '' });
     }
-    accordions.details = [...document.querySelectorAll('details')].filter((d) => onScreen(d)).length;
+    const detVis = [...document.querySelectorAll('details')].filter((d) => onScreen(d));
+    accordions.details = detVis.length;
     accordions.byClass = [...document.querySelectorAll('[class*="accordion"]')].filter((e) => onScreen(e)).length;
     accordions.faq = faqHeadEl ? { heading: txt(faqHeadEl).slice(0, 60), top: Math.round(R(faqHeadEl).top + sy) } : null;
+    /* details под заголовком FAQ (до 4000 px ниже) — пункты FAQ для discover (faqSummary) */
+    const faqTop = accordions.faq ? accordions.faq.top : null;
+    accordions.detailsNearFaq = faqTop == null ? 0 : detVis.filter((d) => { const y = R(d).top + sy; return y >= faqTop - 50 && y <= faqTop + 4000; }).length;
   } catch (e) { errors.push(`аккордеоны: ${String(e.message || e).slice(0, 120)}`); }
 
-  /* --- переключатель меню (бургер) в шапке: aria-expanded, имя, знак, 2–4 полоски (как discover) --- */
+  /* --- переключатель меню (бургер) в шапке: aria-expanded, имя, знак, 2–4 полоски --- */
   const toggles = [];
   if (want.has('toggles')) try {
     const clickable = (e) => { for (let x = e, d = 0; x && d < 3; x = x.parentElement, d++) { if (x.matches('button,[role="button"],a,label,summary,[onclick],[tabindex]') || cs(x).cursor === 'pointer') return true; } return false; };
     const rotated = (s) => { const m = /matrix\(([^)]+)\)/.exec(s.transform || ''); return !!m && Math.abs(parseFloat(m[1].split(',')[1]) || 0) > 0.05; };
-    const hexish = (c) => !!c && c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(c);
+    /* полоска — залита видимым цветом (hex из lib: прозрачный в любой записи, в том числе oklch(… / 0), — null) или с рамкой */
     const barsIn = (e) => {
       let n = 0;
       for (const k of [e, ...e.querySelectorAll('*')]) {
-        if (k !== e) { const r = R(k); const s = cs(k); if (r.height > 0 && r.height <= 4 && r.width >= 10 && r.width <= 48 && E(k) > 0.3 && !rotated(s) && (hexish(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0)) n++; }
-        for (const pe of ['::before', '::after']) { const ps = cs(k, pe); if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue; const h = parseFloat(ps.height) || 0, w = parseFloat(ps.width) || 0; if (h > 0 && h <= 4 && w >= 10 && w <= 48 && !rotated(ps) && (hexish(ps.backgroundColor) || parseFloat(ps.borderTopWidth) > 0)) n++; }
+        if (k !== e) { const r = R(k); const s = cs(k); if (r.height > 0 && r.height <= 4 && r.width >= 10 && r.width <= 48 && E(k) > 0.3 && !rotated(s) && (hex(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0)) n++; }
+        for (const pe of ['::before', '::after']) { const ps = cs(k, pe); if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue; const h = parseFloat(ps.height) || 0, w = parseFloat(ps.width) || 0; if (h > 0 && h <= 4 && w >= 10 && w <= 48 && !rotated(ps) && (hex(ps.backgroundColor) || parseFloat(ps.borderTopWidth) > 0)) n++; }
       }
       return n;
     };
@@ -204,7 +238,7 @@ function clickTargetsInPage(arg) {
       togM.set(e, how);
     }
     const toggleEls = [...togM.keys()].filter((e) => ![...togM.keys()].some((o) => o !== e && o.contains(e)));
-    toggleEls.slice(0, 3).forEach((e, i) => { e.setAttribute('data-rw-ctog', String(i)); const r = R(e); const ex = e.closest('[data-expect]'); toggles.push({ i, sig: sig(e), selector: cssPath(e), how: togM.get(e), w: Math.round(r.width), h: Math.round(r.height), text: txt(e).slice(0, 20), expect: ex ? ex.dataset.expect : '' }); });
+    toggleEls.slice(0, maxToggles).forEach((e, i) => { e.setAttribute('data-rw-ctog', String(i)); const r = R(e); const ex = e.closest('[data-expect]'); toggles.push({ i, sig: sig(e), selector: cssPath(e), how: togM.get(e), w: Math.round(r.width), h: Math.round(r.height), text: txt(e).slice(0, 20), expect: ex ? ex.dataset.expect : '' }); });
   } catch (e) { errors.push(`переключатели меню: ${String(e.message || e).slice(0, 120)}`); }
 
   /* --- вкладки: role=tablist, иначе ряд однотипных кнопок (2–8), из которых активна ровно одна
@@ -263,17 +297,18 @@ function clickTargetsInPage(arg) {
   return { accordions, toggles, tabs, disclosures, errors };
 }
 
-/** Найти, что раскрывается по клику. want — какие виды искать. Метки остаются в странице для кликов. */
-export function findClickTargets(page, { want = ['accordions', 'toggles', 'tabs', 'disclosures'] } = {}) {
-  return evaluateWith(page, clickTargetsInPage, { want }, DEPS);
+/** Найти, что раскрывается по клику. want — какие виды искать; maxToggles — сколько переключателей
+    меню вернуть (по умолчанию 3, discover берёт 6). Метки остаются в странице для кликов. */
+export function findClickTargets(page, { want = ['accordions', 'toggles', 'tabs', 'disclosures'], maxToggles = 3 } = {}) {
+  return evaluateWith(page, clickTargetsInPage, { want, maxToggles }, DEPS);
 }
 
-/* ---------- подтверждение аккордеона кликом (как discover.probeAccordions) ---------- */
+/* ---------- подтверждение аккордеона кликом ---------- */
 const sameDoc = (a, b) => String(a).split('#')[0] === String(b).split('#')[0];
 
 function accPointInPage(p) {
   const item = document.querySelector(`[data-rw-cacc="${p.id}"]`); if (!item) return { skip: 'пункт пропал из DOM' };
-  item.scrollIntoView({ block: 'center', behavior: 'instant' });
+  if (!p.noScroll) item.scrollIntoView({ block: 'center', behavior: 'instant' });
   const want = String(p.q || '').slice(0, 30); let target = null;
   for (const e of item.querySelectorAll('*')) { const t = (e.innerText || '').replace(/\s+/g, ' ').trim(); if (t && t.startsWith(want)) target = e; }
   const r = (target || item).getBoundingClientRect();
@@ -281,7 +316,8 @@ function accPointInPage(p) {
   const hit = document.elementFromPoint(x, y);
   if (!hit || !(item.contains(hit) || hit.contains(item))) return { skip: 'точку нажатия закрывает другой элемент' };
   const a = hit.closest('a[href]'); if (a && !/^(#|javascript:)/i.test(a.getAttribute('href') || '')) return { skip: 'в точке нажатия ссылка на другой адрес' };
-  return { x, y };
+  const s = screenPt(x, y); if (s.off) return { skip: 'точка нажатия за краем экрана (страница шире экрана)' };
+  return { x: s.x, y: s.y };
 }
 /* Видимая доля ответа (ищется по тексту: Framer пересоздаёт узлы при смене варианта) и высота пункта. */
 function accStateInPage(p) {
@@ -308,13 +344,15 @@ function accStateInPage(p) {
 }
 
 /**
- * До 4 групп (самые большие) и 2 пунктов в группе, не дольше 40 с: навести (ответ показался — наведение,
- * не аккордеон), нажать (ответ виден наполовину или пункт вырос на 20+ px), нажать ещё раз (закрылся ли).
- * На сенсорном экране, если клик мышью не раскрыл, — касание. Пишет в группу tried/opened/closed/status.
+ * До 4 групп (сначала свои, details — последними; внутри — самые большие) и 2 пунктов в группе, не
+ * дольше 40 с: навести (ответ показался — наведение, не аккордеон), нажать (ответ виден наполовину или
+ * пункт вырос на 20+ px), нажать ещё раз (закрылся ли). На сенсорном экране, если клик мышью не
+ * раскрыл, — касание. Пишет в группу tried/opened/closed/status, а если ни один пункт не нажат —
+ * skip: почему (точка за краем экрана, закрыта другим элементом, ссылка на другой адрес).
  */
 export async function probeAccordions(page, groups, { touch = false } = {}) {
   const t0 = Date.now(); let probed = 0;
-  for (const g of [...groups].sort((a, b) => b.count - a.count)) {
+  for (const g of [...groups].sort((a, b) => (a.native ? 1 : 0) - (b.native ? 1 : 0) || b.count - a.count)) {
     if (probed >= 4 || Date.now() - t0 > 40000) { g.status = 'не проверен'; g.tried = 0; continue; }
     probed++;
     const tries = [];
@@ -329,9 +367,10 @@ export async function probeAccordions(page, groups, { touch = false } = {}) {
       if (s0.frac < 0.5 && s1.frac >= 0.5) { tries.push({ q: p.q, hover: true }); await page.mouse.move(1, 1).catch(() => {}); await sleep(250); continue; }
       const opened = (x) => (x.frac >= 0.5 && s0.frac < 0.5) || (x.h != null && s0.h != null && x.h - s0.h >= 20);
       const url0 = page.url();
-      await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+      const pn = await evaluateWith(page, accPointInPage, { ...p, noScroll: true }, DEPS).catch(() => null); const cp0 = pn && !pn.skip ? pn : pt;
+      await page.mouse.click(cp0.x, cp0.y).catch(() => {}); await sleep(800);
       let s2 = await st();
-      if (!opened(s2) && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(800); s2 = await st(); }
+      if (!opened(s2) && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(cp0.x, cp0.y).catch(() => {}); await sleep(800); s2 = await st(); }
       if (!sameDoc(page.url(), url0)) { tries.push({ q: p.q, navigated: page.url() }); g.navigated = page.url(); break; }
       const t = { q: p.q, opened: opened(s2), before: { frac: s0.frac, h: s0.h }, after: { frac: s2.frac, h: s2.h } };
       if (t.opened) {
@@ -344,9 +383,61 @@ export async function probeAccordions(page, groups, { touch = false } = {}) {
     g.tries = tries; g.tried = tries.filter((t) => !t.skip).length; g.opened = tries.filter((t) => t.opened).length;
     g.closed = tries.filter((t) => t.closed).length; g.hoverOnly = tries.filter((t) => t.hover).length;
     g.status = g.opened ? 'подтверждён' : g.hoverOnly ? 'наведение, не аккордеон' : g.tried ? 'клик не раскрыл' : 'не проверен';
+    const sk = !g.tried && tries.find((t) => t.skip); if (sk) g.skip = sk.skip; else delete g.skip;
     if (g.navigated) break;
   }
   return groups;
+}
+
+/* ---------- переключатель меню: открывает ли клик навигацию ---------- */
+
+/* Ссылки, видимые в окне и не закрытые другим элементом: «href|текст». */
+function linksInViewInPage() {
+  const out = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    const r = a.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || r.bottom <= 0 || r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth || eff(a) <= 0.3) continue;
+    const x = Math.min(Math.max(r.left + r.width / 2, 1), innerWidth - 2), y = Math.min(Math.max(r.top + r.height / 2, 1), innerHeight - 2);
+    const hit = document.elementFromPoint(x, y); if (!hit || !(a === hit || a.contains(hit) || hit.contains(a))) continue;
+    out.add(`${a.getAttribute('href') || ''}|${(a.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30)}`);
+  }
+  return [...out];
+}
+/* Точка нажатия переключателя data-rw-ctog: центр, и в центре — он сам. Видимое окно сначала — в начало
+   окна раскладки: после проверки аккордеонов внизу страницы шире экрана оно остаётся внизу (offsetTop 182
+   на стенде clicks), scrollTo(0, 0) его не возвращает, и шапка выходила «за краем экрана». */
+function togPointInPage(i) {
+  const e = document.querySelector(`[data-rw-ctog="${i}"]`); if (!e) return null;
+  const vv = window.visualViewport; if (vv && (vv.offsetTop || vv.offsetLeft)) document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
+  const r = e.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return null;
+  const x = r.left + r.width / 2, y = r.top + r.height / 2; const hit = document.elementFromPoint(x, y);
+  const s = screenPt(x, y);
+  return { x: s.x, y: s.y, ok: !!hit && (e.contains(hit) || hit.contains(e)), off: s.off };
+}
+/**
+ * До max переключателей (по умолчанию 2): наверху страницы нажать, открылись ли ссылки (2+ новых видимых
+ * и не закрытых), закрыть повторным кликом или Escape. Пишет в переключатель probe:
+ * { opens, added, sample, closedBy } | { skip } | { navigated }.
+ */
+export async function probeToggles(page, toggles, { touch = false, max = 2 } = {}) {
+  const links = () => evaluateWith(page, linksInViewInPage, null, DEPS).catch(() => []);
+  for (const t of toggles.slice(0, max)) {
+    await scrollToY(page, 0); await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
+    const pt = await evaluateWith(page, togPointInPage, t.i, DEPS).catch(() => null);
+    if (!pt || !pt.ok || pt.off) { t.probe = { skip: !pt ? 'пропал из DOM или не виден' : pt.off ? 'за краем экрана (страница шире экрана)' : 'закрыт другим элементом' }; continue; }
+    const before = await links(); const url0 = page.url();
+    await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+    let added = (await links()).filter((x) => !before.includes(x));
+    if (added.length < 2 && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(800); added = (await links()).filter((x) => !before.includes(x)); }
+    if (!sameDoc(page.url(), url0)) { t.probe = { navigated: page.url() }; break; }
+    t.probe = { opens: added.length >= 2, added: added.length, sample: added.slice(0, 4).map((x) => x.slice(x.indexOf('|') + 1) || x.split('|')[0]) };
+    if (t.probe.opens) {
+      const still = async () => (await links()).filter((x) => added.includes(x)).length;
+      await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+      if ((await still()) <= added.length / 2) t.probe.closedBy = 'повторный клик';
+      else { await page.keyboard.press('Escape').catch(() => {}); await sleep(500); t.probe.closedBy = (await still()) <= added.length / 2 ? 'Escape' : null; }
+    }
+  }
+  return toggles;
 }
 
 /** Группа считается аккордеоном: подтверждена кликом или кликом не проверялась. */
@@ -360,6 +451,61 @@ export function accordionItems(acc) {
 
 /** «свой аккордеон ×7: svg-значок + ответ обрезан overflow, клик раскрывает (2 из 2), второй клик закрывает» */
 export function accordionNote(g) {
-  const st = g.status === 'подтверждён' ? `клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.status === 'не проверен' || !g.status ? 'кликом не проверялся' : g.status;
+  const st = g.status === 'подтверждён' ? `клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.skip ? `клик не проверен: ${g.skip}` : g.status === 'не проверен' || !g.status ? 'кликом не проверялся' : g.status;
   return `${g.kind === 'details' ? 'аккордеон на details' : g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}, ${st}`;
+}
+
+/* ---------- самопроверка: fixtures/clicks/index.html — desktop, mobile и mobile с масштабом 1.25 ----------
+   Третий проход — видимое окно увеличено (Emulation.setPageScaleFactor): так бывает после прохода discover
+   (стенд motion: scale 1.056), и точка, умноженная на scale, промахивалась мимо пунктов. */
+async function selftest() {
+  const url = pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'clicks', 'index.html')).href;
+  let bad = 0, n = 0;
+  const check = (vp, what, ok, got) => { n++; if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${vp} ${what}: ${got}`); };
+  const br = await launch();
+  try {
+    const [[, desk], [, mob]] = pickViewports('desktop,mobile');
+    for (const [name, vp, scale] of [['desktop', desk, 1], ['mobile', mob, 1], ['mobile×1.25', mob, 1.25]]) {
+      const page = await openPage(br, url, vp, { settle: 0 });
+      try {
+        if (scale !== 1) {
+          const cdp = await page.createCDPSession(); await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: scale }); await sleep(300);
+          const sc = await page.evaluate(() => visualViewport.scale);
+          check(name, 'масштаб видимого окна', Math.abs(sc - scale) < 0.01, `visualViewport.scale ${sc}`);
+        }
+        const found = await findClickTargets(page, { want: ['accordions', 'toggles'] });
+        for (const e of found.errors) check(name, 'поиск', false, e);
+        const wide = await page.evaluate(() => ({ iw: innerWidth, vw: Math.round(visualViewport.width) }));
+        const acc = found.accordions, touch = !!vp.hasTouch;
+        await probeAccordions(page, acc.groups, { touch });
+        await probeToggles(page, found.toggles, { touch });
+        const G = (e) => acc.groups.filter((g) => g.expect === e), T = (e) => found.toggles.filter((t) => t.expect === e);
+        const gs = (l) => l.map((g) => `${g.kind}×${g.count} ${g.sig} — ${accordionNote(g)}`).join('; ') || 'нет';
+        const ts = (l) => l.map((t) => `${t.selector} (${t.how}) ${JSON.stringify(t.probe || null)}`).join('; ') || 'нет';
+        const own = G('acc-own'), hov = G('acc-hover'), det = G('acc-details');
+        check(name, 'свой аккордеон', own.length === 1 && own[0].count === 3 && own[0].status === 'подтверждён' && own[0].closed === own[0].opened, gs(own));
+        check(name, 'ответ при наведении', hov.length === 1 && hov[0].status === 'наведение, не аккордеон', gs(hov));
+        check(name, 'details группой', det.length === 1 && det[0].native && det[0].count === 3 && det[0].status === 'подтверждён', gs(det));
+        check(name, 'бегущая строка — не аккордеон', !G('not-acc').length, gs(G('not-acc')));
+        check(name, 'details и FAQ', acc.details === 3 && acc.detailsNearFaq === 3 && !!acc.faq && acc.faq.heading === 'Частые вопросы', `details ${acc.details}, у FAQ ${acc.detailsNearFaq}, заголовок ${acc.faq ? `«${acc.faq.heading}»` : 'нет'}`);
+        check(name, 'пунктов аккордеона', accordionItems(acc) === 6, `${accordionItems(acc)} (ждали 6: details 3 + свой 3, наведение не в счёт)`);
+        const tg = T('toggle'), edge = T('toggle-edge');
+        check(name, 'бургер', tg.length === 1 && tg[0].probe && tg[0].probe.opens && tg[0].probe.closedBy === 'повторный клик', ts(tg));
+        check(name, 'прозрачные полоски — не бургер', !T('not-toggle').length, ts(T('not-toggle')));
+        if (touch) {
+          check(name, 'страница шире экрана', wide.iw > wide.vw, `окно раскладки ${wide.iw}, видимое ${wide.vw}`);
+          check(name, 'бургер за краем экрана', edge.length === 1 && edge[0].probe && /за краем экрана/.test(edge[0].probe.skip || ''), ts(edge));
+        } else check(name, 'бургер у правого края', edge.length === 1 && edge[0].probe && edge[0].probe.opens, ts(edge));
+      } finally { await page.close().catch(() => {}); }
+    }
+  } finally { await br.close().catch(() => {}); }
+  console.log(`${bad ? 'FAIL' : 'OK'}: проверок ${n}, расхождений ${bad} · ${url}`);
+  return bad ? 1 : 0;
+}
+
+const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isCli) {
+  if (process.argv[2] === 'selftest') process.exit(await selftest());
+  console.log('clicks.mjs — модуль (findClickTargets, probeAccordions, probeToggles); из командной строки только: node clicks.mjs selftest');
+  process.exit(process.argv[2] && !/^(-h|--help)$/.test(process.argv[2]) ? 1 : 0);
 }
