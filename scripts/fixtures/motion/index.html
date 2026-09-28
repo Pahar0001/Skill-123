@@ -97,6 +97,26 @@
   .under::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 2px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform .3s ease; }
   .under:hover::after { transform: scaleX(1); }
   canvas { display: block; width: 320px; height: 160px; background: #fff; border-radius: 12px; }
+  /* 17. по клику: бургер и выезжающая панель, вкладки, аккордеон как у Framer (svg-шеврон, ответ в обёртке
+     height 0), кнопка «Подробнее» с aria-expanded (показ сразу, без анимации) */
+  .burger { width: 40px; height: 32px; padding: 8px 6px; border: 0; background: transparent; cursor: pointer; }
+  .burger i { display: block; height: 2px; margin: 4px 0; background: currentColor; transition: transform .3s ease; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 320px; z-index: 80; padding: 80px 32px; background: #232530; color: #fff;
+    transform: translateX(100%); transition: transform .35s cubic-bezier(.2, .7, .2, 1); }
+  .drawer.open { transform: none; }
+  .drawer a { display: block; padding: 8px 0; color: inherit; }
+  .tabs [role="tablist"] { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tabs [role="tab"] { padding: 10px 20px; border: 1px solid #232530; border-radius: 10px; background: #fff; color: #232530; cursor: pointer; transition: background-color .2s ease, color .2s ease; }
+  .tabs [role="tab"][aria-selected="true"] { background: #232530; color: #fff; }
+  .tabs [role="tabpanel"] { padding: 24px; border-radius: 14px; background: #fff; }
+  .tabs [role="tabpanel"]:not([hidden]) { animation: tabIn .3s ease-out; }
+  @keyframes tabIn { from { opacity: 0; transform: translateY(8px); } }
+  .faq__item { max-width: 720px; margin-bottom: 10px; border: 1px solid #d9d9e3; border-radius: 14px; background: #fff; cursor: pointer; }
+  .faq__q { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; font-weight: 600; }
+  .faq__q svg { width: 16px; height: 16px; transition: transform .3s ease; }
+  .faq__item.open .faq__q svg { transform: rotate(90deg); }
+  .faq__a { height: 0; overflow: hidden; transition: height .4s cubic-bezier(.2, .7, .2, 1); }
+  .faq__a p { margin: 0; padding: 0 22px 18px; }
   @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -104,7 +124,8 @@
 <div class="progress" data-expect="progress"></div>
 <a class="upbtn" href="#" data-expect="reveal-up">↑ Наверх</a>
 <p class="typeonce" data-expect="typewriter-load" style="position:absolute;top:70px;left:6vw;margin:0;font:600 18px/1.2 sans-serif"></p>
-<header class="head" data-expect="header"><b>MOTION</b><a href="#cards">Карточки</a></header>
+<header class="head" data-expect="header"><b>MOTION</b><a href="#cards">Карточки</a><button class="burger" aria-label="Меню" aria-expanded="false" aria-controls="drawer" data-expect="click-menu"><i></i><i></i><i></i></button></header>
+<nav class="drawer" id="drawer" aria-label="Меню сайта"><a href="#cards">Карточки</a><a href="#tabs">Вкладки</a><a href="#faq">Вопросы</a><a href="#more">Подробнее</a></nav>
 <div class="cursor" data-expect="cursor"></div>
 
 <section class="hero">
@@ -164,6 +185,28 @@
   <p><a class="under" href="#x" data-expect="hover">Ссылка с линией</a></p>
   <canvas width="640" height="320" data-expect="canvas"></canvas>
 </section>
+<section class="tabs" id="tabs" data-expect="click-tabs"><h2>Вкладки</h2>
+  <div role="tablist"><button role="tab" aria-selected="true" aria-controls="p1" id="t1">Печать</button><button role="tab" aria-selected="false" aria-controls="p2" id="t2">Покраска</button><button role="tab" aria-selected="false" aria-controls="p3" id="t3">Доставка</button></div>
+  <div role="tabpanel" id="p1" aria-labelledby="t1">Печатаем слоями по 0.05 мм, одна фигурка — одна ночь работы принтера.</div>
+  <div role="tabpanel" id="p2" aria-labelledby="t2" hidden>Красим вручную акрилом в три слоя, от грунта до лака, кистью и аэрографом.</div>
+  <div role="tabpanel" id="p3" aria-labelledby="t3" hidden>Отправляем в коробке с поролоном, срок — два дня по городу и неделя по стране.</div>
+</section>
+
+<section id="faq" data-expect="click-accordion"><h2>Частые вопросы</h2>
+  <div class="faq__item" data-framer-name="Question"><div class="faq__q">Сколько стоит фигурка?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="faq__a"><p>Цена зависит от размера и покраски, точную называем после того, как посмотрим модель.</p></div></div>
+  <div class="faq__item" data-framer-name="Question"><div class="faq__q">Можно ли прислать свою модель?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="faq__a"><p>Да, принимаем STL и OBJ, проверяем модель на печатаемость до начала работы.</p></div></div>
+  <div class="faq__item" data-framer-name="Question"><div class="faq__q">Как долго ждать?<svg viewBox="0 0 16 16"><path d="M5 2l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div><div class="faq__a"><p>Обычно неделю: два дня печать, остальное время — сушка, покраска и упаковка фигурки.</p></div></div>
+</section>
+
+<section id="dets" data-expect="click-details"><h2>Вопросы на details</h2>
+  <details><summary>Можно ли забрать самому?</summary><p>Да, из мастерской в центре города по договорённости, в любой день недели.</p></details>
+  <details><summary>Есть ли подарочная упаковка?</summary><p>Есть: коробка с окном и открытка, её можно выбрать при оформлении заказа.</p></details>
+</section>
+
+<section id="more-box"><h2>Раскрытие</h2>
+  <button class="more" aria-expanded="false" aria-controls="more" data-expect="click-disclosure">Подробнее о печати</button>
+  <div id="more" hidden><p>Принтер работает ночью, утром фигурку снимают со стола, убирают поддержки и шлифуют швы вручную перед покраской.</p></div>
+</section>
 <section style="height:60vh"></section>
 
 <script>
@@ -215,6 +258,19 @@
   /* карусель сама листает */
   const slides = document.querySelector('.slides'); let s = 0;
   if (!reduce) setInterval(() => { s = (s + 1) % 3; slides.style.transform = `translateX(${-s * 420}px)`; }, 2000);
+  /* по клику: бургер, вкладки, аккордеон, раскрытие */
+  const burger = document.querySelector('.burger'), drawer = document.querySelector('.drawer');
+  const setMenu = (on) => { drawer.classList.toggle('open', on); burger.setAttribute('aria-expanded', String(on)); };
+  burger.addEventListener('click', () => setMenu(!drawer.classList.contains('open')));
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+  for (const t of document.querySelectorAll('[role="tab"]')) t.addEventListener('click', () => {
+    for (const x of document.querySelectorAll('[role="tab"]')) { const on = x === t; x.setAttribute('aria-selected', String(on)); document.getElementById(x.getAttribute('aria-controls')).hidden = !on; }
+  });
+  for (const q of document.querySelectorAll('.faq__item')) q.addEventListener('click', () => {
+    const a = q.querySelector('.faq__a'); const open = q.classList.toggle('open'); a.style.height = open ? a.scrollHeight + 'px' : '0px';
+  });
+  const more = document.querySelector('.more');
+  more.addEventListener('click', () => { const on = more.getAttribute('aria-expanded') !== 'true'; more.setAttribute('aria-expanded', String(on)); document.getElementById('more').hidden = !on; });
   /* холст: движется круг */
   const c = document.querySelector('canvas'), g = c.getContext('2d');
   (function draw(t) { g.clearRect(0, 0, 640, 320); g.fillStyle = '#6a4ee1'; g.beginPath(); g.arc(320 + Math.sin(t / 500) * 220, 160, 50, 0, 7); g.fill(); if (!reduce) requestAnimationFrame(draw); })(0);

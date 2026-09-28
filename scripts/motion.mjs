@@ -3,12 +3,19 @@
  * Движение страницы: что двигается, от чего, как и с какими числами — инвентарь, чтобы повторить
  * движение донора целиком, и сверка «донор → наш сайт», чтобы ни одно не потерялось.
  *
- *   node motion.mjs <адрес> [--viewport desktop] [--out <папка прогона>] [--tag <имя>]
- *                   [--time 6000] [--hover 14] [--no-hover] [--no-mouse] [--no-scroll] [--no-crops] [--debug]
- *   node motion.mjs compare <motion.json донора> <адрес нашего сайта | наш motion.json>
+ *   node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop[,mobile]]
+ *                   [--out <папка прогона>] [--tag <имя>] [--time 6000] [--hover 14] [--clicks 6]
+ *                   [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug]
+ *   node motion.mjs compare <motion.json донора> <адрес нашего сайта | наш motion.json> [ещё пары…]
  *                   [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport …]
  *   node motion.mjs selftest            проверка распознавания на стенде fixtures/motion/index.html
  *   node motion.mjs --help
+ *
+ * Несколько страниц и экранов за один запуск (один браузер): адреса подряд или --pages от первого
+ * адреса — «тип=путь» (тип — имя протокола) или просто пути через запятую; --viewport списком.
+ *   node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/y" --viewport desktop,mobile --tag donor
+ *   → motion/donor-home.json, donor-home-mobile.json, donor-product.json, … и сводка по всем.
+ * Одна страница и один экран — имя --tag как есть (или <страница>-<экран>), как раньше.
  *
  * Что распознаётся (вид → рецепт в reference/motion.md):
  *   entrance        вход при загрузке (CSS-анимация, переход, element.animate) — из чего, сколько, задержки
@@ -30,29 +37,41 @@
  *   hover           наведение: картинка в карточке крупнее, кнопка светлее/выше/с тенью, линия под ссылкой
  *   mouse           реакция на мышь: наклон, параллакс; cursor — свой курсор
  *   canvas, video   холст, который рисует (2D/WebGL), и видео-фон
+ *   click           по клику (clicks.mjs находит, что раскрывается): меню-бургер, аккордеон (details,
+ *                   aria-expanded и «свои» Framer/Tilda), вкладки (role=tab и ряд кнопок с одной активной),
+ *                   раскрывающаяся кнопка [aria-expanded]. Что открылось (панель) и как: сдвиг, масштаб,
+ *                   прозрачность, высота, шторка — и вход из @keyframes/element.animate, если панель показали
+ *                   из display:none; значок (поворот шеврона, бургер в крестик); кнопка (фон, цвет); старая
+ *                   панель вкладок; длительность и кривая (события, element.animate, последняя смена style,
+ *                   снимки через 80/200/400/700 мс; пружина Framer — linear() целиком в json); блокируется ли
+ *                   прокрутка; закрывается ли — повторным кликом, прежней вкладкой или Escape.
  * Плюс библиотеки движения (GSAP/ScrollTrigger, Lenis, Framer, AOS, Swiper, Lottie, Webflow, Tilda…),
  * CSS scroll-driven, плавная прокрутка и правило «меньше движения».
  *
  * Как снимается: страница открывается с перехватом событий (animationstart/end, transitionrun/end,
- * element.animate, смена классов и style) → 4 с без прокрутки (петли, печать, карусели) → наведение
- * на образцы кнопок, карточек, ссылок → движение мыши по первому экрану → проход прокруткой шагами
- * по четверти экрана, на каждом шаге ждём, пока движение уляжется, и снимаем прозрачность, transform,
- * фильтр, шторку и положение у каждого заметного элемента → вверх на полтора экрана (шапка) →
- * вырезки элементов. Отличие: прокрутка скриптом ≠ колесо — сглаживание Lenis/пружины Framer
- * догоняют; скрипт ждёт до 0.9 с на шаг.
+ * element.animate, смена классов и style) → 4 с без прокрутки (петли, печать, карусели) → проход
+ * прокруткой шагами по четверти экрана, на каждом шаге ждём, пока движение уляжется, и снимаем
+ * прозрачность, transform, фильтр, шторку и положение у каждого заметного элемента → вверх на полтора
+ * экрана (шапка) → движение мыши по первому экрану → наведение на образцы кнопок, карточек, ссылок →
+ * клики (до --clicks штук, до 60 с; навести, снимок всех элементов, клик, снимки, разбор, вырезка
+ * открытого cNN.png, закрыть) → вырезки элементов. Отличие: прокрутка скриптом ≠ колесо — сглаживание
+ * Lenis/пружины Framer догоняют; скрипт ждёт до 0.9 с на шаг.
  *
- * Выход: <out>/motion/<tag>.json (протокол: items[], libs, verdict) и <tag>.md (таблица для
- * analysis.md), вырезки <out>/motion/<tag>/mNN.png. По умолчанию <out> — папка прогона по адресу
- * (runs/<slug>), <tag> — <страница>-<экран>. --debug — ещё <tag>.series.json: все шаги и ряды значений
- * менявшихся элементов (разбирать спорное распознавание).
+ * Выход: <out>/motion/<tag>.json (протокол: items[], libs, clicks, verdict) и <tag>.md (таблица для
+ * analysis.md), вырезки <out>/motion/<tag>/mNN.png и cNN.png (открытое кликом). По умолчанию <out> —
+ * папка прогона по первому адресу (runs/<slug>). --debug — ещё <tag>.series.json: все шаги и ряды
+ * значений менявшихся элементов, а в json — разбор каждого клика (clicks.tried[].diff).
  *
  * compare: для каждого движения донора ищется такое же у нас (тот же вид, похожие числа):
  *   OK — есть и совпадает; ОТЛИЧАЕТСЯ — вид тот же, числа другие (какие); НЕТ — не найдено.
+ *   По клику пара — тот же подвид (меню, аккордеон, вкладки, раскрытие); высота панели не сравнивается
+ *   (она от содержимого), свойства донора, которых у нас нет, — разница.
  *   Решение «почему нет / чем заменено» — в <out>/motion-decisions.json:
  *     { "m04": "у нас другой первый экран (вариант B), стопки картинок нет", "reveal:div.card": "…" }
  *   Движения, которых у донора нет, печатаются как «своё» — проверить, что это задумано (банк идей).
  *   Вердикт: FAIL — есть НЕТ без решения; WARN — есть ОТЛИЧАЕТСЯ; иначе OK. Протокол годится
- *   доказательством для state.mjs (визуал/runtime движения).
+ *   доказательством для state.mjs (визуал/runtime движения). Несколько пар подряд — протоколы
+ *   compare-<тип донора>, итог — худший вердикт.
  * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден.
  *
  * Код выхода: 0 — снято (и compare без FAIL); 1 — FAIL сверки, неверные аргументы, не открылась страница.
@@ -62,14 +81,15 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
-  scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote,
+  scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
 } from './lib.mjs';
+import { findClickTargets } from './clicks.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { pos, opt } = parseArgs(process.argv.slice(2), {
-  flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'debug'],
-  optional: ['viewport', 'out', 'tag', 'time', 'hover', 'decisions'],
+  flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'no-clicks', 'debug'],
+  optional: ['viewport', 'out', 'tag', 'time', 'hover', 'clicks', 'decisions', 'pages'],
   commands: ['compare', 'selftest'],
 });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
@@ -111,6 +131,7 @@ function instrument() {
         if (m.attributeName === 'style') {
           const s = mo.style.get(el); const t = now();
           if (s) { s.n++; s.last = t; } else if (mo.style.size < 10000) mo.style.set(el, { n: 1, first: t, last: t });
+          if (mo.rec) mo.rec.set(el, t);                             /* после клика: когда скрипт в последний раз менял style */
         } else if (m.attributeName === 'class' && el.classList) {
           const was = new Set(String(m.oldValue || '').split(/\s+/).filter(Boolean));
           const added = [...el.classList].filter((c) => !was.has(c)); const removed = [...was].filter((c) => !el.classList.contains(c));
@@ -401,9 +422,120 @@ function mouseSnapInPage() {
     const el = els[i]; if (!el.isConnected) continue; const r = el.getBoundingClientRect();
     if (r.bottom < 0 || r.top > vh) continue;
     const s = getComputedStyle(el);
-    out[i] = [s.transform, Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2), s.position];
+    const ex = el.closest('[data-expect]');
+    out[i] = [s.transform, Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2), s.position, sig(el), ex ? ex.dataset.expect : ''];
   }
   return out;
+}
+
+/* ---------- клики: снимки всех элементов до и после нажатия ---------- */
+
+/* Снимок состояния всех элементов: видим ли (итоговая прозрачность в порядке документа, доля коробки,
+   не обрезанная предками с overflow, пересечение с окном), коробка, прозрачность, transform, шторка, цвета.
+   name 'base' — заново собрать список элементов и начать журнал; остальные — снимок в window.__ckS[name]. */
+function ckSnapInPage(name) {
+  const SKIPT = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR|SOURCE|TRACK)$/;
+  if (name === 'base') {
+    window.__ckEls = [...document.body.querySelectorAll('*')].filter((e) => !SKIPT.test(e.tagName) && !e.ownerSVGElement).slice(0, 9000);
+    window.__ckS = {}; window.__ckSet = new Set(window.__ckEls);
+  }
+  const els = window.__ckEls; const vw = innerWidth, vh = innerHeight;
+  const effM = new Map(), clipM = new Map(); const out = new Array(els.length);
+  const INF = { l: -1e9, t: -1e9, r: 1e9, b: 1e9 };
+  for (let i = 0; i < els.length; i++) {
+    const el = els[i];
+    if (!el.isConnected) { out[i] = null; continue; }
+    const s = getComputedStyle(el); const r = el.getBoundingClientRect(); const p = el.parentElement;
+    const e = (s.display === 'none' ? 0 : parseFloat(s.opacity)) * (p && effM.has(p) ? effM.get(p) : 1);
+    effM.set(el, s.visibility === 'hidden' ? 0 : e);
+    let c = p && clipM.has(p) ? clipM.get(p) : INF;
+    if (s.position === 'fixed') c = INF;                              /* закреплённое предки не обрезают */
+    const clipOf = { l: Math.max(c.l, r.left), t: Math.max(c.t, r.top), r: Math.min(c.r, r.right), b: Math.min(c.b, r.bottom) };
+    const cl = s.overflowX !== 'visible' || s.overflowY !== 'visible' || s.clipPath !== 'none' ? { l: Math.max(c.l, r.left), t: Math.max(c.t, r.top), r: Math.min(c.r, r.right), b: Math.min(c.b, r.bottom) } : c;
+    clipM.set(el, cl);
+    const area = r.width * r.height;
+    const shownA = Math.max(0, clipOf.r - clipOf.l) * Math.max(0, clipOf.b - clipOf.t);
+    const inView = r.right > 0 && r.left < vw && r.bottom > 0 && r.top < vh;
+    /* checkVisibility: закрытый details и content-visibility: hidden прячут содержимое, оставляя ему коробку */
+    const vis = area > 0 && e > 0.05 && s.visibility !== 'hidden' && shownA >= area * 0.25 && inView && (!el.checkVisibility || el.checkVisibility()) ? 1 : 0;
+    out[i] = [vis, Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height), Math.round(parseFloat(s.opacity) * 100) / 100,
+      s.transform === 'none' ? '' : s.transform, s.clipPath === 'none' ? '' : s.clipPath, s.backgroundColor, s.color, Math.round(shownA), s.display === 'none' ? 1 : 0];
+  }
+  window.__ckS[name] = { t: Math.round(performance.now()), rows: out };
+  if (name === 'base') { const mo = window.__mo; if (mo) { mo.rec = new Map(); window.__ckEv0 = mo.ev.length; window.__ckWa0 = mo.waapi.length; } }
+  return { n: els.length, lock: getComputedStyle(document.documentElement).overflow + '/' + getComputedStyle(document.body).overflow };
+}
+
+/* Что изменилось между снимком base и end: элементы с разницей (видимость, размер, transform, прозрачность,
+   шторка, цвета), у каждого — ближайший изменившийся предок, промежуточные снимки, переходы и события
+   после клика (длительность, кривая), новые узлы в DOM. trg — метка нажатого элемента. */
+function ckDiffInPage(arg) {
+  const els = window.__ckEls || []; const S = window.__ckS || {}; const B = S.base, Z = S.end; if (!B || !Z) return null;
+  const mids = (arg.mids || []).filter((n) => S[n]).map((n) => S[n]);
+  const trg = document.querySelector(arg.trg);
+  const tfDiff = (a, b) => a !== b;
+  const changed = []; const P = S.pre;
+  const differs = (a, z) => a[0] !== z[0] || Math.abs(a[3] - z[3]) > 3 || Math.abs(a[4] - z[4]) > 3 || a[6] !== z[6] || Math.abs(a[5] - z[5]) > 0.04 || a[7] !== z[7];
+  let busy = 0;
+  for (let i = 0; i < els.length; i++) {
+    const a = B.rows[i], z = Z.rows[i]; if (!a || !z) continue;
+    /* менялось и без клика (печать, бегущая строка, карусель, петля) — между двумя снимками до нажатия */
+    if (P && P.rows[i] && differs(a, P.rows[i])) { busy++; continue; }
+    const d = a[0] !== z[0] || Math.abs(a[3] - z[3]) > 3 || Math.abs(a[4] - z[4]) > 3 || tfDiff(a[6], z[6]) || Math.abs(a[5] - z[5]) > 0.04 || a[7] !== z[7] || a[8] !== z[8] || a[9] !== z[9] || Math.abs(a[1] - z[1]) > 3 || Math.abs(a[2] - z[2]) > 3;
+    if (d) changed.push(i);
+  }
+  /* сдвиг коробки без своего transform и размера — страница под раскрытым блоком съехала вниз: не в счёт */
+  const own = changed.filter((i) => { const a = B.rows[i], z = Z.rows[i]; return !(a[0] === z[0] && a[3] === z[3] && a[4] === z[4] && a[6] === z[6] && Math.abs(a[5] - z[5]) <= 0.04 && a[7] === z[7] && a[8] === z[8] && a[9] === z[9]); });
+  const set = new Set(own); const idx = new Map(els.map((e, k) => [e, k]));
+  const ev = (window.__mo ? window.__mo.ev.slice(window.__ckEv0 || 0) : []).filter((e) => e.type === 'trans-end' || e.type === 'anim-end');
+  const wa = window.__mo ? window.__mo.waapi.slice(window.__ckWa0 || 0) : [];
+  const rec = window.__mo && window.__mo.rec ? window.__mo.rec : new Map();
+  const t0 = arg.t0;
+  const out = own.slice(0, 400).map((i) => {
+    const el = els[i]; let par = -1;
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) { const k = idx.get(p); if (k !== undefined && set.has(k)) { par = k; break; } }
+    const s = getComputedStyle(el);
+    const inside = (x) => x && x.nodeType === 1 && (x === el || el.contains(x));
+    const evs = ev.filter((e) => e.el === el).map((e) => ({ t: e.t - t0, dur: e.dur, prop: e.prop || e.name }));
+    const was = wa.filter((w) => w.el === el).map((w) => ({ t: w.t - t0, dur: w.duration, easing: w.easing, props: w.props, first: w.first, last: w.last }));
+    return { i, par, sig: sig(el), tag: el.tagName.toLowerCase(), text: (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50),
+      trigger: !!trg && (el === trg || el.contains(trg) || trg.contains(el)), inTrigger: !!trg && trg.contains(el) && el !== trg, isTrigger: el === trg,
+      base: B.rows[i], end: Z.rows[i], mids: mids.map((m) => ({ t: m.t - t0, v: m.rows[i] })),
+      trans: { prop: s.transitionProperty, dur: s.transitionDuration, ease: s.transitionTimingFunction, delay: s.transitionDelay },
+      anim: s.animationName !== 'none' ? { name: s.animationName, dur: s.animationDuration, ease: s.animationTimingFunction } : null,
+      ev: evs, waapi: was, styleLast: rec.has(el) ? rec.get(el) - t0 : null, childEv: ev.some((e) => e.el !== el && inside(e.el)) };
+  });
+  /* новые узлы: появились в DOM после base и видны (меню, которое вставляется скриптом) */
+  const added = []; const known = window.__ckSet || new Set();
+  for (const el of document.body.querySelectorAll('*')) {
+    if (known.has(el) || el.ownerSVGElement || /^(SCRIPT|STYLE|LINK|META)$/.test(el.tagName)) continue;
+    const r = el.getBoundingClientRect(); if (r.width * r.height < 400 || r.bottom <= 0 || r.top >= innerHeight) continue;
+    if (added.some((a) => a.el.contains(el))) continue;
+    const s = getComputedStyle(el);
+    added.push({ el, sig: sig(el), w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.left), y: Math.round(r.top), op: parseFloat(s.opacity), tf: s.transform === 'none' ? '' : s.transform, trans: { dur: s.transitionDuration, ease: s.transitionTimingFunction }, anim: s.animationName !== 'none' ? { name: s.animationName, dur: s.animationDuration, ease: s.animationTimingFunction } : null });
+    if (added.length >= 6) break;
+  }
+  if (window.__mo) window.__mo.rec = null;
+  return { changed: out, total: own.length, busy, added: added.map((a) => ({ ...a, el: undefined })), url: location.href,
+    lock: getComputedStyle(document.documentElement).overflow + '/' + getComputedStyle(document.body).overflow };
+}
+
+/* Точка нажатия по метке: элемент — в середину окна (закреплённое — как есть), центр коробки, в точке — он сам. */
+function ckPointInPage(sel) {
+  const el = document.querySelector(sel); if (!el) return { skip: 'пропал из DOM' };
+  let fixed = false; for (let e = el; e && e !== document.body; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') { fixed = true; break; } }
+  if (!fixed) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  /* у details нажимается summary: у раскрытого «верх + 30 px» — уже текст ответа */
+  const aim = el.matches('details') ? el.querySelector('summary') || el : el;
+  const r = aim.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return { skip: 'не виден' };
+  const x = Math.round(r.left + Math.min(r.width / 2, 160)), y = Math.round(r.top + Math.min(r.height / 2, 30));
+  const hit = document.elementFromPoint(x, y);
+  if (!hit || !(el.contains(hit) || hit.contains(el))) return { skip: 'точку нажатия закрывает другой элемент' };
+  const a = hit.closest('a[href]'); if (a && !/^(#|javascript:)/i.test(a.getAttribute('href') || '')) return { skip: 'в точке нажатия ссылка на другой адрес' };
+  for (const o of document.querySelectorAll('[data-rw-ck-hit]')) o.removeAttribute('data-rw-ck-hit');
+  const btn = hit.closest('button, a, [role="button"], [role="tab"], summary, [aria-expanded]');
+  (btn && el.contains(btn) ? btn : el.contains(hit) ? hit : el).setAttribute('data-rw-ck-hit', '');
+  return { x, y, text: (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30), sig: sig(el), expect: el.closest('[data-expect]') ? el.closest('[data-expect]').dataset.expect : '' };
 }
 
 /* =====================================================================
@@ -439,7 +571,9 @@ function clipShare(cp, w, h) {
   return Math.max(0, 1 - px(l, w) - px(r, w)) * Math.max(0, 1 - px(t, h) - px(b, h));
 }
 const msOf = (s) => String(s || '').split(',').map((d) => parseFloat(d) * (/ms/.test(d) ? 1 : 1000)).filter((x) => !Number.isNaN(x));
-const easeName = (e) => String(e || '').split(',')[0].trim();
+/* linear(0, 0.0184, …) из десятков точек — пружина (Framer, Motion): в таблицу коротко, значение целиком — в json */
+const easeShort = (e) => { const s = String(e || ''); const m = /^linear\((.*)\)$/.exec(s); return m && s.length > 40 ? `пружина — linear() из ${m[1].split(',').length} точек (целиком в json)` : s; };
+const easeName = (e) => String(e || '').split(/,(?![^(]*\))/)[0].trim();
 
 /* подпись без состояний и номеров — для объединения одинаковых элементов */
 function pattern(sig) {
@@ -700,16 +834,191 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
   return items;
 }
 
+/* ---------- фаза кликов: меню, аккордеоны, вкладки, раскрывающиеся кнопки ---------- */
+const CLICK_SUB = { toggle: 'меню', accordion: 'аккордеон', tab: 'вкладки', disclosure: 'раскрытие' };
+const CLICK_RECIPE = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure' };
+const rgbHex = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c || ''); if (!m) return String(c || ''); if (m[4] !== undefined && Number(m[4]) === 0) return 'прозрачный'; return '#' + [m[1], m[2], m[3]].map((v) => Math.round(Number(v)).toString(16).padStart(2, '0')).join('').toUpperCase(); };
+
+/* Разбор одного клика: панель (самое крупное появившееся, иначе выросшее по высоте, иначе новый узел DOM),
+   как она приходит (сдвиг, масштаб, прозрачность, высота, шторка — у неё и изменившихся предков),
+   значок (маленький элемент с поворотом), смена вида кнопки, старая панель вкладок, длительность и кривая
+   (события переходов и element.animate после клика, последняя смена style скриптом, промежуточные снимки). */
+/* «opacity: 0; transform: translateY(8px) scale(.96)» → { op, tx, ty, sc } (проценты сдвига — от ширины/высоты) */
+function cssProps(css, w, h) {
+  const out = {}; const t = String(css || '');
+  const op = /opacity:\s*([\d.]+)/.exec(t); if (op) out.op = Number(op[1]);
+  const px = (v, size) => (/%/.test(v) ? parseFloat(v) / 100 * size : parseFloat(v));
+  let m = /translateX\(([^)]+)\)/.exec(t); if (m) out.tx = px(m[1], w);
+  m = /translateY\(([^)]+)\)/.exec(t); if (m) out.ty = px(m[1], h);
+  m = /translate(?:3d)?\(([^,)]+),\s*([^,)]+)/.exec(t); if (m) { out.tx = px(m[1], w); out.ty = px(m[2], h); }
+  m = /scale\(([\d.]+)/.exec(t); if (m) out.sc = Number(m[1]);
+  if (/transform:\s*none/.test(t)) { out.tx = 0; out.ty = 0; out.sc = 1; }
+  return out;
+}
+
+function summarizeClick(t, pt, diff, kf = {}) {
+  const ch = diff.changed; if (!ch.length && !diff.added.length) return null;
+  const byI = new Map(ch.map((c) => [c.i, c]));
+  const isAnc = (o, c) => { for (let p = c.par; p >= 0; p = byI.has(p) ? byI.get(p).par : -1) if (p === o.i) return true; return false; };
+  const tops = (list) => list.filter((c) => !list.some((o) => o !== c && isAnc(o, c)));
+  const area = (v) => (v ? v[3] * v[4] : 0);
+  const appeared = tops(ch.filter((c) => c.base[0] === 0 && c.end[0] === 1 && c.end[10] >= 400 && !c.isTrigger)).sort((a, b) => b.end[10] - a.end[10]);
+  const grown = ch.filter((c) => !c.isTrigger && c.end[4] - c.base[4] > 12).sort((a, b) => (b.end[4] - b.base[4]) - (a.end[4] - a.base[4]));
+  const gone = tops(ch.filter((c) => c.base[0] === 1 && c.end[0] === 0 && area(c.base) >= 1000 && !c.trigger)).sort((a, b) => area(b.base) - area(a.base));
+  let panel = appeared.find((c) => c.end[10] >= 1000) || grown[0] || null;
+  /* появившийся блок был обрезан предком (Framer: ответ полной высоты внутри пункта с overflow: hidden) —
+     панель — предок, который вырос, чтобы его показать; выше — пока предок растёт на столько же и в нём
+     не было другого видимого (высота «до» та же). Блок сам рос с нуля (обёртка ответа height 0 → N) — он и панель */
+  if (panel && panel.base[4] > 0 && panel.base[0] === 0) {
+    const grow = (q) => q.end[4] - q.base[4];
+    let p = panel.par; const first = p >= 0 && byI.get(p);
+    if (first && grow(first) >= Math.max(12, panel.end[4] * 0.4)) {
+      panel = first;
+      for (p = panel.par; p >= 0 && byI.has(p); p = byI.get(p).par) { const q = byI.get(p); if (Math.abs(grow(q) - grow(panel)) <= Math.max(4, grow(panel) * 0.15) && q.base[4] <= panel.base[4] + 12) panel = q; else break; }
+    }
+  }
+  const props = []; const put = (prop, from, to) => { if (!props.some((p) => p.prop === prop)) props.push({ prop, from, to }); };
+  const chain = [];
+  if (panel) { chain.push(panel); for (let p = panel.par, n = 0; p >= 0 && byI.has(p) && n < 2; p = byI.get(p).par, n++) if (!byI.get(p).trigger) chain.push(byI.get(p)); }
+  for (const c of chain) {
+    const a = decompose(c.base[6]), z = decompose(c.end[6]);
+    if (Math.abs(a.tx - z.tx) > 2) put('панель: сдвиг X', fmtV('tx', a.tx), fmtV('tx', z.tx));
+    if (Math.abs(a.ty - z.ty) > 2) put('панель: сдвиг Y', fmtV('ty', a.ty), fmtV('ty', z.ty));
+    if (Math.abs((a.sx + a.sy) / 2 - (z.sx + z.sy) / 2) > 0.02) put('панель: масштаб', fmtV('sc', (a.sx + a.sy) / 2), fmtV('sc', (z.sx + z.sy) / 2));
+    if (Math.abs(c.base[5] - c.end[5]) > 0.04) put('панель: прозрачность', fmtV('op', c.base[5]), fmtV('op', c.end[5]));
+    if (c.base[7] !== c.end[7]) { const f = clipShare(c.base[7], c.base[3], c.base[4]), g = clipShare(c.end[7], c.end[3], c.end[4]); if (f !== null && g !== null && Math.abs(f - g) > 0.02) put('панель: шторка (видно)', pct(f), pct(g)); }
+    if (c === chain[0] && Math.abs(c.end[4] - c.base[4]) > 3 && !c.base[11] && !(c.base[4] === 0 && props.length)) put('панель: высота', `${c.base[4]} px`, `${c.end[4]} px`);
+  }
+  /* панель, которую показали (display:none → блок), входит анимацией: «из» — первый кадр @keyframes или element.animate */
+  const lead0 = chain[0];
+  if (lead0) {
+    let fromCss = '', toCss = '';
+    const w = lead0.waapi.find((x) => x.first);
+    const an = lead0.anim ? String(lead0.anim.name).split(',')[0].trim() : '';
+    if (w) { fromCss = kfText(w.first); toCss = w.last && w.last !== w.first ? kfText(w.last) : ''; }
+    else if (an && kf && kf[an] && kf[an].length) { const fr = kf[an]; fromCss = fr[0].css; toCss = fr.length > 1 ? fr[fr.length - 1].css : ''; }
+    if (fromCss) {
+      const a = cssProps(fromCss, lead0.end[3], lead0.end[4]), z = cssProps(toCss, lead0.end[3], lead0.end[4]); const e = decompose(lead0.end[6]);
+      if (a.op !== undefined && Math.abs(a.op - (z.op ?? lead0.end[5])) > 0.04) put('панель: прозрачность', fmtV('op', a.op), fmtV('op', z.op ?? lead0.end[5]));
+      if (a.tx !== undefined && Math.abs(a.tx - (z.tx ?? e.tx)) > 2) put('панель: сдвиг X', fmtV('tx', a.tx), fmtV('tx', z.tx ?? e.tx));
+      if (a.ty !== undefined && Math.abs(a.ty - (z.ty ?? e.ty)) > 2) put('панель: сдвиг Y', fmtV('ty', a.ty), fmtV('ty', z.ty ?? e.ty));
+      if (a.sc !== undefined && Math.abs(a.sc - (z.sc ?? (e.sx + e.sy) / 2)) > 0.02) put('панель: масштаб', fmtV('sc', a.sc), fmtV('sc', z.sc ?? (e.sx + e.sy) / 2));
+    }
+    if (lead0.base[11] && !lead0.end[11]) put('панель: показ', 'display: none', 'видна');
+  }
+  if (panel && !props.length) put('панель: показ', 'скрыта', 'видна');
+  if (!panel && diff.added.length) { const a = diff.added[0]; put('панель: показ', 'нет в DOM', `вставлена ${a.w}×${a.h}`); }
+  const icon = ch.find((c) => c.end[3] <= 48 && c.end[4] <= 48 && Math.abs(decompose(c.end[6]).rot - decompose(c.base[6]).rot) >= 10);
+  if (icon) put('значок: поворот', fmtV('rot', decompose(icon.base[6]).rot), fmtV('rot', decompose(icon.end[6]).rot));
+  const btn = ch.find((c) => (c.isTrigger || c.inTrigger) && c.base[8] !== c.end[8]); if (btn) put('кнопка: фон', rgbHex(btn.base[8]), rgbHex(btn.end[8]));
+  const col = ch.find((c) => (c.isTrigger || c.inTrigger) && c.base[9] !== c.end[9]); if (col) put('кнопка: цвет', rgbHex(col.base[9]), rgbHex(col.end[9]));
+  if (t.type === 'tab' && gone.length) put('старая панель', 'видна', 'скрыта');
+  if (!props.length) return null;
+  /* время: события и element.animate после клика у участников, последняя смена style скриптом, снимки */
+  const who = [...chain, icon, gone[0]].filter(Boolean);
+  const durs = []; let easing = '';
+  for (const c of who) {
+    for (const e of c.ev) if (e.dur > 0) durs.push(e.dur);
+    for (const w of c.waapi) { if (w.dur) durs.push(w.dur + Math.max(0, w.t)); if (!easing && w.easing) easing = w.easing; }
+    if (c.styleLast != null && c.styleLast > 60) durs.push(c.styleLast);
+  }
+  const lead = chain[0] || icon;
+  if (!easing && lead) { const d0 = msOf(lead.trans.dur).some((x) => x > 0); easing = d0 ? easeName(lead.trans.ease) : lead.anim ? easeName(lead.anim.ease) : ''; }
+  const cssDur = lead ? Math.max(0, ...msOf(lead.trans.dur), ...(lead.anim ? msOf(lead.anim.dur) : [])) : 0;
+  const same = (a, b) => !!a && !!b && a[0] === b[0] && Math.abs(a[4] - b[4]) <= 2 && Math.abs(a[3] - b[3]) <= 2 && a[6] === b[6] && Math.abs(a[5] - b[5]) <= 0.02 && a[7] === b[7];
+  const midsLead = lead ? lead.mids.filter((m) => m.v) : [];
+  const moving = midsLead.some((m) => !same(m.v, lead.end));
+  const settledAt = moving ? (midsLead.find((m, k) => same(m.v, lead.end) && midsLead.slice(k).every((x) => same(x.v, lead.end))) || {}).t : null;
+  let duration = durs.length ? Math.round(Math.max(...durs)) : cssDur ? Math.round(cssDur) : settledAt ? Math.round(settledAt) : 0;
+  const notes = [];
+  if (!moving && !durs.length && !cssDur) { duration = 0; notes.push('сразу, без анимации'); }
+  else if (!durs.length && !cssDur && moving) notes.push(settledAt ? `по снимкам — улеглось к ${Math.round(settledAt)} мс` : 'двигалось дольше 0.7 с — длительность по снимкам не видна');
+  if (diff.lockBase && diff.lock !== diff.lockBase && /hidden|clip/.test(diff.lock)) notes.push('прокрутка страницы блокируется');
+  if (t.type === 'accordion' && t.count) notes.push(`пунктов ${t.count}`);
+  if (t.type === 'tab' && t.count) notes.push(`вкладок ${t.count}`);
+  return { kind: 'click', sub: CLICK_SUB[t.type], trigger: 'click', component: t.how, props: props.slice(0, 6), timing: { duration: duration || undefined, easing: easing || undefined, note: notes.join(', ') || undefined },
+    el: { sig: pt.sig, text: pt.text, expect: t.expect ? { kind: t.expect } : pt.expect ? { kind: pt.expect } : null }, box: panel ? { x: panel.end[1], y: panel.end[2], w: panel.end[3], h: panel.end[4] } : null };
+}
+
+/**
+ * Нажать на всё, что раскрывается по клику (clicks.mjs: меню, аккордеоны — до 2 групп, вкладки,
+ * [aria-expanded]), до maxN штук и не дольше 60 с: навести (наведение — до снимка «до»), снимок всех
+ * элементов, клик, снимки через 80/200/400/700 мс и через 1.5 с, разбор; вырезка открытого; закрыть
+ * (повторный клик, для вкладок — клик по прежней, иначе Escape) и записать, закрылось ли.
+ */
+async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = null, debug = false } = {}) {
+  const items = [], notes = [], tried = [];
+  await scrollToY(page, 0); await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
+  let found;
+  try { found = await findClickTargets(page); } catch (e) { notes.push(`поиск нажимаемого: ${String(e.message || e).slice(0, 120)}`); return { items, notes, tried }; }
+  for (const e of found.errors || []) notes.push(`поиск нажимаемого: ${e}`);
+  const targets = [];
+  for (const x of found.toggles) targets.push({ type: 'toggle', sel: `[data-rw-ctog="${x.i}"]`, how: x.how, expect: x.expect });
+  for (const g of [...found.accordions.groups].sort((a, b) => b.count - a.count).slice(0, 2)) if (g.probe[0]) targets.push({ type: 'accordion', sel: `[data-rw-cacc="${g.probe[0].id}"]`, how: `${g.chevron || 'без значка'}, ответ ${g.how}`, count: g.count, expect: g.expect });
+  for (const x of found.tabs) targets.push({ type: 'tab', sel: `[data-rw-ctab="${x.n}:t"]`, back: `[data-rw-ctab="${x.n}:c"]`, how: x.how, count: x.count, expect: x.expect });
+  for (const x of found.disclosures) targets.push({ type: 'disclosure', sel: `[data-rw-cexp="${x.i}"]`, how: x.controls ? `aria-expanded, aria-controls=${x.controls}` : 'aria-expanded', expect: x.expect });
+  const t0all = Date.now(); let k = 0;
+  const snap = (name) => evaluateWith(page, ckSnapInPage, name, deps);
+  for (const t of targets.slice(0, maxN)) {
+    if (Date.now() - t0all > 60000) { notes.push(`клики: не хватило 60 с, не нажато ${targets.length - tried.length}`); break; }
+    const sub = CLICK_SUB[t.type];
+    const pt = await evaluateWith(page, ckPointInPage, t.sel, deps).catch(() => null);
+    if (!pt || pt.skip) { tried.push({ ...t, skip: pt ? pt.skip : 'не найден' }); notes.push(`клик (${sub}) ${t.sel}: ${pt ? pt.skip : 'не найден'}`); continue; }
+    const url0 = page.url();
+    try {
+      await page.mouse.move(pt.x, pt.y, { steps: 3 }); await sleep(450);
+      const b = await snap('base'); await sleep(300); await snap('pre');   /* второй снимок до клика: что меняется само */
+      const tIn = await page.evaluate(() => performance.now());
+      await page.mouse.click(pt.x, pt.y); const tc = Date.now();
+      const MIDS = [80, 200, 400, 700];
+      for (let q = 0; q < MIDS.length; q++) { const w = MIDS[q] - (Date.now() - tc); if (w > 0) await sleep(w); await snap('m' + q); }
+      await sleep(Math.max(0, 1500 - (Date.now() - tc)));
+      await snap('end');
+      if (page.url().split('#')[0] !== url0.split('#')[0]) { notes.push(`клик по «${pt.text || pt.sig}» (${sub}) увёл на ${page.url()} — вернулся, клики остановлены`); await page.goBack({ waitUntil: 'load' }).catch(() => {}); break; }
+      let diff = await evaluateWith(page, ckDiffInPage, { t0: tIn, mids: ['m0', 'm1', 'm2', 'm3'], trg: '[data-rw-ck-hit]' }, deps);
+      const kfNames = diff ? [...new Set(diff.changed.filter((c) => c.anim).map((c) => String(c.anim.name).split(',')[0].trim()))].slice(0, 20) : [];
+      const kf = kfNames.length ? await evaluateWith(page, keyframesInPage, kfNames, deps).catch(() => ({})) : {};
+      let it = diff ? summarizeClick(t, pt, { ...diff, lockBase: b.lock }, kf) : null;
+      if (!it && vp.hasTouch) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(1500); await snap('end'); diff = await evaluateWith(page, ckDiffInPage, { t0: tIn, mids: [], trg: '[data-rw-ck-hit]' }, deps); it = diff ? summarizeClick(t, pt, { ...diff, lockBase: b.lock }, kf) : null; }
+      tried.push({ ...t, text: pt.text, changed: diff ? diff.total : 0, item: !!it, ...(debug && diff ? { diff: { added: diff.added, changed: diff.changed.slice(0, 40).map((c) => ({ i: c.i, par: c.par, sig: c.sig, text: c.text.slice(0, 30), trigger: c.trigger, base: c.base, end: c.end, mids: c.mids.map((m) => [m.t, m.v && m.v.slice(0, 7)]), ev: c.ev, waapi: c.waapi.map((w) => ({ t: w.t, dur: w.dur, easing: String(w.easing).slice(0, 40) })), styleLast: c.styleLast })) } } : {}) });
+      if (!it) { notes.push(`клик по «${pt.text || pt.sig}» (${sub}) видимо ничего не изменил`); continue; }
+      k++;
+      if (cropDir && it.box) {
+        try {
+          const sc = await page.evaluate(() => ({ x: scrollX, y: scrollY, vw: innerWidth, vh: innerHeight }));
+          const L = Math.max(0, Math.min(it.box.x, pt.x - 40) - 12), T = Math.max(0, Math.min(it.box.y, pt.y - 30) - 12);
+          const R = Math.min(sc.vw, Math.max(it.box.x + it.box.w, pt.x + 40) + 12), B = Math.min(sc.vh, Math.max(it.box.y + it.box.h, pt.y + 30) + 12);
+          if (R - L > 8 && B - T > 8) { const f = path.join(cropDir, `c${String(k).padStart(2, '0')}.png`); await page.screenshot({ path: f, clip: { x: L + sc.x, y: T + sc.y, width: R - L, height: B - T }, captureBeyondViewport: false }); it.crop = path.relative(out, f).replace(/\\/g, '/'); }
+        } catch (e) { /* без вырезки */ }
+      }
+      delete it.box;
+      /* закрыть: повторный клик (вкладки — по прежней), иначе Escape */
+      /* закрылось: то, что клик открыл (видимость, высота), вернулось как было; менявшееся само (снимок pre) — не в счёт */
+      const shut = async () => { await snap('close'); return page.evaluate(() => { const S = window.__ckS, P = S.pre; let n = 0, back = 0; for (let i = 0; i < S.base.rows.length; i++) { const a = S.base.rows[i], z = S.end.rows[i], c = S.close.rows[i]; if (!a || !z || !c) continue; if (P && P.rows[i] && (P.rows[i][0] !== a[0] || Math.abs(P.rows[i][4] - a[4]) > 3)) continue; if (a[0] !== z[0] || Math.abs(a[4] - z[4]) > 12) { n++; if (c[0] === a[0] && Math.abs(c[4] - a[4]) <= 12) back++; } } return n ? back / n : 1; }); };
+      const again = await evaluateWith(page, ckPointInPage, t.back || t.sel, deps).catch(() => null);
+      let closedBy = null;
+      const waitShut = Math.min(2600, Math.max(1100, (it.timing.duration || 0) + 450));
+      if (again && !again.skip) { await page.mouse.click(again.x, again.y).catch(() => {}); await sleep(waitShut); if ((await shut()) >= 0.8) closedBy = t.type === 'tab' ? 'клик по прежней вкладке' : 'повторный клик'; }
+      if (!closedBy) { await page.keyboard.press('Escape').catch(() => {}); await sleep(waitShut); if ((await shut()) >= 0.8) closedBy = 'Escape'; }
+      it.timing.note = [it.timing.note, closedBy ? `закрывается: ${closedBy}` : 'не закрылся ни повторным кликом, ни Escape'].filter(Boolean).join(', ');
+      items.push(it);
+    } catch (e) { notes.push(`клик (${sub}) ${t.sel}: ${String(e.message || e).slice(0, 100)}`); }
+    await page.mouse.move(1, 1).catch(() => {});
+  }
+  if (!targets.length) notes.push('по клику раскрываться нечему: меню-бургера, аккордеонов, вкладок и [aria-expanded] не найдено');
+  return { items, notes, tried, found: { toggles: found.toggles.length, accordions: found.accordions.groups.length, tabs: found.tabs.length, disclosures: found.disclosures.length } };
+}
+
 /* ---------- сборка ---------- */
 function describeTrigger(it) {
   if (it.kind === 'reveal') return `прокрутка: ${it.scroll.at}${it.cause ? `; ${it.cause}` : ''}`;
   if (it.kind === 'parallax') return `прокрутка: сдвиг = коэффициент × прокрутка${it.coefs && it.coefs.length > 1 ? ` (слои: ${it.coefs.join(', ')})` : ` (${it.scroll.coefficient})`}`;
   if (it.kind === 'scroll-linked') return it.scroll && it.scroll.from ? `прокрутка: ${it.scroll.from} → ${it.scroll.to} (${it.scroll.rangePx} px)` : `прокрутка${it.scroll && it.scroll.note ? `: ${it.scroll.note}` : ''}`;
-  return { load: 'загрузка', time: 'время (само)', scroll: 'прокрутка', hover: 'наведение', mouse: 'движение мыши' }[it.trigger] || it.trigger;
+  return { load: 'загрузка', time: 'время (само)', scroll: 'прокрутка', hover: 'наведение', mouse: 'движение мыши', click: 'клик' }[it.trigger] || it.trigger;
 }
 function describeTiming(it) {
   const t = it.timing || {}; const p = [];
-  if (t.duration) p.push(`${t.duration} мс`); if (t.easing) p.push(t.easing); if (t.delay) p.push(`задержка ${t.delay} мс`);
+  if (t.duration) p.push(`${t.duration} мс`); if (t.easing) p.push(easeShort(t.easing)); if (t.delay) p.push(`задержка ${t.delay} мс`);
   if (t.stagger) p.push(`по очереди +${t.stagger} мс`); if (t.period) p.push(`период ${round(t.period / 1000, 1)} с`); if (t.speed) p.push(t.speed); if (t.note) p.push(t.note);
   if (it.scroll && it.scroll.coefficient !== null && it.scroll.coefficient !== undefined) p.push(`коэффициент ${it.scroll.coefficient} (px сдвига на px прокрутки)`);
   return p.join(', ') || '—';
@@ -717,13 +1026,13 @@ function describeTiming(it) {
 const RECIPE = { entrance: 'entrance', reveal: 'reveal', 'scroll-linked': 'scroll-scrub', parallax: 'parallax', pinned: 'pin', header: 'header-scroll', progress: 'scroll-progress',
   marquee: 'marquee', typewriter: 'typewriter', 'rotating-words': 'rotating-words', counter: 'counter', carousel: 'carousel-auto', loop: 'loop', hover: 'hover', mouse: 'mouse-tilt', cursor: 'custom-cursor', canvas: 'canvas', video: 'video-bg' };
 const KIND_RU = { entrance: 'вход при загрузке', reveal: 'появление', 'scroll-linked': 'привязано к прокрутке', parallax: 'параллакс', pinned: 'закреплённый раздел', header: 'шапка при прокрутке', progress: 'прогресс прокрутки',
-  marquee: 'бегущая строка', typewriter: 'печатающийся текст', 'rotating-words': 'смена слов', counter: 'счётчик', carousel: 'карусель сама', loop: 'петля', hover: 'наведение', mouse: 'реакция на мышь', cursor: 'свой курсор', canvas: 'холст рисует', video: 'видео-фон' };
+  marquee: 'бегущая строка', typewriter: 'печатающийся текст', 'rotating-words': 'смена слов', counter: 'счётчик', carousel: 'карусель сама', loop: 'петля', hover: 'наведение', mouse: 'реакция на мышь', cursor: 'свой курсор', canvas: 'холст рисует', video: 'видео-фон', click: 'по клику' };
 
-async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, doHover = true, doMouse = true, doScroll = true, crops = true, quiet = false, debug = false } = {}) {
+async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, doHover = true, doMouse = true, doScroll = true, doClicks = true, clickN = 6, crops = true, quiet = false, debug = false, browser: shared = null } = {}) {
   const say = (s) => { if (!quiet) console.log(s); };
   const rv = resolveViewport(vpSpec || 'desktop'); if (!rv) die(`Неизвестный экран: ${vpSpec}`);
   const [vpName, vp] = rv;
-  const browser = await launch();
+  const browser = shared || await launch();
   const t0 = Date.now();
   const result = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, takenAt: new Date().toISOString(), items: [], libs: {}, notes: [] };
   try {
@@ -794,6 +1103,15 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
           if (after) hovers.push({ ...c, before, after });
         } catch (e) { /* элемент ушёл — дальше */ }
       }
+      await scrollToY(page, 0); await sleep(300);
+    }
+
+    /* 5. клики — после наведения: меню, аккордеоны, вкладки, [aria-expanded] (раскрывают и закрывают обратно) */
+    const tClick0 = await page.evaluate(() => performance.now());
+    let clicks = null;
+    if (doClicks) {
+      const cropDir = crops ? ensureDir(path.join(out, 'motion', tag)) : null;
+      clicks = await probeClicks(page, vp, deps, { maxN: clickN, cropDir, out, debug }).catch((e) => ({ items: [], notes: [`клики: ${String(e.message || e).slice(0, 120)}`], tried: [] }));
       await scrollToY(page, 0); await sleep(300);
     }
 
@@ -883,7 +1201,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     }
     /* появления: причина (класс, событие) и длительность */
     for (const it of items.filter((x) => x.kind === 'reveal')) {
-      const cls = ev.cls.filter((c) => c.i === it.i && c.added.length);
+      const cls = ev.cls.filter((c) => c.i === it.i && c.added.length && c.t < tClick0);
       if (cls.length) it.cause = `класс «${cls[0].added.slice(0, 2).join(' ')}» при входе в экран (IntersectionObserver)`;
       const ends = ev.ev.filter((e) => e.i === it.i && (e.type === 'trans-end' || e.type === 'anim-end'));
       const wa = ev.waapi.filter((w) => w.i === it.i && w.iterations !== 'infinite');
@@ -920,7 +1238,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
         const pos = mouse.map((m) => m.s[i]); const fixed = pos[0][3] === 'fixed' || pos[0][3] === 'absolute';
         const near = mouse.every((m, k) => Math.hypot(pos[k][1] - m.x, pos[k][2] - m.y) < 40);
         const ds = tfs.map(decompose);
-        const mEl = el || { sig: '', text: '' };
+        const mEl = el || { sig: pos[0][4] || '', text: '', expect: pos[0][5] ? { kind: pos[0][5] } : null };
         if (near && fixed) { items.push({ kind: 'cursor', trigger: 'mouse', props: [{ prop: 'следует за мышью', from: '', to: '' }], timing: {}, i: Number(i), el: mEl }); continue; }
         const rot = Math.max(...ds.map((x) => Math.abs(x.rx) + Math.abs(x.ry)));
         const mv = Math.max(...ds.map((x) => Math.hypot(x.tx - ds[0].tx, x.ty - ds[0].ty)));
@@ -953,6 +1271,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
       items.push({ kind: 'canvas', trigger: 'time', props: [{ prop: `холст ${c.ctx}`, from: '', to: `${c.w}×${c.h}${animated === null ? `, движется ли — не проверено${c.err ? ' (' + c.err + ')' : ''}` : ', рисует движение'}` }], timing: {}, el: { sig: c.sig, expect: c.expect ? { kind: c.expect } : null } });
     }
 
+    if (clicks) { for (const it of clicks.items) items.push(it); result.clicks = { found: clicks.found || null, tried: clicks.tried.map((x) => ({ type: x.type, sel: x.sel, text: x.text, skip: x.skip, changed: x.changed, item: x.item, ...(x.diff ? { diff: x.diff } : {}) })) }; result.notes.push(...clicks.notes); }
     /* по очереди: появления у соседей с растущей задержкой */
     const reveals = items.filter((x) => x.kind === 'reveal');
     const groups = new Map();
@@ -985,12 +1304,15 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
       if (same) { same.count = (same.count || 1) + 1; if (same.examples.length < 3) same.examples.push(it.el.sig); if (it.kind === 'parallax' && it.scroll) same.coefs.push(it.scroll.coefficient); continue; }
       final.push({ ...it, _key: key, count: it.count || 1, examples: [it.el.sig], coefs: it.scroll && it.kind === 'parallax' ? [it.scroll.coefficient] : [] });
     }
+    /* строки без изменения («сдвиг X 0 px → 0 px»: дрожь меньше шага округления) — не движение */
+    for (const it of final) it.props = it.props.filter((p) => !(p.from !== '' && p.from === p.to));
+    for (let q = final.length - 1; q >= 0; q--) if (!final[q].props.length) final.splice(q, 1);
     /* номера, рецепты, вырезки */
     let k = 0;
     const cropDir = path.join(out, 'motion', tag);
     if (crops) ensureDir(cropDir);
     for (const it of final) {
-      k++; it.id = `m${String(k).padStart(2, '0')}`; it.recipe = RECIPE[it.kind] || it.kind;
+      k++; it.id = `m${String(k).padStart(2, '0')}`; it.recipe = it.kind === 'click' ? CLICK_RECIPE[it.sub] || 'click' : RECIPE[it.kind] || it.kind;
       it.target = it.el.sig; it.text = it.el.text || ''; it.expect = it.el.expect ? it.el.expect.kind : (it.el.expectInside && it.el.expectInside[0]) || '';
       if (crops && (it.i !== undefined || it.hover !== undefined)) {
         try {
@@ -1011,7 +1333,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     if (!result.libs.reducedRule) result.notes.push('правила prefers-reduced-motion в CSS нет — у нас обязательно (reference/motion.md)');
     if (ev.capped) result.notes.push('событий больше 8000 — часть не записана');
     await page.close();
-  } finally { await browser.close(); }
+  } finally { if (!shared) await browser.close(); }
   result.verdict = 'OK';
   return result;
 }
@@ -1043,6 +1365,7 @@ const FAMILY = (it) => {
   if (it.kind === 'reveal') return it.sub === 'исчезает' ? 'reveal:out' : it.sub === 'при прокрутке вверх' ? 'reveal:up' : 'reveal:in';
   if (it.kind === 'hover') return `hover:${it.component || ''}`;
   if (it.kind === 'counter') return 'counter';
+  if (it.kind === 'click') return `click:${it.sub || ''}`;
   return it.kind;
 };
 function nums(it) { const out = {}; for (const p of it.props || []) { const a = parseFloat(String(p.from).replace(',', '.')), b = parseFloat(String(p.to).replace(',', '.')); out[p.prop] = [a, b]; } return out; }
@@ -1060,12 +1383,13 @@ function similar(d, o) {
   const nd = nums(d), no = nums(o);
   for (const [prop, [a, b]] of Object.entries(nd)) {
     if (!(prop in no)) {
-      if (['reveal', 'scroll-linked', 'parallax', 'entrance'].includes(d.kind)) { diffs.push(`нет «${prop}» (${a} → ${b})`); score -= 0.25; }
+      if (['reveal', 'scroll-linked', 'parallax', 'entrance', 'click'].includes(d.kind)) { const pr = (d.props || []).find((x) => x.prop === prop); diffs.push(`нет «${prop}» (${pr ? `${pr.from} → ${pr.to}` : `${a} → ${b}`})`); score -= 0.25; }
       /* наведение: у донора меняется цвет, у нас — только подчёркивание — это другое наведение, а не то же */
       else if (d.kind === 'hover') { const pr = (d.props || []).find((x) => x.prop === prop); diffs.push(`у нас не меняется «${prop}»${pr ? ` (у донора ${pr.from} → ${pr.to})` : ''}`); score -= 0.15; }
       continue;
     }
     const [c, e] = no[prop];
+    if (d.kind === 'click' && /высота/.test(prop)) continue;       /* высота панели — от содержимого, не язык движения */
     const bad = (x, y) => Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) > Math.max(0.05, Math.abs(x) * 0.25);
     if (bad(a, c) || bad(b, e)) { diffs.push(`${prop}: у донора ${a} → ${b}, у нас ${c} → ${e}`); score -= 0.15; }
   }
@@ -1114,16 +1438,22 @@ const timeMs = opt.time !== undefined ? Number(opt.time) : 6000;
 if (!(timeMs >= 1000 && timeMs <= 20000)) die('--time: от 1000 до 20000 мс');
 const hoverN = opt.hover !== undefined && opt.hover !== true ? Number(opt.hover) : 14;
 if (!(hoverN >= 0 && hoverN <= 60)) die('--hover: от 0 до 60');
+const clickN = opt.clicks !== undefined && opt.clicks !== true ? Number(opt.clicks) : 6;
+if (!(clickN >= 0 && clickN <= 20)) die('--clicks: от 0 до 20');
+const phases = { timeMs, hoverN, clickN, doHover: !opt['no-hover'], doMouse: !opt['no-mouse'], doScroll: !opt['no-scroll'], doClicks: !opt['no-clicks'] && clickN > 0, crops: !opt['no-crops'] };
+const vpList = (v) => String(v && v !== true ? v : 'desktop').split(',').map((x) => x.trim()).filter(Boolean);
+for (const v of vpList(opt.viewport)) if (!resolveViewport(v)) die(`Неизвестный экран: ${v}`);
 
 if (cmd === 'selftest') {
   const url = pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'index.html')).href;
   const out = path.resolve(String(opt.out || path.join(process.env.TEMP || process.env.TMPDIR || '.', 'motion-selftest')));
-  const res = await inventory(url, opt.viewport || 'desktop', { out, tag: 'selftest', timeMs, hoverN, crops: false });
+  const res = await inventory(url, vpList(opt.viewport)[0], { out, tag: 'selftest', ...phases, crops: false });
   writeJson(path.join(out, 'motion', 'selftest.json'), res);
   const html = fs.readFileSync(path.join(HERE, 'fixtures', 'motion', 'index.html'), 'utf8');
-  const expected = [...html.matchAll(/data-expect="([\w-]+)"/g)].map((m) => m[1]);
+  const expected = [...html.matchAll(/data-expect="([\w-]+)"/g)].map((m) => m[1]).filter((k) => phases.doClicks || !/^click-/.test(k));
   const need = [...new Set(expected)];
-  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind);
+  const CK = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure' };
+  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind === 'click' ? (i.sub === 'аккордеон' && /details/.test(i.component || '') ? 'click-details' : CK[i.sub] || 'click') : i.kind);
   const found = new Set(res.items.map(key));
   const byExpect = new Set(res.items.map((i) => i.expect).filter(Boolean));
   let bad = 0;
@@ -1133,48 +1463,102 @@ if (cmd === 'selftest') {
   process.exit(bad ? 1 : 0);
 }
 
-if (cmd === 'compare') {
-  const [donorFile, ourArg] = pos;
-  if (!donorFile || !ourArg) die('Нужно: node motion.mjs compare <motion.json донора> <адрес или motion.json нашего> (подробно: --help)');
-  const donor = readJson(path.resolve(donorFile)); if (!donor || !Array.isArray(donor.items)) die(`Не читается протокол донора: ${donorFile}`);
-  let ours; let out;
-  if (/^(https?|file):/i.test(ourArg)) {
-    out = opt.out ? path.resolve(String(opt.out)) : runDir(opt, ourArg);
-    const vp = opt.viewport || donor.viewport || 'desktop';
-    const tag = `${pageSlug(ourArg)}-${vp}`;
-    ours = await inventory(ourArg, vp, { out, tag, timeMs, hoverN, doHover: !opt['no-hover'], doMouse: !opt['no-mouse'], doScroll: !opt['no-scroll'], crops: !opt['no-crops'] });
-    writeJson(path.join(out, 'motion', `${tag}.json`), ours); fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdTable(ours));
-  } else {
-    ours = readJson(path.resolve(ourArg)); if (!ours || !Array.isArray(ours.items)) die(`Не читается наш протокол: ${ourArg}`);
-    out = opt.out ? path.resolve(String(opt.out)) : path.dirname(path.dirname(path.resolve(ourArg)));
+/* страницы запуска: адреса подряд и --pages «тип=путь,…» или «путь,…» от первого адреса.
+   Имя протокола: одна страница и один экран — --tag как есть (или <страница>-<экран>); несколько —
+   <--tag>-<тип или страница>, у экрана не desktop — ещё -<экран> (donor-home, donor-product-mobile);
+   без --tag — <тип или страница>-<экран>. */
+function pagePlan() {
+  const urls = pos.filter((p) => /^(https?|file):/i.test(p));
+  const junk = pos.filter((p) => !/^(https?|file):/i.test(p));
+  if (junk.length) die(`Не адрес: ${junk.join(' ')} — адреса начинаются с http://, https:// или file:// (страницы от первого адреса — --pages)`);
+  const list = urls.map((u) => ({ url: u, type: null }));
+  if (opt.pages && opt.pages !== true) {
+    if (!urls.length) die('--pages считаются от первого адреса: node motion.mjs <адрес> --pages "home=/,product=/p/x"');
+    for (const part of String(opt.pages).split(',').map((x) => x.trim()).filter(Boolean)) {
+      const m = /^([\p{L}\w-]+)=(.+)$/u.exec(part);
+      const href = new URL(unmangle(m ? m[2] : part), urls[0]).href;
+      const same = list.find((x) => x.url === href);
+      if (same) { if (m) same.type = m[1]; continue; }
+      list.push({ url: href, type: m ? m[1] : null });
+    }
   }
-  const decFile = path.resolve(String(opt.decisions && opt.decisions !== true ? opt.decisions : path.join(out, 'motion-decisions.json')));
-  const decisions = readJson(decFile, {}) || {};
-  const c = compare(donor, ours, decisions);
-  const tag = opt.tag && opt.tag !== true ? String(opt.tag) : 'compare';
-  const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
-    steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}`, details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
-    extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
-  writeJson(path.join(out, 'motion', `${tag}.json`), proto);
-  fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
-  for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение: ${r.decision}` : ''}`);
-  console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
-  console.log(`${c.verdict}: сверка движения · ${path.join(out, 'motion', `${tag}.md`)}`);
-  process.exit(c.verdict === 'FAIL' ? 1 : 0);
+  if (!list.length) die('Нужно: node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop,mobile] [--out папка] (подробно: --help)');
+  const vps = vpList(opt.viewport); const prefix = opt.tag && opt.tag !== true ? String(opt.tag) : '';
+  const single = list.length === 1 && vps.length === 1;
+  const runs = [];
+  for (const p of list) for (const vp of vps) {
+    const name = p.type || pageSlug(p.url);
+    const tag = single ? (prefix || `${name}-${vp}`) : prefix ? `${prefix}-${name}${vp === 'desktop' ? '' : '-' + vp}` : `${name}-${vp}`;
+    if (runs.some((r) => r.tag === tag)) die(`Два протокола с одним именем ${tag}: задайте типы в --pages («тип=путь»)`);
+    runs.push({ url: p.url, vp, tag, type: p.type });
+  }
+  return runs;
 }
 
-/* инвентарь */
-const url = pos[0];
-if (!url || !/^(https?|file):/i.test(url)) die('Нужно: node motion.mjs <адрес> [--viewport desktop] [--out папка] (подробно: --help)');
-if (pos.length > 1) die(`Лишние слова после адреса: ${pos.slice(1).join(' ')}`);
-const out = runDir(opt, url);
-const vp = opt.viewport && opt.viewport !== true ? String(opt.viewport) : 'desktop';
-const tag = opt.tag && opt.tag !== true ? String(opt.tag) : `${pageSlug(url)}-${vp}`;
-const res = await inventory(url, vp, { out, tag, timeMs, hoverN, doHover: !opt['no-hover'], doMouse: !opt['no-mouse'], doScroll: !opt['no-scroll'], crops: !opt['no-crops'], debug: !!opt.debug });
-writeJson(path.join(out, 'motion', `${tag}.json`), res);
-fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdTable(res));
-const byKind = {}; for (const it of res.items) byKind[KIND_RU[it.kind] || it.kind] = (byKind[KIND_RU[it.kind] || it.kind] || 0) + (it.count || 1);
-console.log(`Найдено движений: ${res.items.length} (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`);
-for (const it of res.items) console.log(`  ${it.id} ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''} — ${it.target}${it.count > 1 ? ` ×${it.count}` : ''}: ${it.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 110)} · ${describeTiming(it).slice(0, 80)}`);
-if (res.notes.length) for (const n of res.notes) console.log(`WARN ${n}`);
-console.log(`OK: инвентарь движения · ${path.join(out, 'motion', `${tag}.md`)}`);
+if (cmd === 'compare') {
+  /* пары «протокол донора — наш адрес или протокол» подряд: compare d1.json url1 d2.json url2 … */
+  if (pos.length < 2 || pos.length % 2) die('Нужно: node motion.mjs compare <motion.json донора> <адрес или motion.json нашего> [ещё пары…] (подробно: --help)');
+  const pairs = []; for (let q = 0; q < pos.length; q += 2) pairs.push([pos[q], pos[q + 1]]);
+  const many = pairs.length > 1;
+  let browser = null; let worst = 'OK'; const rank = { OK: 0, WARN: 1, FAIL: 2 };
+  try {
+    for (const [donorFile, ourArg] of pairs) {
+      const donor = readJson(path.resolve(donorFile)); if (!donor || !Array.isArray(donor.items)) die(`Не читается протокол донора: ${donorFile}`);
+      let ours; let out;
+      if (/^(https?|file):/i.test(ourArg)) {
+        out = opt.out ? path.resolve(String(opt.out)) : runDir(opt, ourArg);
+        const vp = opt.viewport && opt.viewport !== true ? vpList(opt.viewport)[0] : donor.viewport || 'desktop';
+        const tag = `${pageSlug(ourArg)}-${vp}`;
+        if (!browser) browser = await launch();
+        ours = await inventory(ourArg, vp, { out, tag, ...phases, browser });
+        writeJson(path.join(out, 'motion', `${tag}.json`), ours); fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdTable(ours));
+      } else {
+        ours = readJson(path.resolve(ourArg)); if (!ours || !Array.isArray(ours.items)) die(`Не читается наш протокол: ${ourArg}`);
+        out = opt.out ? path.resolve(String(opt.out)) : path.dirname(path.dirname(path.resolve(ourArg)));
+      }
+      const decFile = path.resolve(String(opt.decisions && opt.decisions !== true ? opt.decisions : path.join(out, 'motion-decisions.json')));
+      const decisions = readJson(decFile, {}) || {};
+      const c = compare(donor, ours, decisions);
+      const dname = path.basename(donorFile, '.json').replace(/^donor-/, '');
+      const tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
+      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
+        steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}`, details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
+        extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
+      writeJson(path.join(out, 'motion', `${tag}.json`), proto);
+      fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
+      if (many) console.log(`\n== ${donorFile} → ${ourArg}`);
+      for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение: ${r.decision}` : ''}`);
+      console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
+      console.log(`${c.verdict}: сверка движения · ${path.join(out, 'motion', `${tag}.md`)}`);
+      if (rank[c.verdict] > rank[worst]) worst = c.verdict;
+    }
+  } finally { if (browser) await browser.close().catch(() => {}); }
+  if (many) console.log(`\n${worst}: пар ${pairs.length}`);
+  process.exit(worst === 'FAIL' ? 1 : 0);
+}
+
+/* инвентарь: одна или несколько страниц, один или несколько экранов — один браузер на всё */
+const runs = pagePlan();
+const out = runDir(opt, runs[0].url);
+const browser = await launch();
+const summary = [];
+try {
+  for (const r of runs) {
+    if (runs.length > 1) console.log(`\n== ${r.tag}: ${r.url} (${r.vp})`);
+    let res;
+    try { res = await inventory(r.url, r.vp, { out, tag: r.tag, ...phases, debug: !!opt.debug, browser }); } catch (e) { console.log(`FAIL ${r.tag}: ${String(e.message || e).slice(0, 200)}`); summary.push({ ...r, error: String(e.message || e).slice(0, 120) }); continue; }
+    writeJson(path.join(out, 'motion', `${r.tag}.json`), res);
+    fs.writeFileSync(path.join(out, 'motion', `${r.tag}.md`), mdTable(res));
+    const byKind = {}; for (const it of res.items) byKind[KIND_RU[it.kind] || it.kind] = (byKind[KIND_RU[it.kind] || it.kind] || 0) + (it.count || 1);
+    console.log(`Найдено движений: ${res.items.length} (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`);
+    for (const it of res.items) console.log(`  ${it.id} ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''} — ${it.target}${it.count > 1 ? ` ×${it.count}` : ''}: ${it.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 110)} · ${describeTiming(it).slice(0, 80)}`);
+    if (res.notes.length) for (const n of res.notes) console.log(`WARN ${n}`);
+    console.log(`OK: инвентарь движения · ${path.join(out, 'motion', `${r.tag}.md`)}`);
+    summary.push({ ...r, items: res.items.length, byKind });
+  }
+} finally { await browser.close().catch(() => {}); }
+if (runs.length > 1) {
+  console.log(`\nСтраниц ${new Set(runs.map((r) => r.url)).size}, экранов ${new Set(runs.map((r) => r.vp)).size}, протоколов ${summary.filter((s) => !s.error).length} из ${runs.length}:`);
+  for (const s of summary) console.log(`  ${s.error ? 'FAIL' : 'OK  '} ${s.tag.padEnd(28)} ${s.error ? s.error : `${s.items} движений (${Object.entries(s.byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`}`);
+}
+process.exit(summary.some((s) => s.error) ? 1 : 0);

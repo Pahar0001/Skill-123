@@ -1,0 +1,365 @@
+/**
+ * Что на странице раскрывается по клику: аккордеоны (details, [aria-expanded] и «свои» — Framer,
+ * Tilda, Webflow), переключатели меню (бургер), вкладки (role=tab и ряды кнопок с одной активной),
+ * раскрывающиеся кнопки ([aria-expanded="false"]). Одно правило для motion.mjs (движение по клику)
+ * и extract.mjs скилла design-reference (паспорт: аккордеон). Правило аккордеона и меню — то же,
+ * что в discover.mjs (там свой экземпляр внутри большого замера; меняете одно — поправьте другое).
+ *
+ *   const found = await findClickTargets(page, { want: ['accordions', 'toggles', 'tabs', 'disclosures'] });
+ *   await probeAccordions(page, found.accordions.groups, { touch });   // подтверждение кликом
+ *   accordionItems(found.accordions)                                  // details + подтверждённые пункты
+ *
+ * Метки в странице: data-rw-cacc (пункт аккордеона), data-rw-ctog (меню), data-rw-ctab
+ * («n:t» — вкладка, на которую нажать, «n:c» — активная, к ней вернуться), data-rw-cexp.
+ */
+import { evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, sleep } from './lib.mjs';
+
+const DEPS = { eff: EFFECTIVE_OPACITY_FN, sig: SIG_FN };
+
+/* ---------- в странице ---------- */
+function clickTargetsInPage(arg) {
+  const want = new Set((arg && arg.want) || ['accordions', 'toggles', 'tabs', 'disclosures']);
+  const vw = innerWidth, vh = innerHeight, sy = scrollY;
+  for (const a of ['data-rw-cacc', 'data-rw-ctog', 'data-rw-ctab', 'data-rw-cexp']) for (const e of document.querySelectorAll(`[${a}]`)) e.removeAttribute(a);
+  const csM = new Map(); const cs = (el, p) => { if (p) return getComputedStyle(el, p); let s = csM.get(el); if (!s) { s = getComputedStyle(el); csM.set(el, s); } return s; };
+  const effM = new Map(); const E = (el) => { let v = effM.get(el); if (v === undefined) { v = eff(el); effM.set(el, v); } return v; };
+  const rM = new Map(); const R = (el) => { let r = rM.get(el); if (!r) { r = el.getBoundingClientRect(); rM.set(el, r); } return r; };
+  const txt = (el) => ((el && (typeof el.innerText === 'string' ? el.innerText : el.textContent)) || '').replace(/\s+/g, ' ').trim();
+  const ownText = (el) => { let t = ''; for (const n of el.childNodes) if (n.nodeType === 3) t += ' ' + n.textContent; return t.replace(/\s+/g, ' ').trim(); };
+  const sigNoId = (el) => el.tagName.toLowerCase() + (el.classList && el.classList.length ? '.' + [...el.classList].slice(0, 3).join('.') : '');
+  const onScreen = (el, min = 0.05) => { const r = R(el); if (!(r.width > 0 && r.height > 0)) return false; if (r.bottom + sy <= 0 || r.right <= 0 || r.left >= vw) return false; return E(el) > min; };
+  const inConsent = (el) => !!el.closest('[data-rw-consent-box]');
+  const SKIP = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|LINK|META|BR|WBR|HEAD|TITLE)$/;
+  const TAIL_GLYPH = /[\s›»>+＋−–—×✕✚▾▼▿▸▶⌄˅∨⌃^❯⟩〉⏷↓-]+$/;
+  const errors = [];
+  const everything = [...document.body.querySelectorAll('*')].filter((el) => !SKIP.test(el.tagName) && !el.ownerSVGElement);
+  const all = everything.filter((el) => onScreen(el));
+  const cssPath = (el) => {
+    const esc = (x) => (window.CSS && CSS.escape ? CSS.escape(x) : x);
+    const uniqSel = (x) => { try { const l = document.querySelectorAll(x); return l.length === 1 && l[0] === el; } catch (e) { return false; } };
+    if (el.id && uniqSel('#' + esc(el.id))) return '#' + esc(el.id);
+    for (const at of ['aria-label', 'data-framer-name', 'title', 'data-testid']) { const v = el.getAttribute(at); if (v) { const x = `${el.tagName.toLowerCase()}[${at}="${v.replace(/"/g, '\\"')}"]`; if (uniqSel(x)) return x; } }
+    const cls = [...el.classList].filter((c) => !/^(is-|has-)|active|open|hover|focus/.test(c)).slice(0, 3).map(esc);
+    if (cls.length && uniqSel(el.tagName.toLowerCase() + '.' + cls.join('.'))) return el.tagName.toLowerCase() + '.' + cls.join('.');
+    const parts = [];
+    for (let e = el; e && e !== document.body && parts.length < 10; e = e.parentElement) {
+      if (e.id && e !== el) { parts.unshift('#' + esc(e.id)); if (uniqSel(parts.join(' > '))) return parts.join(' > '); break; }
+      let p = e.tagName.toLowerCase(); const c = [...e.classList].filter((x) => !/^(is-|has-)|active|open|hover|focus/.test(x)).slice(0, 2).map(esc); if (c.length) p += '.' + c.join('.');
+      const sib = e.parentElement ? [...e.parentElement.children].filter((k) => k.tagName === e.tagName) : [];
+      if (sib.length > 1) p += `:nth-of-type(${sib.indexOf(e) + 1})`;
+      parts.unshift(p); if (uniqSel(parts.join(' > '))) return parts.join(' > ');
+    }
+    return parts.join(' > ');
+  };
+  const nameOf = (e) => [e.getAttribute('data-framer-name'), e.getAttribute('aria-label'), typeof e.className === 'string' ? e.className : '', e.id].filter(Boolean).join(' ');
+
+  /* --- аккордеоны: видимый вопрос, значок и спрятанный внутри ответ от 30 знаков (как discover) --- */
+  let accordions = { details: 0, groups: [], byClass: 0 };
+  if (want.has('accordions')) try {
+    const hidM = new Map();
+    const hiddenHow = (el) => {
+      if (hidM.has(el)) return hidM.get(el);
+      let how = null; const r = R(el);
+      if (cs(el).display === 'contents') how = null;
+      else if (!(r.width > 0 && r.height > 1)) how = el.getClientRects().length ? 'нулевая высота' : 'display:none';
+      else if (E(el) <= 0.05) how = 'прозрачен';
+      else {
+        let l = r.left, t = r.top, rt = r.right, b = r.bottom;
+        for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+          const s = cs(p); if (s.overflowX === 'visible' && s.overflowY === 'visible' && s.clipPath === 'none') continue;
+          const pr = R(p); l = Math.max(l, pr.left); t = Math.max(t, pr.top); rt = Math.min(rt, pr.right); b = Math.min(b, pr.bottom);
+          if (rt <= l || b <= t) { how = 'обрезан overflow'; break; }
+        }
+        if (!how && (rt - l) * (b - t) < r.width * r.height * 0.1) how = 'обрезан overflow';
+      }
+      hidM.set(el, how); return how;
+    };
+    const fixM = new Map();
+    const fixedAnc = (el) => { for (let e = el; e && e !== document.body; e = e.parentElement) { let f = fixM.get(e); if (f === undefined) { f = cs(e).position === 'fixed'; fixM.set(e, f); } if (f) return true; } return false; };
+    const ACC_EXCL = 'nav, header, [role="navigation"], [role="menu"], [role="menubar"], [role="dialog"], [role="alertdialog"], dialog, [aria-modal="true"], [role="tabpanel"], [role="tablist"], [data-rw-consent-box], select, template';
+    const GLYPH = /^[›»>+＋−–—×✕✚▾▼▿▸▶⌄˅∨⌃^❯⟩〉⏷↓-]$/;
+    const ICON_NAME = /chevron|arrow|caret|plus|toggle|icon|expand|collapse|стрелк|плюс/i;
+    const chevronIn = (item, hid) => {
+      for (const e of item.querySelectorAll('*')) {
+        if (hid.contains(e)) continue; const r = R(e);
+        if (!(r.width >= 2 && r.height >= 6 && r.width <= 44 && r.height <= 44) || E(e) <= 0.3) continue;
+        const t = ownText(e); if (t && GLYPH.test(t)) return `знак «${t}»`;
+        if (r.width < 6) continue;
+        const tag = e.tagName.toLowerCase();
+        if (tag === 'svg' || tag === 'img') return tag === 'svg' ? 'svg-значок' : 'картинка-значок';
+        const nm = nameOf(e); if (ICON_NAME.test(nm)) return `значок ${(e.getAttribute('data-framer-name') || nm).slice(0, 24)}`;
+        const s = cs(e); if (!t && r.width <= 24 && r.height <= 24 && s.transform !== 'none' && (parseFloat(s.borderRightWidth) > 0 || parseFloat(s.borderBottomWidth) > 0)) return 'уголок из рамки';
+      }
+      for (const e of [item, ...item.querySelectorAll('*')]) {
+        if (hid.contains(e)) continue;
+        for (const pe of ['::before', '::after']) { const c = String(cs(e, pe).content || '').replace(/^["']|["']$/g, '').trim(); if (c && c !== 'none' && c !== 'normal' && GLYPH.test(c)) return `знак «${c}» (${pe})`; }
+      }
+      return null;
+    };
+    const questionIn = (item, hid) => {
+      for (const e of [item, ...item.querySelectorAll('*')]) {
+        if (hid.contains(e)) continue;
+        const o = ownText(e); if (o.length < 2 || E(e) <= 0.3 || hiddenHow(e)) continue;
+        const t = (e.contains(hid) ? o : txt(e)).replace(TAIL_GLYPH, '');
+        if (t.length >= 3) return t.slice(0, 160);
+      }
+      return null;
+    };
+    const SLIDER = '.swiper, .splide, .slick-slider, .glide, .flickity-enabled, .t-slds, [class*="carousel"], [class*="slider"], [aria-roledescription="carousel"]';
+    const prevQuestion = (h, item) => {
+      for (let x = h; x && x !== item; x = x.parentElement) {
+        for (let p = x.previousElementSibling; p; p = p.previousElementSibling) {
+          if (hiddenHow(p) || E(p) <= 0.3) continue;
+          const t = txt(p).replace(TAIL_GLYPH, ''); if (t.length >= 3 && t.length <= 300) return t.slice(0, 160);
+        }
+      }
+      return null;
+    };
+    const FAQ_RE = /(^|[^a-zа-яё])(faq|f\.a\.q\.?)([^a-zа-яё]|$)|frequently\s+asked|частые\s+вопросы|часто\s+задаваемые|вопросы\s+и\s+ответы|ответы\s+на\s+(частые\s+)?вопросы|^\s*вопросы\s*[:.!?]?\s*$|^\s*questions\s*[:.!?]?\s*$|q\s*&\s*a/i;
+    const faqHeadEl = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],[class*="title"],[class*="heading"]')].find((h) => { if (!onScreen(h) || inConsent(h)) return false; const t = txt(h); return t.length <= 80 && FAQ_RE.test(t); });
+    /* бегущая строка и карусель по кругу: обрезанная копия ленты — не спрятанный ответ (VN3D: дорожка игр) */
+    const loopEls = new Set(); try { for (const a of document.getAnimations()) { const tm = a.effect && a.effect.getTiming ? a.effect.getTiming() : {}; if (tm.iterations === Infinity && a.effect.target) loopEls.add(a.effect.target); } } catch (e) { /* нет WAAPI */ }
+    const inLoop = (el) => { for (const t of loopEls) if (t.contains(el) || el.contains(t)) return true; return false; };
+    const byItem = new Map();
+    for (const el of everything) {
+      if (!hiddenHow(el) || (loopEls.size && inLoop(el))) continue;
+      const par = el.parentElement; if (!par || par === document.body || hiddenHow(par)) continue;
+      const tc = (el.textContent || '').replace(/\s+/g, ' ').trim(); if (tc.length < 30) continue;
+      if (el.closest(ACC_EXCL) || el.closest('details') || el.closest(SLIDER) || fixedAnc(par)) continue;
+      const linkChars = [...el.querySelectorAll('a')].reduce((a, x) => a + (x.textContent || '').trim().length, 0);
+      if (linkChars > tc.length * 0.5) continue;
+      if (el.querySelector('img,video,iframe,canvas') && tc.length < 80) continue;
+      let item = par, q = null;
+      for (let d = 0; d < 6 && item && item !== document.body; d++) { if (cs(item).display !== 'contents') { q = questionIn(item, el); if (q) break; } item = item.parentElement; }
+      if (!q || !item || item === document.body || tc.startsWith(q)) continue;
+      let rec = byItem.get(item); if (!rec) byItem.set(item, rec = { item, q, hids: [] });
+      rec.hids.push({ el, tc });
+    }
+    const accItems = [];
+    for (const rec of byItem.values()) {
+      const n = rec.hids.length; const ir = R(rec.item);
+      if (ir.height < 16 || ir.height > 240 * n || ir.width < 140) continue;
+      const link = rec.item.closest('a[href]'); if (link && !/^(#|javascript:)/i.test(link.getAttribute('href') || '')) continue;
+      const kind = rec.item.querySelector('[aria-expanded]') || rec.item.matches('[aria-expanded]') ? 'aria-expanded' : 'свой';
+      for (const h of rec.hids) accItems.push({ item: rec.item, how: hiddenHow(h.el), q: (n > 1 && prevQuestion(h.el, rec.item)) || rec.q, answer: h.tc.slice(0, 60), chevron: chevronIn(rec.item, h.el), kind });
+    }
+    const gmap = new Map();
+    for (const rec of accItems) { const key = [sigNoId(rec.item), rec.kind, rec.chevron ? 'значок' : '', rec.how].join('|'); if (!gmap.has(key)) gmap.set(key, { sig: sigNoId(rec.item), kind: rec.kind, how: rec.how, chevron: rec.chevron, items: [] }); gmap.get(key).items.push(rec); }
+    let accId = 0;
+    for (const gr of gmap.values()) {
+      const n = gr.items.length; const qm = gr.items.filter((x) => /\?\s*$/.test(x.q)).length;
+      if (!((gr.chevron && (n >= 2 || faqHeadEl || qm)) || (n >= 3 && (faqHeadEl || qm >= n / 2)))) continue;
+      const probe = gr.items.slice(0, 2).map((x) => { const id = x.item.getAttribute('data-rw-cacc') || 'a' + (accId++); x.item.setAttribute('data-rw-cacc', id); return { id, q: x.q.slice(0, 80), answer: x.answer }; });
+      const inClass = gr.items.every((x) => !!x.item.closest('[class*="accordion"]'));
+      const ex = gr.items[0].item.closest('[data-expect]');
+      accordions.groups.push({ sig: gr.sig, kind: gr.kind, how: gr.how, chevron: gr.chevron, count: n, flat: new Set(gr.items.map((x) => x.item)).size < n, qMarks: qm, inClass, top: Math.round(R(gr.items[0].item).top + sy), questions: gr.items.slice(0, 4).map((x) => x.q.slice(0, 80)), probe, expect: ex ? ex.dataset.expect : '' });
+    }
+    /* details/summary: считаются отдельно (accordions.details), а для кликов — группой по родителю
+       (kind 'details'; в паспорт второй раз не идут) */
+    const dets = [...document.querySelectorAll('details')].filter((d) => onScreen(d) && !inConsent(d) && !d.open && d.querySelector('summary'));
+    const byPar = new Map(); for (const d of dets) { const k = d.parentElement; if (!byPar.has(k)) byPar.set(k, []); byPar.get(k).push(d); }
+    for (const list of [...byPar.values()].sort((a, b) => b.length - a.length).slice(0, 3)) {
+      const d = list[0]; const sm = d.querySelector('summary'); const id = 'd' + (accId++); d.setAttribute('data-rw-cacc', id);
+      const answer = [...d.childNodes].filter((n) => n !== sm).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+      const ex = d.closest('[data-expect]');
+      accordions.groups.push({ sig: sigNoId(d), kind: 'details', how: 'details/summary', chevron: chevronIn(sm, document.createElement('i')) || 'маркер details', count: list.length, flat: false, qMarks: list.filter((x) => /\?\s*$/.test(txt(x.querySelector('summary')))).length, inClass: false, native: true,
+        top: Math.round(R(d).top + sy), questions: list.slice(0, 4).map((x) => txt(x.querySelector('summary')).slice(0, 80)), probe: [{ id, q: txt(sm).slice(0, 80), answer: answer.slice(0, 60) }], expect: ex ? ex.dataset.expect : '' });
+    }
+    accordions.details = [...document.querySelectorAll('details')].filter((d) => onScreen(d)).length;
+    accordions.byClass = [...document.querySelectorAll('[class*="accordion"]')].filter((e) => onScreen(e)).length;
+    accordions.faq = faqHeadEl ? { heading: txt(faqHeadEl).slice(0, 60), top: Math.round(R(faqHeadEl).top + sy) } : null;
+  } catch (e) { errors.push(`аккордеоны: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* --- переключатель меню (бургер) в шапке: aria-expanded, имя, знак, 2–4 полоски (как discover) --- */
+  const toggles = [];
+  if (want.has('toggles')) try {
+    const clickable = (e) => { for (let x = e, d = 0; x && d < 3; x = x.parentElement, d++) { if (x.matches('button,[role="button"],a,label,summary,[onclick],[tabindex]') || cs(x).cursor === 'pointer') return true; } return false; };
+    const rotated = (s) => { const m = /matrix\(([^)]+)\)/.exec(s.transform || ''); return !!m && Math.abs(parseFloat(m[1].split(',')[1]) || 0) > 0.05; };
+    const hexish = (c) => !!c && c !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(c);
+    const barsIn = (e) => {
+      let n = 0;
+      for (const k of [e, ...e.querySelectorAll('*')]) {
+        if (k !== e) { const r = R(k); const s = cs(k); if (r.height > 0 && r.height <= 4 && r.width >= 10 && r.width <= 48 && E(k) > 0.3 && !rotated(s) && (hexish(s.backgroundColor) || parseFloat(s.borderTopWidth) > 0)) n++; }
+        for (const pe of ['::before', '::after']) { const ps = cs(k, pe); if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue; const h = parseFloat(ps.height) || 0, w = parseFloat(ps.width) || 0; if (h > 0 && h <= 4 && w >= 10 && w <= 48 && !rotated(ps) && (hexish(ps.backgroundColor) || parseFloat(ps.borderTopWidth) > 0)) n++; }
+      }
+      return n;
+    };
+    const headZone = (e) => {
+      if (e.closest('header, nav, [role="banner"], [role="navigation"]')) return true;
+      for (let x = e; x && x !== document.body; x = x.parentElement) { const p = cs(x).position; if (p === 'fixed' || p === 'sticky') { const r = R(x); return r.top < vh * 0.3 && r.height < vh * 0.5; } }
+      return R(e).top + sy < Math.min(160, vh * 0.3);
+    };
+    const togM = new Map();
+    for (const e of all) {
+      const r = R(e); if (r.height < 16 || r.height > 72 || r.width < 16 || r.width > 160) continue;
+      if (inConsent(e) || !headZone(e) || !clickable(e)) continue;
+      const t = txt(e); const label = nameOf(e) + ' ' + (e.getAttribute('title') || '');
+      let how = null;
+      if ((e.hasAttribute('aria-expanded') || e.hasAttribute('aria-controls')) && r.width <= 72) how = 'aria-expanded';
+      else if (/burger|hamburger|menu-?toggle|nav-?toggle|navbar-toggler|menu-?(button|btn|icon|trigger)|mobile-?menu|меню/i.test(label) && t.length <= 12) how = `имя «${label.trim().slice(0, 30)}»`;
+      else if (/^(☰|≡|menu|меню)$/i.test(t)) how = `знак «${t}»`;
+      else if (r.width <= 72 && t.length <= 1) { const bars = barsIn(e); if (bars >= 2 && bars <= 4) how = `${bars} полоски`; else if (e.querySelector('svg') && /menu|nav|burger|toggle|меню|навигац/i.test(label)) how = 'svg-значок'; }
+      if (!how) continue;
+      const link = e.closest('a[href]'); if (link && !/^(#|javascript:)/i.test(link.getAttribute('href') || '')) continue;
+      togM.set(e, how);
+    }
+    const toggleEls = [...togM.keys()].filter((e) => ![...togM.keys()].some((o) => o !== e && o.contains(e)));
+    toggleEls.slice(0, 3).forEach((e, i) => { e.setAttribute('data-rw-ctog', String(i)); const r = R(e); const ex = e.closest('[data-expect]'); toggles.push({ i, sig: sig(e), selector: cssPath(e), how: togM.get(e), w: Math.round(r.width), h: Math.round(r.height), text: txt(e).slice(0, 20), expect: ex ? ex.dataset.expect : '' }); });
+  } catch (e) { errors.push(`переключатели меню: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* --- вкладки: role=tablist, иначе ряд однотипных кнопок (2–8), из которых активна ровно одна
+     (класс active/current/selected, aria-pressed, aria-current), не в меню, шапке и подвале --- */
+  const tabs = [];
+  if (want.has('tabs')) try {
+    const STATE = /(^|[-_])(active|current|selected|is-active|is-selected|is-current|w--current|on)($|[-_])/i;
+    const isOn = (e) => e.getAttribute('aria-selected') === 'true' || e.getAttribute('aria-pressed') === 'true' || !!e.getAttribute('aria-current') && e.getAttribute('aria-current') !== 'false' || [...e.classList].some((c) => STATE.test(c));
+    const pat = (e) => e.tagName + '.' + [...e.classList].filter((c) => !STATE.test(c)).slice(0, 2).join('.');
+    let n = 0;
+    const push = (list, cur, how, box) => {
+      const target = list.find((t) => t !== cur); if (!target || n >= 3) return;
+      target.setAttribute('data-rw-ctab', `${n}:t`); cur.setAttribute('data-rw-ctab', `${n}:c`);
+      const ex = box.closest('[data-expect]');
+      tabs.push({ n, how, count: list.length, sig: sig(box), target: txt(target).slice(0, 30), current: txt(cur).slice(0, 30), top: Math.round(R(box).top + sy), expect: ex ? ex.dataset.expect : '' }); n++;
+    };
+    const used = new Set();
+    for (const tl of document.querySelectorAll('[role="tablist"]')) {
+      if (!onScreen(tl) || inConsent(tl)) continue;
+      const list = [...tl.querySelectorAll('[role="tab"]')].filter((t) => onScreen(t));
+      if (list.length < 2) continue;
+      list.forEach((t) => used.add(t));
+      push(list, list.find((t) => t.getAttribute('aria-selected') === 'true') || list[0], 'role=tab', tl);
+    }
+    const parents = new Set();
+    for (const e of all) {
+      if (used.has(e) || !e.matches('button, [role="button"], a[href^="#"], a:not([href]), li, [class*="tab"]')) continue;
+      if (e.closest('nav, header, footer, [role="navigation"], [role="tablist"], [role="menu"], [data-rw-consent-box], [data-rw-cacc], form')) continue;
+      if (e.parentElement) parents.add(e.parentElement);
+    }
+    for (const p of parents) {
+      const kids = [...p.children].filter((k) => onScreen(k));
+      if (kids.length < 2 || kids.length > 8) continue;
+      const pt = pat(kids[0]); if (!kids.every((k) => pat(k) === pt)) continue;
+      if (!kids.every((k) => { const r = R(k); const t = txt(k); return r.height >= 20 && r.height <= 90 && r.width >= 30 && r.width <= 420 && t.length >= 1 && t.length <= 40; })) continue;
+      const on = kids.filter(isOn); if (on.length !== 1) continue;
+      if (kids.some((k) => { const a = k.closest('a[href]') || k.querySelector('a[href]'); return a && !/^(#|javascript:)/i.test(a.getAttribute('href') || ''); })) continue;
+      push(kids, on[0], 'ряд кнопок, одна активна', p);
+    }
+  } catch (e) { errors.push(`вкладки: ${String(e.message || e).slice(0, 120)}`); }
+
+  /* --- раскрывающиеся кнопки: [aria-expanded="false"] вне меню шапки, аккордеонов и вкладок --- */
+  const disclosures = [];
+  if (want.has('disclosures')) try {
+    for (const e of all) {
+      if (disclosures.length >= 3) break;
+      if (e.getAttribute('aria-expanded') !== 'false' || inConsent(e) || e.closest('[data-rw-cacc], [data-rw-ctog], [role="tablist"]') || e.querySelector('[data-rw-ctog]')) continue;
+      const r = R(e); if (r.width < 16 || r.width > 420 || r.height < 12 || r.height > 90) continue;
+      const link = e.closest('a[href]'); if (link && !/^(#|javascript:)/i.test(link.getAttribute('href') || '')) continue;
+      e.setAttribute('data-rw-cexp', String(disclosures.length));
+      const ex = e.closest('[data-expect]');
+      disclosures.push({ i: disclosures.length, sig: sig(e), text: txt(e).slice(0, 30), controls: e.getAttribute('aria-controls') || '', top: Math.round(r.top + sy), expect: ex ? ex.dataset.expect : '' });
+    }
+  } catch (e) { errors.push(`раскрывающиеся кнопки: ${String(e.message || e).slice(0, 120)}`); }
+
+  return { accordions, toggles, tabs, disclosures, errors };
+}
+
+/** Найти, что раскрывается по клику. want — какие виды искать. Метки остаются в странице для кликов. */
+export function findClickTargets(page, { want = ['accordions', 'toggles', 'tabs', 'disclosures'] } = {}) {
+  return evaluateWith(page, clickTargetsInPage, { want }, DEPS);
+}
+
+/* ---------- подтверждение аккордеона кликом (как discover.probeAccordions) ---------- */
+const sameDoc = (a, b) => String(a).split('#')[0] === String(b).split('#')[0];
+
+function accPointInPage(p) {
+  const item = document.querySelector(`[data-rw-cacc="${p.id}"]`); if (!item) return { skip: 'пункт пропал из DOM' };
+  item.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const want = String(p.q || '').slice(0, 30); let target = null;
+  for (const e of item.querySelectorAll('*')) { const t = (e.innerText || '').replace(/\s+/g, ' ').trim(); if (t && t.startsWith(want)) target = e; }
+  const r = (target || item).getBoundingClientRect();
+  const x = Math.round(r.left + Math.min(r.width / 2, 160)), y = Math.round(r.top + Math.min(r.height / 2, 30));
+  const hit = document.elementFromPoint(x, y);
+  if (!hit || !(item.contains(hit) || hit.contains(item))) return { skip: 'точку нажатия закрывает другой элемент' };
+  const a = hit.closest('a[href]'); if (a && !/^(#|javascript:)/i.test(a.getAttribute('href') || '')) return { skip: 'в точке нажатия ссылка на другой адрес' };
+  return { x, y };
+}
+/* Видимая доля ответа (ищется по тексту: Framer пересоздаёт узлы при смене варианта) и высота пункта. */
+function accStateInPage(p) {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const want = norm(p.answer).slice(0, 40); const item = document.querySelector(`[data-rw-cacc="${p.id}"]`);
+  let best = null;
+  for (const e of document.body.querySelectorAll('*')) {
+    if (/^(SCRIPT|STYLE|TEMPLATE)$/.test(e.tagName) || (e.textContent || '').length < want.length || !e.getClientRects().length) continue;
+    if (!norm(e.textContent).startsWith(want)) continue;
+    if (!best || best.contains(e) || (item && item.contains(e) && !item.contains(best))) best = e;
+  }
+  const frac = (el) => {
+    const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0) || eff(el) <= 0.05) return 0;
+    let l = r.left, t = r.top, rt = r.right, b = r.bottom;
+    for (let q = el.parentElement; q && q !== document.body && q !== document.documentElement; q = q.parentElement) {
+      const s = getComputedStyle(q); if (s.overflowX === 'visible' && s.overflowY === 'visible' && s.clipPath === 'none') continue;
+      const qr = q.getBoundingClientRect(); l = Math.max(l, qr.left); t = Math.max(t, qr.top); rt = Math.min(rt, qr.right); b = Math.min(b, qr.bottom);
+      if (rt <= l || b <= t) return 0;
+    }
+    return Math.round((rt - l) * (b - t) / (r.width * r.height) * 100) / 100;
+  };
+  const ir = item && item.isConnected ? item.getBoundingClientRect() : null;
+  return { found: !!best, frac: best ? frac(best) : 0, h: ir ? Math.round(ir.height) : null };
+}
+
+/**
+ * До 4 групп (самые большие) и 2 пунктов в группе, не дольше 40 с: навести (ответ показался — наведение,
+ * не аккордеон), нажать (ответ виден наполовину или пункт вырос на 20+ px), нажать ещё раз (закрылся ли).
+ * На сенсорном экране, если клик мышью не раскрыл, — касание. Пишет в группу tried/opened/closed/status.
+ */
+export async function probeAccordions(page, groups, { touch = false } = {}) {
+  const t0 = Date.now(); let probed = 0;
+  for (const g of [...groups].sort((a, b) => b.count - a.count)) {
+    if (probed >= 4 || Date.now() - t0 > 40000) { g.status = 'не проверен'; g.tried = 0; continue; }
+    probed++;
+    const tries = [];
+    for (const p of g.probe || []) {
+      const st = () => evaluateWith(page, accStateInPage, p, DEPS).catch(() => ({ found: false, frac: 0, h: null }));
+      const pt = await evaluateWith(page, accPointInPage, p, DEPS).catch(() => null);
+      if (!pt || pt.skip) { tries.push({ q: p.q, skip: pt ? pt.skip : 'пункт не найден' }); continue; }
+      await sleep(150);
+      const s0 = await st();
+      await page.mouse.move(pt.x, pt.y, { steps: 3 }).catch(() => {}); await sleep(450);
+      const s1 = await st();
+      if (s0.frac < 0.5 && s1.frac >= 0.5) { tries.push({ q: p.q, hover: true }); await page.mouse.move(1, 1).catch(() => {}); await sleep(250); continue; }
+      const opened = (x) => (x.frac >= 0.5 && s0.frac < 0.5) || (x.h != null && s0.h != null && x.h - s0.h >= 20);
+      const url0 = page.url();
+      await page.mouse.click(pt.x, pt.y).catch(() => {}); await sleep(800);
+      let s2 = await st();
+      if (!opened(s2) && touch && sameDoc(page.url(), url0)) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(800); s2 = await st(); }
+      if (!sameDoc(page.url(), url0)) { tries.push({ q: p.q, navigated: page.url() }); g.navigated = page.url(); break; }
+      const t = { q: p.q, opened: opened(s2), before: { frac: s0.frac, h: s0.h }, after: { frac: s2.frac, h: s2.h } };
+      if (t.opened) {
+        const pt2 = await evaluateWith(page, accPointInPage, p, DEPS).catch(() => null); const cp = pt2 && !pt2.skip ? pt2 : pt;
+        await page.mouse.click(cp.x, cp.y).catch(() => {}); await sleep(800);
+        const s3 = await st(); t.closed = s3.frac < 0.5 || (s3.h != null && s2.h != null && s2.h - s3.h >= 20);
+      }
+      tries.push(t); await page.mouse.move(1, 1).catch(() => {});
+    }
+    g.tries = tries; g.tried = tries.filter((t) => !t.skip).length; g.opened = tries.filter((t) => t.opened).length;
+    g.closed = tries.filter((t) => t.closed).length; g.hoverOnly = tries.filter((t) => t.hover).length;
+    g.status = g.opened ? 'подтверждён' : g.hoverOnly ? 'наведение, не аккордеон' : g.tried ? 'клик не раскрыл' : 'не проверен';
+    if (g.navigated) break;
+  }
+  return groups;
+}
+
+/** Группа считается аккордеоном: подтверждена кликом или кликом не проверялась. */
+export const accordionOk = (g) => !g.status || g.status === 'подтверждён' || g.status === 'не проверен';
+
+/** Пунктов аккордеона: details + пункты «своих» групп, которые не отвергнуты кликом (группы details — уже в acc.details). */
+export function accordionItems(acc) {
+  if (!acc) return 0;
+  return (acc.details || 0) + (acc.groups || []).filter((g) => !g.native && accordionOk(g)).reduce((a, g) => a + g.count, 0);
+}
+
+/** «свой аккордеон ×7: svg-значок + ответ обрезан overflow, клик раскрывает (2 из 2), второй клик закрывает» */
+export function accordionNote(g) {
+  const st = g.status === 'подтверждён' ? `клик раскрывает (${g.opened} из ${g.tried})${g.closed === g.opened ? ', второй клик закрывает' : ''}` : g.status === 'не проверен' || !g.status ? 'кликом не проверялся' : g.status;
+  return `${g.kind === 'details' ? 'аккордеон на details' : g.kind === 'aria-expanded' ? 'аккордеон с aria-expanded' : 'свой аккордеон'} ×${g.count}: ${g.chevron || 'без значка'} + ответ ${g.how}, ${st}`;
+}

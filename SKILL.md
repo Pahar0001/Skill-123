@@ -50,7 +50,7 @@ WARN — поправить команду и перепрогнать, прот
 | Референсы | снять через скилл `design-reference`; не копировать, брать принципы |
 | Донор | «сделай сайт в языке вот этого» — режим донора (ниже) |
 | О чём сайт и что продаёт | в переработке — из самого сайта; в режиме донора без этого не начинать — спросить (выдумывать бизнес нельзя) |
-| Кадры и видео | свои → свободные источники (`media.mjs`) → генерация с согласия; ключ Pexels — см. «Когда спрашивать» |
+| Кадры и видео | свои → свободные источники (`media.mjs`) → генерация с согласия (Higgsfield; иконки, иллюстрации и паттерны в настоящем SVG — `recraft.mjs`); ключ Pexels — см. «Когда спрашивать» |
 | Пожелания по стилю | вывести из текущего сайта: сохранять его язык, если не просили менять |
 | Ограничения | по умолчанию: не менять контакты, цены, логотип, основной цвет, бэкенд |
 | Исходники | искать самому, см. режимы ниже |
@@ -183,7 +183,7 @@ node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --ta
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag base-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag before --pages /,<другие страницы в задаче> --with-320
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или донор> --out <папка>/cliche/donor.json
-node ~/.claude/skills/site-rework/scripts/motion.mjs <url или донор> --out <папка> --tag <site|donor>-home   # всё движение числами: вид, запуск, из → в, длительность, отрезок прокрутки
+node ~/.claude/skills/site-rework/scripts/motion.mjs <url или донор> --pages "home=/,<тип>=<путь>" --viewport desktop,mobile --out <папка> --tag <site|donor>   # всё движение числами на всех типах страниц за один запуск: вид, запуск, из → в, длительность, отрезок прокрутки, клики (меню, аккордеоны, вкладки)
 ```
 Если у сайта или донора есть зерно, шум, плёнка — `node ~/.claude/skills/site-rework/scripts/texture.mjs
 <url> --out <папка>/texture` (рецепт и `--grain-*`, `reference/engines.md` → «Фактура»).
@@ -263,7 +263,7 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна
 node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-mobile --viewport mobile
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
-node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <url> --out <папка>   # движение донора: пара у нас или решение
+node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <url> [<папка>/motion/donor-<тип>.json <наша страница типа> …] --out <папка>   # движение донора: пара у нас или решение, все пары одним запуском
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag browser-user --browser firefox --wait 3000 --canvas   # браузер пользователя
 ```
 У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),
@@ -332,7 +332,7 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 Спрашивать (через `AskUserQuestion`, если сессия интерактивная; иначе принять
 допущение, записать его в отчёт и продолжать):
 - запрос конфликтует с ограничением («сделай ярче» при «не менять основной цвет»);
-- генерация картинок или 3D стоит денег на счету пользователя (Higgsfield);
+- генерация картинок или 3D стоит денег на счету пользователя (Higgsfield, Recraft: `recraft.mjs` без `--yes` печатает сумму — её и назвать в вопросе);
 - нужны крупные кадры первого экрана или видео, а `media.mjs doctor` пишет, что
   `PEXELS_API_KEY` не задан, — один раз попросить бесплатный ключ (pexels.com/api);
   перед поиском на Commons без `MEDIA_CONTACT` — спросить контакт для User-Agent
@@ -360,7 +360,7 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 | `design-reference` нет рядом | палитра и шрифты из `discovery.md`, токены выписать руками |
 | `texture.mjs` не загрузился | `discover.mjs` мерит фактуру запасным путём; `--no-texture-module` — то же нарочно |
 | сеть источников кадров (DNS, VPN) | `media.mjs` пишет «временная ошибка, повторить позже», пробует DoH; не записывать источник как недоступный |
-| генерация картинок недоступна | фото из свободных источников (`media.mjs`), SVG/CSS-графика, оставить существующие |
+| генерация картинок недоступна (нет кредитов Higgsfield, нет `RECRAFT_API_TOKEN` или баланса) | фото из свободных источников (`media.mjs`), SVG/CSS-графика, оставить существующие |
 | нет модели для 3D | процедурная геометрия в Three.js, шейдер — не ждать модель; или без 3D |
 | сервер отдаёт 429 | подождать минуту, не перезапускать |
 | `net::ERR_TIMED_OUT`, `ERR_CONNECTION_RESET` (медленное TLS) | скрипты повторяют переход трижды и пишут «с N-й попытки»; не гонять несколько скриптов по такому сайту параллельно |
@@ -388,11 +388,13 @@ scripts/cliche.mjs     шаблонность: дефолты на живой с
 scripts/taste.mjs      журнал вкуса между прогонами: отвергнутое и принятое с картинками, область site|general
 scripts/media.mjs      фото и видео из законных бесплатных источников: doctor, search, pick, import, credits
 scripts/media/         модули источников, обработки, видео и манифеста
+scripts/recraft.mjs    Recraft API: SVG-иконки, иллюстрации, паттерны, фоны в палитре сайта; векторизация, фон, увеличение; трата только с --yes, на сайт — через take (ворота --seen/--caption, credits.json)
 scripts/shots.mjs      снимки «до/после» на одинаковых экранах; возврат наверх сверяется с первым экраном
 scripts/diff.mjs       где изменилась картинка: доля, полосы, картинка различий
 scripts/perf.mjs       скорость с бюджетами: LCP с элементом, CLS, вес (холодный кэш, сжатие), долгие задачи по фазам, кадры/с, память, цена слоёв
 scripts/a11y.mjs       контраст (с прозрачностью и зерном), кегль, alt, подписи, фокус (и на подписи), цели нажатия (с подписью), закреплённое на прокрутке
-scripts/motion.mjs     движение числами: 19 видов (и показ при прокрутке вверх), библиотеки; compare донор → наш сайт; selftest на fixtures/motion
+scripts/motion.mjs     движение числами: 20 видов и 5 по клику (меню, аккордеон свой и на details, вкладки, «Подробнее»), библиотеки; несколько страниц и экранов за запуск; compare донор → наш сайт (пары подряд); selftest на fixtures/motion
+scripts/clicks.mjs     что раскрывается по клику (аккордеоны Framer/Tilda, бургер, вкладки, aria-expanded) и проверка кликом — для motion и extract (design-reference)
 scripts/ideas.mjs      банк идей: удачное с прошлых сайтов, где стояло, отзыв; pick — свежее под новый сайт
 scripts/state.mjs      журнал задач и этапов: статусы только с доказательствами
 scripts/mirror.mjs     зеркало чужой страницы как верстак (rework.css / rework.js)

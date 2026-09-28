@@ -14,7 +14,7 @@ node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <па�
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
 node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
-node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --out <папка> --tag donor-home                   # всё движение числами (+ --viewport mobile --tag donor-home-mobile)
+node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --pages "home=/,product=<путь>,collection=<путь>" --viewport desktop,mobile --out <папка> --tag donor   # всё движение числами: donor-home, donor-home-mobile, donor-product… одним запуском
 ```
 
 **Все страницы донора, а не только главная.** Донор задаёт и структуру сайта:
@@ -42,9 +42,11 @@ node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <па�
 −3°, карточка ×1.04 с тенью, «Back to top». Копировать по максимуму: пропущенное движение
 пользователь видит сразу.
 
-**Каждый тип страницы, который будет у нас, — своим замером.** `motion.mjs <страница донора> --tag
-donor-<тип>` на странице товара, категории и т. д., и перед сдачей `motion.mjs compare
-motion/donor-<тип>.json <наша страница того же типа>`. Сверка только с главной пропускает своё
+**Каждый тип страницы, который будет у нас, — своим замером.** Все типы — одним запуском:
+`motion.mjs <донор> --pages "home=/,product=<путь>,…" --viewport desktop,mobile --tag donor` (протокол
+`donor-<тип>` на каждый тип и экран, в том числе движение по клику: меню-бургер на телефоне, аккордеоны,
+вкладки), и перед сдачей `motion.mjs compare motion/donor-<тип>.json <наша страница того же типа>` —
+все пары одной командой. Сверка только с главной пропускает своё
 движение внутренних страниц: у shapefest страница товара дала закреплённую карточку покупки у
 галереи (10 350 px прокрутки), появление заголовков разделов и цвет меню при наведении — на
 главной этого не видно. `motion-decisions.json` один на прогон: ключи — «вид:подпись»
@@ -106,8 +108,7 @@ discover блок не дописывает — его пишет `texture.mjs
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
 node ~/.claude/skills/site-rework/scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile --out <папка>/texture-compare
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
-node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <адрес сайта> --out <папка>
-node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-<тип>.json <наша страница этого типа> --out <папка> --tag compare-<тип>
+node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <адрес сайта> <папка>/motion/donor-<тип>.json <наша страница этого типа> --out <папка>   # пары подряд: compare-home, compare-<тип>
 ```
 
 `verify.mjs` сверяет с одной спецификацией: внутреннюю страницу — со спецификацией страницы того

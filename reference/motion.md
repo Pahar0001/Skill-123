@@ -3,13 +3,14 @@
 Движение — такая же часть языка донора, как палитра и шрифт. Пользователь замечает пропуск
 сразу («вот тут ты не добавил анимацию»). Порядок работы:
 
-1. **Снять** всё движение донора: `motion.mjs <донор>` (desktop; для важных блоков и mobile).
+1. **Снять** всё движение донора: `motion.mjs <донор> --pages "home=/,product=…" --viewport desktop,mobile --tag donor` —
+   все типы страниц и оба экрана одним запуском, с движением по клику (меню, аккордеоны, вкладки).
 2. **Перенести по максимуму**: каждая строка таблицы донора → наш блок с теми же числами, или
    решение «почему нет» в `motion-decisions.json`. Числа — из протокола, не на глаз.
 3. **Добавить своё**: 1–2 движения из самого товара (у VN3D — фигурка печатается слоями в такт
    печатающемуся слову) и 1–2 свежие идеи из банка (`ideas.mjs pick`), которых не было на
    последних сайтах. Своё — сверху донора, не вместо.
-4. **Сверить**: `motion.mjs compare <донор.json> <наш адрес>` — FAIL, пока у донора есть
+4. **Сверить**: `motion.mjs compare <донор.json> <наш адрес> [ещё пары…]` — FAIL, пока у донора есть
    движение без пары и без решения. Протокол сверки — доказательство для журнала (state.mjs).
 5. **После сдачи**: удачное — в банк идей (`ideas.mjs add`), что пользователь отверг — туда же
    со статусом rejected и его словами.
@@ -17,19 +18,26 @@
 ## Команды
 
 ```
-node scripts/motion.mjs <адрес> [--viewport desktop] [--out <прогон>] [--tag donor-home]   # инвентарь
+node scripts/motion.mjs <адрес> [--viewport desktop] [--out <прогон>] [--tag donor-home]   # инвентарь одной страницы
+node scripts/motion.mjs <донор> --pages "home=/,product=/p/x" --viewport desktop,mobile --tag donor --out <прогон>
+                                        # все типы страниц и экраны: donor-home, donor-home-mobile, donor-product, …
 node scripts/motion.mjs compare <прогон>/motion/donor-home.json <наш адрес> --out <прогон>  # сверка
-node scripts/motion.mjs selftest                                                          # 19 видов на стенде
+node scripts/motion.mjs compare <прогон>/motion/donor-home.json <наш адрес> <прогон>/motion/donor-product.json <наша страница товара> --out <прогон>
+                                        # несколько пар: compare-home, compare-product, итог — худший вердикт
+node scripts/motion.mjs selftest                                                          # 24 вида на стенде (4 — по клику)
 ```
 
 Выход: `<прогон>/motion/<tag>.md` — таблица «вид · где · запуск · что меняется · параметры · рецепт»
 (её и копировать в analysis.md, раздел «Движение донора → блоки»), `.json` — протокол, вырезки
-`<tag>/mNN.png`. `--debug` пишет ещё ряды значений по шагам — разбирать спорное.
+`<tag>/mNN.png` и `<tag>/cNN.png` (открытое кликом). `--debug` пишет ещё ряды значений по шагам и разбор
+каждого клика (`clicks.tried[].diff`) — разбирать спорное. `--no-clicks` — без кликов, `--clicks N` — сколько нажимать.
 
-Чего motion.mjs не видит: движение по клику (меню, аккордеон, модальное окно — это runtime.mjs),
-переходы между страницами (Barba и View Transitions — только в списке библиотек), звук, движение
-внутри холста (видно только «рисует/не рисует»), эффекты, которые включаются после долгого
-бездействия. Прокрутка скриптом — не колесо: плавная прокрутка (Lenis) и пружины Framer
+Чего motion.mjs не видит: переходы между страницами (Barba и View Transitions — только в списке
+библиотек), звук, движение внутри холста (видно только «рисует/не рисует»), эффекты, которые
+включаются после долгого бездействия. По клику — только то, что раскрывается на месте (меню-бургер,
+аккордеоны, вкладки, кнопки с `aria-expanded`); окно по кнопке «Заказать», слайдер по стрелкам,
+корзина — `runtime.mjs --click` и снимки. Меню видно по кнопке-бургеру в шапке: на широком экране,
+где меню открыто, его нет — снимать и `--viewport mobile`. Прокрутка скриптом — не колесо: плавная прокрутка (Lenis) и пружины Framer
 догоняются ожиданием до 0.9 с на шаг, отрезки прокрутки точны до ~5% высоты экрана.
 
 ## Общие правила для любого движения
@@ -221,6 +229,69 @@ const TYPE = 1000 / 16, ERASE = 1000 / 29, HOLD = 2600;          // из про�
 Наклон ±8°: `rotateX/rotateY` от положения мыши, `perspective(600px)`, возврат при уходе мыши.
 Только на устройствах с мышью (`@media (hover: hover) and (pointer: fine)`), при «меньше
 движения» — без наклона. Свой курсор — редко к месту; системный курсор не прятать.
+
+### `click-menu` — меню по кнопке (бургер)
+Из протокола: как приходит панель (`панель: сдвиг X 320 px → 0`, прозрачность, высота), значок
+(`значок: поворот 0° → 45°` — полоски в крестик), длительность и кривая, «прокрутка страницы
+блокируется», чем закрывается. Пружина Framer — `linear(…)` целиком в json: её и вставлять в
+`transition-timing-function`, не заменять на ease.
+```css
+.drawer { position: fixed; inset: 0 0 0 auto; width: min(320px, 86vw); transform: translateX(100%); visibility: hidden;
+  transition: transform .35s cubic-bezier(.2,.7,.2,1), visibility 0s .35s; }                  /* числа — из протокола */
+.drawer.is-open { transform: none; visibility: visible; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+.burger[aria-expanded="true"] i:first-child { transform: translateY(6px) rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .drawer, .drawer.is-open { transition: none; } }
+```
+```js
+const setMenu = (on) => { drawer.classList.toggle('is-open', on); burger.setAttribute('aria-expanded', String(on)); document.documentElement.classList.toggle('no-scroll', on); if (on) drawer.querySelector('a').focus(); else burger.focus(); };
+burger.addEventListener('click', () => setMenu(burger.getAttribute('aria-expanded') !== 'true'));
+addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+```
+Закрывается и крестиком внутри панели, и Escape (у донора панель часто закрывает сам бургер — наш
+крестик внутри обязателен), фокус уходит в меню и возвращается на кнопку; скрытое меню — вне Tab
+(`visibility: hidden`). Проверка — `runtime.mjs --click "<бургер>"` на телефоне.
+
+### `click-accordion` — аккордеон
+Из протокола: панель (у Framer растёт сам пункт: `панель: высота 78 → 284 px`, ответ обрезан пунктом;
+у своих — обёртка ответа `0 → N px`), значок (`поворот 0° → 90°` у шеврона, `45°` у плюса),
+длительность (пружина Framer ~0.8 с), закрывается ли вторым кликом.
+```html
+<div class="faq__item"><h3><button class="faq__q" aria-expanded="true" aria-controls="a1">Вопрос<svg aria-hidden="true" …/></button></h3>
+  <div class="faq__a" id="a1"><div><p>Ответ</p></div></div></div>
+```
+```css
+/* свёрнуто только со скриптом (класс js ставит он же): без JS ответы видны */
+.js .faq__a { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .4s cubic-bezier(.2,.7,.2,1), visibility 0s .4s; }
+.faq__a > div { overflow: hidden; }                                       /* высота «auto» без замера в JS */
+.js .faq__item.is-open .faq__a { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows .4s cubic-bezier(.2,.7,.2,1); }
+.faq__q svg { transition: transform .3s ease; } .faq__item.is-open .faq__q svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .js .faq__a, .faq__q svg { transition: none; } }
+```
+```js
+document.documentElement.classList.add('js');
+for (const b of document.querySelectorAll('.faq__q')) {
+  b.setAttribute('aria-expanded', 'false');
+  b.addEventListener('click', () => { const on = b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', String(on)); b.closest('.faq__item').classList.toggle('is-open', on); });
+}
+```
+Вопрос — `button` с `aria-expanded`; свёрнутый ответ скрыт и от чтения с экрана (`visibility`), а не
+только обрезан. Высота панели у донора и у нас разная (от текста) — сверка её
+не сравнивает, сравнивает, как приходит и сколько длится.
+
+### `click-tabs` — вкладки
+Из протокола: новая панель (вход из `@keyframes`: `прозрачность 0 → 1`, `сдвиг Y 8 → 0`; или сразу),
+старая — скрыта, кнопка (фон и цвет активной), длительность.
+```css
+[role="tabpanel"]:not([hidden]) { animation: tab-in .3s ease-out; }
+@keyframes tab-in { from { opacity: 0; transform: translateY(8px); } }
+[role="tab"][aria-selected="true"] { background: var(--c-text); color: var(--c-bg); }
+```
+Разметка — `role="tablist"`, `tab` с `aria-selected` и `aria-controls`, стрелки влево/вправо
+между вкладками; без JS все панели видны списком.
+
+### `click-disclosure` — «Подробнее» (кнопка с aria-expanded)
+Из протокола: как показывается (часто «сразу, без анимации» — `hidden` снимается), закрывается ли.
+Повторять как у донора: если у него сразу — не добавлять анимацию «от себя».
 
 ### `canvas` — холст рисует
 3D или 2D. Запуск после загрузки (`requestIdleCallback`), без блокировки (`compileAsync`, если
