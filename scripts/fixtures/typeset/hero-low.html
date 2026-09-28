@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд типографики: первый экран</title>
+<!-- Вторая страница стенда typeset.mjs --selftest: lang="en" при русском тексте, кнопка ниже окна и не на оси h1,
+     текст, который печатается сам. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F, U+0490-0491, U+2116; }
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+body { margin: 0; padding: 40px 24px; background: #fff; color: #111; font: 500 18px/1.55 'Full', system-ui, sans-serif; }
+section { max-width: 760px; margin: 0 auto; }
+h1 { font: 700 56px/1.08 'Full', system-ui, sans-serif; margin: 0 0 28px; text-wrap: balance; }
+.lead { font-size: 21px; line-height: 1.45; max-width: 30em; margin: 0 0 20px; }
+.long { max-width: 34em; margin: 0 0 20px; }
+/* кнопка сдвинута на 6 px от оси h1 и уехала ниже окна за длинным текстом */
+.btn { display: inline-block; margin: 24px 0 0 6px; padding: 14px 26px; background: #0b7a4b; color: #fff; border-radius: 10px; text-decoration: none; font-weight: 600; }
+.typing { min-height: 2em; }
+@media (max-width: 600px) { h1 { font-size: 36px; } .lead { font-size: 19px; } }
+</style>
+</head>
+<body>
+<section>
+  <h1 id="h1">Фигурки ручной покраски&nbsp;на&nbsp;заказ</h1>
+  <p id="lede" class="lead">Печатаю на смоляном принтере и крашу вручную. Можно выбрать готовую модель или прислать свою — подскажу размер, срок и цену до начала работы.</p>
+  <p class="long">Сначала мы обсуждаем, что нужно: героя из игры, миниатюру для партии или подарок. Потом я подбираю модель в открытых библиотеках или предлагаю заказать её у знакомого скульптора. Затем печатаю пробную версию в сером пластике и присылаю фото, чтобы вы проверили пропорции и позу.</p>
+  <p class="long">Если всё в порядке, фигурка отправляется на покраску: грунт, базовые цвета, тени и блики. Готовую работу покрываю матовым лаком и упаковываю в коробку с мягкой прокладкой, чтобы она доехала целой. Отправляю почтой и курьером по всей России, в Ярославле можно забрать самому.</p>
+  <p class="long">Большие фигурки и диорамы печатаются частями и собираются на штифтах, поэтому срок у них дольше. Обычно это от двух до четырёх недель, точный срок называю после разговора о модели.</p>
+  <p class="long">Если фигурка нужна к празднику, скажите дату сразу: подберу модель попроще или начну с самой долгой части, чтобы успеть. Срочные заказы беру, когда в очереди есть окно, и честно говорю, если не успею.</p>
+  <p id="p-typing" class="typing"></p>
+  <a id="cta" class="btn" href="#order">Заказать фигурку</a>
+</section>
+<script>
+/* текст печатается сам — строчные правила для такого блока не выносятся (typeset: «меняется само») */
+const full = 'Пишу в мессенджер или на почту и отвечаю в течение дня, по выходным тоже.';
+let k = 0; const el = document.getElementById('p-typing');
+setInterval(() => { k = (k + 1) % (full.length + 12); el.textContent = full.slice(0, Math.min(k, full.length)); }, 60);
+</script>
+</body>
+</html>

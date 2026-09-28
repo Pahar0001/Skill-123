@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд типографики</title>
+<!-- Стенд typeset.mjs --selftest: у каждого блока с ошибкой — известный id, ожидания — в typeset.mjs (SELFTEST).
+     Шрифты — Commissioner (OFL, fonts/LICENSE.txt), подмножества cyrillic и latin, вес 500–700, как на VN3D. -->
+<style>
+/* Full — кириллица и латиница, 500–700 (как на VN3D): ₽ (U+20BD) не входит ни в одно подмножество */
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F, U+0490-0491, U+2116; }
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+/* Lat — только латиница: кириллица уйдёт в запасной; font-display не задан (auto) */
+@font-face { font-family: 'Lat'; font-weight: 500 700; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+/* Only500 — одно начертание 500: запрос 800 даст синтетический жирный; font-display: block */
+@font-face { font-family: 'Only500'; font-weight: 500; font-display: block; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F; }
+@font-face { font-family: 'Only500'; font-weight: 500; font-display: block; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+/* Missing — файла нет */
+@font-face { font-family: 'Missing'; font-weight: 400; src: url('fonts/nope.woff2') format('woff2'); }
+
+body { margin: 0; padding: 24px 16px; background: #fff; color: #111; font: 500 18px/1.55 'Full', system-ui, sans-serif; }
+section { margin: 0 auto 48px; max-width: 1200px; }
+.wide { max-width: 1100px; }
+.ok { max-width: 34em; }
+.narrow { max-width: 300px; }
+.tiny { max-width: 190px; }
+.just { text-align: justify; }
+.hyph { hyphens: auto; }
+.lat { font-family: 'Lat', Arial, sans-serif; }
+.syn { font-family: 'Only500', Arial, sans-serif; font-weight: 800; }
+.syn-ok { font-family: 'Only500', Arial, sans-serif; font-weight: 500; }
+.ital { font-style: italic; }
+.miss { font-family: 'Missing', Georgia, serif; }
+h1 { font: 700 64px/1.05 'Full', system-ui, sans-serif; letter-spacing: -0.02em; max-width: 720px; margin: 0 0 24px; }
+h2 { font: 700 40px/1.2 'Full', system-ui, sans-serif; max-width: 640px; margin: 64px 0 16px; }
+h2.bal { text-wrap: balance; }
+h2.track { letter-spacing: 0.12em; text-transform: uppercase; }
+h2.far { font-size: 28px; margin: 16px 0 48px; }
+.caps0 { font-size: 12px; text-transform: uppercase; letter-spacing: 0; }
+.caps1 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+.pretty { text-wrap: pretty; }
+.split span { display: inline-block; }
+.lh-tight { line-height: 1.1; }
+.btn { display: inline-block; margin-top: 28px; padding: 14px 26px; background: #5b3df5; color: #fff; border-radius: 10px; text-decoration: none; font-weight: 600; }
+/* ширину задаёт скрипт внизу: разрыв на нужном месте в любом браузере */
+.fit { white-space: normal; }
+table { border-collapse: collapse; font-size: 16px; }
+td { padding: 2px 12px; text-align: right; }
+.tab td { font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { h1 { font-size: 40px; } h2 { font-size: 28px; } }
+</style>
+</head>
+<body>
+<section>
+  <h1 id="h1">Фигурки для настольных игр и героев любимых вселенных на заказ</h1>
+  <p id="lede" class="ok">Печатаю фигурки на 3D-принтере из пластика и крашу вручную. Можно выбрать готовую модель или прислать свою, а я подскажу размер и срок.</p>
+  <a id="cta" class="btn" href="#order">Заказать фигурку</a>
+</section>
+
+<section class="wide">
+  <h2 id="h2-lonely">Как проходит заказ фигурки от эскиза до</h2>
+  <p id="p-wide">Сначала мы обсуждаем, что нужно: героя из игры, миниатюру для партии или подарок. Потом я подбираю модель в открытых библиотеках или предлагаю заказать её у знакомого скульптора. Затем печатаю пробную версию в сером пластике и присылаю фото, чтобы вы проверили пропорции и позу. Если всё в порядке, фигурка отправляется на покраску: грунт, базовые цвета, тени и блики. Готовую работу покрываю матовым лаком и упаковываю в коробку с мягкой прокладкой, чтобы она доехала целой.</p>
+</section>
+
+<section>
+  <h2 id="h2-bal" class="bal">Как проходит заказ фигурки от эскиза до</h2>
+  <p id="p-ok" class="ok">Сначала мы обсуждаем, что нужно: героя из игры, миниатюру для партии или подарок. Потом я подбираю модель в открытых библиотеках или предлагаю заказать её у знакомого скульптора. Затем печатаю пробную версию в сером пластике и присылаю фото, чтобы вы проверили пропорции и позу. Если всё в порядке, фигурка отправляется на покраску.</p>
+  <p id="p-pretty" class="ok pretty">Сначала мы обсуждаем, что нужно: героя из игры, миниатюру для партии или подарок. Потом я подбираю модель в открытых библиотеках или предлагаю заказать её у знакомого скульптора. Затем печатаю пробную версию в сером пластике и присылаю фото, чтобы вы проверили пропорции и позу. Если всё в порядке, фигурка отправляется на покраску.</p>
+  <p id="p-nbsp" class="ok">Сначала мы обсуждаем, что нужно: героя из&nbsp;игры, миниатюру для&nbsp;партии или&nbsp;подарок. Потом я&nbsp;подбираю модель в&nbsp;открытых библиотеках или&nbsp;предлагаю заказать её&nbsp;у&nbsp;знакомого скульптора. Затем печатаю пробную версию в&nbsp;сером пластике и&nbsp;присылаю фото, чтобы вы&nbsp;проверили пропорции и&nbsp;позу. Если всё в&nbsp;порядке, фигурка отправляется на&nbsp;покраску.</p>
+  <p id="p-forced">Работаю в<br>Ярославле и отправляю по всей<br>России.</p>
+  <p id="p-inline" class="ok">Размер <b>от 3 до 30 см</b>, цена <a href="#">от 1 000 ₽</a> — зависит от сложности. Слово по<b>полам</b> в двух узлах и <em>курсивная вставка без курсивного начертания</em> в тексте.</p>
+  <h2 id="h2-far" class="far">Заголовок дальше от своего текста</h2>
+  <p id="p-far" class="ok">Под этим заголовком отступ больше, чем над ним: заголовок оторван от своего текста и прилип к блоку сверху.</p>
+</section>
+
+<section class="narrow">
+  <p id="p-just" class="just">Готовую работу покрываю матовым лаком и упаковываю в коробку с мягкой прокладкой, чтобы она доехала целой. Широкоформатные высокодетализированные миниатюры печатаются дольше.</p>
+  <p id="p-hyph" class="hyph">Готовую работу покрываю матовым лаком и упаковываю в коробку с мягкой прокладкой, чтобы она доехала целой. Широкоформатные высокодетализированные миниатюры печатаются дольше.</p>
+  <p id="p-split" class="split"><span>Каждое</span> <span>слово</span> <span>в</span> <span>своём</span> <span>блоке,</span> <span>как</span> <span>делает</span> <span>разбивка</span> <span>текста</span> <span>для</span> <span>анимации</span> <span>появления.</span></p>
+  <p id="p-tight" class="lh-tight">Плотный интерлиньяж у основного текста мешает читать: строки слипаются, глаз теряет начало следующей строки.</p>
+  <p id="p-hybreak" class="fit" data-fit="Печатаю на 3D-">Печатаю на 3D-принтере.</p>
+  <p id="p-lead" class="fit" data-fit="Фигурка готова">Фигурка готова — осталось покрасить.</p>
+  <p id="p-num" class="fit" data-fit="Цена 1 500">Цена 1 500 ₽ за штуку.</p>
+</section>
+
+<section class="tiny">
+  <p id="p-narrow">Узкая колонка для основного текста: строки короткие, правый край рвётся, слова часто остаются в конце строки одни.</p>
+</section>
+
+<section>
+  <h2 id="h2-track" class="track">Разрядка у крупного капса</h2>
+  <p id="caps0" class="caps0">Подпись капсом без разрядки</p>
+  <p id="caps1" class="caps1">Подпись капсом с разрядкой</p>
+  <p id="p-lat" class="lat ok">Кириллица этим шрифтом не набирается: у файла только латиница, Latin only.</p>
+  <p id="p-syn" class="syn">Жирный 800 при единственном начертании 500</p>
+  <p id="p-syn-ok" class="syn-ok">Обычный 500 при начертании 500</p>
+  <p id="p-miss" class="miss">Шрифт, файла которого нет на сервере</p>
+  <p id="p-ital" class="ital">Курсив без курсивного файла</p>
+  <table id="t-prop"><tr><td>1 111 ₽</td></tr><tr><td>8 888 ₽</td></tr><tr><td>10 490 ₽</td></tr></table>
+  <table id="t-tab" class="tab"><tr><td>1 111 ₽</td></tr><tr><td>8 888 ₽</td></tr><tr><td>10 490 ₽</td></tr></table>
+</section>
+<script>
+/* .fit: ширина блока — ширина начала строки (data-fit) + 4 px, чтобы остальное ушло на вторую строку в любом браузере */
+document.fonts.ready.then(() => {
+  for (const p of document.querySelectorAll('.fit')) {
+    const s = document.createElement('span'); s.textContent = p.dataset.fit; s.style.whiteSpace = 'pre';
+    p.textContent = ''; p.appendChild(s); const w = s.getBoundingClientRect().width;
+    p.textContent = p.id === 'p-hybreak' ? 'Печатаю на 3D-принтере.' : p.id === 'p-lead' ? 'Фигурка готова — осталось покрасить.' : 'Цена 1 500 ₽ за штуку.';
+    p.style.width = Math.ceil(w + 4) + 'px';
+  }
+});
+</script>
+</body>
+</html>
