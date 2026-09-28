@@ -4,8 +4,8 @@
  * движение донора целиком, и сверка «донор → наш сайт», чтобы ни одно не потерялось.
  *
  *   node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop[,mobile]]
- *                   [--out <папка прогона>] [--tag <имя>] [--time 6000] [--hover 14] [--clicks 6]
- *                   [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug]
+ *                   [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14]
+ *                   [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug]
  *   node motion.mjs compare <motion.json донора> <адрес нашего сайта | наш motion.json> [ещё пары…]
  *                   [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport …]
  *   node motion.mjs selftest            проверка распознавания на стенде fixtures/motion/index.html
@@ -16,6 +16,9 @@
  *   node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/y" --viewport desktop,mobile --tag donor
  *   → motion/donor-home.json, donor-home-mobile.json, donor-product.json, … и сводка по всем.
  * Одна страница и один экран — имя --tag как есть (или <страница>-<экран>), как раньше.
+ * --time — базовое окно «время» (мс); медленную петлю (период длиннее окна: покачивание Framer 7–13 с) окно
+ * продлевает кусками по 2 с, пока не увидит два разворота, но не дольше --time-cap (1000–60000, по умолчанию
+ * 20000). Не уложилась — строка «окно N с короче периода», а не пропуск. Без медленных петель — ровно --time.
  *
  * Что распознаётся (вид → рецепт в reference/motion.md):
  *   entrance        вход при загрузке (CSS-анимация, переход, element.animate) — из чего, сколько, задержки
@@ -33,7 +36,9 @@
  *   typewriter      печатающийся текст (слова, скорость набора и стирания); rotating-words — смена слов
  *   counter         числа, которые считают
  *   carousel        слайды листаются сами (интервал, шаг)
- *   loop            бесконечные петли: парение, вращение, пульс, мигание
+ *   loop            бесконечные петли: парение, вращение, пульс, мигание (CSS — по ключевым кадрам; на JS —
+ *                   по разворотам: период, размах); одинаковые соседи (стопка картинок Framer, у каждой свой
+ *                   период — вразнобой) — одна строка ×N с parent и members
  *   hover           наведение: картинка в карточке крупнее, кнопка светлее/выше/с тенью, линия под ссылкой
  *   mouse           реакция на мышь: наклон, параллакс; cursor — свой курсор
  *   canvas, video   холст, который рисует (2D/WebGL), и видео-фон
@@ -49,7 +54,8 @@
  * CSS scroll-driven, плавная прокрутка и правило «меньше движения».
  *
  * Как снимается: страница открывается с перехватом событий (animationstart/end, transitionrun/end,
- * element.animate, смена классов и style) → 4 с без прокрутки (петли, печать, карусели) → проход
+ * element.animate, смена классов и style) → --time без прокрутки (петли, печать, карусели; медленная петля
+ * продлевает окно до --time-cap) → проход
  * прокруткой шагами по четверти экрана, на каждом шаге ждём, пока движение уляжется, и снимаем
  * прозрачность, transform, фильтр, шторку и положение у каждого заметного элемента → вверх на полтора
  * экрана (шапка) → движение мыши по первому экрану → наведение на образцы кнопок, карточек, ссылок →
@@ -68,11 +74,17 @@
  *   (она от содержимого), свойства донора, которых у нас нет, — разница.
  *   Решение «почему нет / чем заменено» — в <out>/motion-decisions.json:
  *     { "m04": "у нас другой первый экран (вариант B), стопки картинок нет", "reveal:div.card": "…" }
+ *   Петли одинаковых соседей (стопка картинок Framer, у каждой свой период) — одна строка ×N с parent
+ *   и members; решение на всю группу — ключ loop:<родитель> > * (loop:div.framer-Nsiv9.framer-x6zctv > *),
+ *   ключ вид:подпись любого участника тоже подходит. Голый loop:<родитель> — про сам родитель.
+ *   Каким ключом закрыта строка — столбец «ключ решения» (в json — decisionKey).
  *   Движения, которых у донора нет, печатаются как «своё» — проверить, что это задумано (банк идей).
  *   Вердикт: FAIL — есть НЕТ без решения; WARN — есть ОТЛИЧАЕТСЯ; иначе OK. Протокол годится
  *   доказательством для state.mjs (визуал/runtime движения). Несколько пар подряд — протоколы
  *   compare-<тип донора>, итог — худший вердикт.
- * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден.
+ * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден или найден вид
+ * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля).
+ * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает.
  *
  * Код выхода: 0 — снято (и compare без FAIL); 1 — FAIL сверки, неверные аргументы, не открылась страница.
  */
@@ -83,13 +95,13 @@ import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
   scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
 } from './lib.mjs';
-import { findClickTargets } from './clicks.mjs';
+import { findClickTargets, SCREEN_POINT_FN } from './clicks.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { pos, opt } = parseArgs(process.argv.slice(2), {
   flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'no-clicks', 'debug'],
-  optional: ['viewport', 'out', 'tag', 'time', 'hover', 'clicks', 'decisions', 'pages'],
+  optional: ['viewport', 'out', 'tag', 'time', 'time-cap', 'hover', 'clicks', 'decisions', 'pages'],
   commands: ['compare', 'selftest'],
 });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
@@ -166,10 +178,21 @@ function instrument() {
 function textLogInPage() {
   const mo = window.__mo; if (!mo || !mo.text) return [];
   const els = window.__moEls || []; const out = [];
+  /* печать в новом элементе на каждое слово (shapefest: новый span.Typewriter__wrapper раз в ~3.5 с): у того, что
+     на странице сейчас, журнал бывает в 1–3 записи (слово только начало печататься) — и печать то находилась, то
+     нет (5 из 8 прогонов). Прошлые слова — отключённые элементы с тем же тегом и классом, что у подключённого:
+     из них и из него берётся самый длинный журнал */
+  const kk = (el) => `${el.tagName}.${el.getAttribute('class') || ''}`;
+  /* «такой же есть на странице» — по DOM, а не по журналу: только что созданный элемент слова ещё без текста */
+  const liveMemo = new Map(); const live = { has: (key) => { if (!liveMemo.has(key)) { const [tag, cls] = [key.slice(0, key.indexOf('.')), key.slice(key.indexOf('.') + 1)]; liveMemo.set(key, [...document.getElementsByTagName(tag)].some((x) => (x.getAttribute('class') || '') === cls)); } return liveMemo.get(key); } };
+  const best = new Map();
   for (const [el, log] of mo.text) {
-    if (log.length < 4 || !el.isConnected) continue;
+    if (log.length < 4 || !(el.isConnected || live.has(kk(el)))) continue;
     let grow = 0; for (let k = 1; k < log.length; k++) { const a = log[k - 1][1], b = log[k][1]; if (b.startsWith(a) || a.startsWith(b)) grow++; }
     if (grow / (log.length - 1) < 0.7) continue;
+    const b = best.get(kk(el)); if (!b || log.length > b.log.length || (log.length === b.log.length && el.isConnected)) best.set(kk(el), { el, log });
+  }
+  for (const { el, log } of best.values()) {
     const ex = el.closest('[data-expect]');
     out.push({ sig: sig(el), i: els.indexOf(el), log, text: (el.textContent || '').trim().slice(0, 40), expect: ex ? ex.dataset.expect : '' });
     if (out.length >= 10) break;
@@ -316,15 +339,18 @@ function hotHashInPage() {
 /* Итог по элементам, которые менялись: ряды, подпись и то, что нужно для разбора. */
 function seriesOutInPage() {
   const S = window.__moS; const els = window.__moEls || []; const out = [];
+  const at = new Map(els.map((e, k) => [e, k]));
   for (const [i, h] of S.series) {
     if (h.rows.length < 2) continue;
     const el = els[i]; if (!el) continue;
     const s = getComputedStyle(el);
     const p = el.parentElement;
     const cls = (el.getAttribute && el.getAttribute('class')) || '';
+    const no = el.closest('[data-expect-not]');                    /* стенд: на этом блоке такого вида быть не должно */
     out.push({
       i, sig: sig(el), tag: el.tagName.toLowerCase(), cls: String(cls).slice(0, 120), id: el.id || '',
-      parent: p ? sig(p) : '', idx: p ? [...p.children].indexOf(el) : 0, siblings: p ? p.children.length : 0,
+      parent: p ? sig(p) : '', pi: p && at.has(p) ? at.get(p) : -1, idx: p ? [...p.children].indexOf(el) : 0, siblings: p ? p.children.length : 0,
+      ...(no ? { expectNot: no.dataset.expectNot } : {}),
       position: s.position, text: (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60),
       trans: { dur: s.transitionDuration, delay: s.transitionDelay, ease: s.transitionTimingFunction, prop: s.transitionProperty },
       anim: { name: s.animationName, dur: s.animationDuration, delay: s.animationDelay, ease: s.animationTimingFunction, iter: s.animationIterationCount, timeline: s.animationTimeline || '' },
@@ -334,6 +360,12 @@ function seriesOutInPage() {
     });
   }
   return { steps: S.steps, series: out };
+}
+/* Лёгкий промежуточный итог окна «время» — продлевать ли его: ряды менявшихся элементов и подпись родителя. */
+function timePeekInPage() {
+  const S = window.__moS; const els = window.__moEls || []; const out = [];
+  for (const i of S.hot) { const h = S.series.get(i); const el = els[i]; if (!h || !el || h.rows.length < 2) continue; out.push({ i, parent: el.parentElement ? sig(el.parentElement) : '', rows: h.rows }); }
+  return { t: S.steps.map((s) => s.t), series: out };
 }
 
 /* Бесконечные и идущие анимации (getAnimations): цель, имя, длительность, ключевые кадры. */
@@ -520,11 +552,20 @@ function ckDiffInPage(arg) {
     lock: getComputedStyle(document.documentElement).overflow + '/' + getComputedStyle(document.body).overflow };
 }
 
-/* Точка нажатия по метке: элемент — в середину окна (закреплённое — как есть), центр коробки, в точке — он сам. */
-function ckPointInPage(sel) {
+/* Точка нажатия по метке: элемент — в середину окна (закреплённое — как есть), центр коробки, в точке — он сам.
+   Точка — в координатах видимого окна (screenPt = SCREEN_POINT_FN из clicks.mjs: сдвиг на offsetLeft/offsetTop,
+   без умножения на visualViewport.scale — CDP масштабирует сам; «× scale» при scale 1.056 после discover
+   промахивался на 23 px): на телефоне у страницы шире экрана окно раскладки больше видимого, и клик по
+   getBoundingClientRect уходил мимо; точка за краем экрана не нажимается. Закреплённое (меню в шапке): видимое
+   окно сначала — в начало окна раскладки, после кликов внизу оно остаётся сдвинутым (offsetTop 182), scrollTo(0, 0)
+   его не возвращает. lx, ly — в окне раскладки (для вырезки). { sel, noScroll: true } — пересчитать прямо перед
+   кликом: наведение сдвигает видимое окно. */
+function ckPointInPage(arg) {
+  const sel = typeof arg === 'string' ? arg : arg.sel; const noScroll = typeof arg === 'object' && !!arg.noScroll;
   const el = document.querySelector(sel); if (!el) return { skip: 'пропал из DOM' };
   let fixed = false; for (let e = el; e && e !== document.body; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') { fixed = true; break; } }
-  if (!fixed) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  if (!fixed && !noScroll) el.scrollIntoView({ block: 'center', behavior: 'instant' });
+  const vv0 = window.visualViewport; if (fixed && !noScroll && vv0 && (vv0.offsetTop || vv0.offsetLeft)) document.documentElement.scrollIntoView({ block: 'start', inline: 'start', behavior: 'instant' });
   /* у details нажимается summary: у раскрытого «верх + 30 px» — уже текст ответа */
   const aim = el.matches('details') ? el.querySelector('summary') || el : el;
   const r = aim.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0)) return { skip: 'не виден' };
@@ -535,7 +576,8 @@ function ckPointInPage(sel) {
   for (const o of document.querySelectorAll('[data-rw-ck-hit]')) o.removeAttribute('data-rw-ck-hit');
   const btn = hit.closest('button, a, [role="button"], [role="tab"], summary, [aria-expanded]');
   (btn && el.contains(btn) ? btn : el.contains(hit) ? hit : el).setAttribute('data-rw-ck-hit', '');
-  return { x, y, text: (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30), sig: sig(el), expect: el.closest('[data-expect]') ? el.closest('[data-expect]').dataset.expect : '' };
+  const s = screenPt(x, y); if (s.off) return { skip: 'точка нажатия за краем экрана (страница шире экрана)' };
+  return { x: s.x, y: s.y, lx: x, ly: y, text: (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 30), sig: sig(el), expect: el.closest('[data-expect]') ? el.closest('[data-expect]').dataset.expect : '' };
 }
 
 /* =====================================================================
@@ -605,10 +647,178 @@ function fit(xs, ys) {
   return { b, a: my - b * mx, r2 };
 }
 
+/* ---------- петли во времени: развороты, что это за движение, группа соседей ---------- */
+/* Окно «время» (--time, 6 с) бывает короче периода: покачивание картинок Framer — 7–13 с, и что увидит окно,
+   зависит от фазы (shapefest: 35–37 разных наборов петель на 104 скользящих окнах). Поэтому развороты — с
+   гистерезисом (размер шага замера не важен), петля — два разворота и размах от разворота к развороту не гаснет;
+   меньше двух разворотов и не встало — «окно короче периода»: окно продлевается кусками по chunk до --time-cap. */
+const LOOP = { chunk: 2000, cap: 20000, settleMin: 3000, settleShare: 0.35, decay: 0.5, spanRatio: 3 };
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+
+/* Развороты: засчитан, когда значение отошло от последнего экстремума больше чем на h; первый — только если
+   он отошёл от начального значения больше чем на eps (иначе окно просто началось у разворота). */
+function turningPoints(ts, ys, h, eps) {
+  const ext = []; let dir = 0, ref = 0, hi = 0, lo = 0;
+  for (let i = 1; i < ys.length; i++) {
+    if (dir === 0) {
+      if (ys[i] > ys[hi]) hi = i; if (ys[i] < ys[lo]) lo = i;
+      if (ys[hi] - ys[i] > h) { if (hi > 0 && ys[hi] - ys[0] > eps) ext.push({ i: hi, t: ts[hi], y: ys[hi], type: 'max' }); dir = -1; ref = i; }
+      else if (ys[i] - ys[lo] > h) { if (lo > 0 && ys[0] - ys[lo] > eps) ext.push({ i: lo, t: ts[lo], y: ys[lo], type: 'min' }); dir = 1; ref = i; }
+      continue;
+    }
+    if (dir === 1) { if (ys[i] >= ys[ref]) ref = i; else if (ys[ref] - ys[i] > h) { ext.push({ i: ref, t: ts[ref], y: ys[ref], type: 'max' }); dir = -1; ref = i; } }
+    else if (ys[i] <= ys[ref]) ref = i; else if (ys[i] - ys[ref] > h) { ext.push({ i: ref, t: ts[ref], y: ys[ref], type: 'min' }); dir = 1; ref = i; }
+  }
+  return ext;
+}
+/* сколько мс в конце наблюдения значение стоит (в пределах eps от последнего) */
+const tailFlat = (ts, ys, eps) => { const n = ys.length; let j = n - 1; while (j > 0 && Math.abs(ys[j - 1] - ys[n - 1]) <= eps) j--; return ts[n - 1] - ts[j]; };
+
+/* Одно свойство одного элемента во времени. status: small — едва сдвинулось (smooth — ровно и не встало: начало
+   долгой петли), marquee, carousel, decay — пружина/вход (гаснет или встало), loop, settled — доводка,
+   spin — вращение (ровная скорость ≥ 10 с), undetermined — окно короче периода, step — один переход между
+   площадками (карусель с долгим показом слайда или разовый сдвиг: ждать второго). */
+function classifyProp(k, ts, ysIn, vals) {
+  const ys = [...ysIn];
+  if (k === 'rot') for (let q = 1; q < ys.length; q++) ys[q] -= 360 * Math.round((ys[q] - ys[q - 1]) / 360);   /* 179° → −179° — это +2°, а не разворот */
+  /* одиночный выброс (соседи равны, между ними — скачок) — не движение: Framer на кадр растягивает контейнер.
+     Только если по обе стороны значение стоит (ещё один замер): при шаге замера 300–400 мс вершина пружины или
+     петли между двумя замерами на разных склонах тоже «выброс», и её стирало — пружина выглядела петлёй */
+  const still = (q) => q < 1 || q >= ys.length || Math.abs(ys[q] - ys[q - 1]) <= EPS[k];
+  for (let q = 1; q + 1 < ys.length; q++) if (Math.abs(ys[q - 1] - ys[q + 1]) <= EPS[k] && Math.abs(ys[q] - ys[q - 1]) > EPS[k] * 3 && still(q - 1) && still(q + 2)) ys[q] = ys[q - 1];
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo;
+  const obs = ts[ts.length - 1] - ts[0];
+  if (span < EPS[k] * 3) {
+    /* smooth — ровно и не встало (начало долгой петли); turn — был разворот: покачивание 0↔2° (контейнер стопки
+       shapefest) в окне от спуска до подъёма даёт размах 1.77° — на волос меньше 3·EPS, и петля терялась */
+    /* сдвиг на 1–2 px у элемента, чей размер меняется (полоса, растущая по ширине, с кадровыми выбросами transform —
+       shapefest framer-1x8s64v), — не начало петли: окно из-за него тянулось до предела */
+    if ((k === 'tx' || k === 'ty') && (() => { const sz = vals.map((v) => (k === 'tx' ? v.w : v.h)); return Math.max(...sz) - Math.min(...sz) > 1; })()) return null;
+    if (span >= EPS[k]) return { k, lo, hi, span, obs, status: 'small', smooth: tailFlat(ts, ys, EPS[k] / 2) < 1500 && fit(ts, ys).r2 > 0.8, turn: span >= EPS[k] * 2 && turningPoints(ts, ys, span * 0.4, EPS[k]).length >= 1 };
+    return null;
+  }
+  /* translate(-50%) за меняющимся размером — только когда размер и правда менялся: медленное парение ±4 px у
+     картинки высотой 400 px (2% высоты) прежним правилом выбрасывалось */
+  if (k === 'tx' || k === 'ty') { const sz = vals.map((v) => (k === 'tx' ? v.w : v.h)); if (Math.max(...sz) - Math.min(...sz) > 1) { const rel = vals.map((v) => v[k] / Math.max(1, k === 'tx' ? v.w : v.h)); if (Math.max(...rel) - Math.min(...rel) < 0.02) return null; } }
+  const f = fit(ts, ys);
+  const base = { k, lo, hi, span, obs, r2: f.r2, b: f.b, speed: Math.abs(f.b) * 1000, y0: ys[0], y1: ys[ys.length - 1] };
+  if ((k === 'tx' || k === 'ty') && f.r2 > 0.95 && Math.abs(f.b) * 1000 > 5) return { ...base, status: 'marquee' };
+  /* ступеньки — карусель: значение стоит (площадки: держится ≥3 замеров подряд), потом прыгает. Без опоры на число
+     замеров и на фазу окна (раньше: «стоящих шагов вдвое больше прыжков» и «до первого прыжка стоит 0.6 с» — под
+     нагрузкой шаг замера 250–400 мс, и карусель становилась «колебанием»; медленное парение ±4 px, окно у разворота
+     — «каруселью, шаг ≈2 px»): путь (сумма |шаг|) — в основном прыжками (шаг > 3·EPS), переходов между площадками
+     ≥ 2, на площадках — не меньше 40% времени */
+  let pathAll = 0, pathJump = 0, segs = 0, holdMs = 0, inJump = false;
+  for (let q = 1; q < ys.length; q++) { const d = Math.abs(ys[q] - ys[q - 1]); pathAll += d; if (d > EPS[k] * 3) { pathJump += d; if (!inJump) segs++; inJump = true; } else { inJump = false; if (d <= EPS[k]) holdMs += ts[q] - ts[q - 1]; } }
+  /* площадка — значение стоит не меньше 0.7 с (у пружины у разворотов стоит 0.1–0.3 с, у слайда — секунды) */
+  const plats = []; { let a = 0; for (let q = 1; q <= ys.length; q++) { if (q < ys.length && Math.abs(ys[q] - ys[q - 1]) <= EPS[k]) continue; if (ts[q - 1] - ts[a] >= 700) { const v = Math.round(ys[a]); if (!plats.length || Math.abs(plats[plats.length - 1] - v) > EPS[k] * 3) plats.push(v); } a = q; } }
+  if ((k === 'tx' || k === 'ty') && plats.length >= 2 && segs >= 2 && pathJump >= pathAll * 0.6 && holdMs >= obs * 0.4) return { ...base, status: 'carousel', plats };
+  /* один переход — карусель с долгим показом (5 с) или разовый сдвиг: не решать, ждать второго (stepWait) */
+  if ((k === 'tx' || k === 'ty') && plats.length >= 2 && segs === 1 && pathJump >= pathAll * 0.6) {
+    let last = 0; for (let q = 1; q < ys.length; q++) if (Math.abs(ys[q] - ys[q - 1]) > EPS[k] * 3) last = q;
+    return { ...base, status: 'step', since: ts[ts.length - 1] - ts[last] };
+  }
+  const ext = turningPoints(ts, ys, Math.max(EPS[k] * 1.5, span * 0.15), EPS[k]);
+  /* «встало» — хвост в полосе 5% размаха (не шире EPS): у медленного покачивания 0↔5° за 13 с вершина держится в
+     полосе EPS 0.6° больше 3 с, и окно, начатое в покое, решало «доводка» — петля терялась */
+  const flat = tailFlat(ts, ys, Math.min(EPS[k], span * 0.05));
+  const settled = flat >= Math.max(LOOP.settleMin, LOOP.settleShare * obs);
+  Object.assign(base, { turns: ext.length, flat, settled });
+  if (ext.length >= 2) {
+    const sw = ext.slice(1).map((e, q) => Math.abs(e.y - ext[q].y));
+    /* гаснет: последний размах меньше половины первого — или каждый следующий меньше прежнего (< 0.85) и последний
+       меньше 0.7 первого (пружина, застанная окном с середины: два размаха 12.5 → 7.3, а «встало» не хватило 24 мс) */
+    /* под нагрузкой шаг замера 400 мс — треть периода пружины, вершины теряются и размахи скачут: ещё сравнить
+       наибольший размах последней трети с наибольшим первой (огибающая) */
+    const third = Math.max(1, Math.floor(sw.length / 3));
+    const fading = sw.length >= 2 && (sw[sw.length - 1] < LOOP.decay * sw[0] || (sw.slice(1).every((v, q) => v < sw[q] * 0.85) && sw[sw.length - 1] < sw[0] * 0.7)
+      || (sw.length >= 3 && Math.max(...sw.slice(-third)) < 0.6 * Math.max(...sw.slice(0, third))));
+    if (fading || settled) return { ...base, status: 'decay' };
+    /* два разворота (один размах — гаснет ли, не видно) и после них стоит ≥ 1.5 с: хвост пружины, застанный окном,
+       или петля с паузой — решить нельзя, продлить окно (дальше: встало → пружина, новые развороты → петля) */
+    if (ext.length === 2 && flat >= 1500) return { ...base, status: 'undetermined' };
+    /* период — между одноимёнными разворотами; при двух разворотах — удвоенное расстояние между ними */
+    const T = ext.length >= 3 ? median(ext.slice(2).map((e, q) => e.t - ext[q].t)) : 2 * (ext[1].t - ext[0].t);
+    const firstMax = ext.find((e) => e.type === 'max');
+    return { ...base, status: 'loop', period: Math.round(T), phase: firstMax ? Math.round((firstMax.t - ts[0]) % T) : null, full: ext.length >= 3 };
+  }
+  if (settled) return { ...base, status: 'settled' };
+  /* вращение — ровная скорость не меньше 10 с (по четвертям наблюдения); разгон долгой петли — не вращение */
+  if (k === 'rot' && f.r2 > 0.98 && obs >= 10000) {
+    const q4 = Math.floor(ys.length / 4); const bs = [0, 1, 2, 3].map((q) => fit(ts.slice(q * q4, (q + 1) * q4), ys.slice(q * q4, (q + 1) * q4)).b);
+    if (bs.every((b) => b / f.b > 0.8 && b / f.b < 1.25)) return { ...base, status: 'spin' };
+  }
+  return { ...base, status: 'undetermined' };
+}
+
+/* Элемент целиком: tx ty sc rot op по замерам idx. Свойства бесконечной CSS/WAAPI-анимации (cssLoop) — не здесь:
+   их разбирают по ключевым кадрам. */
+function classifyEl(el, steps, idx, { cssLoop = null } = {}) {
+  const pts = idx.map((s) => [steps[s].t, propsOf(el.u[s])]).filter((x) => x[1]);
+  if (pts.length < 3) return [];
+  const ts = pts.map((x) => x[0]), vals = pts.map((x) => x[1]); const out = [];
+  for (const k of ['tx', 'ty', 'sc', 'rot', 'op']) {
+    if (cssLoop && cssLoop.props.some((p) => (k === 'op' ? p === 'opacity' : /transform|translate|rotate|scale/.test(p)))) continue;
+    const c = classifyProp(k, ts, vals.map((v) => v[k]), vals); if (c) out.push(c);
+  }
+  return out;
+}
+/* нужен ли ещё кусок окна: «окно короче периода» или ровное начало долгой петли */
+const slowStart = (c) => c.status === 'small' && (c.smooth || c.turn);
+/* один переход между площадками — может быть карусель с долгим показом слайда: ждать второй, но не дольше 8 с после него */
+const stepWait = (c) => c.status === 'step' && c.since < 8000;
+const unresolved = (cls) => cls.some((c) => c.status === 'undetermined' || slowStart(c) || stepWait(c));
+
+/* Петли → строки протокола: соседи по родителю с тем же свойством — одна строка ×N (стопка картинок Framer:
+   у каждой свой период, вразнобой — это задумка донора, а не разные движения). В группу — петли и «окно короче
+   периода», а ещё соседи, которые в этом окне стояли у разворота (small, settled и decay при ≤ 2 разворотах);
+   пружина с тремя и больше разворотами — нет. Вращение — своей строкой.
+   Разные движения соседей с тем же свойством (картинка качается на 3°, значок рядом — на 30°) — разные строки:
+   решённые петли (loop) делятся по размаху, если он отличается больше чем в LOOP.spanRatio раз; остальные
+   участники (размах у них увиден не целиком) идут к ближайшей по размаху — неполный размах группу не дробит. */
+function loopRows(perEl) {
+  const rows = []; const groups = new Map();
+  const loopish = (c) => c.status === 'loop' || c.status === 'undetermined';
+  for (const { el, cls } of perEl) for (const c of cls) {
+    if (c.status === 'spin') { rows.push({ kind: 'loop', sub: 'вращение', trigger: 'time', props: [{ prop: NAMES.rot, from: '', to: '' }], timing: { speed: `${round(c.speed, 1)}°/с` }, source: 'js', i: el.i, el, parent: pattern(el.parent), members: [el.sig], is: [el.i], mk: [`${el.i}|rot`] }); continue; }
+    if (!['loop', 'undetermined', 'settled', 'decay', 'small'].includes(c.status)) continue;
+    const key = `${el.parent}|${c.k}`; const g = groups.get(key) || []; g.push({ el, c }); groups.set(key, g);
+  }
+  const parts = [];
+  for (const g of groups.values()) {
+    if (!g.some((x) => loopish(x.c))) continue;
+    const pool = g.filter((x) => loopish(x.c) || x.c.status === 'small' || ((x.c.status === 'settled' || x.c.status === 'decay') && x.c.turns <= 2));
+    const full = pool.filter((x) => x.c.status === 'loop');
+    if (!full.length) { parts.push(pool); continue; }
+    const cl = []; for (const x of [...full].sort((a, b) => a.c.span - b.c.span)) { const c = cl[cl.length - 1]; if (c && x.c.span <= c[0].c.span * LOOP.spanRatio) c.push(x); else cl.push([x]); }
+    const mid = cl.map((c) => median(c.map((x) => x.c.span)));
+    for (const x of pool) if (x.c.status !== 'loop') { let b = 0; for (let q = 1; q < cl.length; q++) if (Math.abs(Math.log(Math.max(x.c.span, 1e-9) / mid[q])) < Math.abs(Math.log(Math.max(x.c.span, 1e-9) / mid[b]))) b = q; cl[b].push(x); }
+    for (const c of cl) parts.push(pool.filter((x) => c.includes(x)));            /* порядок участников — как в документе */
+  }
+  for (const members of parts) {
+    const k = members[0].c.k; const first = members[0].el;
+    const periods = members.map((x) => x.c.period).filter(Boolean).sort((a, b) => a - b);
+    const spans = members.map((x) => x.c.span).sort((a, b) => a - b);
+    const open = members.filter((x) => x.c.status !== 'loop');
+    const note = [];
+    if (periods.length > 1 && periods[periods.length - 1] > periods[0] * 1.08) note.push(`период ${round(periods[0] / 1000, 1)}–${round(periods[periods.length - 1] / 1000, 1)} с, у каждого свой — вразнобой`);
+    if (members.length > 1) { const a = fmtV(k, spans[0]), b = fmtV(k, spans[spans.length - 1]); note.push(a === b ? `размах ${a}` : `размах ${a}–${b}`); }
+    if (open.length) note.push(`окно ${round(Math.max(...members.map((x) => x.c.obs)) / 1000, 1)} с короче периода${members.length > 1 ? ` у ${open.length}` : ''}`);
+    rows.push({ kind: 'loop', sub: k === 'op' ? 'мигание' : k === 'sc' ? 'пульс' : 'колебание', trigger: 'time',
+      props: [{ prop: NAMES[k], from: fmtV(k, Math.min(...members.map((x) => x.c.lo))), to: fmtV(k, Math.max(...members.map((x) => x.c.hi))) }],
+      timing: { period: periods.length ? median(periods) : undefined, note: note.join('; ') || undefined,
+        ...(members.length > 1 ? { periods: members.map((x) => x.c.period || null), ranges: members.map((x) => `${fmtV(k, x.c.lo)}…${fmtV(k, x.c.hi)}`) } : {}),
+        phases: members.map((x) => (x.c.phase === undefined ? null : x.c.phase)) },
+      source: 'js', i: first.i, el: first, parent: pattern(first.parent), count: members.length, members: members.map((x) => x.el.sig).slice(0, 30), is: members.map((x) => x.el.i), mk: members.map((x) => `${x.el.i}|${k}`),
+      cropI: members.length > 1 && first.pi >= 0 ? first.pi : first.i });                     /* вырезка — вся стопка (родитель), если он под наблюдением */
+  }
+  return rows;
+}
+
 /* ---------- фаза «без прокрутки»: петли, печать, счётчики, карусели ---------- */
 function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
   const vals = timeIdx.map((s) => propsOf(el.u[s])).filter(Boolean);
-  if (vals.length < 3) return [];
+  if (vals.length < 3) return { items: [], cls: [] };
   let ts = timeIdx.map((s) => steps[s].t);
   const items = [];
   /* текст листа: долгое частое наблюдение, если было, иначе замеры окна «время» */
@@ -617,7 +827,7 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
   if (fromWatch) { texts = watch.map((w) => w[1]); ts = watch.map((w) => w[0]); }
   const distinct = [...new Set(texts)];
   if (distinct.length >= 3) {
-    const nums = distinct.map((x) => Number(String(x).replace(/[\s ,]/g, '')));
+    const nums = distinct.map((x) => Number(String(x).replace(/[\s\u00a0,]/g, '')));
     const shape = (x) => String(x).replace(/\d+/g, '#');
     const shapes = {}; for (const x of texts) shapes[shape(x)] = (shapes[shape(x)] || 0) + 1;
     const topShape = Object.entries(shapes).sort((a, b) => b[1] - a[1])[0];
@@ -645,40 +855,21 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
       } else items.push({ kind: 'rotating-words', trigger: 'time', props: [{ prop: 'текст', from: distinct[0], to: distinct.slice(1, 4).join(' / ') }], timing: {} });
     }
   }
-  /* transform и прозрачность — по замерам окна «время» */
-  ts = timeIdx.map((s) => steps[s].t);
-  const cssLoop = anims.find((a) => a.i === el.i && a.iterations === 'infinite' && !a.timeline);
-  if (finite) return items;                                      /* вход при загрузке — не петля: разберётся отдельно */
-  for (const k of ['tx', 'ty', 'sc', 'rot', 'op']) {
-    const ys = vals.map((v) => v[k]);
-    /* одиночный выброс (соседи равны, между ними — скачок) — не движение: Framer на кадр растягивает контейнер */
-    for (let q = 1; q + 1 < ys.length; q++) if (Math.abs(ys[q - 1] - ys[q + 1]) <= EPS[k] && Math.abs(ys[q] - ys[q - 1]) > EPS[k] * 3) ys[q] = ys[q - 1];
-    const span = Math.max(...ys) - Math.min(...ys);
-    if (span < EPS[k] * 3) continue;
-    if (k === 'tx' || k === 'ty') { const rel = vals.map((v) => v[k] / Math.max(1, k === 'tx' ? v.w : v.h)); if (Math.max(...rel) - Math.min(...rel) < 0.02) continue; } /* translate(-50%) за меняющимся размером */
-    const f = fit(ts, ys);
-    if (cssLoop && cssLoop.props.some((p) => (k === 'op' ? p === 'opacity' : /transform|translate|rotate|scale/.test(p)))) continue; /* разберём по ключевым кадрам ниже */
-    if ((k === 'tx' || k === 'ty') && f.r2 > 0.95 && Math.abs(f.b) * 1000 > 5) { items.push({ kind: 'marquee', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, ys[0]), to: fmtV(k, ys[ys.length - 1]) }], timing: { speed: `${round(Math.abs(f.b) * 1000)} px/с ${k === 'tx' ? (f.b < 0 ? 'влево' : 'вправо') : (f.b < 0 ? 'вверх' : 'вниз')}` }, source: 'js' }); continue; }
-    /* ступеньки: значение стоит, потом прыгает — карусель */
-    let jumps = 0, holds = 0; for (let q = 1; q < ys.length; q++) { if (Math.abs(ys[q] - ys[q - 1]) > EPS[k] * 3) jumps++; else holds++; }
-    /* площадки: значение держится ≥3 замеров подряд; шаг — разница соседних площадок; до первого прыжка — стоит */
-    const plats = []; for (let q = 2; q < ys.length; q++) if (Math.abs(ys[q] - ys[q - 1]) <= EPS[k] && Math.abs(ys[q - 1] - ys[q - 2]) <= EPS[k]) { const v = Math.round(ys[q]); if (!plats.length || Math.abs(plats[plats.length - 1] - v) > EPS[k] * 3) plats.push(v); }
-    const firstMove = ys.findIndex((y, q) => q > 0 && Math.abs(y - ys[0]) > EPS[k] * 3);
-    const heldBefore = firstMove > 0 ? (ts[firstMove] - ts[0]) : 0;
-    if ((k === 'tx' || k === 'ty') && plats.length >= 2 && holds > jumps * 2 && heldBefore >= 600) {
-      const dif = plats.slice(1).map((v, q) => Math.abs(v - plats[q])).sort((a, b) => a - b); const stepPx = dif[Math.floor(dif.length / 2)];
-      items.push({ kind: 'carousel', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, plats[0]), to: fmtV(k, plats[plats.length - 1]) }], timing: { note: `шаг ≈${stepPx} px, листает сам` }, source: 'js' }); continue;
+  /* transform и прозрачность — по замерам окна «время»: бегущая строка и карусель — здесь, петли и вращение —
+     строками групп (loopRows) по разбору cls всех элементов */
+  if (finite) return { items, cls: [] };                         /* вход при загрузке — не петля: разберётся отдельно */
+  const cssLoop = anims.find((a) => a.i === el.i && a.iterations === 'infinite' && !a.timeline) || null;   /* разберём по ключевым кадрам ниже */
+  const cls = classifyEl(el, steps, timeIdx, { cssLoop });
+  for (const c of cls) {
+    const k = c.k;
+    if (c.status === 'marquee') items.push({ kind: 'marquee', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, c.y0), to: fmtV(k, c.y1) }], timing: { speed: `${round(c.speed)} px/с ${k === 'tx' ? (c.b < 0 ? 'влево' : 'вправо') : (c.b < 0 ? 'вверх' : 'вниз')}` }, source: 'js' });
+    else if (c.status === 'carousel') {
+      /* шаг — разница соседних площадок; до первого прыжка — стоит */
+      const dif = c.plats.slice(1).map((v, q) => Math.abs(v - c.plats[q])).sort((a, b) => a - b); const stepPx = dif[Math.floor(dif.length / 2)];
+      items.push({ kind: 'carousel', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, c.plats[0]), to: fmtV(k, c.plats[c.plats.length - 1]) }], timing: { note: `шаг ≈${stepPx} px, листает сам` }, source: 'js' });
     }
-    /* колебание — хотя бы два разворота; монотонное изменение без площадок — не петля */
-    let turns = 0, dir = 0; for (let q = 1; q < ys.length; q++) { const dd = ys[q] - ys[q - 1]; if (Math.abs(dd) <= EPS[k]) continue; const sg = Math.sign(dd); if (dir && sg !== dir) turns++; dir = sg; }
-    if (turns < 2 && k !== 'rot') continue;
-    { const hN = Math.floor(ys.length / 2); const a1 = Math.max(...ys.slice(0, hN)) - Math.min(...ys.slice(0, hN)); const a2 = Math.max(...ys.slice(hN)) - Math.min(...ys.slice(hN));
-      if (a2 < a1 * 0.5 || a2 < EPS[k] * 3) continue; }                  /* затухает — пружина доводится, это не петля */
-    if (k === 'rot' && f.r2 > 0.9 && Math.abs(f.b) * 1000 < 3) continue;           /* медленный дрейф — доводка пружины после загрузки */
-    if (k === 'rot' && f.r2 > 0.9) { items.push({ kind: 'loop', sub: 'вращение', trigger: 'time', props: [{ prop: 'поворот', from: '', to: '' }], timing: { speed: `${round(Math.abs(f.b) * 1000)}°/с` }, source: 'js' }); continue; }
-    items.push({ kind: k === 'op' ? 'loop' : 'loop', sub: k === 'op' ? 'мигание' : k === 'sc' ? 'пульс' : 'колебание', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, Math.min(...ys)), to: fmtV(k, Math.max(...ys)) }], timing: {}, source: 'js' });
   }
-  return items;
+  return { items, cls };
 }
 
 /* кадр анимации {"offset":0,"transform":"…"} → «transform: …; opacity: …» */
@@ -829,7 +1020,7 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
     }
   }
   /* счётчик после входа в экран */
-  const texts = P.map((x) => x.p.text); const nums = [...new Set(texts)].map((x) => Number(String(x).replace(/[\s ,]/g, ''))).filter((x) => !Number.isNaN(x));
+  const texts = P.map((x) => x.p.text); const nums = [...new Set(texts)].map((x) => Number(String(x).replace(/[\s\u00a0,]/g, ''))).filter((x) => !Number.isNaN(x));
   if (nums.length >= 2 && [...new Set(texts)].length >= 2 && nums[nums.length - 1] > nums[0]) items.push({ kind: 'counter', trigger: 'scroll', props: [{ prop: 'число', from: String(nums[0]), to: String(nums[nums.length - 1]) }], timing: {} });
   return items;
 }
@@ -968,8 +1159,10 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
     try {
       await page.mouse.move(pt.x, pt.y, { steps: 3 }); await sleep(450);
       const b = await snap('base'); await sleep(300); await snap('pre');   /* второй снимок до клика: что меняется само */
+      /* точка заново, без прокрутки: на телефоне наведение сдвигает видимое окно (у страницы шире экрана) */
+      const pn = await evaluateWith(page, ckPointInPage, { sel: t.sel, noScroll: true }, deps).catch(() => null); const cp = pn && !pn.skip ? pn : pt;
       const tIn = await page.evaluate(() => performance.now());
-      await page.mouse.click(pt.x, pt.y); const tc = Date.now();
+      await page.mouse.click(cp.x, cp.y); const tc = Date.now();
       const MIDS = [80, 200, 400, 700];
       for (let q = 0; q < MIDS.length; q++) { const w = MIDS[q] - (Date.now() - tc); if (w > 0) await sleep(w); await snap('m' + q); }
       await sleep(Math.max(0, 1500 - (Date.now() - tc)));
@@ -979,15 +1172,16 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
       const kfNames = diff ? [...new Set(diff.changed.filter((c) => c.anim).map((c) => String(c.anim.name).split(',')[0].trim()))].slice(0, 20) : [];
       const kf = kfNames.length ? await evaluateWith(page, keyframesInPage, kfNames, deps).catch(() => ({})) : {};
       let it = diff ? summarizeClick(t, pt, { ...diff, lockBase: b.lock }, kf) : null;
-      if (!it && vp.hasTouch) { await page.touchscreen.tap(pt.x, pt.y).catch(() => {}); await sleep(1500); await snap('end'); diff = await evaluateWith(page, ckDiffInPage, { t0: tIn, mids: [], trg: '[data-rw-ck-hit]' }, deps); it = diff ? summarizeClick(t, pt, { ...diff, lockBase: b.lock }, kf) : null; }
+      if (!it && vp.hasTouch) { await page.touchscreen.tap(cp.x, cp.y).catch(() => {}); await sleep(1500); await snap('end'); diff = await evaluateWith(page, ckDiffInPage, { t0: tIn, mids: [], trg: '[data-rw-ck-hit]' }, deps); it = diff ? summarizeClick(t, pt, { ...diff, lockBase: b.lock }, kf) : null; }
       tried.push({ ...t, text: pt.text, changed: diff ? diff.total : 0, item: !!it, ...(debug && diff ? { diff: { added: diff.added, changed: diff.changed.slice(0, 40).map((c) => ({ i: c.i, par: c.par, sig: c.sig, text: c.text.slice(0, 30), trigger: c.trigger, base: c.base, end: c.end, mids: c.mids.map((m) => [m.t, m.v && m.v.slice(0, 7)]), ev: c.ev, waapi: c.waapi.map((w) => ({ t: w.t, dur: w.dur, easing: String(w.easing).slice(0, 40) })), styleLast: c.styleLast })) } } : {}) });
       if (!it) { notes.push(`клик по «${pt.text || pt.sig}» (${sub}) видимо ничего не изменил`); continue; }
       k++;
       if (cropDir && it.box) {
         try {
           const sc = await page.evaluate(() => ({ x: scrollX, y: scrollY, vw: innerWidth, vh: innerHeight }));
-          const L = Math.max(0, Math.min(it.box.x, pt.x - 40) - 12), T = Math.max(0, Math.min(it.box.y, pt.y - 30) - 12);
-          const R = Math.min(sc.vw, Math.max(it.box.x + it.box.w, pt.x + 40) + 12), B = Math.min(sc.vh, Math.max(it.box.y + it.box.h, pt.y + 30) + 12);
+          const px = cp.lx ?? cp.x, py = cp.ly ?? cp.y;                /* коробка панели — в окне раскладки, точка — тоже */
+          const L = Math.max(0, Math.min(it.box.x, px - 40) - 12), T = Math.max(0, Math.min(it.box.y, py - 30) - 12);
+          const R = Math.min(sc.vw, Math.max(it.box.x + it.box.w, px + 40) + 12), B = Math.min(sc.vh, Math.max(it.box.y + it.box.h, py + 30) + 12);
           if (R - L > 8 && B - T > 8) { const f = path.join(cropDir, `c${String(k).padStart(2, '0')}.png`); await page.screenshot({ path: f, clip: { x: L + sc.x, y: T + sc.y, width: R - L, height: B - T }, captureBeyondViewport: false }); it.crop = path.relative(out, f).replace(/\\/g, '/'); }
         } catch (e) { /* без вырезки */ }
       }
@@ -1019,7 +1213,8 @@ function describeTrigger(it) {
 function describeTiming(it) {
   const t = it.timing || {}; const p = [];
   if (t.duration) p.push(`${t.duration} мс`); if (t.easing) p.push(easeShort(t.easing)); if (t.delay) p.push(`задержка ${t.delay} мс`);
-  if (t.stagger) p.push(`по очереди +${t.stagger} мс`); if (t.period) p.push(`период ${round(t.period / 1000, 1)} с`); if (t.speed) p.push(t.speed); if (t.note) p.push(t.note);
+  if (t.stagger) p.push(`по очереди +${t.stagger} мс`);
+  if (t.period && !/у каждого свой/.test(t.note || '')) p.push(`период ${round(t.period / 1000, 1)} с`);   /* у группы вразнобой — диапазон в note */ if (t.speed) p.push(t.speed); if (t.note) p.push(t.note);
   if (it.scroll && it.scroll.coefficient !== null && it.scroll.coefficient !== undefined) p.push(`коэффициент ${it.scroll.coefficient} (px сдвига на px прокрутки)`);
   return p.join(', ') || '—';
 }
@@ -1028,7 +1223,7 @@ const RECIPE = { entrance: 'entrance', reveal: 'reveal', 'scroll-linked': 'scrol
 const KIND_RU = { entrance: 'вход при загрузке', reveal: 'появление', 'scroll-linked': 'привязано к прокрутке', parallax: 'параллакс', pinned: 'закреплённый раздел', header: 'шапка при прокрутке', progress: 'прогресс прокрутки',
   marquee: 'бегущая строка', typewriter: 'печатающийся текст', 'rotating-words': 'смена слов', counter: 'счётчик', carousel: 'карусель сама', loop: 'петля', hover: 'наведение', mouse: 'реакция на мышь', cursor: 'свой курсор', canvas: 'холст рисует', video: 'видео-фон', click: 'по клику' };
 
-async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, doHover = true, doMouse = true, doScroll = true, doClicks = true, clickN = 6, crops = true, quiet = false, debug = false, browser: shared = null } = {}) {
+async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.cap, hoverN = 14, doHover = true, doMouse = true, doScroll = true, doClicks = true, clickN = 6, crops = true, quiet = false, debug = false, browser: shared = null } = {}) {
   const say = (s) => { if (!quiet) console.log(s); };
   const rv = resolveViewport(vpSpec || 'desktop'); if (!rv) die(`Неизвестный экран: ${vpSpec}`);
   const [vpName, vp] = rv;
@@ -1044,20 +1239,41 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     await waitForOverlay(page, 4000).catch(() => null);
     /* окно cookie закрыть до замеров: оно перекрывает первый экран на вырезках и ловит наведение */
     result.consent = consentNote(await closeConsent(page).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 100) })));
-    const deps = { sig: SIG_FN };
+    const deps = { sig: SIG_FN, screenPt: SCREEN_POINT_FN };
     result.libs = await evaluateWith(page, libsInPage, null, deps);
-    const n = await evaluateWith(page, collectInPage, 5000, deps);
-    say(`Страница открыта за ${round((Date.now() - tLoad0) / 1000, 1)} с · элементов под наблюдением: ${n} · ${result.libs.libs.join(', ') || 'библиотек движения не видно'}`);
+    let n = await evaluateWith(page, collectInPage, 5000, deps);
+    /* под наблюдение попала малая доля элементов (у остальных коробка меньше 100 px²) — страница не дорисовалась:
+       shapefest в 2 из 7 открытий давал 69–214 вместо 850–1500, и петли стопки не находились вовсе. Подождать и
+       собрать заново один раз; не помогло — записать в протокол */
+    const domAll = async () => page.evaluate(() => (document.body ? document.body.getElementsByTagName('*').length : 0)).catch(() => 0);
+    let all = await domAll();
+    if (all > 300 && n < all * 0.3) { await sleep(2000); n = await evaluateWith(page, collectInPage, 5000, deps); all = await domAll(); }
+    if (all > 300 && n < all * 0.3) result.notes.push(`под наблюдением ${n} элементов из ${all} в DOM — страница, похоже, не дорисовалась; снимок неполный, переснять`);
+    say(`Страница открыта за ${round((Date.now() - tLoad0) / 1000, 1)} с · элементов под наблюдением: ${n} (в DOM ${all}) · ${result.libs.libs.join(', ') || 'библиотек движения не видно'}`);
 
-    /* 1. без прокрутки: время */
+    /* 1. без прокрутки: время. Базовое окно timeMs; если кто-то движется медленнее окна (меньше двух разворотов
+       и не встал, или едва начал и движется ровно) — продлевать кусками по LOOP.chunk, но не дольше capMs */
     const timeSteps = [];
-    const tEnd = Date.now() + timeMs;
-    while (Date.now() < tEnd) { timeSteps.push((await evaluateWith(page, sampleInPage, 'time', deps)).step); await sleep(110); }
+    const tStart = Date.now(); let tStop = tStart + timeMs; let peeks = 0; let slow = 0;
+    for (;;) {
+      while (Date.now() < tStop) { timeSteps.push((await evaluateWith(page, sampleInPage, 'time', deps)).step); await sleep(110); }
+      if (Date.now() - tStart >= capMs) break;
+      const peek = await evaluateWith(page, timePeekInPage, null, deps); peeks++;
+      const an = await evaluateWith(page, animationsInPage, null, deps);
+      const cssOf = (i) => an.find((a) => a.i === i && a.iterations === 'infinite' && !a.timeline) || null;
+      const st = peek.t.map((t) => ({ t }));
+      slow = peek.series.filter((el) => { el.u = unroll(el.rows, st.length); return unresolved(classifyEl(el, st, timeSteps, { cssLoop: cssOf(el.i) })); }).length;
+      if (!slow) break;
+      tStop = Math.min(tStart + capMs, Date.now() + LOOP.chunk);
+    }
+    const timeObs = Date.now() - tStart;
+    if (timeObs > timeMs + 500) say(`Окно «время» продлено до ${round(timeObs / 1000, 1)} с: медленное движение (период длиннее окна ${round(timeMs / 1000, 1)} с)${Date.now() - tStart >= capMs && slow ? ', упёрлось в --time-cap' : ''}`);
     const animsTop = await evaluateWith(page, animationsInPage, null, deps);
     /* текст, который менялся: наблюдать чаще и дольше — слово печатается, держится секунды и стирается */
     const txtIdx = await evaluateWith(page, textCandidatesInPage, null, deps);
     const textWatch = txtIdx.length ? await evaluateWith(page, textWatchInPage, { idx: txtIdx, ms: 9000 }, deps) : {};
-    const textLog = await evaluateWith(page, textLogInPage, null, deps).catch(() => []);
+    const textLog = await evaluateWith(page, textLogInPage, null, deps).catch((e) => { result.notes.push(`журнал смен текста не прочитан: ${String(e.message || e).slice(0, 120)}`); return []; });
+    const textLogSize = debug ? await page.evaluate(() => { const mo = window.__mo; if (!mo || !mo.text) return null; const by = {}; for (const [el, log] of mo.text) { const k = el.tagName + '.' + String(el.getAttribute('class') || '').split(' ')[0] + (el.isConnected ? '' : ' (отключён)'); (by[k] = by[k] || []).push(log.length); } return { size: mo.text.size, by }; }).catch((e) => String(e.message || e)) : null;
 
     /* 2. прокрутка */
     const scrollSteps = []; const upSteps = [];
@@ -1121,7 +1337,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     const kfNames = [...new Set([...animsTop, ...animsEnd].filter((a) => a.kind === 'CSSAnimation').map((a) => a.name).concat(ev.ev.filter((e) => e.type === 'anim').map((e) => e.name)))].slice(0, 80);
     const kf = await evaluateWith(page, keyframesInPage, kfNames, deps);
 
-    if (debug) writeJson(path.join(out, "motion", `${tag}.series.json`), { steps: data.steps, series: data.series.map((x) => ({ ...x, u: undefined })), timeIdx: timeSteps, scrollIdx: scrollSteps, upIdx: upSteps, anims: animsTop, textWatch, textLog });
+    if (debug) writeJson(path.join(out, "motion", `${tag}.series.json`), { steps: data.steps, series: data.series.map((x) => ({ ...x, u: undefined })), timeIdx: timeSteps, scrollIdx: scrollSteps, upIdx: upSteps, anims: animsTop, textWatch, textLog, textLogSize });
     /* ---------- разбор ---------- */
     const steps = data.steps; const nSteps = steps.length;
     const timeIdx = timeSteps; const scrollIdx = scrollSteps;
@@ -1133,24 +1349,45 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
     /* конечные анимации и переходы, начавшиеся в первые 1.5 с окна «время» без нашего участия, — вход при загрузке */
     const tTime0 = steps[timeIdx[0]] ? steps[timeIdx[0]].t : 0;
     const finiteEls = new Set([...ev.ev.filter((e) => (e.type === 'anim-end' || e.type === 'trans-end') && e.t <= tTime0 + 1500).map((e) => e.i), ...ev.waapi.filter((w) => w.t <= tTime0 + 1500 && w.iterations !== 'infinite').map((w) => w.i)].filter((i) => i >= 0 && !loopTargets.has(i)));
+    /* окно «время»: сначала все элементы (петли — группами соседей по родителю), потом прокрутка */
+    const timeOf = new Map(); const perEl = [];
     for (const el of data.series) {
-      /* какие свойства менялись во времени (петли) — их прокрутке не приписываем */
+      const r = analyzeTime(el, steps, timeIdx, animsTop, finiteEls.has(el.i), textWatch[el.i]);
+      timeOf.set(el.i, r); if (r.cls.length) perEl.push({ el, cls: r.cls });
+    }
+    const loops = loopRows(perEl);
+    const inLoop = new Set(loops.flatMap((r) => r.mk));
+    const loopAt = new Map(); for (const r of loops) loopAt.set(r.i, [...(loopAt.get(r.i) || []), r]);
+    for (const el of data.series) {
+      /* какие свойства менялись во времени (петли) — их прокрутке не приписываем: вторая половина окна (как было)
+         и то, что разбор окна признал петлёй, вращением, «окном короче периода» или ровным началом долгой петли —
+         медленный поворот стопки во второй половину окна не попадал и утекал в параллакс */
       const tv = timeIdx.slice(Math.floor(timeIdx.length / 2)).map((s) => propsOf(el.u[s])).filter(Boolean);
       const timeChanged = new Set();
       for (const k of ['tx', 'ty', 'sc', 'rot', 'op', 'blur', 'clip']) { const ys = tv.map((v) => v[k]); if (ys.length > 2 && Math.max(...ys) - Math.min(...ys) > EPS[k] * 2) timeChanged.add(k); }
       if (tv.length > 2 && new Set(tv.map((v) => v.text)).size > 2) timeChanged.add('text');
-      for (const it of analyzeTime(el, steps, timeIdx, animsTop, finiteEls.has(el.i), textWatch[el.i])) items.push({ ...it, i: el.i, el });
+      const r = timeOf.get(el.i);
+      for (const c of r.cls) if (inLoop.has(`${el.i}|${c.k}`) || c.status === 'undetermined' || slowStart(c)) timeChanged.add(c.k);
+      for (const it of r.items) items.push({ ...it, i: el.i, el });
+      for (const it of loopAt.get(el.i) || []) items.push(it);
       if (loopTargets.has(el.i)) { for (const k of ['tx', 'ty', 'sc', 'rot', 'op']) timeChanged.add(k); }
       for (const it of analyzeScroll(el, steps, scrollIdx, vh, { vw, upIdx: upSteps, timeChanged })) items.push({ ...it, i: el.i, el });
     }
     /* печать с загрузки (журнал смен текста), которую окна «время» и частое наблюдение не поймали */
     for (const lg of textLog) {
-      if (items.some((x) => (x.kind === 'typewriter' || x.kind === 'rotating-words') && ((lg.i >= 0 && x.i === lg.i) || (x.el && x.el.sig === lg.sig)))) continue;
+      const prev = items.findIndex((x) => (x.kind === 'typewriter' || x.kind === 'rotating-words') && ((lg.i >= 0 && x.i === lg.i) || (x.el && x.el.sig === lg.sig)));
       const L = lg.log; const add = [], del = [];
       for (let k = 1; k < L.length; k++) { const dl = L[k][1].length - L[k - 1][1].length, dt = (L[k][0] - L[k - 1][0]) / 1000; if (dt > 0 && dt < 1 && dl) (dl > 0 ? add : del).push(Math.abs(dl) / dt); }
       if (add.length < 3) continue;
       const med = (a) => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
       const once = !del.length && L[L.length - 1][0] < tTime0 + 1500;
+      /* окно «время» застало хвост печати, что идёт один раз при загрузке (стенд: печать 1.2 с, страница открылась
+         за 0.1 с — «набор ≈1 знаков/с, видели не целиком»): журнал с загрузки видел её целиком — строка из журнала */
+      /* то же, если окно видело слово урывками («видели не целиком», «набор ≈0 знаков/с»: shapefest печатает каждое
+         слово в новом элементе, под наблюдением только тот, что был при сборе, — длинное окно чаще застаёт его) */
+      const weak = (x) => /видели не целиком/.test(x.props.map((p) => p.to).join(' ')) || /≈0 знаков|не пойман/.test((x.timing && x.timing.speed) || '');
+      if (prev >= 0 && !once && !weak(items[prev])) continue;
+      if (prev >= 0) items.splice(prev, 1);
       const series = lg.i >= 0 ? data.series.find((s) => s.i === lg.i) : null;
       /* слова — допечатанные до стирания (пики длины); ни одного — самое длинное из увиденного */
       const seq = L.map((x) => x[1]); const words = [...new Set(seq.filter((w, q) => q + 1 < seq.length && seq[q + 1].length < w.length && (q === 0 || seq[q - 1].length < w.length) && w.length > 1))];
@@ -1178,8 +1415,9 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
       if (dup) { dup.source = `CSS animation-timeline (${a.timeline}) @keyframes ${a.name}`; continue; }
       items.push({ kind: 'scroll-linked', trigger: 'scroll', props: [{ prop: 'кадры', from: kfText(a.first), to: kfText(a.last) }], scroll: { note: `CSS animation-timeline (${a.timeline})` }, timing: {}, source: `css @keyframes ${a.name}`, i: a.i, el: el || { sig: a.target } });
     }
-    /* вход при загрузке: события до конца фазы «время» у элементов первого экрана */
-    const tTimeEnd = steps[timeIdx[timeIdx.length - 1]] ? steps[timeIdx[timeIdx.length - 1]].t : Infinity;
+    /* вход при загрузке: события до конца фазы «время» у элементов первого экрана (базового окна: продление ради
+       медленной петли входов не добавляет) */
+    const tTimeEnd = Math.min(steps[timeIdx[timeIdx.length - 1]] ? steps[timeIdx[timeIdx.length - 1]].t : Infinity, tTime0 + timeMs);
     const entrance = new Map();
     for (const e of ev.ev.filter((x) => (x.type === 'anim-end' || x.type === 'trans-end') && x.t <= tTimeEnd + 200)) {
       const el = byI.get(e.i); const key = `${pattern(e.sig)}|${e.name || e.prop}`;
@@ -1194,7 +1432,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
       const el = g.el; const p0 = el ? propsOf(el.u.find(Boolean)) : null; const p1 = el ? propsOf(el.u[timeIdx[timeIdx.length - 1]] || el.u.find(Boolean)) : null;
       const first = g.waapi ? g.waapi.first : (kf[g.name] && kf[g.name][0] ? kf[g.name][0].css : '');
       const last = g.waapi ? g.waapi.last : (kf[g.name] && kf[g.name].length ? kf[g.name][kf[g.name].length - 1].css : '');
-      const isScrollReveal = items.some((x) => x.i === g.i && ['reveal', 'carousel', 'marquee', 'loop', 'typewriter', 'rotating-words', 'counter'].includes(x.kind));
+      const isScrollReveal = items.some((x) => (x.i === g.i || (x.is && x.is.includes(g.i))) && ['reveal', 'carousel', 'marquee', 'loop', 'typewriter', 'rotating-words', 'counter'].includes(x.kind));
       if (isScrollReveal) continue;
       items.push({ kind: 'entrance', trigger: 'load', props: [{ prop: g.prop || g.name, from: first.slice(0, 70) || (p0 ? `прозрачность ${p0.op}` : ''), to: last.slice(0, 70) || (p1 ? `прозрачность ${p1.op}` : '') }],
         timing: { duration: Math.max(...g.durs), easing: g.waapi ? g.waapi.easing : (el ? easeName(g.name ? el.anim.ease : el.trans.ease) : '') }, source: g.waapi ? 'element.animate' : (g.name ? `css @keyframes ${g.name}` : `переход ${g.prop}`), i: g.i, el: el || { sig: g.sig }, count: g.n > 1 ? g.n : undefined });
@@ -1301,8 +1539,12 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
         || (f.kind === 'scroll-linked' && it.kind === 'scroll-linked' && f.props.map((p) => p.prop + r1(p.from) + r1(p.to)).join() === it.props.map((p) => p.prop + r1(p.from) + r1(p.to)).join())
         || (f.kind === 'hover' && it.kind === 'hover' && f.component === it.component && f.sub === it.sub && f.props.map((p) => p.prop + p.from + p.to).join() === it.props.map((p) => p.prop + p.from + p.to).join())
         || (f.kind === 'parallax' && it.kind === 'parallax' && f.el.parent && f.el.parent === it.el.parent));
-      if (same) { same.count = (same.count || 1) + 1; if (same.examples.length < 3) same.examples.push(it.el.sig); if (it.kind === 'parallax' && it.scroll) same.coefs.push(it.scroll.coefficient); continue; }
-      final.push({ ...it, _key: key, count: it.count || 1, examples: [it.el.sig], coefs: it.scroll && it.kind === 'parallax' ? [it.scroll.coefficient] : [] });
+      if (same) {
+        if (it.members) { same.count = (same.count || 1) + (it.count || 1); same.members = [...(same.members || []), ...it.members].slice(0, 30); same.is = [...(same.is || []), ...it.is]; for (const m of it.members) if (same.examples.length < 3) same.examples.push(m); continue; }
+        same.count = (same.count || 1) + 1; if (same.examples.length < 3) same.examples.push(it.el.sig); if (it.kind === 'parallax' && it.scroll) same.coefs.push(it.scroll.coefficient); continue;
+      }
+      /* строка группы петель — участники в examples (первые три), решение compare — и на группу (members, parent) */
+      final.push({ ...it, _key: key, count: it.count || 1, examples: it.members ? it.members.slice(0, 3) : [it.el.sig], coefs: it.scroll && it.kind === 'parallax' ? [it.scroll.coefficient] : [] });
     }
     /* строки без изменения («сдвиг X 0 px → 0 px»: дрожь меньше шага округления) — не движение */
     for (const it of final) it.props = it.props.filter((p) => !(p.from !== '' && p.from === p.to));
@@ -1322,14 +1564,15 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
             const x = Math.max(0, r.left - 12), y = Math.max(0, r.top - 12);
             /* область снимка — в координатах документа (puppeteer 25), внутри окна */
             return { x: x + scrollX, y: y + scrollY, width: Math.max(8, Math.min(innerWidth - x, r.width + 24)), height: Math.max(8, Math.min(innerHeight - y, r.height + 24)) };
-          }, { i: it.i, hover: it.hover });
+          }, { i: it.cropI ?? it.i, hover: it.hover });
           if (box) { await sleep(250); const f = path.join(cropDir, `${it.id}.png`); await page.screenshot({ path: f, clip: box, captureBeyondViewport: false }); it.crop = path.relative(out, f).replace(/\\/g, '/'); }
         } catch (e) { /* без вырезки */ }
       }
-      delete it.el; delete it._key; if (!it.coefs.length) delete it.coefs;
+      if (it.el.expectNot) it.expectNot = it.el.expectNot;
+      delete it.el; delete it._key; delete it.is; delete it.mk; delete it.cropI; if (!it.coefs.length) delete it.coefs;
     }
     result.items = final;
-    result.stats = { steps: { time: timeIdx.length, scroll: scrollIdx.length, up: upSteps.length }, observed: n, changed: data.series.length, events: ev.ev.length, waapi: ev.waapi.length, classChanges: ev.cls.length, capped: ev.capped, seconds: round((Date.now() - t0) / 1000, 1) };
+    result.stats = { steps: { time: timeIdx.length, scroll: scrollIdx.length, up: upSteps.length, timeMs: timeObs, timeBaseMs: timeMs, peeks }, slowUnresolved: perEl.filter((x) => unresolved(x.cls)).length || undefined, observed: n, inDom: all, changed: data.series.length, events: ev.ev.length, waapi: ev.waapi.length, classChanges: ev.cls.length, capped: ev.capped, seconds: round((Date.now() - t0) / 1000, 1) };
     if (!result.libs.reducedRule) result.notes.push('правила prefers-reduced-motion в CSS нет — у нас обязательно (reference/motion.md)');
     if (ev.capped) result.notes.push('событий больше 8000 — часть не записана');
     await page.close();
@@ -1341,12 +1584,12 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, hoverN = 14, do
 /* ---------- отчёт ---------- */
 function mdTable(res) {
   const L = [`# Движение: ${res.url} (${res.viewport} ${res.size})`, '',
-    `Снято ${res.takenAt.slice(0, 16).replace('T', ' ')} · motion.mjs · за ${res.stats ? res.stats.seconds : '?'} с · окно cookie: ${res.consent || '—'} · библиотеки: ${res.libs.libs && res.libs.libs.length ? res.libs.libs.join(', ') : 'не видно'} · «меньше движения»: ${res.libs.reducedRule ? 'правило есть' : 'НЕТ'}${res.libs.smoothCss ? ' · html{scroll-behavior:smooth}' : ''}`, '',
+    `Снято ${res.takenAt.slice(0, 16).replace('T', ' ')} · motion.mjs · за ${res.stats ? res.stats.seconds : '?'} с${res.stats && res.stats.steps.timeMs > res.stats.steps.timeBaseMs + 500 ? ` · окно «время» ${round(res.stats.steps.timeMs / 1000, 1)} с (продлено ради медленного движения)` : ''} · окно cookie: ${res.consent || '—'} · библиотеки: ${res.libs.libs && res.libs.libs.length ? res.libs.libs.join(', ') : 'не видно'} · «меньше движения»: ${res.libs.reducedRule ? 'правило есть' : 'НЕТ'}${res.libs.smoothCss ? ' · html{scroll-behavior:smooth}' : ''}`, '',
     '| № | вид | где | запуск | что меняется | параметры | как повторить |', '|---|---|---|---|---|---|---|'];
   for (const it of res.items) {
     /* одинаковый эффект у разных элементов — назвать и остальные (до двух) */
     const others = [...new Set((it.examples || []).map(pattern))].filter((x) => x !== pattern(it.target)).slice(0, 2);
-    const where = `\`${it.target}\`${it.count > 1 ? ` ×${it.count}` : ''}${others.length ? ` (и ${others.map((x) => `\`${x}\``).join(', ')})` : ''}${it.text ? ` «${it.text.slice(0, 28)}»` : ''}${it.crop ? ` [вырезка](${it.crop})` : ''}`;
+    const where = `\`${it.target}\`${it.count > 1 ? ` ×${it.count}` : ''}${others.length ? ` (и ${others.map((x) => `\`${x}\``).join(', ')})` : ''}${it.members && it.count > 1 && it.parent ? ` · соседи в \`${it.parent}\`` : ''}${it.text ? ` «${it.text.slice(0, 28)}»` : ''}${it.crop ? ` [вырезка](${it.crop})` : ''}`;
     const what = it.props.map((p) => `${p.prop}${p.from || p.to ? `: ${p.from} → ${p.to}` : ''}`).join('; ');
     const par = describeTiming(it) + (it.coefs && it.coefs.length > 1 ? `; слои: ${it.coefs.join(', ')}` : '') + (it.source ? ` · ${it.source}` : '');
     L.push(`| ${it.id} | ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''}${it.component ? `, ${it.component}` : ''} | ${where} | ${describeTrigger(it)} | ${what.replace(/\|/g, '/')} | ${par.replace(/\|/g, '/')} | \`${it.recipe}\` |`);
@@ -1403,15 +1646,22 @@ function similar(d, o) {
   if (d.scroll && o.scroll && Number.isFinite(d.scroll.startPct) && Number.isFinite(o.scroll.startPct) && (Math.abs(d.scroll.startPct - o.scroll.startPct) > 20 || Math.abs(d.scroll.endPct - o.scroll.endPct) > 20)) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.startPct}% → ${d.scroll.endPct}%, у нас ${o.scroll.startPct}% → ${o.scroll.endPct}%`); score -= 0.1; }
   return { score: Math.max(0.05, score), diffs, notes: [] };
 }
+/* Решение по строке донора: первый найденный ключ — номер, «вид:подпись», «вид:подпись» любого участника группы
+   (старые решения на картинку стопки работают), «вид:<родитель> > *» — на всю группу детей, вид. Голый
+   «loop:<родитель>» — решение про сам родитель (у shapefest он качается своей строкой), детей не закрывает. */
+function decisionFor(d, dec) {
+  const keys = [d.id, `${d.kind}:${pattern(d.target)}`, ...(d.members || []).map((m) => `${d.kind}:${pattern(m)}`), ...(d.parent ? [`${d.kind}:${d.parent} > *`] : []), d.kind];
+  const k = keys.find((x) => x && Object.prototype.hasOwnProperty.call(dec, x) && dec[x]); return k ? { key: k, text: String(dec[k]) } : null;
+}
 /* одно наше движение может закрывать несколько одинаковых у донора (одна анимация карточек на весь каталог) */
 function compare(donor, ours, decisions) {
   const rows = []; const used = new Set();
   for (const d of donor.items) {
     let best = null;
     for (const o of ours.items) { const s = similar(d, o); if (s.score > 0 && (!best || s.score > best.s.score || (s.score === best.s.score && !used.has(o.id) && used.has(best.o.id)))) best = { o, s }; }
-    const dec = decisions[d.id] || decisions[`${d.kind}:${pattern(d.target)}`] || decisions[d.kind];
-    if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, notes: best.s.notes || [], decision: dec || '' }); }
-    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : 'НЕТ', diffs: [], notes: [], decision: dec || '' });
+    const hit = decisionFor(d, decisions); const dec = hit ? hit.text : ''; const key = hit ? hit.key : '';
+    if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, notes: best.s.notes || [], decision: dec, key }); }
+    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : 'НЕТ', diffs: [], notes: [], decision: dec, key });
   }
   const extra = ours.items.filter((o) => !used.has(o.id));
   const miss = rows.filter((r) => r.status === 'НЕТ').length, diff = rows.filter((r) => r.status === 'ОТЛИЧАЕТСЯ' && !r.decision).length;
@@ -1420,13 +1670,14 @@ function compare(donor, ours, decisions) {
 }
 function mdCompare(c, donor, ours) {
   const L = [`# Сверка движения: донор → наш сайт`, '', `Донор: ${donor.url} (${donor.viewport}) · наш: ${ours.url} (${ours.viewport}) · вердикт **${c.verdict}** (нет без решения: ${c.miss}, отличается: ${c.diff})`, '',
-    '| донор | вид | у донора | у нас | статус | разница / решение |', '|---|---|---|---|---|---|'];
+    '| донор | вид | у донора | у нас | статус | разница / решение | ключ решения |', '|---|---|---|---|---|---|---|'];
   for (const r of c.rows) {
     const d = r.d; const dWhat = `\`${d.target}\`${d.count > 1 ? ` ×${d.count}` : ''}: ${d.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 90)}`;
-    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${r.o ? `${r.o.id} \`${r.o.target}\`` : '—'} | ${r.status} | ${[...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} |`);
+    const hint = !r.key && r.status !== 'OK' && d.parent && d.count > 1 ? `на группу — \`${d.kind}:${d.parent} > *\`` : '—';   /* строка ×N без решения: каким ключом закрыть */
+    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${r.o ? `${r.o.id} \`${r.o.target}\`` : '—'} | ${r.status} | ${[...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} | ${r.key ? `\`${r.key.replace(/\|/g, '/')}\`` : hint} |`);
   }
   L.push('', `## Своё (у донора нет) — ${c.extra.length}`, '', ...(c.extra.length ? c.extra.map((o) => `- ${o.id} ${KIND_RU[o.kind] || o.kind}${o.sub ? ` (${o.sub})` : ''} — \`${o.target}\`: ${o.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 100)}`) : ['- нет']),
-    '', 'Решения «почему нет / чем заменено» — `motion-decisions.json` в папке прогона: { "m04": "почему", "reveal:div.card": "почему" }.', 'Своё — сверить с банком идей (`ideas.mjs list`): задумано ли, записать удачное.');
+    '', 'Решения «почему нет / чем заменено» — `motion-decisions.json` в папке прогона: { "m04": "почему", "reveal:div.card": "почему" }; на группу петель (строка ×N) — "loop:<родитель> > *".', 'Своё — сверить с банком идей (`ideas.mjs list`): задумано ли, записать удачное.');
   return L.join('\n') + '\n';
 }
 
@@ -1436,11 +1687,13 @@ function mdCompare(c, donor, ours) {
 const cmd = pos[0] === 'compare' || pos[0] === 'selftest' ? pos.shift() : 'inventory';
 const timeMs = opt.time !== undefined ? Number(opt.time) : 6000;
 if (!(timeMs >= 1000 && timeMs <= 20000)) die('--time: от 1000 до 20000 мс');
+const capMs = opt['time-cap'] !== undefined && opt['time-cap'] !== true ? Number(opt['time-cap']) : LOOP.cap;
+if (!(capMs >= 1000 && capMs <= 60000)) die('--time-cap: от 1000 до 60000 мс');
 const hoverN = opt.hover !== undefined && opt.hover !== true ? Number(opt.hover) : 14;
 if (!(hoverN >= 0 && hoverN <= 60)) die('--hover: от 0 до 60');
 const clickN = opt.clicks !== undefined && opt.clicks !== true ? Number(opt.clicks) : 6;
 if (!(clickN >= 0 && clickN <= 20)) die('--clicks: от 0 до 20');
-const phases = { timeMs, hoverN, clickN, doHover: !opt['no-hover'], doMouse: !opt['no-mouse'], doScroll: !opt['no-scroll'], doClicks: !opt['no-clicks'] && clickN > 0, crops: !opt['no-crops'] };
+const phases = { timeMs, capMs, hoverN, clickN, doHover: !opt['no-hover'], doMouse: !opt['no-mouse'], doScroll: !opt['no-scroll'], doClicks: !opt['no-clicks'] && clickN > 0, crops: !opt['no-crops'] };
 const vpList = (v) => String(v && v !== true ? v : 'desktop').split(',').map((x) => x.trim()).filter(Boolean);
 for (const v of vpList(opt.viewport)) if (!resolveViewport(v)) die(`Неизвестный экран: ${v}`);
 
@@ -1453,13 +1706,45 @@ if (cmd === 'selftest') {
   const expected = [...html.matchAll(/data-expect="([\w-]+)"/g)].map((m) => m[1]).filter((k) => phases.doClicks || !/^click-/.test(k));
   const need = [...new Set(expected)];
   const CK = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure' };
-  const key = (i) => (i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind === 'click' ? (i.sub === 'аккордеон' && /details/.test(i.component || '') ? 'click-details' : CK[i.sub] || 'click') : i.kind);
+  /* петли на JS (source js): группа соседей ×N — loop-group, одна — loop-js (колебание), pulse-js, blink-js, spin-js */
+  const JSK = { 'колебание': 'loop-js', 'пульс': 'pulse-js', 'мигание': 'blink-js', 'вращение': 'spin-js' };
+  const key = (i) => (i.kind === 'loop' && i.source === 'js' ? (i.count > 1 ? 'loop-group' : JSK[i.sub] || 'loop-js') : i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind === 'click' ? (i.sub === 'аккордеон' && /details/.test(i.component || '') ? 'click-details' : CK[i.sub] || 'click') : i.kind);
   const found = new Set(res.items.map(key));
   const byExpect = new Set(res.items.map((i) => i.expect).filter(Boolean));
   let bad = 0;
   for (const k of need) { const ok = found.has(k); const at = byExpect.has(k); if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${k}${ok ? (at ? '' : ' (найдено, но не на своём блоке)') : ' — не найдено'}`); }
+  /* data-expect-not: на этом блоке такого вида быть не должно (пружина входа — не петля) */
+  const nots = [...new Set([...html.matchAll(/data-expect-not="([\w -]+)"/g)].flatMap((m) => m[1].split(/\s+/)).filter(Boolean))]; let wrong = 0;
+  for (const k of nots) { const hit = res.items.filter((i) => i.expectNot && i.expectNot.split(/\s+/).includes(k) && (i.kind === k || key(i) === k)); if (hit.length) wrong++; console.log(`${hit.length ? 'FAIL' : 'OK  '} не ${k}${hit.length ? ` — найдено на блоке, где его быть не должно: ${hit.map((i) => `${i.id} ${i.target}`).join(', ')}` : ''}`); }
+  /* data-expect-n: строка ×N на своём блоке — одна и участников ровно N (стопка — одной строкой, не поштучно) */
+  for (const [, k, n] of html.matchAll(/data-expect="([\w-]+)"[^>]*?data-expect-n="(\d+)"/g)) {
+    const rows = res.items.filter((i) => i.expect === k && key(i) === k); const ok = rows.length === 1 && rows[0].count === Number(n); if (!ok) wrong++;
+    console.log(`${ok ? 'OK  ' : 'FAIL'} ${k} ×${n}${ok ? '' : ` — строк ${rows.length}${rows.length ? `, участников ${rows.map((i) => i.count).join('/')}` : ''}`}`);
+  }
+  const st = res.stats.steps;
   console.log(`\n${mdTable(res)}`);
-  console.log(`${bad ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad} · ${path.join(out, 'motion', 'selftest.json')}`);
+  /* клики на телефоне со страницей шире экрана: видимое окно увеличено ×1.25 (Emulation.setPageScaleFactor — так
+     бывает после прохода discover, scale 1.056), окно раскладки больше видимого. Точка из getBoundingClientRect
+     должна попадать (сдвиг на offset, без «× scale»), меню в шапке — нажаться или честно «за краем экрана» */
+  let wide = 0;
+  if (phases.doClicks) {
+    const [, mvp] = resolveViewport('mobile'); const br = await launch();
+    try {
+      const page = await preparePage(br, mvp, {}); await page.evaluateOnNewDocument(instrument);
+      await gotoRetry(page, url, { waitUntil: 'load', timeout: 60000 });
+      const cdp = await page.createCDPSession(); await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.25 }); await sleep(300);
+      const w = await page.evaluate(() => ({ iw: innerWidth, vw: Math.round(visualViewport.width), sc: Math.round(visualViewport.scale * 100) / 100 }));
+      const ck = await probeClicks(page, mvp, { sig: SIG_FN, screenPt: SCREEN_POINT_FN }, { maxN: clickN });
+      const got = new Set(ck.items.map((it) => (it.sub === 'аккордеон' && /details/.test(it.component || '') ? 'click-details' : CK[it.sub])));
+      console.log(`\nклики на телефоне ×${w.sc}: окно раскладки ${w.iw} px, видимое ${w.vw} px`);
+      for (const k of ['click-accordion', 'click-details', 'click-tabs', 'click-disclosure']) { const ok = got.has(k); if (!ok) wide++; console.log(`${ok ? 'OK  ' : 'FAIL'} ×1.25 ${k}${ok ? '' : ` — не найдено (${ck.notes.filter((n) => !/меню/.test(n)).join('; ').slice(0, 200) || 'без заметок'})`}`); }
+      const edge = ck.notes.find((n) => /меню/.test(n) && /за краем экрана/.test(n)); const ok = got.has('click-menu') || !!edge; if (!ok) wide++;
+      console.log(`${ok ? 'OK  ' : 'FAIL'} ×1.25 click-menu — ${got.has('click-menu') ? 'нажато' : edge ? 'за краем экрана (не нажимается, как у человека)' : `не найдено (${ck.notes.join('; ').slice(0, 200)})`}`);
+      await page.close();
+    } finally { await br.close().catch(() => {}); }
+  }
+  console.log(`${bad || wrong || wide ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad}; запретов и счётов ×N не выполнено ${wrong}; кликов ×1.25 мимо ${wide} · окно «время» ${round(st.timeMs / 1000, 1)} с (базовое ${round(st.timeBaseMs / 1000, 1)}) · ${path.join(out, 'motion', 'selftest.json')}`);
+  bad += wrong + wide;
   process.exit(bad ? 1 : 0);
 }
 
@@ -1522,12 +1807,12 @@ if (cmd === 'compare') {
       const dname = path.basename(donorFile, '.json').replace(/^donor-/, '');
       const tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
       const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
-        steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}`, details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
+        steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
         extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
       writeJson(path.join(out, 'motion', `${tag}.json`), proto);
       fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
       if (many) console.log(`\n== ${donorFile} → ${ourArg}`);
-      for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение: ${r.decision}` : ''}`);
+      for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
       console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
       console.log(`${c.verdict}: сверка движения · ${path.join(out, 'motion', `${tag}.md`)}`);
       if (rank[c.verdict] > rank[worst]) worst = c.verdict;

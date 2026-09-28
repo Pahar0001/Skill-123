@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>motion.mjs — стенд всех видов движения</title>
 <!-- Стенд для `motion.mjs selftest`: здесь есть каждый вид движения, который скрипт должен узнать.
-     У каждого блока data-expect — какой вид ждём (selftest сверяет найденное с этим списком).
+     У каждого блока data-expect — какой вид ждём (selftest сверяет найденное с этим списком); data-expect-n —
+     сколько участников у строки ×N; data-expect-not — каких видов (через пробел) на блоке быть не должно.
      Внешних файлов нет: страница открывается по file:// и через serve.mjs. -->
 <style>
   * { box-sizing: border-box; }
@@ -52,6 +53,16 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .pulse { width: 90px; height: 90px; border-radius: 20px; background: #2fb468; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(1.12); } }
+  /* 6а. петли на JS (requestAnimationFrame + style.transform): стопка картинок как у shapefest — у каждой свой
+     период 9.6–13 с, старт общий, вразнобой (одна строка ×3); медленное парение ±4 px за 6 с; пульс ×1↔1.05 за
+     4 с; вход с затухающим качанием (пружина) — не петля */
+  .jsloops { display: flex; flex-wrap: wrap; gap: 60px; align-items: center; }   /* на телефоне — в столбик: страница не шире экрана */
+  .stack { position: relative; width: 240px; height: 150px; }
+  .stack__pic { position: absolute; top: 20px; width: 90px; height: 110px; border-radius: 10px; background: #866bff; transform-origin: 50% 100%; }
+  .stack__pic:nth-child(1) { left: 0; } .stack__pic:nth-child(2) { left: 75px; background: #5cceff; } .stack__pic:nth-child(3) { left: 150px; background: #ffb03a; }
+  .jsfloat, .jspulse, .spring { width: 90px; height: 90px; border-radius: 50%; background: #1c90f0; }
+  .jspulse { border-radius: 20px; background: #e8413c; }
+  .spring { border-radius: 14px; background: #2fb468; }
 
   /* 7. появление карточек по очереди (IO добавляет класс) */
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -65,7 +76,7 @@
   .l1 { left: 10%; top: 120px; background: #866bff; } .l2 { left: 40%; top: 200px; background: #5cceff; } .l3 { left: 70%; top: 160px; background: #ffb03a; }
 
   /* 9. фон, который при въезде уменьшается и гаснет (JS, как у shapefest) */
-  .banner { height: 420px; margin: 0 6vw; border-radius: 40px; overflow: hidden; background: #000; }
+  .banner { position: relative; height: 420px; margin: 0 6vw; border-radius: 40px; overflow: hidden; background: #000; }   /* relative — фон ×1.4 обрезается баннером, страница не шире экрана */
   .banner__bg { position: absolute; inset: 0; background: radial-gradient(circle at 30% 40%, #444 0 18%, transparent 19%), radial-gradient(circle at 70% 60%, #666 0 22%, transparent 23%); transform-origin: 50% 50%; }
 
   /* 10. CSS-анимация по прокрутке (animation-timeline: view()) */
@@ -80,7 +91,7 @@
 
   /* 12–16 */
   .counter { font-size: 64px; font-weight: 800; }
-  .carousel { overflow: hidden; width: 420px; border-radius: 16px; }
+  .carousel { overflow: hidden; width: 420px; max-width: 100%; border-radius: 16px; }   /* на телефоне не шире экрана: иначе бургер шапки за краем */
   .slides { display: flex; transition: transform .6s ease; }
   .slides div { flex: none; width: 420px; height: 200px; display: grid; place-items: center; font-size: 30px; color: #fff; }
   .clip { height: 220px; border-radius: 16px; background: #6a4ee1; clip-path: inset(0 100% 0 0); transition: clip-path 1s ease; }
@@ -145,6 +156,15 @@
   <div class="float" data-expect="float"></div>
   <div class="spin" data-expect="spin"></div>
   <div class="pulse" data-expect="pulse"></div>
+</section>
+
+<section class="jsloops">
+  <div class="stack" data-expect="loop-group" data-expect-n="3">
+    <div class="stack__pic" data-a="5" data-t="9.6"></div><div class="stack__pic" data-a="-3" data-t="11.2"></div><div class="stack__pic" data-a="5" data-t="13"></div>
+  </div>
+  <div><div class="jsfloat" data-expect="loop-js"></div></div>
+  <div><div class="jspulse" data-expect="pulse-js"></div></div>
+  <div data-expect-not="loop carousel"><div class="spring"></div></div>
 </section>
 
 <section id="cards"><h2>Появление по очереди</h2>
@@ -221,6 +241,21 @@
     await new Promise((r) => setTimeout(r, 900));
     for (let n = w.length; n >= 0; n--) { type.textContent = w.slice(0, n); await new Promise((r) => setTimeout(r, 35)); }
   } })();
+  /* петли на JS: стопка (период у каждой свой, старт общий), парение, пульс — покадрово через style.transform */
+  const pics = [...document.querySelectorAll('.stack__pic')], jsfloat = document.querySelector('.jsfloat'), jspulse = document.querySelector('.jspulse');
+  if (!reduce) (function frame(now) {
+    const s = now / 1000;
+    for (const p of pics) { const a = +p.dataset.a, T = +p.dataset.t; p.style.transform = `rotate(${(a / 2 * (1 - Math.cos(2 * Math.PI * s / T))).toFixed(3)}deg)`; }
+    jsfloat.style.transform = `translateY(${(4 * Math.sin(2 * Math.PI * s / 6)).toFixed(2)}px)`;
+    jspulse.style.transform = `scale(${(1.025 - 0.025 * Math.cos(2 * Math.PI * s / 4)).toFixed(4)})`;
+    requestAnimationFrame(frame);
+  })(performance.now());
+  /* пружина: вход сверху с затухающим качанием, ~4 с. Под motion.mjs — через 0.4 с после начала наблюдения
+     (window.__moS), чтобы окно «время» видело её целиком; открыли руками — через 20 с */
+  const spring = document.querySelector('.spring');
+  const springGo = () => { if (reduce || spring.dataset.go) return; spring.dataset.go = '1'; const t0 = performance.now();
+    (function f(t) { const s = (t - t0) / 1000; if (s > 6) { spring.style.transform = 'none'; return; } spring.style.transform = `translateY(${(-30 * Math.exp(-s / 1.1) * Math.cos(2 * Math.PI * s / 1.2)).toFixed(2)}px)`; requestAnimationFrame(f); })(t0); };
+  { const w0 = performance.now(); (function wait() { if (window.__moS) setTimeout(springGo, 400); else if (performance.now() - w0 > 20000) springGo(); else setTimeout(wait, 50); })(); }
   /* вход через WAAPI */
   document.querySelector('.pop').animate([{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 700, easing: 'ease-out', fill: 'both' });
   /* мышь: наклон карточки и свой курсор */
