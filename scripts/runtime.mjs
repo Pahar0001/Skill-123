@@ -142,7 +142,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
+  flagsDump, launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
 } from './lib.mjs';
@@ -154,6 +154,8 @@ const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', '
 const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'help', 'h']);
 /* настройки со значением */
 const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser']);
+/* справочник флагов (flags-doc.mjs, RW_FLAGS_DUMP=1): списки выше и выход с кодом 0 — до справки и разбора */
+flagsDump({ steps: [...STEP], flags: [...FLAG].filter((f) => !STEP.has(f)), values: [...OPTS], optional: [], commands: [] });
 const usage = (msg) => { console.error(msg); process.exit(2); };
 const short = (s, n = 60) => String(s).replace(/\s+/g, ' ').slice(0, n);
 /* имя флага из слова: «--scroll», «--scroll=1» → scroll; «-h» → h; не флаг → null */
@@ -192,12 +194,14 @@ const isUrlWord = (s) => { try { return /^(https?|file|data|about):$/.test(new U
 const FALSE_RE = /^(0|false|no|off|нет)$/i;
 
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
+/* posAt[k] — номер слова pos[k] в argv: «лишнее слово» сразу за неизвестным флагом называется вместе с ним */
+const posAt = [];
 const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser']);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
-  if (a === '--') { pos.push(...argv.slice(i + 1).map(String)); break; }
-  if (!a.startsWith('-')) { pos.push(a); continue; }
+  if (a === '--') { for (let j = i + 1; j < argv.length; j++) { pos.push(String(argv[j])); posAt.push(j); } break; }
+  if (!a.startsWith('-')) { pos.push(a); posAt.push(i); continue; }
   /* неизвестный флаг: «--foo», «--foo=1» и любое слово с одним дефисом («-v», «-o»; «-h» — справка, выше).
      Значение — следующее слово, только если это не флаг, не «--» и не адрес: «--strict U --css»
      не съедает адрес (раньше — «Нужен адрес»), «-v U» — не «лишние слова после адреса» */
@@ -207,12 +211,13 @@ for (let i = 0; i < argv.length; i++) {
   if (!single && eqI > 0) { v = k.slice(eqI + 1); k = k.slice(0, eqI); }
   if (single || !(STEP.has(k) || FLAG.has(k) || OPTS.has(k))) {
     const shown = single ? (eqI > 0 ? a.slice(0, eqI) : a) : `--${k}`;
+    const at = i; /* до ++i: где стоит сам флаг */
     if (v === undefined && !(single && eqI > 0)) {
       const next = argv[i + 1];
       if (next !== undefined && next !== '--' && !String(next).startsWith('-') && !isUrlWord(next)) { v = String(argv[++i]); taken.push([shown, v]); }
     }
     /* «-viewport mobile» — опечатка в дефисах у известного флага: подсказать, иначе запуск тихо идёт на desktop */
-    unknown.push({ shown, word: v !== undefined && !(eqI > 0) ? v : null, guess: single && isKnown(`-${shown}`) ? `-${shown}` : null });
+    unknown.push({ shown, at, word: v !== undefined && !(eqI > 0) ? v : null, guess: single && isKnown(`-${shown}`) ? `-${shown}` : null });
     continue;
   }
   if (v !== undefined) {
@@ -259,7 +264,15 @@ if (!url) {
       : '';
   console.error(`Нужен адрес${why}: node runtime.mjs <url> [--viewport mobile] [--scroll] [--click sel] [--canvas] [--motion] ... (-h, --help — все шаги)`); process.exit(1);
 }
-if (pos.length > 1) usage(`лишние слова после адреса: ${pos.slice(1).map((p) => `«${p}»`).join(', ')} — шаги и настройки пишутся с «--» (--hover "sel"), значение с пробелами — в кавычках`);
+if (pos.length > 1) {
+  /* лишнее слово сразу за неизвестным флагом, который его не взял (адрес, «--foo=1 слово», «-v file:///…»):
+     назвать флаг рядом — иначе WARN о флаге и «лишние слова» читались как две разные ошибки */
+  const extra = pos.slice(1).map((p, k) => {
+    const u = unknown.find((x) => x.at === posAt[k + 1] - 1 && x.word == null);
+    return `«${p}»${u ? ` (сразу за неизвестным флагом ${u.shown}: у runtime его нет, и слово осталось без флага — -h, список шагов и настроек)` : ''}`;
+  });
+  usage(`лишние слова после адреса: ${extra.join(', ')} — шаги и настройки пишутся с «--» (--hover "sel"), значение с пробелами — в кавычках`);
+}
 let urlOk = null; try { urlOk = new URL(url); } catch { /* ниже */ }
 if (!urlOk || !/^(https?|file|data|about):$/.test(urlOk.protocol)) {
   const hint = fs.existsSync(url) ? ` (файл на диске: file:///${path.resolve(url).replace(/\\/g, '/')})` : /^-/.test(url) ? ' (похоже на флаг: после «--» идёт только адрес — флаги и -h пишите до «--»)' : /^[\w.-]+(:\d+)?(\/|$)/.test(url) ? ` (например, http://${url})` : '';

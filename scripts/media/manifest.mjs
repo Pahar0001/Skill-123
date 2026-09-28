@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeJson } from '../lib.mjs';
 
 export const MANIFEST = 'manifest.json';
 export const CREDITS = 'credits.json';
@@ -18,9 +19,11 @@ export function readManifest(dir) {
   if (!fs.existsSync(f)) return null;
   return JSON.parse(fs.readFileSync(f, 'utf8'));
 }
+/* через lib.writeJson: в манифест пишется generator — какой версией media.mjs (и media/*.mjs) собран;
+   прежний generator снимается, иначе writeJson сохранил бы его как есть */
 export function writeManifest(dir, m) {
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, MANIFEST), JSON.stringify(m, null, 1));
+  const { generator, ...rest } = m || {};
+  writeJson(path.join(dir, MANIFEST), rest);
 }
 
 /* ---------- ворота ---------- */

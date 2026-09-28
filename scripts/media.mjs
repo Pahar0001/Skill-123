@@ -114,7 +114,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadSharp, getFfmpeg, parseArgs, ensureDir, slugFromUrl } from './lib.mjs';
+import { loadSharp, getFfmpeg, parseArgs, ensureDir, runDir, capSlug, trackModule } from './lib.mjs';
 import * as net from './media/net.mjs';
 import { SOURCES, PROFILES, chooseFile, flagsFor, headersFor, ORIENT } from './media/photo.mjs';
 import { ROLES, MAX_GRAIN, makePreview, makeMosaic, hamming, buildSheets, processPhoto, applyLook, unsplashMarkup, cssLook, slugify, kb, mb, parseLook, parseRatio, orientedSize, headerDims } from './media/process.mjs';
@@ -125,7 +125,7 @@ import { readManifest, writeManifest, gate, resolveLicense, LICENSES, saveCredit
 const FLAGS = ['ok-flags', 'fresh', 'not-editorial', 'help', 'h'];
 /* флаги со значением — «optional»: значение берётся, если следующее слово не флаг (проверка «без значения» ниже) */
 const OPTIONAL = ['kind', 'profile', 'role', 'orient', 'min', 'sources', 'n', 'frames', 'out', 'run', 'seen', 'caption', 'name', 'dest', 'look', 'contrast', 'grain', 'crop-mobile', 'ratio', 'src-prefix', 'avif', 'start', 'dur', 'fade', 'license', 'author', 'author-url', 'title', 'file-url', 'md'];
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS, optional: OPTIONAL, commands: ['doctor', 'search', 'pick', 'import', 'credits'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: FLAGS, optional: OPTIONAL, commands: ['doctor', 'search', 'pick', 'import', 'credits'], strict: true });
 /* Флаги со значением: без значения (`--role` в конце или перед другим флагом) — ошибка до сети
    и файлов, а не молчаливое «по умолчанию» (`--out` без значения раньше создавал папку «true»).
    --md у credits значение может не иметь; --seen и --caption проверяют ворота (код 2). */
@@ -159,6 +159,7 @@ function videoModulePath() {
 async function loadVideo() {
   const f = videoModulePath();
   if (!fs.existsSync(f)) return null;
+  trackModule(f); /* путь вычисляется (MEDIA_VIDEO_MODULE) — версия модуля в generator.deps */
   const m = await import(pathToFileURL(f).href);
   for (const fn of ['search', 'resolve', 'encode']) if (typeof m[fn] !== 'function') throw new Error(`${path.basename(f)} не экспортирует ${fn}() — см. MEDIA_API.md`);
   return m;
@@ -211,21 +212,22 @@ function sanitizeCand(c) {
   return JSON.parse(JSON.stringify(rest).replace(/([?&](?:key|api_key|client_id|access_key|token)=)[^&"\\]+/gi, '$1***'));
 }
 /**
- * Папка прогона для --run: адрес сайта — slug как у остальных скриптов (lib.slugFromUrl:
- * http://localhost:4177/ → localhost-4177, путь страницы входит в имя); полный путь — сама
- * папка; иначе — slug (без --run — «media», как раньше). Только вычисляет, ничего не создаёт.
+ * Папка прогона для --run: адрес сайта — папка как у остальных скриптов (lib.runDir и slugFromUrl:
+ * http://localhost:4177/ → localhost-4177, путь страницы входит в имя, не длиннее 60 знаков — длинное
+ * имя получает хеш, иначе sharp и ffmpeg падали на пути длиннее 260; прежняя папка под полным
+ * именем берётся с WARN); полный путь — сама папка; иначе — slug (готовый — тоже до 60 знаков с
+ * хешем; без --run — «media», как раньше). Только вычисляет, ничего не создаёт.
  */
 function runBase() {
   const run = str(opt.run).trim();
   if (!run) return path.join(RUNS, slugify('_media', 60));
   if (/^(https?|file):\/\//i.test(run)) {
-    let slug;
-    try { slug = slugFromUrl(run); } catch { fail(`--run ${run}: не разобрать адрес`); }
-    return path.join(RUNS, slug);
+    try { return runDir({}, run); } catch { fail(`--run ${run}: не разобрать адрес`); }
   }
   if (path.isAbsolute(run)) return path.resolve(run);
-  /* готовый slug (как печатают discover и shots) не обрезается: длинный путь страницы даёт длинное имя */
-  return path.join(RUNS, slugify(run, /^[a-z0-9-]+$/i.test(run) ? 200 : 60));
+  /* готовый slug (как печатают discover и shots) — по тому же пределу, что у адреса (capSlug): имя
+     до 60 знаков прежнее, длиннее — начало и хеш, как папка, которую для этого адреса создали скрипты */
+  return path.join(RUNS, /^[a-z0-9-]+$/i.test(run) ? capSlug(slugify(run, 200)) : slugify(run, 60));
 }
 function searchDir(q, kind, profile) {
   if (opt.out) return path.resolve(String(opt.out));

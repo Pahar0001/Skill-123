@@ -91,8 +91,9 @@
  *
  * Версия скрипта. Протоколы скриптов скилла несут поле generator (lib.writeJson): имя
  * скрипта, его последний коммит в git скилла, были ли незакоммиченные правки, то же для
- * lib.mjs. Протокол, снятый другой версией (коммит скрипта или lib.mjs не тот, что сейчас
- * рядом со state.mjs, или в момент съёмки либо сейчас в файле незакоммиченные правки),
+ * lib.mjs и подключаемых модулей (generator.deps: texture.mjs у a11y и perf, taste.mjs у
+ * cliche, extract.mjs у discover). Протокол, снятый другой версией (коммит скрипта, lib.mjs
+ * или модуля из deps не тот, что сейчас рядом со state.mjs, или в момент съёмки либо сейчас в файле незакоммиченные правки),
  * принимается, но с WARN «протокол снят другой версией скрипта (<коммит> против <текущий>)
  * — перепрогнать»: инструмент менялся между замером и отметкой. Протокол без generator
  * (снят раньше) принимается как прежде; в show у него пометка «версия скрипта неизвестна».
@@ -265,8 +266,16 @@ function findStep(items, spec) {
 
 const SCRIPTS_DIR = path.dirname(fileURLToPath(import.meta.url));
 let currentVersions;
-/* текущая версия файла скилла по имени (runtime.mjs, lib.mjs): git — один раз на процесс, на все скрипты сразу */
+/* ключ зависимости с «/» (generator.deps) — путь от папки скиллов: site-rework/scripts/texture.mjs,
+   design-reference/scripts/extract.mjs; полный путь (модуль вне папки скиллов) — как есть */
+const SKILLS_ROOT = path.dirname(path.dirname(SCRIPTS_DIR));
+const depVersions = new Map();
+/* текущая версия файла скилла по имени (runtime.mjs, lib.mjs) или по ключу зависимости: git — один раз на процесс, на все скрипты сразу */
 function currentVersion(name) {
+  if (/[\\/]/.test(String(name))) {
+    if (!depVersions.has(name)) { const abs = path.resolve(SKILLS_ROOT, String(name)); depVersions.set(name, fs.existsSync(abs) ? codeVersion([abs])[abs] || null : null); }
+    return depVersions.get(name);
+  }
   if (!currentVersions) {
     let files = []; try { files = fs.readdirSync(SCRIPTS_DIR).filter((f) => f.endsWith('.mjs')).map((f) => path.join(SCRIPTS_DIR, f)); } catch { /* нет папки */ }
     currentVersions = Object.fromEntries(Object.entries(codeVersion(files)).map(([f, v]) => [path.basename(f), v]));
@@ -286,17 +295,20 @@ const sameCommit = (a, b) => !!a && !!b && (String(a).startsWith(String(b)) || S
 function versionCheck(g) {
   if (!g || typeof g !== 'object' || !g.script) return { gen: null, warn: null, note: 'версия скрипта неизвестна (протокол без generator)' };
   const name = path.basename(String(g.script));
-  const gen = { script: name, commit: g.commit ?? null, dirty: g.dirty ?? null, ...(g.lib && typeof g.lib === 'object' ? { lib: { commit: g.lib.commit ?? null, dirty: g.lib.dirty ?? null } } : {}) };
-  const parts = [[name, gen], ...(gen.lib ? [['lib.mjs', gen.lib]] : [])];
+  /* deps (с 28.09.2026) — подключаемые модули: texture.mjs у a11y и perf, taste.mjs у cliche, extract.mjs у discover */
+  const deps = g.deps && typeof g.deps === 'object' && !Array.isArray(g.deps) ? Object.fromEntries(Object.entries(g.deps).map(([k, x]) => [k, { commit: x?.commit ?? null, dirty: x?.dirty ?? null }])) : null;
+  const gen = { script: name, commit: g.commit ?? null, dirty: g.dirty ?? null, ...(g.lib && typeof g.lib === 'object' ? { lib: { commit: g.lib.commit ?? null, dirty: g.lib.dirty ?? null } } : {}), ...(deps && Object.keys(deps).length ? { deps } : {}) };
+  const parts = [[name, gen], ...(gen.lib ? [['lib.mjs', gen.lib]] : []), ...Object.entries(gen.deps || {})];
   const diffs = []; const unknown = []; let wasDirty = false; let nowDirty = false;
   for (const [n, was] of parts) {
     const now = currentVersion(n);
-    if (was.commit == null && was.dirty == null) { unknown.push(`${n}: при съёмке git не было`); continue; }
-    if (!now) { unknown.push(`${n}: такого файла рядом со state.mjs нет`); continue; }
-    if (now.commit == null && now.dirty == null) { unknown.push(`${n}: git сейчас недоступен`); continue; }
+    const short = /[\\/]/.test(n) ? n.split(/[\\/]/).pop() : n; /* зависимость — коротким именем: texture.mjs */
+    if (was.commit == null && was.dirty == null) { unknown.push(`${short}: при съёмке git не было`); continue; }
+    if (!now) { unknown.push(`${short}: ${short === n ? 'такого файла рядом со state.mjs нет' : `файла ${n} нет в папке скиллов`}`); continue; }
+    if (now.commit == null && now.dirty == null) { unknown.push(`${short}: git сейчас недоступен`); continue; }
     if (was.dirty) wasDirty = true;
     if (now.dirty) nowDirty = true;
-    if (!sameCommit(was.commit, now.commit) || was.dirty || now.dirty) diffs.push(`${n} ${verLabel(was)} против ${verLabel(now)}`);
+    if (!sameCommit(was.commit, now.commit) || was.dirty || now.dirty) diffs.push(`${short} ${verLabel(was)} против ${verLabel(now)}`);
   }
   return {
     gen,

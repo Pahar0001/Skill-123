@@ -103,7 +103,7 @@ import { fileURLToPath } from 'node:url';
 import {
   launch, openPage, loadSharp, parseArgs, sleep, ensureDir, writeJson, readJson, runDir, slugFromUrl,
   scrollThrough, forceInstantScroll, scrollToY, screenSegment, segmentPositions, pickViewports, resolveViewport,
-  SIG_FN, EFFECTIVE_OPACITY_FN,
+  SIG_FN, EFFECTIVE_OPACITY_FN, addStyleSafe, removeStyleSafe, collectWarnings, takeWarnings,
 } from './lib.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -405,41 +405,19 @@ export async function findTextureLayers(page, { mark = false, extras = false, mi
   return page.evaluate(`(${TEXTURE_LAYERS_FN})(${JSON.stringify({ mark, extras, minW, minH })})`);
 }
 
-/* Свой стиль на странице, в том числе при строгом CSP. Сначала <style data-rw="key">; если CSP страницы
-   (style-src без 'unsafe-inline') его не применил — у такого элемента нет sheet, стиль молча не действует —
-   элемент убирается и ставится сконструированная таблица в document.adoptedStyleSheets: CSP на неё не
-   распространяется. Сама страница не меняется, CSP для вкладки не отключается. Повторный вызов с тем же
-   ключом заменяет стиль, а не копит таблицы. → 'style' | 'adopted' | null (не вставился никак). */
-function styleSetInPage({ key, css }) {
-  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
-  const reg = window.__rwSheets || (window.__rwSheets = {});
-  if (reg[key]) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== reg[key]); delete reg[key]; }
-  const st = document.createElement('style'); st.setAttribute('data-rw', key); st.textContent = css;
-  (document.head || document.documentElement).appendChild(st);
-  if (st.sheet) return 'style';
-  st.remove();
-  try {
-    const sh = new CSSStyleSheet(); sh.replaceSync(css);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh];
-    reg[key] = sh;
-    return 'adopted';
-  } catch { return null; }
-}
-function styleDropInPage({ key }) {
-  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
-  const reg = window.__rwSheets;
-  if (reg && reg[key]) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== reg[key]); delete reg[key]; }
-}
 /** Текст ошибки, когда стиль не вставился ни элементом, ни adoptedStyleSheets. */
 export const CSP_NO_STYLE = 'CSP страницы запрещает вставку стиля';
 /**
- * Вставить свой стиль под ключом (тот же ключ — замена) так, чтобы он действовал и при строгом CSP:
- * <style data-rw=key>, а если CSP его не применил — document.adoptedStyleSheets.
- * → 'style' | 'adopted' | null. Для perf.mjs (--overlay селектор) и hideTextureLayers.
+ * Свой стиль под ключом (тот же ключ — замена), в том числе при строгом CSP — через lib.addStyleSafe:
+ * CSP страницы (заголовок из preparePage и meta) проверяется до вставки, и при запрете <style> не
+ * пробуется, а сразу ставится сконструированная таблица (document.adoptedStyleSheets). Раньше <style>
+ * пробовался всегда: нарушение CSP попадало в журнал консоли вкладки, perf и runtime считали его
+ * ошибкой консоли сайта, а на report-uri сайта уходил отчёт. → 'style' | 'adopted' | null (не вставился
+ * никак). WARN здесь не печатается — решает вызывающий (CSP_NO_STYLE). Для perf (--overlay) и hideTextureLayers.
  */
-export function setPageStyle(page, key, css) { return page.evaluate(styleSetInPage, { key, css }); }
+export function setPageStyle(page, key, css) { return addStyleSafe(page, css, { key, warn: false }); }
 /** Убрать стиль, вставленный setPageStyle под этим ключом (любым из двух способов). */
-export function dropPageStyle(page, key) { return page.evaluate(styleDropInPage, { key }); }
+export function dropPageStyle(page, key) { return removeStyleSafe(page, key); }
 
 /**
  * Спрятать найденные слои (после findTextureLayers с mark: true): слой — visibility:hidden и opacity:0;
@@ -1336,8 +1314,12 @@ function inputKind(s, die) {
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
   const VALUES = ['viewport', 'viewports', 'vp', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens'];
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h', 'strict'], values: VALUES, optional: ['sd-tol', 'lag-tol'], commands: ['compare'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['extras', 'help', 'h', 'strict'], values: VALUES, optional: ['sd-tol', 'lag-tol'], commands: ['compare'], strict: true });
   const die = (msg) => { console.error(msg); process.exit(1); };
+  /* WARN lib (свой стиль не вставился) — не посреди вывода, а в итоге и в json (warnings). Только как скрипт:
+     texture — ещё и модуль discover, perf и a11y, у них свой сбор */
+  collectWarnings();
+  const libWarnings = () => { const w = takeWarnings(); for (const x of w) console.log(`WARN ${x}`); return w; };
   /* --viewport, --viewports и старое --vp — один флаг во всех режимах (замер, texture.json, compare) */
   const vpKeys = ['viewport', 'viewports', 'vp'].filter((k) => opt[k] !== undefined && opt[k] !== true);
   const vpSpec = vpKeys.length ? String(opt[vpKeys[0]]).trim() : null;
@@ -1369,7 +1351,8 @@ if (isMain) {
       if (m.size[0] > 2600 || m.size[1] > 4000) console.log('WARN снимок очень большой — если это полностраничный снимок, закреплённое зерно на нём есть только в верхнем экране; мерить снимки окна');
       if (opt.json) writeJson(String(opt.json), { ...m, _tiles: undefined });
     } else if (pos[0] === 'compare') {
-      if (!pos[1] || !pos[2]) { console.error('compare <донор: url|json> <сайт: url|json>'); process.exit(2); }
+      /* код 1, как у остальных ошибок аргументов и как обещает справка (до 28.09.2026 здесь был 2) */
+      if (!pos[1] || !pos[2]) die('compare <донор: url|json> <сайт: url|json>');
       const kDonor = inputKind(pos[1], die), kSite = inputKind(pos[2], die);
       const vps = pickViewports(vpSpec || 'desktop,mobile');
       /* texture.json читаются до папок и браузера: битый файл — ошибка сразу, а не после замера второй стороны */
@@ -1395,7 +1378,8 @@ if (isMain) {
         console.log(`${c.verdict.padEnd(4)} ${c.viewport}: ${c.verdict === 'OK' ? 'фактура как у донора' : c.verdict === 'WARN' ? 'сравнить нечем (нет ровных фонов или замера)' : 'фактура не как у донора'}`);
         if (c.verdict === 'FAIL') fail = true; if (c.verdict === 'WARN') warn = true;
       }
-      writeJson(String(opt.json || path.join(out, 'compare.json')), { donor: dl, site: sl, compare: cmp });
+      const lw = libWarnings(); if (lw.length) warn = true;
+      writeJson(String(opt.json || path.join(out, 'compare.json')), { donor: dl, site: sl, compare: cmp, ...(lw.length ? { warnings: lw } : {}) });
       console.log(`\n${fail ? 'FAIL' : warn ? 'WARN' : 'OK'}: сверка фактуры — ${path.join(out, 'compare.json')}`);
       if (fail) process.exit(1); /* compare даёт 1 при FAIL и без --strict — как раньше */
     } else {
@@ -1421,14 +1405,15 @@ if (isMain) {
       const block = tokensBlock(rec, list);
       console.log(`\nпеременные для site.tokens.css:\n${block}`);
       const jf = fromJson ? (opt.json ? String(opt.json) : null) : String(opt.json || path.join(path.resolve(String(opt.out || path.join(runDir({}, url), 'texture'))), 'texture.json'));
-      if (jf) writeJson(jf, { url, takenAt: fromJson && saved && saved.takenAt ? saved.takenAt : new Date().toISOString(), results: list, recipe: rec, tokens: block });
+      const lw = libWarnings();
+      if (jf) writeJson(jf, { url, takenAt: fromJson && saved && saved.takenAt ? saved.takenAt : new Date().toISOString(), results: list, recipe: rec, tokens: block, ...(lw.length ? { warnings: lw } : {}) });
       if (opt.tokens) { writeTokens(String(opt.tokens), block); console.log(`блок переменных → ${opt.tokens}`); }
       if (opt.css) { ensureDir(path.dirname(path.resolve(String(opt.css)))); fs.writeFileSync(String(opt.css), fillGrainCss(rec)); console.log(`grain.css с рецептом → ${opt.css}`); }
       if (opt.md) { ensureDir(path.dirname(path.resolve(String(opt.md)))); fs.writeFileSync(String(opt.md), textureMarkdown(list, { recipe: rec })); console.log(`раздел для discovery.md → ${opt.md}`); }
       if (jf) console.log(`итог → ${jf}`);
       /* одиночный замер сравнивать не с чем: вердикты OK и WARN (не измерено, гаснет, не виден);
          «не как у донора» — FAIL только в compare. --strict: код 1 при FAIL, здесь его не бывает */
-      const nWarn = list.filter((r) => r.status !== 'есть').length + list.reduce((s, r) => s + (r.diagnosis || []).length, 0);
+      const nWarn = list.filter((r) => r.status !== 'есть').length + list.reduce((s, r) => s + (r.diagnosis || []).length, 0) + lw.length;
       console.log(`\nИтог: ${nWarn ? `WARN ${nWarn}` : 'OK'} — одиночный замер даёт только OK и WARN; «фактура не как у донора» (FAIL, код 1) — texture.mjs compare${opt.strict ? ' (--strict: код выхода 0 — FAIL нет)' : ''}`);
     }
   } catch (e) {

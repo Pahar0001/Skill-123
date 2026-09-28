@@ -184,15 +184,17 @@ import path from 'node:path';
 import {
   launch, openPage, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir, loadSharp,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, VIEWPORTS,
-  SIG_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN, HEX_FN,
+  SIG_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN, HEX_FN, addStyleSafe, removeStyleSafe, collectWarnings, takeWarnings,
 } from './lib.mjs';
 import { findTextureLayers } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'no-grain', 'strict'], values: ['viewport', 'viewports', 'out', 'tag'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-grain', 'strict'], values: ['viewport', 'viewports', 'out', 'tag'], strict: true });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
+/* WARN lib (свой стиль не вставился) — строкой вердикта и в json, а не посреди вывода */
+collectWarnings();
 for (const k of ['viewport', 'viewports', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)');
 const url = pos[0];
@@ -221,41 +223,14 @@ const FX_DEPS = { ...DEPS, stk: stickyInPage.toString() };
 
 /* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
 
-/* <style> с ключом data-rw; если CSP страницы (style-src без 'unsafe-inline') его не применил — у
-   такого элемента нет sheet, — сконструированная таблица в document.adoptedStyleSheets: CSP на неё не
-   распространяется. Повторный вызов с тем же ключом заменяет стиль. Возвращает способ или null */
-function cssAddInPage({ key, css }) {
-  const drop = () => {
-    const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
-    const sh = window.__rwSheets && window.__rwSheets[key];
-    if (sh) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sh); delete window.__rwSheets[key]; }
-  };
-  drop();
-  const st = document.createElement('style'); st.setAttribute('data-rw', key); st.textContent = css;
-  (document.head || document.documentElement).appendChild(st);
-  if (st.sheet) return 'style';
-  st.remove();
-  try {
-    const sh = new CSSStyleSheet(); sh.replaceSync(css);
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sh];
-    (window.__rwSheets = window.__rwSheets || {})[key] = sh;
-    return 'adopted';
-  } catch { return null; }
-}
-function cssRemoveInPage({ key }) {
-  const old = document.querySelector(`style[data-rw="${key}"]`); if (old) old.remove();
-  const sh = window.__rwSheets && window.__rwSheets[key];
-  if (sh) { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sh); delete window.__rwSheets[key]; }
-}
 const CSP_NO_STYLE = 'CSP запрещает вставку стиля';
-/* не вставился ни так, ни так — ошибка с текстом CSP_NO_STYLE: проверка, которой нужен стиль, пишет
-   WARN «не измерен — CSP запрещает вставку стиля» */
-async function addCss(page, key, css) {
-  const how = await page.evaluate(cssAddInPage, { key, css });
-  if (!how) throw new Error(CSP_NO_STYLE);
-  return how;
-}
-const removeCss = (page, key) => page.evaluate(cssRemoveInPage, { key });
+/* свой стиль — lib.addStyleSafe: CSP страницы (заголовок из preparePage и meta) проверяется до вставки,
+   при запрете сразу сконструированная таблица (document.adoptedStyleSheets) — без нарушения в консоли
+   и отчёта на report-uri сайта (раньше <style> пробовался всегда). Повторный вызов с тем же ключом
+   заменяет стиль. Не вставился никак — ошибка CSP_NO_STYLE: проверка, которой нужен стиль, пишет
+   WARN «не измерен — CSP запрещает вставку стиля». (null бывает и при сбое самой вкладки — редкость.) */
+async function addCss(page, key, css) { const how = await addStyleSafe(page, css, { key, warn: false }); if (!how) throw new Error(CSP_NO_STYLE); return how; }
+const removeCss = (page, key) => removeStyleSafe(page, key);
 
 /* ---------- функции страницы (свободные переменные sig, eff, vis, hexc — из lib.mjs) ---------- */
 
@@ -489,7 +464,12 @@ function stickyInPage(host) {
    ещё lo…hi — высоты прокрутки, на которых он закреплён (stk), и never — не закрепляется нигде
    (участок короче 8 px): такие высоты мерить незачем, там это обычный текст своей секции */
 function fixedTextInPage({ limit }) {
-  const vw = innerWidth, vh = innerHeight;
+  /* «за краем» — по видимой области (visualViewport), а не по окну раскладки: у dir=rtl шире экрана на
+     телефоне окно раскладки 820, а видно 320 — текст на 320…820 на снимок не попадал и потом числился
+     «вне окна» (шум в WARN). band — по-прежнему в пределах innerHeight: это высота прокрутки окна */
+  const vv = window.visualViewport;
+  const VX = vv ? vv.offsetLeft : 0, VY = vv ? vv.offsetTop : 0;
+  const vw = vv ? VX + vv.width : innerWidth, vh = innerHeight, vb = vv ? VY + vv.height : innerHeight;
   const pinned = (n) => { const p = getComputedStyle(n).position; return p === 'fixed' || p === 'sticky'; };
   const hosts = document.body ? [...document.body.querySelectorAll('*')].filter(pinned) : [];
   /* место в потоке — у всех sticky, и у тех, чей текст сейчас за окном (stk запоминает его на узле) */
@@ -521,7 +501,7 @@ function fixedTextInPage({ limit }) {
       if (el instanceof SVGElement || el.hasAttribute('data-rw-fx') || !ownText(el) || !vis(el)) continue;
       const r = el.getBoundingClientRect(); if (r.width <= 2 || r.height <= 2) continue; /* sr-only */
       const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
-      if (cx < 0 || cy < 0 || cx > vw || cy > vh) continue; /* закрытое меню за краем окна */
+      if (cx < VX || cy < VY || cx > vw || cy > vb) continue; /* закрытое меню за краем видимой области */
       if (clipped(el, cx, cy)) continue;
       const host = hostOf(el); const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
       let band = cy; const k = hs.position === 'sticky' ? stk(host) : null;
@@ -716,7 +696,8 @@ function resetViewInPage({ rest }) {
   }
   const d = document.createElement('div'); const set = (k, v) => d.style.setProperty(k, v, 'important');
   for (const [k, v] of [['position', 'absolute'], ['display', 'block'], ['margin', '0'], ['padding', '0'], ['border', '0'], ['transform', 'none'], ['visibility', 'hidden'], ['pointer-events', 'none'], ['width', `${vv.width}px`], ['height', `${vv.height}px`], ['left', '0px'], ['top', '0px']]) set(k, v);
-  (document.body || document.documentElement).appendChild(d);
+  /* в <html>, не в body: наблюдатели DOM сайта (MutationObserver) обычно смотрят body; на <html> — увидят один узел */
+  document.documentElement.appendChild(d);
   try {
     /* содержащий блок может быть не корнем (body{position:relative}) — положение поправляется по замеру */
     const q = d.getBoundingClientRect();
@@ -1146,7 +1127,14 @@ if (fx && !fx.none) {
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
   /* только возвраты этого прохода (перед высотами); возвраты при замере текста на картинке — в строке выше */
   const vrF = viewReset.failed - vrI.failed, vrR = viewReset.resets - vrI.resets;
-  const vrTxt = vrF ? `; видимая область ${vrF} раз из ${vrR} не вернулась на исходное место (сдвинута замером текста на картинке) — снимки могли лечь не под текстом, смотреть глазами` : '';
+  const blk = (viewReset.how || {})['блок'] || 0;
+  const vrTxt = (vrF ? `; видимая область ${vrF} раз из ${vrR} не вернулась на исходное место (сдвинута замером текста на картинке) — снимки могли лечь не под текстом, смотреть глазами` : '')
+    + (blk ? `; видимая область возвращалась временным невидимым блоком ${blk} раз — наблюдатель DOM страницы на <html> это видит` : '');
+  /* dir=rtl шире экрана: в покое scrollX < 0, видимая область — над пустой полосой переполнения (так эмуляция
+     и, вероятно, телефон показывают страницу при открытии); «над местом вне секций» тогда — правда о том, что
+     видно, а причина — переполнение по ширине (его отдельно дают discover и runtime). Статус не меняется */
+  const rtlWide = !!(viewReset.rest && viewReset.rest.sx < 0);
+  const rtlTxt = '; dir=rtl, страница шире экрана: в покое видимая область стоит над пустой полосой переполнения — так её видит телефон при открытии; сначала убрать переполнение по ширине, потом перемерить';
   /* sticky вне места закрепления — не пропуск: на этой высоте он обычный текст своей секции */
   const unp = (fx.skipped || {})['не закреплён'] || 0;
   const unpTxt = unp ? '; «не закреплён» — sticky-блок на этой высоте уехал вместе со своим контейнером или ещё стоит на своём месте в потоке: там он обычный текст своей секции (контраст — в строках выше), не пропуск' : '';
@@ -1166,7 +1154,7 @@ if (fx && !fx.none) {
       const groups = new Map();
       for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
       const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
-      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${unpTxt}${vrTxt}`);
+      L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${rtlWide && fx.failures.some((f) => !f.section) ? rtlTxt : ''}${unpTxt}${vrTxt}`);
     } else if (!fx.measured) {
       /* ни одного замера только потому, что sticky на этих высотах не закреплён, — мерить нечего: OK с пометкой */
       const other = Object.entries(fx.skipped || {}).filter(([k, v]) => v && k !== 'не закреплён');
@@ -1224,9 +1212,12 @@ L(dom.reducedMotionRule ? 'OK' : 'WARN', 'prefers-reduced-motion', dom.reducedMo
 L(dom.autoplayVideo ? 'FAIL' : 'OK', `видео с автоплеем и звуком: ${dom.autoplayVideo}`);
 L(dom.landmarks.main ? 'OK' : 'WARN', `ориентиры: main ${dom.landmarks.main}, nav ${dom.landmarks.nav}, header ${dom.landmarks.header}, footer ${dom.landmarks.footer}`, dom.landmarks.main ? '' : 'нет <main> — читалка не найдёт начало содержимого');
 if (dom.iframesNoTitle) L('WARN', `iframe без title: ${dom.iframesNoTitle}`);
+/* WARN lib (свой стиль не вставился: CSP запретил и <style>, и таблицы) — отдельной строкой вердикта */
+const libW = takeWarnings();
+for (const w of libW) L('WARN', 'свой стиль на странице', w);
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 const file = path.join(outDir, `${tag}.json`);
-writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, viewReset, focus, lines, verdict });
+writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, viewReset, focus, lines, ...(libW.length ? { warnings: libW } : {}), verdict });
 console.log(`Сохранено: ${file}`);
 if (opt.strict && verdict === 'FAIL') { console.log('Код выхода 1: вердикт FAIL (--strict)'); process.exitCode = 1; }

@@ -57,8 +57,10 @@ const { pos, opt } = parseArgs(process.argv.slice(2), {
   flags: ['help', 'h', 'yes', 'text', 'png', 'demo', 'creative', 'own'],
   optional: ['for', 'model', 'n', 'size', 'colors', 'bg', 'style', 'style-id', 'ref', 'seed', 'run', 'out', 'dest', 'seen', 'caption', 'name', 'license-from'],
   commands: ['doctor', 'gen', 'vectorize', 'remove-bg', 'upscale', 'take', 'selftest', 'price'],
+  strict: true,
 });
-if (opt.help || opt.h || !pos.length) { console.log(HELP); process.exit(pos.length || opt.help || opt.h ? 0 : 1); }
+/* «-h» parseArgs кладёт в позиционные: без этой проверки было «Не знаю команду «-h»», код 1 */
+if (opt.help || opt.h || pos.includes('-h') || !pos.length) { console.log(HELP); process.exit(pos.length || opt.help || opt.h ? 0 : 1); }
 
 /* ---------- цены и модели (recraft.ai/docs/api-reference/pricing, 28.09.2026; 1 $ = 1000 единиц) ---------- */
 export const PRICES = {

@@ -18,7 +18,9 @@
  *                имя или ни одного пригодного в --formats, позиционный аргумент, --out без
  *                папки — код 1, и ничего не создано.
  *   --size       сторона плитки в пикселях (256).
- *   --levels     число уровней яркости, 2…256 (16: sd ≈ 78, файл ≈ 32 КБ).
+ *   --levels     число уровней яркости, 2…256 (16: sd ≈ 78, файл ≈ 32 КБ). PNG и GIF — палитра
+ *                на 2, 4, 16 или 256 цветов (не меньше уровней); GIF держит до 255 уровней:
+ *                при 256 GIF собирается с 255 (тот же seed) и WARN, PNG и WebP — с 256.
  *   --mode gray  непрозрачный серый шум, равномерный 0…255 (среднее 127, sd ≈ 78).
  *                Кладётся слоем mix-blend-mode:normal с opacity = нужная σ / σ плитки
  *                (σ 5 на снимке → .064). Одинаковая сила на любом фоне, включая #000;
@@ -50,7 +52,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadSharp, parseArgs, writeJson } from './lib.mjs';
+import { loadSharp, parseArgs, writeJson, flagsDump } from './lib.mjs';
 
 /* справка — до загрузки sharp: -h и запуск без аргументов ничего не создают и работают без него */
 const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
@@ -65,7 +67,8 @@ const HELP = `grain-tile.mjs — своя шумовая плитка для з�
 
   --out        папка для файлов (по умолчанию текущая — если задан хоть один другой флаг)
   --size       сторона плитки, px (256)
-  --levels     уровней яркости 2…256 (16: σ ≈ 78.35, ≈ 32 КБ)
+  --levels     уровней яркости 2…256 (16: σ ≈ 78.35, ≈ 32 КБ); PNG и GIF — палитра на 2, 4, 16 или 256
+               цветов; GIF — до 255 уровней (при 256 GIF собирается с 255 и WARN)
   --mode       gray — непрозрачный серый шум (normal, opacity = σ/78.35); alpha — светлые и тёмные
                зёрна с альфой (GIF полупрозрачность не держит — только PNG/WebP)
   --px         зерно N×N px (lag1 плитки ≈ 1 − 1/N)
@@ -85,7 +88,10 @@ const HELP = `grain-tile.mjs — своя шумовая плитка для з�
 Вердикты: OK; WARN — формат не держит задуманное (alpha в GIF); FAIL — кадров не столько, кадр
 испорчен, плоский или повторяет соседний (код выхода 1). У альфа-плитки цвет полностью прозрачных
 пикселей не сверяется (он не виден), σ и среднее — как плитка видна на сером 128.`;
+/* флаги — одним списком: и для разбора, и для справочника flags-doc.mjs (он спрашивает до справки и выхода без аргументов) */
+const ARGS = { flags: ['help', 'h'], values: ['out', 'size', 'levels', 'mode', 'px', 'frames', 'fps', 'frame-ms', 'seed', 'name', 'formats', 'json', 'check', 'sprite-frames'], strict: true };
 if (isMain) {
+  flagsDump(ARGS);
   const argv = process.argv.slice(2);
   if (!argv.length) { console.log(HELP); console.error('\nБез аргументов плитка не пишется: укажите --out папка (или --check файл).'); process.exit(1); }
   if (argv.includes('-h') || argv.includes('--help') || argv.includes('--h')) { console.log(HELP); process.exit(0); }
@@ -126,8 +132,15 @@ export function makeFrames({ size = 256, levels = 16, px = 1, frames = 1, mode =
    effort и dither, если palette не задан. Раньше у альфы стоял effort: 10 — файл выходил
    палитровым, прозрачные пиксели получали цвет палитры 76/105/113 вместо 0/255 (самопроверка:
    «уровней 3», «не совпадают … до 179»), а при --levels больше 128 квантовалась бы и сама альфа. */
+/* Ёмкость палитры — 2, 4, 16 или 256 цветов, не меньше levels: sharp выводит разрядность палитры из
+   colours с округлением вниз (5–8 цветов → 2 бита = 4 цвета, 17–128 → 4 бита = 16), и лишние уровни
+   сливались — самопроверка честно давала FAIL «кадры не совпадают … до 36». Так же и у GIF (17, 32, 100).
+   При 16 уровнях (по умолчанию) файл тот же байт в байт. */
+const paletteColours = (levels) => [2, 4, 16, 256].find((c) => c >= levels) || 256;
+/* GIF держит не больше 255 цветов на кадр: при 256 уровнях самопроверка давала FAIL (244 уровня из 256) */
+const GIF_MAX_LEVELS = 255;
 function pngOpts(mode, levels) {
-  return mode === 'alpha' ? { compressionLevel: 9, palette: false } : { compressionLevel: 9, palette: true, colours: Math.min(256, Math.max(2, levels)), effort: 10 };
+  return mode === 'alpha' ? { compressionLevel: 9, palette: false } : { compressionLevel: 9, palette: true, colours: paletteColours(levels), effort: 10 };
 }
 
 /** σ яркости плитки с такими параметрами (по умолчанию — 256 px, 16 уровней, серая, seed 7: 78.35). */
@@ -227,7 +240,7 @@ function judge(res, { wantPages, wantDelay, lossless, alphaLost }) {
 /* ---------------- CLI ---------------- */
 
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h'], values: ['out', 'size', 'levels', 'mode', 'px', 'frames', 'fps', 'frame-ms', 'seed', 'name', 'formats', 'json', 'check', 'sprite-frames'] });
+  const { pos, opt } = parseArgs(process.argv.slice(2), ARGS);
   const report = { files: [] };
   const die = (m) => { console.error(m); process.exit(1); };
   /* всё проверяется до первой записи: папка --out не появляется, если аргументы неверны */
@@ -260,7 +273,7 @@ if (isMain) {
     const bufs = makeFrames({ size, levels, px, frames, mode, seed });
     const ch = mode === 'alpha' ? 2 : 1;
     const expect = bufs.map((b) => expectedRgba(b, mode));
-    const jobs = [];
+    const jobs = []; let gifNote = null;
     if (formats.has('png')) {
       const f = path.join(out, `${name}.png`);
       await sharp(bufs[0], { raw: { width: size, height: size, channels: ch } }).png(pngOpts(mode, levels)).toFile(f);
@@ -275,8 +288,13 @@ if (isMain) {
       const inputs = await Promise.all(bufs.map((b) => sharp(b, { raw: { width: size, height: size, channels: ch } }).png().toBuffer()));
       if (formats.has('gif')) {
         const f = path.join(out, `${name}-${frames}f.gif`);
-        await sharp(inputs, { join: { animated: true } }).gif({ loop: 0, delay: new Array(frames).fill(frameMs), colours: Math.min(256, Math.max(2, levels)), effort: 10 }).toFile(f);
-        jobs.push({ f, expect, wantPages: frames, wantDelay: frameMs, lossless: true, alphaLost: mode === 'alpha' });
+        /* больше 255 уровней GIF не держит — его кадры собираются заново с 255 уровнями (тот же seed), остальные форматы — как заданы */
+        const gl = Math.min(levels, GIF_MAX_LEVELS);
+        const gb = gl === levels ? null : makeFrames({ size, levels: gl, px, frames, mode, seed });
+        const gInputs = gb ? await Promise.all(gb.map((b) => sharp(b, { raw: { width: size, height: size, channels: ch } }).png().toBuffer())) : inputs;
+        await sharp(gInputs, { join: { animated: true } }).gif({ loop: 0, delay: new Array(frames).fill(frameMs), colours: paletteColours(gl), effort: 10 }).toFile(f);
+        jobs.push({ f, expect: gb ? gb.map((b) => expectedRgba(b, mode)) : expect, wantPages: frames, wantDelay: frameMs, lossless: true, alphaLost: mode === 'alpha' });
+        if (gb) gifNote = `GIF держит до ${GIF_MAX_LEVELS} уровней: ${path.basename(f)} собран с ${GIF_MAX_LEVELS} уровнями (тот же seed), остальные файлы — с ${levels}`;
       }
       if (formats.has('webp')) {
         const f = path.join(out, `${name}-${frames}f.webp`);
@@ -286,6 +304,7 @@ if (isMain) {
     }
     if (!jobs.length) { console.error(`Нечего писать: --formats ${[...formats].join(',')} (при одном кадре есть только png)`); process.exit(1); }
     console.log(`плитка ${name}: ${size}×${size}, ${levels} уровней, ${mode === 'alpha' ? 'альфа' : 'серая'}, зерно ${px} px, кадров ${frames}${frames > 1 ? ` по ${frameMs} мс` : ''}, seed ${seed} → ${out}`);
+    if (gifNote) line('WARN', 'GIF', gifNote);
     for (const j of jobs) {
       const res = await checkTileFile(j.f, { spriteFrames: j.spriteFrames || 1, expect: j.expect });
       judge(res, j); report.files.push({ ...res, path: j.f });

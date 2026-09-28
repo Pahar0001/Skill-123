@@ -45,16 +45,19 @@
  *                      ленивой загрузки (разбор донора целиком — scripts/tilda.mjs)
  *   свой стиль         addStyleSafe, removeStyleSafe — <style>, а при строгом CSP
  *                      сконструированная таблица (document.adoptedStyleSheets)
- *   версия кода        codeVersion, scriptGenerator — поле generator в протоколах
+ *   версия кода        codeVersion, scriptGenerator, trackModule — поле generator в протоколах
  *   предупреждения     collectWarnings, takeWarnings — WARN из lib (свой стиль не
  *                      вставился) не посреди строки прогресса, а в вердикте скрипта
- *   прочее             parseArgs, getFfmpeg, findModuleRoot, summarizeRequests,
- *                      runDir, slugFromUrl, pageSlug, pagesFrom, unmangle,
+ *   аргументы          parseArgs (strict — неизвестный флаг даёт ошибку с подсказкой),
+ *                      closestFlag, flagsDump (справочник flags-doc.mjs)
+ *   прочее             getFfmpeg, findModuleRoot, summarizeRequests,
+ *                      runDir, slugFromUrl, pageSlug, capSlug, SLUG_MAX, pagesFrom, unmangle,
  *                      ensureDir, writeJson, readJson, kb, sleep
  *
  * Протоколы пишутся через writeJson: в объект добавляется поле generator —
  * какой скрипт и какой его версией снял протокол: { script, commit, dirty,
- * mtime, lib: { commit, dirty, mtime } }. commit — последний коммит файла в git
+ * mtime, lib: { commit, dirty, mtime }, deps? } — deps: подключаемые модули скилла
+ * (texture.mjs у a11y, taste.mjs у cliche; import() с вычисленным путём — trackModule). commit — последний коммит файла в git
  * скилла, dirty — есть ли в файле незакоммиченные правки. git вызывается один раз
  * на процесс; без git (или вне репозитория) commit и dirty — null, запись не падает.
  * state.mjs по этому полю предупреждает, что доказательство снято другой версией.
@@ -1016,18 +1019,14 @@ export async function removeStyleSafe(page, key) {
  * scrollTo(0, y) в анимацию, и замер идёт посреди пути (a11y открыл 2 блока из 21,
  * perf «прокрутил 12453 px», а страница сдвинулась на 149). Вставляет стиль
  * через addStyleSafe (ключ instant-scroll: <style data-rw="instant-scroll">, а при
- * строгом CSP — сконструированная таблица). persist: true — вставлять и после
- * перезагрузок и переходов этой вкладки. Возвращает 'style' | 'adopted' | null.
+ * строгом CSP — сконструированная таблица). Действует до перезагрузки или перехода:
+ * после них — вызвать снова. (Опция persist — вставка в каждый новый документ —
+ * убрана 28.09.2026: её никто не звал, а в новом документе заголовок CSP не виден,
+ * и проба <style> на CSP-сайте давала нарушение в консоли и отчёт на report-uri.)
+ * Возвращает 'style' | 'adopted' | null.
  */
 const INSTANT_CSS = 'html,body,*{scroll-behavior:auto!important}';
-export async function forceInstantScroll(page, { persist = false } = {}) {
-  if (persist && !page.__rwInstantPersist) {
-    markOwnCss(page, INSTANT_CSS);
-    /* в новом документе заголовка CSP не видно — только meta и проба <style> (её нарушение не в журнале) */
-    const arg = JSON.stringify({ key: 'instant-scroll', css: INSTANT_CSS, policies: [] });
-    await page.evaluateOnNewDocument(`(() => { const put = () => (${styleInPage.toString()})(${arg}); if (document.documentElement) put(); else document.addEventListener('DOMContentLoaded', put, { once: true }); })()`);
-    page.__rwInstantPersist = true;
-  }
+export async function forceInstantScroll(page) {
   return addStyleSafe(page, INSTANT_CSS, { key: 'instant-scroll' });
 }
 
@@ -1543,6 +1542,39 @@ export function summarizeRequests(requests) {
 }
 
 /**
+ * Справочник флагов (scripts/flags-doc.mjs): при RW_FLAGS_DUMP=1 разбор аргументов печатает, какие флаги
+ * знает скрипт, строкой «@@RW-FLAGS {json}» и завершает процесс с кодом 0 — до любого действия скрипта.
+ * runtime.mjs разбирает аргументы сам и зовёт flagsDump после своих списков. Без переменной — ничего.
+ */
+export function flagsDump(spec) {
+  if (!process.env.RW_FLAGS_DUMP) return;
+  process.stdout.write('@@RW-FLAGS ' + JSON.stringify(spec) + '\n');
+  process.exit(0);
+}
+/* расстояние правки (вставка, удаление, замена, перестановка соседних) — для подсказки «может быть, --…?» */
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length];
+}
+/** Ближайший к k ключ из списка или null: расстояние правки до трети длины (не меньше 2), либо начало имени. */
+export function closestFlag(k, keys) {
+  let best = null, bd = Infinity;
+  for (const c of new Set(keys)) {
+    if (c === 'h' || c === 'help') continue;
+    const dist = editDistance(k, c);
+    const pre = k.length >= 3 && (c.startsWith(k) || k.startsWith(c));
+    const lim = Math.max(2, Math.floor(c.length / 3));
+    const score = dist <= lim ? dist : pre ? lim + 0.5 : Infinity;
+    if (score < bd) { bd = score; best = c; }
+  }
+  return best;
+}
+/**
  * Аргументы: --out dir --name slug; флаг без значения даёт true; остальное — позиционные.
  * Ещё: запись --key=value; «--» — дальше только позиционные; значение,
  * начинающееся с «--», берётся, если не похоже на имя флага («--note "--scroll
@@ -1554,8 +1586,13 @@ export function summarizeRequests(requests) {
  * (http, https, file, data, about), команду скрипта и слово на «-» («--strict http://…», «--verbose
  * compare a b» — адрес и команда остаются на месте) и даёт WARN в stderr: опечатка во флаге больше
  * не проходит молча. Ключи из списков разбираются как раньше.
+ * strict: true — неизвестный ключ не WARN, а ошибка: строка «неизвестный флаг --x — может быть,
+ * --y?» (ближайший объявленный) в stderr и код 1 до любого действия скрипта. WARN опечатку не
+ * останавливал: «--viewpor mobile» молча мерил desktop. Включать, когда flags-doc.mjs --check
+ * подтверждает, что все флаги скрипта объявлены (иначе strict отвергнет рабочий флаг).
  */
-export function parseArgs(argv, { values = [], flags = [], optional = [], commands = [] } = {}) {
+export function parseArgs(argv, { values = [], flags = [], optional = [], commands = [], strict = false } = {}) {
+  flagsDump({ values, flags, optional, commands, strict: !!strict });
   const V = new Set(values), F = new Set(flags), O = new Set(optional), C = new Set(commands);
   const declared = V.size + F.size + O.size > 0;
   const looksLikeKey = (s) => s === '--' || /^--[A-Za-z][\w.-]*(=|$)/.test(s);
@@ -1577,22 +1614,42 @@ export function parseArgs(argv, { values = [], flags = [], optional = [], comman
       if (declared && !known) unknown.push([k, opt[k] === true ? null : opt[k]]);
     } else pos.push(a);
   }
+  if (strict && unknown.length) {
+    for (const [k] of unknown) { const g = closestFlag(k, [...V, ...F, ...O]); console.error(`неизвестный флаг --${k}${g ? ` — может быть, --${g}?` : ''} (-h — список флагов)`); }
+    process.exit(1);
+  }
   for (const [k, took] of unknown) console.error(`WARN неизвестный флаг --${k} — не используется${took !== null ? ` (вместе со словом «${String(took).slice(0, 40)}», которое он забрал значением)` : ''}; -h — список флагов`);
   return { pos, opt };
 }
 
 /**
- * Имя папки прогона по адресу: хост без www, порт, путь — через «-».
+ * Имя без предела длины → до max знаков: длинное — начало и 8 знаков sha1 полного имени через «-».
+ * Путь runs/<slug>/media/<запрос>/<файл> остаётся короче 260 знаков: sharp (libvips) и ffmpeg предел
+ * Windows не обходят даже при LongPathsEnabled — на длинном пути падали превью, мозаики и кадры видео.
+ * Разные длинные адреса не сливаются (хеш полного имени); имена до max знаков — прежние. То же правило
+ * повторяет запасной путь design-reference (lib.mjs там) — держать общим.
+ *   capSlug('site-ru-news-x') → 'site-ru-news-x';  capSlug('a'.repeat(300)) → 'aaa…a-1b2c3d4e' (60 знаков)
+ */
+export const SLUG_MAX = 60;
+export function capSlug(s, max = SLUG_MAX) {
+  s = String(s);
+  if (s.length <= max) return s;
+  return s.slice(0, max - 9).replace(/-+$/, '') + '-' + crypto.createHash('sha1').update(s).digest('hex').slice(0, 8);
+}
+
+/**
+ * Имя папки прогона по адресу: хост без www, порт, путь — через «-», не длиннее SLUG_MAX (capSlug).
  * https://www.site.ru/news/x → site-ru-news-x; http://localhost:4177/ → localhost-4177;
  * http://127.0.0.1:8080/a → 127-0-0-1-8080-a; http://[::1]:4177/ → ip6-localhost-4177;
  * http://site.ru:8080/ → site-ru-8080; file:///C:/w/site/index.html → file-site-index-html.
+ * { max: Infinity } — имя без предела (так звались папки до 28.09.2026: runDir находит старую).
  */
-export function slugFromUrl(url) {
+export function slugFromUrl(url, { max = SLUG_MAX } = {}) {
   const u = new URL(url);
   /* локальный файл: полный путь в имени папки бессмыслен — два последних сегмента, раскодированные */
   if (u.protocol === 'file:') {
     let p = u.pathname; try { p = decodeURIComponent(p); } catch { /* как есть */ }
-    return ('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file';
+    return capSlug(('file-' + p.split('/').filter(Boolean).slice(-2).join('-')).replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'file', max);
   }
   /* порт: у этой машины (localhost, *.localhost, 127.x.x.x, [::1], 0.0.0.0) — всегда, иначе все
      локальные сайты делят одну папку runs/localhost; у остальных — только явный нестандартный
@@ -1602,18 +1659,31 @@ export function slugFromUrl(url) {
   const local = h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0';
   const port = u.port || (local ? (u.protocol === 'https:' ? '443' : '80') : '');
   const name = h === '::1' ? 'ip6-localhost' : h.includes(':') ? `ip6-${h}` : h.replace(/^www\./, '');
-  return (name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'site';
+  return capSlug((name + (port ? `-${port}` : '') + u.pathname).replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'site', max);
 }
 
+/** Имя страницы по пути адреса (/news/x → news-x, / → home), не длиннее SLUG_MAX (capSlug). */
 export function pageSlug(url) {
   const p = new URL(url).pathname.replace(/\/$/, '');
-  return p ? p.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() : 'home';
+  return p ? capSlug(p.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()) : 'home';
 }
 
+/**
+ * Папка прогона: --out, иначе SITE_REWORK_RUNS (или ~/.claude/site-rework/runs) / slugFromUrl(адрес).
+ * Прогон длинного адреса, начатый до предела имени (28.09.2026), лежит под полным именем: такая
+ * папка есть, а под коротким нет — берётся она, с WARN (один раз на процесс).
+ */
+const warnedRun = new Set();
 export function runDir(opt, url) {
   if (opt.out) return path.resolve(String(opt.out));
   const base = process.env.SITE_REWORK_RUNS || path.join(os.homedir(), '.claude', 'site-rework', 'runs');
-  return path.join(base, slugFromUrl(url));
+  const dir = path.join(base, slugFromUrl(url));
+  let full = null; try { full = slugFromUrl(url, { max: Infinity }); } catch { /* не адрес — ниже упадёт сам */ }
+  if (full && full !== path.basename(dir) && !fs.existsSync(dir) && fs.existsSync(path.join(base, full))) {
+    if (!warnedRun.has(full) && warnedRun.add(full)) libWarn(`папка прогона — прежняя, под полным именем адреса (${full.length} знаков): ${path.join(base, full)}; новые прогоны этого адреса пишутся в ${path.basename(dir)} — перенесите папку, чтобы sharp и ffmpeg не упирались в предел пути Windows (260)`);
+    return path.join(base, full);
+  }
+  return dir;
 }
 
 export function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); return p; }
@@ -1669,18 +1739,48 @@ export function codeVersion(files) {
 function realFile(f) { try { return fs.realpathSync.native(f); } catch { return f; } }
 
 let generatorCache;
+/* Подключаемые модули скилла, от которых зависит протокол: статические импорты «./x.mjs» скрипта
+   и их импорты (texture.mjs у a11y и perf, taste.mjs у cliche, clicks.mjs у motion, media/*.mjs),
+   плюс модули, загруженные import() с вычисленным путём, — их скрипт называет trackModule(файл)
+   (discover: texture.mjs и extract.mjs design-reference; media: media/video.mjs). */
+const IMPORT_RE = /(?:^|[\s;])(?:import|export)\s[^'"`;]*?\bfrom\s*['"](\.{1,2}\/[^'"]+)['"]|\bimport\s*\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g;
+function localDeps(entry) {
+  const seen = new Set([entry]); const out = [];
+  const walk = (f) => {
+    let src; try { src = fs.readFileSync(f, 'utf8'); } catch { return; }
+    for (const m of src.matchAll(IMPORT_RE)) { const d = realFile(path.resolve(path.dirname(f), m[1] || m[2])); if (seen.has(d)) continue; seen.add(d); out.push(d); walk(d); }
+  };
+  walk(entry);
+  return out;
+}
+const trackedModules = new Set();
 /**
- * Кто пишет протокол: { script, commit, dirty, mtime, lib: { commit, dirty, mtime } } —
- * запущенный файл (process.argv[1]) и lib.mjs, от которого зависят все скрипты.
- * Считается один раз на процесс. Без git — commit и dirty null.
+ * Модуль, загруженный import() с вычисленным путём (регулярка статических импортов его не видит):
+ * его версия попадёт в generator.deps протоколов этого процесса. Звать рядом с import():
+ *   trackModule(f); const mod = await import(pathToFileURL(f).href);
+ */
+export function trackModule(file) { const f = realFile(path.resolve(String(file))); if (!trackedModules.has(f)) { trackedModules.add(f); generatorCache = undefined; } }
+/* имя зависимости в протоколе: путь от папки скиллов («site-rework/scripts/texture.mjs»), иначе полный */
+const SKILLS_ROOT = path.dirname(path.dirname(path.dirname(LIB_FILE)));
+const depKey = (f) => { const r = path.relative(SKILLS_ROOT, f); return (r && !r.startsWith('..') && !path.isAbsolute(r) ? r : f).replace(/\\/g, '/'); };
+/**
+ * Кто пишет протокол: { script, commit, dirty, mtime, lib: { commit, dirty, mtime },
+ * deps?: { 'site-rework/scripts/texture.mjs': { commit, dirty, mtime }, … } } — запущенный файл
+ * (process.argv[1]), lib.mjs, от которого зависят все скрипты, и подключаемые модули (статические
+ * импорты и trackModule): после правки texture.mjs протокол a11y, снятый до неё, state.mjs помечает
+ * «снят другой версией (texture.mjs …)». Поля deps нет — зависимостей нет (или протокол до 28.09.2026).
+ * Считается один раз на процесс (новый trackModule сбрасывает). Без git — commit и dirty null.
  */
 export function scriptGenerator() {
   if (generatorCache) return generatorCache;
   const script = process.argv[1] ? realFile(path.resolve(process.argv[1])) : null;
-  const v = codeVersion([script, LIB_FILE]);
+  const deps = [...new Set([...(script ? localDeps(script) : []), ...trackedModules])].filter((f) => f !== script && f !== LIB_FILE);
+  const v = codeVersion([script, LIB_FILE, ...deps]);
   const s = script && v[script] ? v[script] : { commit: null, dirty: null, mtime: null };
   const l = v[LIB_FILE] || { commit: null, dirty: null, mtime: null };
-  generatorCache = { script: script ? path.basename(script) : null, commit: s.commit, dirty: s.dirty, mtime: s.mtime, lib: script === LIB_FILE ? null : { commit: l.commit, dirty: l.dirty, mtime: l.mtime } };
+  const ver = (f) => { const x = v[f] || {}; return { commit: x.commit ?? null, dirty: x.dirty ?? null, mtime: x.mtime ?? null }; };
+  generatorCache = { script: script ? path.basename(script) : null, commit: s.commit, dirty: s.dirty, mtime: s.mtime, lib: script === LIB_FILE ? null : { commit: l.commit, dirty: l.dirty, mtime: l.mtime },
+    ...(deps.length ? { deps: Object.fromEntries(deps.map((f) => [depKey(f), ver(f)])) } : {}) };
   return generatorCache;
 }
 

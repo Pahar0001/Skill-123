@@ -23,12 +23,14 @@
  *               (findTextureLayers: закреплённые или во весь экран); со значением — CSS-селектор слоя,
  *               можно с псевдоэлементом: --overlay "body::after". Слой прячется через opacity:0 и
  *               visibility:hidden (visibility одна не прячет вывод SVG-фильтра feTurbulence).
- *               Строгий CSP (style-src без 'unsafe-inline'): вставленный <style> страница молча не
- *               применяет, и «без слоя» мерился бы со слоем — тогда стиль ставится таблицей
- *               document.adoptedStyleSheets (CSP на неё не распространяется), в выводе об этом строка.
+ *               Строгий CSP (style-src без 'unsafe-inline'): политика проверяется до вставки, и стиль
+ *               сразу ставится таблицей document.adoptedStyleSheets (CSP на неё не распространяется;
+ *               <style> не пробуется — нарушения в консоли сайта от замера нет), в выводе об этом строка.
  *               Не вставился никак — WARN «цена слоя: не измерена — CSP страницы запрещает вставку стиля».
- *   --rounds N  раундов для --overlay, не меньше 5 (по умолчанию 5).
- *   --overlay-only  только цена слоя, без замера загрузки (быстро: сеть не замедляется).
+ *   --rounds N  раундов для --overlay, от 5 до 20 (по умолчанию 5): меньше 5 и больше 20 — примечание
+ *               и ближайшая граница (больше 20 раундов замер идёт минутами).
+ *   --overlay-only  только цена слоя, без замера загрузки (быстро: сеть не замедляется); итог —
+ *               <out>/perf/<tag>-overlay.json (не затирает полный замер <tag>.json).
  *   --strict    код выхода 1 при итоговом вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
  *   --help, --h, -h  эта справка.
  *
@@ -143,14 +145,17 @@ import zlib from 'node:zlib';
 import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, PH_URL,
+  collectWarnings, takeWarnings,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'], optional: ['overlay'] });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'], optional: ['overlay'], strict: true });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
+/* WARN lib (свой стиль не вставился) — в итог и json (warnings), а не посреди вывода прогона */
+collectWarnings();
 for (const k of ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 /* «--overlay http://…» без селектора: адрес ушёл в значение флага */
 if (typeof opt.overlay === 'string' && /^(https?|file):/i.test(opt.overlay) && !pos[0]) { pos.unshift(opt.overlay); opt.overlay = true; }
@@ -181,6 +186,7 @@ if (!Object.prototype.hasOwnProperty.call(NET, netName)) die('Сеть: none, fa
 const runs = Math.max(1, Math.min(9, Number(opt.runs) || 1));
 const rounds = Math.max(5, Math.min(20, Number(opt.rounds) || 5));
 if (opt.rounds !== undefined && Number(opt.rounds) < 5) console.log(`--rounds ${opt.rounds}: меньше 5 раундов разброс не виден — беру 5`);
+if (Number(opt.rounds) > 20) console.log(`--rounds ${opt.rounds}: больше 20 раундов замер идёт минутами — беру 20`);
 const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'perf'));
 const tag = opt.tag || `${vpName}-${netName}-cpu${cpu}`;
 const MB = 1024 * 1024;
@@ -826,7 +832,7 @@ if (opt.overlay) {
   else {
     const W = overlay.stats.with, N = overlay.stats.without;
     console.log(`\nЦена слоя фактуры: ${overlay.layers.map((l) => `${l.el}${l.blend && l.blend !== 'normal' ? ` ${l.blend}` : ''}${l.opacity != null ? ` α${l.opacity}` : ''}${l.animation ? ` [${l.animation}]` : ''}`).join(', ')}; ${overlay.rounds} раундов по 2 с покоя, чередуются`);
-    if (overlay.hideVia === 'adopted') console.log('  «без слоя»: CSP страницы не применяет вставленный <style> — слой спрятан таблицей adoptedStyleSheets');
+    if (overlay.hideVia === 'adopted') console.log('  «без слоя»: CSP страницы запрещает <style> — слой спрятан таблицей adoptedStyleSheets');
     console.log('| вариант | RasterTask: медиана (мин–макс) | Paint: медиана (мин–макс) | растр, мс: медиана |\n|---|---|---|---|');
     for (const [label, S] of [['со слоем', W], ['без слоя', N]]) console.log(`| ${label} | ${S.raster.median} (${S.raster.min}–${S.raster.max}) | ${S.paint.median} (${S.paint.min}–${S.paint.max}) | ${S.rasterMs.median} |`);
     const why = overlay.status === 'WARN' ? `слой перерисовывается в покое: +${overlay.extraRaster} растровых задач и +${overlay.extraPaint} Paint за 2 с (все раунды со слоем выше всех без) — кипение GIF или background-position; сдвиг transform по steps() обходится без перерисовки` : overlay.separated.raster || overlay.separated.paint ? `прибавка в пределах бюджета: +${overlay.extraRaster} растровых задач, +${overlay.extraPaint} Paint за 2 с` : `разницы нет или она в пределах разброса раундов (+${overlay.extraRaster} растровых задач, +${overlay.extraPaint} Paint)`;
@@ -836,6 +842,8 @@ if (opt.overlay) {
   report.overlay = overlay;
 }
 
+const libW = takeWarnings();
+if (libW.length) { console.log(''); for (const w of libW) console.log(`WARN ${w}`); bump('WARN'); lines.push('свой стиль не вставился WARN'); report.warnings = libW; }
 console.log(`\n${worst}: ${lines.join(', ') || 'все бюджеты соблюдены'}`);
 report.verdict = worst;
 const file = path.join(outDir, `${tag}${opt['overlay-only'] ? '-overlay' : ''}.json`);
