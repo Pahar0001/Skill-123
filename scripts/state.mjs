@@ -5,14 +5,15 @@
  * потому что «написал код», «открыл в браузере и работает», «посмотрел и
  * красиво», «на телефоне тоже» и «быстро» — разные вещи.
  *
- *   node state.mjs <папка прогона> init <url> "<запрос>" --site <папка сайта> --mode rework|mirror|donor [--force]
- *   node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor] [--site-ignore "data,*.json"]
+ *   node state.mjs <папка прогона> init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new [--force]
+ *   node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor|new] [--url <адрес>] [--site-ignore "data,*.json"]
  *   node state.mjs <папка> add "<задача>" [--priority P2] [--area hero|mobile|3d|content|motion|...]
  *   node state.mjs <папка> set <id> impl=DONE runtime=VERIFIED --evidence runtime/desktop.json#5
  *   node state.mjs <папка> set <id> visual=VERIFIED --evidence after/home-mobile-first.png mobile=NA --note "почему"
  *   node state.mjs <папка> set <id>[,<id>…] impl=DOING priority=P1
  *   node state.mjs <папка> stage <этап> done|active|todo|skipped
- *   node state.mjs <папка> show [--strict]
+ *   node state.mjs <папка> show [--strict] [--json]
+ *   node state.mjs <папка> probe <файл[#шаг]>… --check runtime|visual|mobile|perf [--task <id>] [--json]
  *   node state.mjs --help
  *
  * Поля задачи (одна задача — пять статусов: реализация и четыре проверки):
@@ -24,18 +25,28 @@
  *   priority                    P0 сломано · P1 крупная проблема UX · P2 крупная визуальная ·
  *                               P3 тексты · P4 движение · P5 полировка (по умолчанию P2)
  * ANALYZED — не поле задачи, а этап (stage discovered/design/tech …).
- * Этапы: discovered browser design tech tools tokens plan ui content assets three motion
- *   runtime visual mobile perf a11y polish report; отметки done ✓ · active → · todo · · skipped –.
+ * Этапы: requirements discovered browser design direction tech tools tokens plan ui content
+ *   assets three motion runtime visual mobile perf a11y polish report; отметки done ✓ · active → ·
+ *   todo · · skipped –. requirements (реестр требований) и direction (направление выбрано) —
+ *   этапы режима new: в rework, mirror и donor init ставит им skipped, и show их не печатает;
+ *   реестр понадобился и там (источников требований больше одного) — stage requirements active,
+ *   тогда этап виден. В старом журнале этих этапов нет: show печатает чек-лист как раньше,
+ *   stage их принимает.
  * Режим прогона (--mode) пишется в журнал и печатается в show — для отчёта.
  *
  * Флаги:
  *   --site <папка>     папка с файлами сайта: исходники (rework), зеркало <прогон>/mirror
- *                      (mirror) или новый сайт (donor). По времени её файлов проверяется,
+ *                      (mirror), новый сайт (donor, new — <прогон>/site; в new init создаёт её
+ *                      сам, если она внутри папки прогона). По времени её файлов проверяется,
  *                      что доказательство снято после последней правки. Без неё VERIFIED
  *                      не ставится. Не учитываются node_modules, .git, кэши сборщиков,
  *                      *.log, базы (*.db, *.sqlite, -wal, -shm) и папки прогонов.
  *   --mode <режим>     rework — переработка по исходникам, mirror — через зеркало
- *                      (исходников нет), donor — новый сайт по донору. Идёт в отчёт.
+ *                      (исходников нет), donor — новый сайт по донору, new — сайт с нуля
+ *                      по требованиям (без донора; с референсами или без). Идёт в отчёт.
+ *   адрес «-» в init   сайта ещё нет — только с --mode new; когда сайт поднят (serve.mjs):
+ *                      meta --url http://localhost:<порт>/
+ *   --url <адрес>      (meta) адрес сайта: http://, https:// или file://
  *   --site-ignore      что ещё не считать правкой сайта: имена папок и файлов или маски
  *                      через запятую («data,uploads,*.json»). Хранится в журнале.
  *   --force            init поверх существующего журнала; старый сохраняется рядом.
@@ -45,6 +56,12 @@
  *   --note "…"         заметка к задаче; для NA — обязательная причина. Без текста — ошибка.
  *                      Заметку, которая начинается с «--», писать так: --note="--scroll прошёл".
  *   --strict           (show) код выхода 1, если итог не OK.
+ *   --json             (show) журнал с состоянием каждой клетки одним JSON: url, режим, папка
+ *                      сайта и её последняя правка, этапы, задачи (cells: статус, cat, label,
+ *                      доказательство, problems, warns; reqs — привязанные требования).
+ *                      (probe) результат проверки доказательства JSON-ом.
+ *   --check, --task    (probe) какой проверкой мерить доказательство и для какой задачи
+ *                      (с задачей учитывается и правило «требование изменено»).
  *   --priority, --area (add) приоритет P0…P5 и область задачи.
  *   --help             эта справка (журнал не читается и не пишется).
  * Значения можно писать и так: --note="…", --evidence=runtime/x.json#3. Если сразу за
@@ -80,16 +97,29 @@
  * — перепрогнать»: инструмент менялся между замером и отметкой. Протокол без generator
  * (снят раньше) принимается как прежде; в show у него пометка «версия скрипта неизвестна».
  *
+ * Требования. Если рядом с журналом лежит реестр requirements.json (requirements.mjs), он
+ * только читается: задача, привязанная к требованию, которое изменили (changedAt, новая
+ * редакция) позже, чем снято доказательство, — «устарело (требование изменено)»: VERIFIED
+ * с таким доказательством не ставится, show даёт FAIL, как после правки файлов сайта.
+ * Снятые (dropped, superseded, out) требования не учитываются.
+ *
+ * probe — проверить доказательство без записи (им пользуется requirements.mjs): те же
+ * правила, что у set … VERIFIED; несколько файлов за вызов — одна проверка --check на все,
+ * с --json — массив. Код 1, если хоть одно не годится.
+ *
  * Пишет: <папка>/state.json; init --force сохраняет старый журнал в state.<время>.json.
  * Код выхода: 0 — готово (и после --help); 1 — отказ (ошибка в аргументах, доказательство
  * не годится, нет журнала) или show --strict с итогом не OK.
  *
- * show печатает режим, папку сайта и её последнюю правку, чек-лист этапов, таблицу задач,
- * список доказательств и итог по проверкам сделанных задач: «проверено N, неприменимо M,
- * без доказательства K, устарело S, …». Доказательство, снятое раньше последней правки
- * сайта, помечается «устарело»: проверку прогнать заново и поставить VERIFIED ещё раз.
+ * show печатает адрес, режим, папку сайта и её последнюю правку, чек-лист этапов, таблицу
+ * задач (с номерами требований), список доказательств и итог по проверкам сделанных задач:
+ * «проверено N, неприменимо M, без доказательства K, устарело S, …». Доказательство, снятое
+ * раньше последней правки сайта или изменения связанного требования, помечается «устарело»:
+ * проверку прогнать заново и поставить VERIFIED ещё раз. С реестром — строка «Требования:
+ * активных, без задачи, пересмотреть после изменения, вопросов без ответа».
  * Итог FAIL — есть отметки без доказательства или устаревшие; WARN — задачи P0–P2 ещё не
- * проверены до конца; OK — всё сделанное проверено.
+ * проверены до конца, у активного must-требования нет задачи либо его надо пересмотреть или
+ * в режиме new нет реестра требований; OK — всё сделанное проверено.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -101,9 +131,13 @@ const IMPL_ALIAS = { IN_PROGRESS: 'DOING', 'IN-PROGRESS': 'DOING' };
 const CHECK = ['NOT_CHECKED', 'VERIFIED', 'FAILED', 'NEEDS_WORK', 'NA'];
 const CHECKS = ['runtime', 'visual', 'mobile', 'perf'];
 const PRIO = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5'];
-const MODES = { rework: 'переработка по исходникам', mirror: 'переработка через зеркало (исходников нет)', donor: 'новый сайт по донору' };
+const MODES = { rework: 'переработка по исходникам', mirror: 'переработка через зеркало (исходников нет)', donor: 'новый сайт по донору', new: 'новый сайт с нуля по требованиям (без донора; с референсами или без)' };
+/* этапы только режима new: в остальных режимах init ставит им skipped, в старых журналах их нет */
+const NEW_ONLY = ['requirements', 'direction'];
 const STAGES = [
+  ['requirements', 'Требования собраны и разобраны'],
   ['discovered', 'Сайт разведан'], ['browser', 'Открыт в браузере, консоль и сеть сняты'], ['design', 'Дизайн разобран глазами'],
+  ['direction', 'Направление выбрано (эскизы показаны)'],
   ['tech', 'Техническая архитектура понята'], ['tools', 'Инструменты выбраны'], ['tokens', 'Дизайн-система снята'],
   ['plan', 'План с приоритетами составлен'], ['ui', 'Вёрстка и UI'], ['content', 'Тексты'], ['assets', 'Картинки и графика'],
   ['three', '3D'], ['motion', 'Движение'], ['runtime', 'Проверка в браузере'], ['visual', 'Визуальная проверка'],
@@ -116,9 +150,9 @@ const IGNORE_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', '.cache', '.
 const IGNORE_FILE = /(\.(log|db|sqlite3?|tmp|temp|swp|swo|pid|lock)$|-(wal|shm|journal)$|~$|^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$)/i;
 
 const argv = process.argv.slice(2);
-const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area'];
-const FLAG_KEYS = ['force', 'strict', 'help', 'h'];
-const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS, commands: ['init', 'meta', 'add', 'set', 'stage', 'show'] });
+const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area', 'url', 'check', 'task'];
+const FLAG_KEYS = ['force', 'strict', 'help', 'h', 'json'];
+const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS, commands: ['init', 'meta', 'add', 'set', 'stage', 'show', 'probe'] });
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
@@ -134,7 +168,7 @@ for (let i = 0; i < argv.length - 1; i++) {
   if (f && KNOWN.has(f[1])) die(`--${k[1]} без значения: следом стоит флаг --${f[1]}. ${k[1] === 'note' ? 'Напишите текст заметки; если она начинается с «--» — так: --note="--scroll прошёл"' : `Нужно: --${k[1]} <значение>`}`);
 }
 const [dir, cmd, ...rest] = pos;
-if (!dir || !cmd) die('Нужно: node state.mjs <папка> init|meta|add|set|stage|show ... (--help — справка)');
+if (!dir || !cmd) die('Нужно: node state.mjs <папка> init|meta|add|set|stage|show|probe ... (--help — справка)');
 const runRoot = path.resolve(dir);
 const file = path.join(runRoot, 'state.json');
 const fmt = (ms) => new Date(ms).toLocaleString('sv-SE');
@@ -179,6 +213,18 @@ function siteLatest() {
   }
   return (latestCache = res);
 }
+
+/* ---------- требования (requirements.json рядом с журналом): только чтение ---------- */
+
+let reqCache;
+function reqRegistry() {
+  if (reqCache === undefined) { const j = readJson(path.join(runRoot, 'requirements.json')); reqCache = j && Array.isArray(j.items) ? j : null; }
+  return reqCache;
+}
+const REQ_GONE = ['dropped', 'superseded', 'out'];
+/* действующие требования, к которым привязана задача */
+const reqsOfTask = (t) => { const r = reqRegistry(); return r && t ? r.items.filter((q) => Array.isArray(q.tasks) && q.tasks.map(Number).includes(Number(t.id)) && !REQ_GONE.includes(q.decision)) : []; };
+const reqIds = (t) => reqsOfTask(t).map((q) => q.id);
 
 /* ---------- доказательство ---------- */
 
@@ -262,9 +308,11 @@ function versionCheck(g) {
 /**
  * Проверить доказательство. Возвращает { rec, problems: [{code, msg}], warns: [], notes: [] }.
  * notes — пометки только для show (например, «версия скрипта неизвестна»).
- * code: missing | type | noverdict | fail | step | vp | nosite | inside | stale.
+ * code: missing | type | noverdict | fail | step | vp | nosite | inside | stale | reqchange.
+ * task — задача, которую доказательство подтверждает: с ней ещё сверка со временем изменения
+ * её действующих требований (reqchange).
  */
-function checkEvidence(spec, check, { lenient = false } = {}) {
+function checkEvidence(spec, check, { lenient = false, task = null } = {}) {
   const problems = []; const warns = []; const notes = [];
   const P = (code, msg) => problems.push({ code, msg });
   const m = /^(.*?\.(?:json|png|jpe?g|webp|avif|gif))(?:#(.*))?$/i.exec(String(spec).trim());
@@ -339,6 +387,11 @@ function checkEvidence(spec, check, { lenient = false } = {}) {
     if (L && L.file && evTime <= L.mtimeMs) P('stale', `снято ${fmt(evTime)}, а сайт правили позже: ${L.file} ${fmt(L.mtimeMs)} — прогнать проверку заново`);
     if (L) { rec.siteEditAt = L.mtimeMs ? new Date(L.mtimeMs).toISOString() : null; rec.siteEditFile = L.file; }
   }
+  /* смена требования: доказательство снято по старой формулировке */
+  for (const q of reqsOfTask(task)) {
+    const ch = Date.parse(q.changedAt || '');
+    if (Number.isFinite(ch) && evTime <= ch) P('reqchange', `снято ${fmt(evTime)}, а требование ${q.id} изменено ${fmt(ch)} (ред. ${q.rev || 1}) — проверить по новой формулировке: requirements.mjs <папка> show ${q.id}`);
+  }
   return { problems, warns, rec, notes };
 }
 const evSpec = (e) => `${e.file}${e.step ? '#' + e.step : ''}`;
@@ -346,16 +399,16 @@ const sameEvidence = (a, b) => !!(a && b) && a.file.toLowerCase() === b.file.toL
 
 /* ---------- состояние клетки таблицы ---------- */
 
-const PROBLEM_LABEL = { missing: 'файла нет', fail: 'протокол FAIL', stale: 'устарело', nosite: 'нет папки сайта', type: 'не годится', noverdict: 'без вердикта', step: 'нет шага', vp: 'не телефон', inside: 'в папке сайта' };
+const PROBLEM_LABEL = { missing: 'файла нет', fail: 'протокол FAIL', stale: 'устарело', nosite: 'нет папки сайта', type: 'не годится', noverdict: 'без вердикта', step: 'нет шага', vp: 'не телефон', inside: 'в папке сайта', reqchange: 'требование изменено' };
 function cellState(t, c) {
   const s = t[c]; const p = t.proof && t.proof[c];
   if (s === 'VERIFIED') {
     if (!p || !p.evidence) return { cat: 'noproof', label: 'VERIFIED (нет доказательства)' };
-    const r = checkEvidence(evSpec(p.evidence), c);
+    const r = checkEvidence(evSpec(p.evidence), c, { task: t });
     if (!r.problems.length) return { cat: 'ok', label: 'VERIFIED', r };
-    const order = ['missing', 'fail', 'type', 'noverdict', 'step', 'vp', 'inside', 'nosite', 'stale'];
+    const order = ['missing', 'fail', 'type', 'noverdict', 'step', 'vp', 'inside', 'nosite', 'reqchange', 'stale'];
     const main = order.find((code) => r.problems.some((x) => x.code === code));
-    const cat = main === 'stale' ? 'stale' : main === 'nosite' ? 'nosite' : 'noproof';
+    const cat = main === 'stale' || main === 'reqchange' ? 'stale' : main === 'nosite' ? 'nosite' : 'noproof';
     return { cat, label: `VERIFIED (${PROBLEM_LABEL[main]})`, r };
   }
   if (s === 'NA') return p && p.note ? { cat: 'na', label: 'NA' } : { cat: 'noproof', label: 'NA (без причины)' };
@@ -365,18 +418,24 @@ function cellState(t, c) {
 
 /* ---------- настройки журнала: папка сайта, режим ---------- */
 
-function applyMeta(target) {
-  if (opt.site !== undefined) {
-    if (opt.site === true || !String(opt.site).trim()) die('--site без папки: --site <папка с файлами сайта>');
-    const s = path.resolve(String(opt.site));
-    if (!fs.existsSync(s) || !fs.statSync(s).isDirectory()) die(`Нет папки сайта ${s}`);
-    if (norm(s) === norm(runRoot)) die('Папка сайта совпадает с папкой прогона: укажите папку, где лежат файлы сайта (для зеркала — <прогон>/mirror)');
-    target.site = s;
-  }
+function applyMeta(target, { createSite = false } = {}) {
   if (opt.mode !== undefined) {
     const m = String(opt.mode).toLowerCase();
     if (!(m in MODES)) die(`--mode: ${Object.keys(MODES).join(' | ')} (${Object.entries(MODES).map(([k, v]) => `${k} — ${v}`).join('; ')})`);
     target.mode = m;
+  }
+  if (opt.site !== undefined) {
+    if (opt.site === true || !String(opt.site).trim()) die('--site без папки: --site <папка с файлами сайта>');
+    const s = path.resolve(String(opt.site));
+    if (norm(s) === norm(runRoot)) die('Папка сайта совпадает с папкой прогона: укажите папку, где лежат файлы сайта (для зеркала — <прогон>/mirror, для нового сайта — <прогон>/site)');
+    /* сайт с нуля: папки ещё нет — создать, если она внутри папки прогона (иначе опечатка в пути создала бы чужую папку) */
+    if (!fs.existsSync(s) && createSite && target.mode === 'new' && inside(path.dirname(s), runRoot)) { fs.mkdirSync(s, { recursive: true }); console.log(`OK   папка сайта создана: ${s}`); }
+    if (!fs.existsSync(s) || !fs.statSync(s).isDirectory()) die(`Нет папки сайта ${s}`);
+    target.site = s;
+  }
+  if (opt.url !== undefined) {
+    if (opt.url === true || !/^(https?|file):\/\/\S/i.test(String(opt.url).trim())) die('--url <адрес сайта: http://…, https://… или file:///…>');
+    target.url = String(opt.url).trim();
   }
   if (opt['site-ignore'] !== undefined) {
     if (opt['site-ignore'] === true) die('--site-ignore без списка: --site-ignore "data,*.json"');
@@ -384,32 +443,39 @@ function applyMeta(target) {
   }
 }
 const metaLines = (s) => [
-  `Режим: ${s.mode ? `${s.mode} — ${MODES[s.mode]}` : 'не указан (meta --mode rework|mirror|donor)'}`,
+  `Режим: ${s.mode ? `${s.mode} — ${MODES[s.mode]}` : 'не указан (meta --mode rework|mirror|donor|new)'}`,
   `Сайт: ${s.site || 'папка не указана (meta --site <папка>) — VERIFIED не ставится, свежесть доказательств не проверить'}${s.siteIgnore && s.siteIgnore.length ? ` · не считать правкой: ${s.siteIgnore.join(', ')}` : ''}`,
 ];
 
 /* ---------- команды ---------- */
 
 if (cmd === 'init') {
-  if (!rest[0]) die('init <url> "<запрос>" --site <папка сайта> --mode rework|mirror|donor');
-  if (st && !opt.force) die(`Журнал уже есть: ${file} (задач ${(st.tasks || []).length}). Начать заново — с --force (старый сохранится рядом), поменять папку сайта или режим — meta.`);
+  if (!rest[0]) die('init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new («-» — адреса ещё нет, только --mode new)');
+  if (rest[0] === '-' && String(opt.mode || '').toLowerCase() !== 'new') die('Адрес «-» (сайта ещё нет) — только в режиме new (--mode new); у переработки и донора адрес есть');
+  if (st && !opt.force) die(`Журнал уже есть: ${file} (задач ${(st.tasks || []).length}). Начать заново — с --force (старый сохранится рядом), поменять папку сайта, режим или адрес — meta.`);
   if (st && opt.force) { const bak = path.join(runRoot, `state.${new Date().toISOString().replace(/[:.]/g, '-')}.json`); fs.copyFileSync(file, bak); console.log(`Старый журнал сохранён: ${bak}`); }
-  st = { url: rest[0], request: rest[1] || '', createdAt: new Date().toISOString(), mode: null, site: null, stages: Object.fromEntries(STAGES.map(([k]) => [k, 'todo'])), tasks: [] };
-  applyMeta(st);
-  st.stages.discovered = 'active';
+  st = { url: rest[0] === '-' ? null : rest[0], request: rest[1] || '', createdAt: new Date().toISOString(), mode: null, site: null, stages: Object.fromEntries(STAGES.map(([k]) => [k, 'todo'])), tasks: [] };
+  applyMeta(st, { createSite: true });
+  /* с нуля начинается с требований; в остальных режимах — с разведки, этапы режима new не нужны */
+  if (st.mode === 'new') st.stages.requirements = 'active';
+  else { st.stages.discovered = 'active'; if (st.mode) for (const k of NEW_ONLY) st.stages[k] = 'skipped'; }
   writeJson(file, st, JOURNAL); console.log(`Журнал создан: ${file}`);
   const [modeLine, siteLine] = metaLines(st);
   console.log(`${st.mode ? 'OK  ' : 'WARN'} ${modeLine}`); console.log(`${st.site ? 'OK  ' : 'WARN'} ${siteLine}`);
+  if (!st.url) console.log('WARN Адреса ещё нет — когда сайт поднимется: meta --url http://localhost:<порт>/');
+  if (st.mode === 'new') console.log('Дальше: требования в реестр — requirements.mjs <папка> ingest --text "<первое сообщение>" --kind brief (файлы ТЗ — --file)');
   process.exit(0);
 }
 if (!st) die(`Нет журнала ${file} — сначала init.`);
 for (const t of st.tasks || []) if (IMPL_ALIAS[t.impl]) t.impl = IMPL_ALIAS[t.impl];
 
 if (cmd === 'meta') {
-  const before = JSON.stringify([st.site, st.mode, st.siteIgnore]);
+  const before = JSON.stringify([st.site, st.mode, st.siteIgnore, st.url]);
   applyMeta(st);
-  if (JSON.stringify([st.site, st.mode, st.siteIgnore]) !== before) { writeJson(file, st, JOURNAL); console.log('Записано.'); }
+  if (JSON.stringify([st.site, st.mode, st.siteIgnore, st.url]) !== before) { writeJson(file, st, JOURNAL); console.log('Записано.'); }
+  console.log(`Адрес: ${st.url || 'ещё нет (meta --url http://localhost:<порт>/)'}`);
   for (const l of metaLines(st)) console.log(l);
+  if (st.mode === 'new') { const sk = NEW_ONLY.filter((k) => st.stages[k] === 'skipped'); if (sk.length) console.log(`WARN в режиме new этапы ${sk.join(', ')} нужны, а отмечены «пропущено»: stage ${sk[0]} active`); }
   const L = siteLatest();
   if (L) console.log(`Последняя правка сайта: ${L.file ? `${L.file} ${fmt(L.mtimeMs)}` : 'файлов нет'} (файлов ${L.files}${L.capped ? ', обход остановлен на 50 000' : ''})`);
 } else if (cmd === 'add') {
@@ -452,7 +518,7 @@ if (cmd === 'meta') {
   for (const c of verified) {
     const spec = evFor(c);
     if (!spec) { errors.push(`${c}=VERIFIED без доказательства: --evidence <протокол.json[#шаг]|снимок.png> (или --evidence-${c})`); continue; }
-    const r = checkEvidence(spec, c);
+    const r = checkEvidence(spec, c, { task: tasks[0] });
     errors.push(...r.problems.map((x) => `${c}: ${x.msg}`)); warns.push(...r.warns.map((x) => `${c}: ${x}`)); recs[c] = r.rec;
     /* один протокол целиком на несколько задач — это «пачка»: второй раз только со своим шагом */
     if (r.rec && r.rec.kind === 'json' && !r.rec.step) {
@@ -494,15 +560,45 @@ if (cmd === 'meta') {
     console.log(`OK   #${t.id} ${t.task}: impl ${t.impl} · ${parts.join(' · ')}${t.note ? ` · ${t.note}` : ''}`);
   }
 } else if (cmd === 'stage') {
-  const [k, v] = rest; if (!(k in st.stages)) die(`Этапы: ${STAGES.map(([s]) => s).join(', ')}`); if (!(v in MARK)) die('done|active|todo|skipped');
+  /* по списку STAGES, а не по ключам журнала: в старом журнале новых этапов (requirements, direction) нет */
+  const [k, v] = rest; if (!STAGES.some(([s]) => s === k)) die(`Этапы: ${STAGES.map(([s]) => s).join(', ')}`); if (!(v in MARK)) die('done|active|todo|skipped');
   st.stages[k] = v; writeJson(file, st, JOURNAL); console.log(`${MARK[v]} ${STAGES.find(([s]) => s === k)[1]}`);
+} else if (cmd === 'probe') {
+  const specs = rest.filter(Boolean);
+  if (!specs.length) die('probe <файл[#шаг]>… --check runtime|visual|mobile|perf [--task <id>] [--json]');
+  const c = opt.check === undefined ? 'runtime' : String(opt.check); if (!CHECKS.includes(c)) die(`--check: ${CHECKS.join(', ')}`);
+  const t = opt.task !== undefined ? st.tasks.find((x) => x.id === Number(opt.task)) : null; if (opt.task !== undefined && !t) die(`Нет задачи #${opt.task}`);
+  const res = specs.map((spec) => { const r = checkEvidence(spec, c, { task: t }); return { spec, ok: !r.problems.length, problems: r.problems, warns: r.warns, notes: r.notes || [], rec: r.rec }; });
+  if (opt.json) console.log(JSON.stringify(res.length === 1 ? res[0] : res, null, 1));
+  else for (const r of res) {
+    for (const x of r.problems) console.log(`FAIL ${r.spec}: ${x.msg}`);
+    for (const w of r.warns) console.log(`WARN ${r.spec}: ${w}`);
+    if (r.ok) console.log(`OK   ${evSpec(r.rec)}${r.rec && r.rec.stepLabel ? ` «${r.rec.stepLabel.slice(0, 60)}»` : ''} · снято ${r.rec && r.rec.takenAt ? fmt(Date.parse(r.rec.takenAt)) : '—'}`);
+  }
+  process.exit(res.some((r) => !r.ok) ? 1 : 0);
 } else if (cmd === 'show') {
   const L = siteLatest();
-  console.log(`# ${st.url}\n\nЗапрос: ${st.request}`);
+  if (opt.json) {
+    const cellJ = (t, c) => { const s = cellState(t, c); const p = t.proof && t.proof[c]; return { status: t[c], cat: s.cat, label: s.label, evidence: (p && p.evidence) || null, problems: s.r ? s.r.problems : [], warns: s.r ? s.r.warns : [] }; };
+    console.log(JSON.stringify({
+      url: st.url || null, request: st.request, mode: st.mode || null, site: st.site || null,
+      siteEdit: L && L.file ? { file: L.file, at: new Date(L.mtimeMs).toISOString() } : null,
+      stages: Object.fromEntries(STAGES.map(([k]) => [k, st.stages[k] || null])),
+      tasks: st.tasks.map((t) => ({ id: t.id, task: t.task, priority: t.priority, area: t.area || null, impl: t.impl, note: t.note || '', reqs: reqIds(t), cells: Object.fromEntries(CHECKS.map((c) => [c, cellJ(t, c)])) })),
+    }, null, 1));
+    process.exit(0);
+  }
+  console.log(`# ${st.url || '(адреса ещё нет — meta --url)'}\n\nЗапрос: ${st.request}`);
   for (const l of metaLines(st)) console.log(l);
   if (st.site) console.log(`Последняя правка сайта: ${L && L.file ? `${L.file} ${fmt(L.mtimeMs)}` : fs.existsSync(st.site) ? 'файлов нет' : 'папки нет'}`);
   console.log('');
-  for (const [k, title] of STAGES) console.log(`${MARK[st.stages[k]] || '·'} ${title}`);
+  /* этапы режима new в других режимах — только если их начали (реестр понадобился и там): у старых журналов
+     и у переработки без реестра чек-лист прежний; этапа нет в журнале (журнал старше этапа) — «не начато» */
+  for (const [k, title] of STAGES) {
+    const v = st.stages[k];
+    if (NEW_ONLY.includes(k) && st.mode !== 'new' && (!v || v === 'skipped') && !(k === 'requirements' && reqRegistry())) continue;
+    console.log(`${MARK[v] || '·'} ${title}`);
+  }
 
   const sorted = [...st.tasks].sort((a, b) => a.priority.localeCompare(b.priority) || a.id - b.id);
   const cells = new Map(sorted.map((t) => [t.id, Object.fromEntries(CHECKS.map((c) => [c, cellState(t, c)]))]));
@@ -510,7 +606,8 @@ if (cmd === 'meta') {
   for (const t of sorted) {
     const cs = cells.get(t.id);
     const naNotes = CHECKS.filter((c) => t[c] === 'NA' && t.proof && t.proof[c] && t.proof[c].note && t.proof[c].note !== t.note).map((c) => `${c} NA: ${t.proof[c].note}`);
-    console.log(`| ${t.id} | ${t.priority} | ${t.task} | ${t.impl} | ${CHECKS.map((c) => cs[c].label).join(' | ')} | ${[t.note, ...naNotes].filter(Boolean).join(' · ').replace(/\|/g, '/')} |`);
+    const rq = reqIds(t);
+    console.log(`| ${t.id} | ${t.priority} | ${t.task}${rq.length ? ` [${rq.join(', ')}]` : ''} | ${t.impl} | ${CHECKS.map((c) => cs[c].label).join(' | ')} | ${[t.note, ...naNotes].filter(Boolean).join(' · ').replace(/\|/g, '/')} |`);
   }
 
   const evLines = []; const bare = [];
@@ -558,12 +655,24 @@ if (cmd === 'meta') {
   console.log(`VERIFIED (runtime, visual и mobile проверены с доказательством или неприменимы с причиной): ${readyT.length ? readyT.map((t) => `#${t.id}`).join(', ') : 'нет'}.`);
   const notReady = doneT.filter((t) => !ready(t));
   if (notReady.length) console.log(`В отчёт как IMPLEMENTED, не VERIFIED:\n${notReady.map((t) => `  - #${t.id}: ${why(t)}`).join('\n')}`);
+  /* требования: активные must без задачи или после изменения не пересмотрены — план не сходится с реестром */
+  const R = reqRegistry();
+  let reqOpen = [];
+  if (R) {
+    const act = R.items.filter((q) => (q.decision || 'active') === 'active');
+    const noTask = act.filter((q) => !(q.tasks || []).length && !['glossary', 'audience', 'risk', 'assumption', 'schedule', 'about'].includes(q.kind));
+    const review = act.filter((q) => q.needsReview);
+    const openQ = (R.questions || []).filter((x) => !x.answer && !x.assumption);
+    console.log(`Требования (requirements.json): активных ${act.length}, без задачи ${noTask.length}${noTask.length ? ` (${noTask.slice(0, 8).map((q) => q.id).join(', ')}${noTask.length > 8 ? ', …' : ''})` : ''}, пересмотреть после изменения ${review.length}${review.length ? ` (${review.slice(0, 8).map((q) => q.id).join(', ')})` : ''}, вопросов без ответа ${openQ.length} — подробно: requirements.mjs <папка> report`);
+    reqOpen = [...new Set([...noTask, ...review])].filter((q) => q.priority === 'must');
+  } else if (st.mode === 'new') console.log('Требования: реестра нет (requirements.json) — в режиме new он обязателен: requirements.mjs <папка> ingest --text "<первое сообщение>" --kind brief');
+  const noRegistry = !R && st.mode === 'new';
   const openHigh = st.tasks.filter((t) => ['P0', 'P1', 'P2'].includes(t.priority) && t.impl !== 'DROPPED' && !ready(t));
   const bad = cnt.noproof + cnt.nosite + cnt.stale;
-  const verdict = bad ? 'FAIL' : openHigh.length ? 'WARN' : 'OK';
+  const verdict = bad ? 'FAIL' : openHigh.length || reqOpen.length || noRegistry ? 'WARN' : 'OK';
   const msg = bad
-    ? `${cnt.noproof + cnt.nosite ? `без доказательства: ${cnt.noproof + cnt.nosite}` : ''}${cnt.noproof + cnt.nosite && cnt.stale ? ', ' : ''}${cnt.stale ? `устарело: ${cnt.stale} (сайт правили после проверки)` : ''} — прогнать проверки заново и поставить VERIFIED с --evidence`
-    : openHigh.length ? `P0–P2 не проверены до конца: ${openHigh.map((t) => `#${t.id}`).join(', ')}` : 'всё сделанное проверено';
+    ? `${cnt.noproof + cnt.nosite ? `без доказательства: ${cnt.noproof + cnt.nosite}` : ''}${cnt.noproof + cnt.nosite && cnt.stale ? ', ' : ''}${cnt.stale ? `устарело: ${cnt.stale} (${R ? 'сайт правили или требование изменили' : 'сайт правили'} после проверки)` : ''} — прогнать проверки заново и поставить VERIFIED с --evidence`
+    : openHigh.length || reqOpen.length || noRegistry ? [openHigh.length ? `P0–P2 не проверены до конца: ${openHigh.map((t) => `#${t.id}`).join(', ')}` : '', reqOpen.length ? `must-требования без задачи или не пересмотрены после изменения: ${reqOpen.map((q) => q.id).join(', ')}` : '', noRegistry ? 'режим new без реестра требований' : ''].filter(Boolean).join('; ') : 'всё сделанное проверено';
   console.log(`\n${verdict}: ${msg}`);
   if (opt.strict && verdict !== 'OK') process.exit(1);
 } else die(`Неизвестная команда ${cmd}`);

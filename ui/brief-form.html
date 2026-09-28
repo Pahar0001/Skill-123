@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Бриф на сайт</title>
-<meta name="description" content="Форма, которая собирает запрос для скилла site-rework — переработка сайта или новый сайт в языке донора: адрес, о чём сайт, задача, референсы, ограничения, кадры — и отдаёт текст по templates/brief.md для вставки в Claude Code.">
+<meta name="description" content="Форма, которая собирает запрос для скилла site-rework — переработка сайта, новый сайт в языке донора или сайт с нуля по требованиям: адрес, о чём сайт, файлы требований, задача, референсы, ограничения, кадры — и отдаёт текст по templates/brief.md для вставки в Claude Code.">
 <style>
   :root { --bg: #f6f4ef; --surface: #ffffff; --text: #1e1b16; --muted: #6b655b; --line: #dcd6ca; --rule: #8f877a; --accent: #7a2e1f; --accent-text: #ffffff; color-scheme: light dark; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #171412; --surface: #211d1a; --text: #efe8dc; --muted: #a49b8c; --line: #3a332d; --rule: #8a7f71; --accent: #d98a5f; --accent-text: #1b1310; } }
@@ -45,17 +45,17 @@
 </head>
 <body>
 <main>
-  <h1 data-rework="Бриф на переработку сайта" data-donor="Бриф на новый сайт в языке донора">Бриф на переработку сайта</h1>
-  <p class="lead" data-rework="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес." data-donor="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязательны адрес донора и то, о чём сайт.">Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес.</p>
+  <h1 data-rework="Бриф на переработку сайта" data-donor="Бриф на новый сайт в языке донора" data-new="Бриф на сайт с нуля">Бриф на переработку сайта</h1>
+  <p class="lead" data-rework="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес." data-donor="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязательны адрес донора и то, о чём сайт." data-new="Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязательно то, о чём сайт; адрес не нужен.">Заполните, нажмите «Собрать бриф» и вставьте текст в Claude Code. Обязателен только адрес.</p>
   <form id="f">
     <div class="field">
-      <label for="url" data-rework="Адрес сайта" data-donor="Адрес донора">Адрес сайта</label>
-      <p class="hint" id="url-h" data-rework="его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже" data-donor="сайт, чей язык берём: шрифты, ритм, линии, фактуру — но не тексты и не фото">его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже</p>
+      <label for="url" data-rework="Адрес сайта" data-donor="Адрес донора" data-new="Адрес, если сайт уже где-то есть">Адрес сайта</label>
+      <p class="hint" id="url-h" data-rework="его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже" data-donor="сайт, чей язык берём: шрифты, ритм, линии, фактуру — но не тексты и не фото" data-new="сайта ещё нет — оставьте пустым; сайты, которые нравятся, — в «Референсы»">его и перерабатываем; если это чужой сайт, чей язык берём, — отметьте ниже</p>
       <input id="url" name="url" type="url" placeholder="https://example.com" required aria-describedby="url-h">
     </div>
 
     <fieldset>
-      <legend>Что делаем с этим адресом</legend>
+      <legend>Что делаем</legend>
       <div class="choices">
         <div class="choice">
           <input type="radio" id="kind-rework" name="kind" value="rework" checked aria-describedby="kind-rework-h">
@@ -67,13 +67,24 @@
           <label for="kind-donor">Делаем новый сайт в его языке</label>
           <p class="hint" id="kind-donor-h">адрес — донор; сайт собирается с нуля про ваше дело</p>
         </div>
+        <div class="choice">
+          <input type="radio" id="kind-new" name="kind" value="new" aria-describedby="kind-new-h">
+          <label for="kind-new">Делаем новый сайт с нуля</label>
+          <p class="hint" id="kind-new-h">адрес не нужен; требования — сообщениями, файлами ТЗ, голосовыми, можно и по ходу</p>
+        </div>
       </div>
     </fieldset>
 
     <div class="field">
       <label for="about">О чём сайт и что продаёт</label>
-      <p class="hint" id="about-h" data-rework="пусто — узнаем с самого сайта" data-donor="обязательно: дело не выдумываем">пусто — узнаем с самого сайта</p>
+      <p class="hint" id="about-h" data-rework="пусто — узнаем с самого сайта" data-donor="обязательно: дело не выдумываем" data-new="обязательно: дело не выдумываем">пусто — узнаем с самого сайта</p>
       <textarea id="about" name="about" placeholder="чем занимаетесь, где, что продаёте и кому" aria-describedby="about-h"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="reqs">Файлы требований</label>
+      <p class="hint" id="reqs-h">ТЗ, PRD (.docx, .pdf), голосовые, скриншоты — путь по строке; можно и потом, по ходу работы</p>
+      <textarea id="reqs" name="reqs" placeholder="C:\Users\…\Downloads\ТЗ.docx" aria-describedby="reqs-h"></textarea>
     </div>
 
     <div class="field" data-only="donor" hidden>
@@ -83,14 +94,14 @@
     </div>
 
     <div class="field">
-      <label for="task" data-rework="Что изменить" data-donor="Что должно быть на сайте">Что изменить</label>
-      <p class="hint" id="task-h" data-rework="своими словами: что не нравится, чего хочется, для кого сайт" data-donor="своими словами: какие блоки, что должен сделать посетитель">своими словами: что не нравится, чего хочется, для кого сайт</p>
-      <textarea id="task" name="task" placeholder="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-rework-ph="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-donor-ph="первый экран, каталог, заявка — и что на них должно происходить" aria-describedby="task-h"></textarea>
+      <label for="task" data-rework="Что изменить" data-donor="Что должно быть на сайте" data-new="Что должно быть на сайте">Что изменить</label>
+      <p class="hint" id="task-h" data-rework="своими словами: что не нравится, чего хочется, для кого сайт" data-donor="своими словами: какие блоки, что должен сделать посетитель" data-new="своими словами: какие страницы и функции, что должен сделать посетитель; подробности можно файлом выше">своими словами: что не нравится, чего хочется, для кого сайт</p>
+      <textarea id="task" name="task" placeholder="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-rework-ph="Сделай сайт визуально дороже, сохрани фирменный стиль. Улучши первый экран. Добавь опросник подбора услуги. Переработай мобильную версию." data-donor-ph="первый экран, каталог, заявка — и что на них должно происходить" data-new-ph="поиск по каталогу, карточка, заявка — и что на них должно происходить" aria-describedby="task-h"></textarea>
     </div>
 
     <div class="field">
       <label for="pages">Страницы в работе</label>
-      <p class="hint" id="pages-h" data-rework="через запятую; пусто — главная" data-donor="какие страницы собрать, через запятую; пусто — одна главная">через запятую; пусто — главная</p>
+      <p class="hint" id="pages-h" data-rework="через запятую; пусто — главная" data-donor="какие страницы собрать, через запятую; пусто — одна главная" data-new="какие страницы собрать, через запятую; пусто — состав из требований">через запятую; пусто — главная</p>
       <input id="pages" name="pages" type="text" placeholder="/, /uslugi, /kontakty" aria-describedby="pages-h">
     </div>
 
@@ -102,14 +113,14 @@
 
     <div class="field">
       <label for="style">Пожелания по стилю</label>
-      <p class="hint" id="style-h" data-rework="пусто — сохранить текущий язык сайта" data-donor="пусто — язык донора">пусто — сохранить текущий язык сайта</p>
+      <p class="hint" id="style-h" data-rework="пусто — сохранить текущий язык сайта" data-donor="пусто — язык донора" data-new="пусто — покажем направления с эскизами на выбор: 3, а с референсами — 2">пусто — сохранить текущий язык сайта</p>
       <textarea id="style" name="style" placeholder="Спокойно, без кричащих цветов. Настоящие фото." aria-describedby="style-h"></textarea>
     </div>
 
     <div class="field">
       <label for="limits">Ограничения</label>
-      <p class="hint" id="limits-h" data-rework="что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд" data-donor="чего на сайте быть не должно; цены, контакты и факты о деле — в любом случае только из брифа">что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд</p>
-      <textarea id="limits" name="limits" placeholder="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-rework-ph="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-donor-ph="чего не показывать и не обещать" aria-describedby="limits-h"></textarea>
+      <p class="hint" id="limits-h" data-rework="что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд" data-donor="чего на сайте быть не должно; цены, контакты и факты о деле — в любом случае только из брифа" data-new="чего на сайте быть не должно; цены, контакты и факты о деле — в любом случае только от вас">что трогать нельзя; пусто — контакты, цены, логотип, основной цвет, бэкенд</p>
+      <textarea id="limits" name="limits" placeholder="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-rework-ph="Не менять основной цвет и логотип. Цены и контакты как есть. Бэкенд не трогать." data-donor-ph="чего не показывать и не обещать" data-new-ph="чего не показывать и не обещать" aria-describedby="limits-h"></textarea>
     </div>
 
     <div class="field" data-only="rework">
@@ -173,7 +184,7 @@
 </main>
 <script>
   // Вывод повторяет поля и порядок templates/brief.md. Поля донора — только в режиме донора,
-  // «зеркало» по умолчанию — только в режиме переработки.
+  // «зеркало» по умолчанию — только в режиме переработки; у сайта с нуля адрес необязателен.
   const f = document.getElementById('f'), out = document.getElementById('out'), text = document.getElementById('text');
   const copyBtn = document.getElementById('copy'), copied = document.getElementById('copied');
   const KEY = 'site-rework-brief';
@@ -204,7 +215,7 @@
   };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data())); } catch {} };
 
-  const kindOf = () => (f.querySelector('input[name="kind"]:checked') || {}).value === 'donor' ? 'donor' : 'rework';
+  const kindOf = () => { const v = (f.querySelector('input[name="kind"]:checked') || {}).value; return v === 'donor' || v === 'new' ? v : 'rework'; };
 
   const sync = () => {
     const kind = kindOf();
@@ -216,10 +227,12 @@
       el.hidden = !on;
       for (const c of el.querySelectorAll('input, textarea')) c.disabled = !on;
     }
-    f.elements.about.required = kind === 'donor';
-    // required пропускает пробелы и невидимые символы, а data() их обрежет — в режиме донора дело не выдумываем.
+    f.elements.url.required = kind !== 'new';
+    const needAbout = kind === 'donor' || kind === 'new';
+    f.elements.about.required = needAbout;
+    // required пропускает пробелы и невидимые символы, а data() их обрежет — в новом сайте (донор, с нуля) дело не выдумываем.
     const aboutMeaningful = (f.elements.about.value.replace(/[\u200B\u200C\u200D\uFEFF]/g, '').match(/[\p{L}\p{N}]/gu) || []).length >= 3;
-    f.elements.about.setCustomValidity(kind === 'donor' && !aboutMeaningful ? 'Опишите, о чём сайт и что он продаёт: без этого дело придётся выдумывать.' : '');
+    f.elements.about.setCustomValidity(needAbout && !aboutMeaningful ? 'Опишите, о чём сайт и что он продаёт: без этого дело придётся выдумывать.' : '');
   };
 
   const sources = (v) => {
@@ -240,19 +253,20 @@
   };
 
   const brief = (d) => {
-    const donor = d.kind === 'donor';
+    const donor = d.kind === 'donor', fresh = d.kind === 'new';
     const or = (v, empty) => v || empty;
     const fields = [
-      ['URL', d.url],
-      ['РЕЖИМ РАБОТЫ', donor ? 'новый сайт в языке донора — URL выше — адрес донора' : 'переработка — URL выше — адрес сайта'],
-      ['О ЧЁМ САЙТ И ЧТО ПРОДАЁТ', or(d.about, donor ? 'не указано — спросить до начала, не выдумывать' : 'узнать с самого сайта')],
+      ['URL', fresh ? or(d.url, 'нет — сайт с нуля') : d.url],
+      ['РЕЖИМ РАБОТЫ', fresh ? 'новый сайт с нуля по требованиям — донора нет' : donor ? 'новый сайт в языке донора — URL выше — адрес донора' : 'переработка — URL выше — адрес сайта'],
+      ['О ЧЁМ САЙТ И ЧТО ПРОДАЁТ', or(d.about, donor || fresh ? 'не указано — спросить до начала, не выдумывать' : 'узнать с самого сайта')],
+      ['ТРЕБОВАНИЯ', or(d.reqs, fresh ? 'файлов пока нет — придут по ходу (сообщения, файлы, голосовые)' : 'нет')],
       donor && ['ЧТО ВЗЯТЬ У ДОНОРА', or(d.take, 'язык целиком') + '\nтексты, фото и файлы донора не берутся'],
-      ['ЗАДАЧА', or(d.task, donor ? 'собрать сайт о деле выше в языке донора' : 'найди, что мешает сайту приводить клиентов, и исправь')],
-      ['СТРАНИЦЫ В РАБОТЕ', or(d.pages, 'главная')],
+      ['ЗАДАЧА', or(d.task, fresh ? 'собрать сайт о деле выше по требованиям' : donor ? 'собрать сайт о деле выше в языке донора' : 'найди, что мешает сайту приводить клиентов, и исправь')],
+      ['СТРАНИЦЫ В РАБОТЕ', or(d.pages, fresh ? 'состав — из требований' : 'главная')],
       ['РЕФЕРЕНСЫ', or(d.refs, 'нет')],
-      ['ПОЖЕЛАНИЯ ПО СТИЛЮ', or(d.style, donor ? 'язык донора' : 'сохранить текущий язык, поднять качество деталей')],
-      ['ОГРАНИЧЕНИЯ', or(d.limits, donor ? 'цены, контакты и факты о деле — только из брифа, не выдумывать' : 'не менять контакты, цены, логотип, основной цвет, бэкенд')],
-      ['ИСХОДНИКИ', donor ? 'не нужны — новый сайт собирается с нуля в папке прогона' : sources(d.src)],
+      ['ПОЖЕЛАНИЯ ПО СТИЛЮ', or(d.style, fresh ? (d.refs ? 'не заданы — 2 направления с эскизами из референсов, до сборки' : 'не заданы — 3 направления с эскизами на выбор, до сборки') : donor ? 'язык донора' : 'сохранить текущий язык, поднять качество деталей')],
+      ['ОГРАНИЧЕНИЯ', or(d.limits, donor || fresh ? 'цены, контакты и факты о деле — только из брифа, не выдумывать' : 'не менять контакты, цены, логотип, основной цвет, бэкенд')],
+      ['ИСХОДНИКИ', fresh ? 'не нужны — сайт собирается с нуля в папке прогона' : donor ? 'не нужны — новый сайт собирается с нуля в папке прогона' : sources(d.src)],
       ['КАДРЫ И ВИДЕО', media(d)],
       ['РЕЖИМ', d.mode],
     ].filter(Boolean);
