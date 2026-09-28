@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>extract — стенд: набор (строки абзаца и h1)</title>
+<!-- Стенд для `extract.mjs --selftest`: замер строк (поле typeset). Моноширинный шрифт; абзац шириной 60.5ch из
+     32 «слов» по 9 знаков (в трёх — «в» и неразрывный пробел, в двух — «и» и обычный пробел): в полной строке
+     ровно 6 слов = 59 знаков, строк 6; коротких слов 5, привязано 3; --measure = ширина абзаца / 16px.
+     h1 40px шириной 20.5ch, text-wrap: balance — 3 строки по 19 знаков: первая — свой текст h1, две — span
+     display:block внутри (строки h1 — весь видимый текст под ним); sr-only внутри h1 — не его строка.
+     Ниже обёртка (h2, четыре абзаца 14px и ссылка inline-block), чей innerText длиннее основного абзаца:
+     самый крупный абзац — основной (по собственному тексту), а не обёртка. -->
+<meta name="expect-h1" content="40px 700">
+<meta name="expect-typeset" content="59 3 balance 3/5 manual 19">
+<meta name="expect-accordion" content="0">
+<style>
+  body { margin: 0; font: 16px/1.5 monospace; color: #111; background: #fff; }
+  main { padding: 40px 24px; }
+  h1 { font: 700 40px/1.1 monospace; width: 20.5ch; margin: 0 0 32px; text-wrap: balance; }
+  h1 .blk { display: block; }
+  p { width: 60.5ch; margin: 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .wrap { margin-top: 48px; } .wrap p.s { font-size: 14px; width: 40ch; } .more { display: inline-block; padding: 8px 0; }
+  @media (max-width: 600px) { h1, p { width: auto; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>alphaword bravoword<span class="blk">charlieww deltaword echowords foxtrotww</span><span class="sr-only">скрытое продолжение заголовка для чтения с экрана, не строка</span></h1>
+  <p>aaaaaaaaa bbbbbbbbb в&nbsp;ccccccc ddddddddd eeeeeeeee и fffffff ggggggggg hhhhhhhhh в&nbsp;iiiiiii jjjjjjjjj kkkkkkkkk и lllllll mmmmmmmmm nnnnnnnnn в&nbsp;ooooooo ppppppppp qqqqqqqqq rrrrrrrrr sssssssss ttttttttt uuuuuuuuu vvvvvvvvv wwwwwwwww xxxxxxxxx yyyyyyyyy zzzzzzzzz aaaaaaaaa bbbbbbbbb ccccccccc ddddddddd eeeeeeeee fffffffff</p>
+  <div class="wrap">
+    <h2>Обёртка секции</h2>
+    <p class="s">Короткий абзац обёртки, девяносто знаков с пробелами — меньше основного абзаца.</p>
+    <p class="s">Второй короткий абзац обёртки: вместе с первым и ссылкой обёртка длиннее основного.</p>
+    <p class="s">Третий короткий абзац обёртки, чтобы innerText обёртки перевесил абзац выше.</p>
+    <p class="s">Четвёртый короткий абзац обёртки — на старом правиле самым крупным была бы обёртка.</p>
+    <a class="more" href="#">Подробнее о мастерской</a>
+  </div>
+</main>
+</body>
+</html>

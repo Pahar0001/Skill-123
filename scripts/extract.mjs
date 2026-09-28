@@ -53,7 +53,7 @@
  *   коробки, текст ≥ 3%, линия ≥ 2%), иначе «акцента нет»;
  * - шкала body — только собственный видимый текст (без style/script),
  *   кегль ≥ 6px, вес = длина текста, в блоках от 40 знаков; сверяется с самым
- *   крупным абзацем (bodyProbe);
+ *   крупным абзацем (bodyProbe — блок с самым длинным собственным текстом, не обёртка);
  * - h1 — самый крупный видимый h1 первого экрана; на первом экране h1 нет — самый
  *   крупный заголовок первого экрана любым тегом (h2–h6, role=heading, текст от 24px
  *   и от 1.4 основного), с пометкой откуда; нет и его — h1 не снят; h2–h4 — самый
@@ -80,9 +80,16 @@
  *   пришла) — не фон; контейнер — сетка Tilda (.t-container без полей колонок, сетка артборда: брейкпоинт
  *   × zoom при upscale=window), элементы Zero Block и колонки .t-col — не кандидаты; меню — ещё и
  *   закреплённые ссылки в любом месте окна (меню Zero Block — плавающая пилюля внизу) и классы меню Tilda.
- *   Язык Tilda-донора точнее — site-rework/scripts/tilda.mjs (атрибуты, а не замер).
+ *   Язык Tilda-донора точнее — site-rework/scripts/tilda.mjs (атрибуты, а не замер);
+ * - набор (typeset, с 2026-09-28.3) — тем же замером строк, что site-rework typeset.mjs (LINES_FN импортом;
+ *   без site-rework — «строки не мерены»), только у самого крупного абзаца (bodyProbe) и h1 шкалы:
+ *   bodyMeasure — медиана знаков в полных строках (последняя не в счёт), h1Lines — строк всего видимого текста
+ *   под h1 (вложенный span display:block — тоже его строки; sr-only и прозрачное не в счёт), textWrap заголовков (text-wrap-style), hyphens абзаца, shortNb/shortTotal — короткие слова
+ *   (typography.md п. 9), привязанные неразрывным пробелом; --measure в токенах — ширина блока абзаца / кегль
+ *   на экране, em (только если в абзаце от двух строк). verify сверяет bodyMeasure ±15% и h1Lines ±1.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -90,7 +97,10 @@ import {
   scrollPass, segmentPositions, screenAt, fullShot, HEX_SRC, EFF_SRC, SIG_SRC, guardPage, assertAlive,
 } from './lib.mjs';
 
-export const VERSION = 'extract 2026-09-28.2';
+/* site-rework typeset.mjs — замер строк (LINES_FN) тем же кодом, что у typeset; ищется там же, где lib.mjs и clicks.mjs */
+const TYPESET = SR ? await import(pathToFileURL(path.join(os.homedir(), '.claude', 'skills', 'site-rework', 'scripts', 'typeset.mjs')).href).catch(() => null) : null;
+
+export const VERSION = 'extract 2026-09-28.3';
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 const MOBILE = { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 /** Старое правило (json до extract 2026-09-24.2): доля пикселей всех снимков окна, с которой насыщенный цвет — акцент. */
@@ -401,7 +411,7 @@ function inPage() {
     list.sort((a, b) => (onFirst(b.h) - onFirst(a.h)) || (fsz(b) - fsz(a)) || (docTop(a.h) - docTop(b.h)));
     if (list.length && onFirst(list[0].h)) {
       const { h, p } = list[0];
-      return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: list.length, how: list.length === 1 ? 'единственный видимый h1' : 'самый крупный h1 первого экрана' } };
+      return { p, h, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: list.length, how: list.length === 1 ? 'единственный видимый h1' : 'самый крупный h1 первого экрана' } };
     }
     const below = list.length ? `; h1 ниже первого экрана не взят: «${textOf(list[0].h).slice(0, 30)}» ${Math.round(fsz(list[0]))}px` : '';
     const NOT_HEAD = 'nav, [role="navigation"], button, [role="button"], a[class*="btn"], a[class*="button"], label, select, option';
@@ -420,7 +430,7 @@ function inPage() {
     if (!heads.length) return { p: null, from: { el: null, how: `на первом экране нет ни h1, ни крупного заголовка — h1 не снят${below}` } };
     const { h, p } = heads[0];
     const tag = h.getAttribute('role') === 'heading' ? 'role=heading' : h.tagName.toLowerCase();
-    return { p, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: 0, tag, how: `на первом экране h1 нет — самый крупный заголовок первого экрана (${tag})${below}` } };
+    return { p, h, from: { el: sig(h), text: textOf(h).slice(0, 60), first: true, of: 0, tag, how: `на первом экране h1 нет — самый крупный заголовок первого экрана (${tag})${below}` } };
   };
 
   /* меню (nav) — одна и та же роль на любой странице: nav вверху первого экрана (сначала внутри header, выше —
@@ -493,11 +503,13 @@ function inPage() {
     /* длинных блоков нет — как раньше, по p и li, но собственным текстом */
     for (const el of document.querySelectorAll('p, li')) { if (!allSet.has(el)) continue; const s = getComputedStyle(el); const t = ownText(el).length; if (t && parseFloat(s.fontSize) >= 6) bump(bodyVotes, keyOf(s, Z(el)), t); }
   }
-  let bodyProbe = null;
-  for (const [b, keys] of blockKeys) { const L = blockLen.get(b); if (!bodyProbe || L > bodyProbe.chars) bodyProbe = { el: sig(b), chars: L, key: topKey(keys) }; }
+  /* самый крупный абзац — по собственному тексту основного стиля, а не по innerText: обёртка секции (div.wrap: h2, два p
+     и ссылка) иначе обгоняет настоящий абзац. chars — innerText блока, как раньше; own — собственный текст */
+  let bodyProbe = null, bodyEl = null, h1El = null;
+  for (const [b, keys] of blockKeys) { const own = Object.values(keys).reduce((a, v) => a + v, 0); if (!bodyProbe || own > bodyProbe.own) { bodyProbe = { el: sig(b), chars: blockLen.get(b), own, key: topKey(keys) }; bodyEl = b; } }
   if (bodyProbe) { const { key, ...rest } = bodyProbe; bodyProbe = { ...rest, ...JSON.parse(key) }; }
   for (const [name, sel] of Object.entries(levels)) {
-    if (name === 'h1') { const x = pickH1(); if (x.p) scale.h1 = JSON.parse(styleKey(x.p)); scaleFrom.h1 = x.from; continue; }
+    if (name === 'h1') { const x = pickH1(); if (x.p) { scale.h1 = JSON.parse(styleKey(x.p)); h1El = x.h; } scaleFrom.h1 = x.from; continue; }
     if (name === 'nav') { const x = pickMenu(); scaleFrom.nav = x.from; if (x.style) scale.nav = x.style; continue; }
     let votes = bodyVotes;
     if (sel) {
@@ -637,6 +649,51 @@ function inPage() {
   for (const sh of document.styleSheets) walkSheet(sh);
   const metaScheme = ((document.querySelector('meta[name="color-scheme"]') || {}).content || '').trim();
 
+  /* набор: тот же замер строк, что у site-rework typeset.mjs (LINES_FN), — только самый крупный абзац (bodyProbe)
+     и h1 шкалы. bodyMeasure — медиана знаков в полных строках (без последней), h1Lines —
+     строк h1; em — ширина блока абзаца / кегль на экране (для --measure); короткие слова — список typography.md п. 9 */
+  const typeset = (() => {
+    if (!lines) return { source: 'нет site-rework — строки не мерены', bodyMeasure: null, h1Lines: null };
+    const one = (el, deep) => { try { return lines(el, null, { deep }); } catch (e) { return null; } };
+    const med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
+    const wrapOf = (e) => { const s = getComputedStyle(e); return s.textWrapStyle || s.textWrap || null; };
+    const r1 = (x) => Math.round(x * 10) / 10;
+    let body = null, h1 = null;
+    if (bodyEl) {
+      /* блок — по правилу замера строк: inline-block (кнопка, бейдж) — свой блок; у абзаца своего текста нет (весь
+         в inline-block внутри) — самый длинный такой блок внутри него */
+      let el = bodyEl, m = one(bodyEl, false), via = null;
+      if (!m || !m.lines.length) {
+        let best = null;
+        for (const [o, nodes] of lines.collect(bodyEl)) { if (o === bodyEl || blockOf(o) !== bodyEl) continue; const n = nodes.reduce((a, x) => a + (x && x.nodeType === 3 ? x.nodeValue.trim().length : 0), 0); if (!best || n > best.n) best = { o, n }; }
+        if (best) { el = best.o; m = one(el, false); via = `свой блок внутри ${sig(bodyEl)}`; }
+      }
+      if (m && m.lines.length) { const z = Z(el), s = getComputedStyle(el); body = { el: sig(el), ...(via ? { via } : {}), lines: m.lines.length, chars: m.lines.map((l) => l.chars), measure: med(m.lines.slice(0, -1).map((l) => l.chars)), box: m.box, fontSize: r1(m.fs * z), em: r1(m.box / (m.fs * z)), hyphens: s.hyphens || s.webkitHyphens || null, shortTotal: m.shortTotal, shortNb: m.shortNb }; }
+    }
+    /* h1 — весь видимый текст под ним (lines.deepNodes): «Холст<br><span style="display:block">на вашей<br>стене</span>» —
+       3 строки, а не 1 (у typeset.mjs блок h1 — только свой текст, «Холст»). Невидимое не в счёт: sr-only (clip,
+       коробка до 2 px с overflow hidden, clip-path inset), прозрачное (eff < 0.05), visibility: hidden */
+    if (h1El) {
+      const memo = new Map();
+      const hid = (e) => {
+        if (memo.has(e)) return memo.get(e);
+        let v = false;
+        if (e && e !== h1El.parentElement && e.nodeType === 1) {
+          const s = getComputedStyle(e), r = e.getBoundingClientRect(), tiny = r.width <= 2 || r.height <= 2;
+          v = s.visibility === 'hidden' || (tiny && (s.clip !== 'auto' || /hidden|clip/.test(s.overflow))) || /inset\(\s*(50|100)%/.test(s.clipPath || '') || (e !== h1El && hid(e.parentElement));
+        }
+        memo.set(e, v); return v;
+      };
+      const nodes = lines.deepNodes(h1El).filter((n) => !n || n.nodeType !== 3 || !(hid(n.parentElement) || eff(n.parentElement) < 0.05));
+      let m = null; try { m = lines(h1El, nodes); } catch (e) { /* не мерен */ }
+      if (m && m.lines.length) h1 = { el: sig(h1El), lines: m.lines.length, chars: m.lines.map((l) => l.chars), textWrap: wrapOf(h1El), shortTotal: m.shortTotal, shortNb: m.shortNb };
+    }
+    const heads = [...document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')].filter((e) => allSet.has(e) && shown(e)).slice(0, 300);
+    const textWrap = [...new Set((h1El ? [h1El] : []).concat(heads).map(wrapOf).filter(Boolean))];
+    const sT = (body ? body.shortTotal : 0) + (h1 ? h1.shortTotal : 0), sN = (body ? body.shortNb : 0) + (h1 ? h1.shortNb : 0);
+    return { source: 'LINES_FN (site-rework typeset.mjs)', bodyMeasure: body ? body.measure : null, h1Lines: h1 ? h1.lines : null, textWrap, hyphens: body ? body.hyphens : null, shortNb: sN, shortTotal: sT, nbShare: sT ? Math.round(sN / sT * 100) / 100 : null, body, h1 };
+  })();
+
   /* движение */
   const libs = {};
   const probes = { gsap: 'gsap', ScrollTrigger: 'ScrollTrigger', Lenis: 'Lenis', Swiper: 'Swiper', AOS: 'AOS', anime: 'anime', THREE: 'THREE', barba: 'barba', LocomotiveScroll: 'LocomotiveScroll', Splitting: 'Splitting', lottie: 'lottie', Framer: '__framer_importFromPackage' };
@@ -652,7 +709,7 @@ function inPage() {
     page: { background: hex(bodyS.backgroundColor) || hex(htmlS.backgroundColor) || '#FFFFFF', color: hex(bodyS.color), scrollBehavior: htmlS.scrollBehavior, lang: document.documentElement.lang },
     palette: { backgrounds: top(bg, 8), text: top(fg, 6), borders: top(border, 5), pairs: pairList },
     fonts: { used: top(fam, 5).map((f) => ({ ...f, stack: topKey(famStack[f.value]) || f.value })), faces: fontFaces, links: fontLinks, faceSrc, unreadableSheets },
-    scale, scaleFrom, bodyProbe, containers: top(containers, 5), containerFrom, grids: gridInfo.slice(0, 25),
+    scale, scaleFrom, bodyProbe, typeset, containers: top(containers, 5), containerFrom, grids: gridInfo.slice(0, 25),
     actions: { fills, underlines },
     spacing: top(space, 16), shape: { radius: top(radius, 6), shadow: top(shadow, 4), borderWidth: top(bw, 4) },
     sections, texture, passport,
@@ -771,6 +828,8 @@ const ZOOM_SRC = (SR && SR.EFFECTIVE_ZOOM_FN) || `(el) => { try { const z = el &
 const CLIP_SRC = (SR && SR.CLIP_SHARE_FN) || '() => 1';
 const TILDA_SRC = (SR && SR.TILDA_FN) || '() => ({ tilda: false })';
 const TSVC_SRC = (SR && SR.IS_TILDA_SERVICE_FN) || '() => false';
+/* замер строк — исходник LINES_FN из site-rework typeset.mjs (импорт командную строку не запускает); без него — null */
+const LINES_SRC = (TYPESET && TYPESET.LINES_FN) || 'null';
 const DEPS = { hex: HEX_SRC, eff: EFF_SRC, sig: SIG_SRC, layer: layerBg.toString(), zoom: ZOOM_SRC, clip: CLIP_SRC, tilda: TILDA_SRC, tsvc: TSVC_SRC };
 const DARK_TEXT = /prefers-color-scheme\s*:\s*dark/i;
 const MOBILE_UA = (SR && SR.MOBILE_UA) || 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -816,7 +875,7 @@ async function measure(browser, url, viewport, { shotsDir, tag, withStates, sche
     assertAlive(page);
     await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await sleep(400);
     const after = await revealAfter(page);
-    const data = await evaluateWith(page, inPage, null, DEPS);
+    const data = await evaluateWith(page, inPage, null, { ...DEPS, lines: LINES_SRC });
     data.motion.scrollReveal = revealBefore.map((b, i) => { const a = after.find((x) => x.i === i); return a && (a.opacity !== b.opacity || a.transform !== b.transform) ? { ...b, becomes: { opacity: a.opacity, transform: a.transform } } : null; }).filter(Boolean).slice(0, 20);
     data.scroll = { steps: pass.screens, pageHeight: pass.pageHeight, maxScrollY: pass.maxScrollY, reachedBottom: pass.reachedBottom, stuck: !!pass.stuck };
     data.tool = { goto: gotoInfo };
@@ -1070,6 +1129,17 @@ export function fontRoles(d) {
   return { body, display, heading, alt, stacks: { body: stackOf(body), display: stackOf(display), heading: stackOf(heading), alt: stackOf(alt) } };
 }
 
+/** Набор строкой: «строка ~62 знаков (desktop) / 34 (телефон), h1 в 2 строки (телефон 4), …»; null — json до extract 2026-09-28.3. */
+export function typesetLine(data) {
+  const d = data.desktop && data.desktop.typeset, m = data.mobile && data.mobile.typeset;
+  if (!d) return null;
+  if (!/^LINES/.test(d.source || '')) return `не мерен — ${d.source}`;
+  const v = (x, k) => (x && x[k] != null ? x[k] : '—');
+  const lines = (n) => (n === '—' ? '— строк' : `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'строку' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'строки' : 'строк'}`);
+  const nb = (x) => (x && x.shortTotal ? `${x.shortNb} из ${x.shortTotal}` : 'коротких слов нет');
+  return `строка ~${v(d, 'bodyMeasure')} знаков (desktop) / ${v(m, 'bodyMeasure')} (телефон)${d.body ? ` — ${d.body.el}, ${d.body.lines} стр., блок ${d.body.em}em` : ' — абзаца нет'}, h1 в ${lines(v(d, 'h1Lines'))} (телефон ${v(m, 'h1Lines')}), text-wrap заголовков: ${(d.textWrap || []).join(', ') || '—'}, переносы: ${d.hyphens || '—'}, короткие слова привязаны неразрывным пробелом: ${nb(d)} (телефон ${nb(m)})`;
+}
+
 /** Сверка шкалы body с самым крупным абзацем: { ok, note } или null (абзаца нет). */
 export function bodyCheck(d) {
   const b = d.scale.body, p = d.bodyProbe;
@@ -1109,6 +1179,7 @@ export function tokensCss(data) {
   if (fr.stacks.heading) L.push(`  --font-heading: ${fr.stacks.heading};`);
   for (const [lvl, s] of Object.entries(d.scale)) { L.push(`  --fs-${lvl}: ${s.fontSize};`); if (m.scale[lvl] && m.scale[lvl].fontSize !== s.fontSize) L.push(`  --fs-${lvl}-mobile: ${m.scale[lvl].fontSize};`); L.push(`  --lh-${lvl}: ${s.lineHeight};`); if (s.letterSpacing !== '0') L.push(`  --ls-${lvl}: ${s.letterSpacing};`); L.push(`  --fw-${lvl}: ${s.fontWeight};`); }
   if (d.containers[0]) L.push(`  --container: ${d.containers[0].value}px;`);
+  const tsb = d.typeset && d.typeset.body; if (tsb && tsb.em && tsb.lines >= 2) L.push(`  --measure: ${tsb.em}em;`);
   if (m.containers[0]) L.push(`  --gutter-mobile: ${Math.round((m.viewport.width - m.containers[0].value) / 2)}px;`);
   const pads = d.sections.map((s) => s.paddingTop).filter((v) => v >= 24).sort((a, b) => a - b);
   if (pads.length) L.push(`  --section-pad: ${pads[Math.floor(pads.length / 2)]}px;`);
@@ -1262,7 +1333,7 @@ ${head}${sc(m.scale)}
 - nav: ${levelSource(d, 'nav', true) || 'не выявлено'}; на узком: ${levelSource(m, 'nav', true) || 'не выявлено'}
 
 Сверка основного текста: ${bc ? (bc.ok ? 'совпадает — ' : '**расходится, проверить глазами** — ') + bc.note : 'длинных абзацев нет'}${bcm && !bcm.ok ? `\nНа узком: **расходится** — ${bcm.note}` : ''}
-
+${typesetLine(data) ? `\nНабор: ${typesetLine(data)}\n` : ''}
 ## 4. Сетка
 - ширина контента: ${d.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}${d.containerFrom && d.containers.length ? ` (вес — высота обёрток; --container ${containerNote(d)})` : ''}
 - узкий экран, ширина контента: ${m.containers.map((c) => c.value + 'px').join(', ') || 'не выявлено'}${m.containerFrom && m.containers.length ? ` (${containerNote(m)})` : ''}
@@ -1330,6 +1401,7 @@ export function summaryLines(data) {
     out.push(`OK   контейнер: ${containerNote(d)}; на узком: ${containerNote(m)}`);
   }
   for (const [b, label] of [[bc, 'широкий'], [bcm, 'узкий']]) if (b) out.push(`${b.ok ? 'OK  ' : 'WARN'} основной текст (${label}): ${b.note}`);
+  if (typesetLine(data)) out.push(`${d.typeset && d.typeset.bodyMeasure != null ? 'OK  ' : 'WARN'} набор: ${typesetLine(data)}`);
   if (m.scale.body && parseFloat(m.scale.body.fontSize) < 6) out.push(`FAIL основной текст на узком экране ${m.scale.body.fontSize}`);
   out.push(`OK   фактура: ${(d.texture || []).length ? d.texture.map((t) => `${t.el} ${t.opacity}/${t.blend}`).join('; ') : 'полноэкранных слоёв нет'}`);
   out.push(`OK   тёмная тема: ${darkLine(data)}`);
@@ -1359,14 +1431,21 @@ const HELP = `Съём дизайн-системы со страницы.
   --light         без состояний наведения/фокуса и без тёмной темы
   --no-pixels     не подтверждать акцент пикселями коробок кнопок и ссылок
   --force         перезаписать существующую <имя>.md
-  --selftest      самопроверка на стендах fixtures/extract (h1, аккордеон Framer, масштаб Tilda)
+  --selftest      самопроверка на стендах fixtures/extract (h1, аккордеон Framer, масштаб Tilda,
+                  набор: знаков в строке абзаца и строк h1)
   --help, -h      эта справка
+
+Набор (поле typeset в json, тем же замером строк, что site-rework typeset.mjs): знаков в строке
+самого крупного абзаца (bodyMeasure), строк h1 (h1Lines), text-wrap заголовков, hyphens, короткие слова
+с неразрывным пробелом; в .md — строка «Набор: …», в токенах — --measure (ширина абзаца / кегль, em).
 
 Переменные: DESIGN_REF_PROJECT / SITE_REWORK_PROJECT — папка с puppeteer-core;
 CHROME_PATH — свой браузер; DESIGN_REF_NO_SR=1 — без помощников site-rework.`;
 /**
  * Самопроверка на стендах fixtures/extract/*.html: ожидания в <meta name="expect-h1"> («32px 700 …» —
- * размер и вес h1 шкалы; «не снят» — h1 шкалы нет) и <meta name="expect-accordion"> (пунктов в паспорте).
+ * размер и вес h1 шкалы; «не снят» — h1 шкалы нет), <meta name="expect-accordion"> (пунктов в паспорте) и
+ * <meta name="expect-typeset"> («59 3 balance 3/5 manual 19» — знаков в полной строке абзаца, строк h1, text-wrap,
+ * привязано/коротких, hyphens, наибольшая строка h1 в знаках; плюс --measure в tokens.css и строка «Набор» в .md).
  * Код 0 — всё совпало.
  */
 async function selftest() {
@@ -1402,6 +1481,18 @@ async function selftest() {
         const n = d.passport.components.accordion || 0, ok = n === Number(ea);
         if (!ok) bad++;
         console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} аккордеон: ждали ${ea}; в паспорте ${n}${accordionLines(d.passport.accordions).map((l) => '\n       ' + l.slice(2)).join('')}`);
+      }
+      /* набор (typeset.html): «знаков в полной строке, строк h1, text-wrap h1, привязано/коротких, hyphens» */
+      const et = meta('expect-typeset');
+      if (et) {
+        const [ms, hl, wrap, nb, hy, h1max] = et.split(' '); const t = d.typeset || {}, b = t.body || {}, tok = tokensCss(data), md = skeleton(data, 'selftest');
+        const rows = [
+          [t.bodyMeasure === Number(ms), `строка абзаца: ждали ${ms} знаков; снято ${t.bodyMeasure} (${b.el || '—'}, строк ${b.lines}: ${(b.chars || []).join(' ')})${/^LINES/.test(t.source || '') ? '' : ' — ' + t.source}`],
+          [t.h1Lines === Number(hl) && (!h1max || (t.h1 && Math.max(...t.h1.chars) <= Number(h1max))), `строк h1: ждали ${hl}${h1max ? ` по ≤ ${h1max} знаков (sr-only не в счёт)` : ''}; снято ${t.h1Lines}${t.h1 ? ` (${t.h1.chars.join(' ')})` : ''}`],
+          [(t.textWrap || []).includes(wrap) && `${t.shortNb}/${t.shortTotal}` === nb && t.hyphens === hy, `text-wrap ${wrap}, привязано ${nb}, переносы ${hy}; снято ${(t.textWrap || []).join(', ') || '—'}, ${t.shortNb}/${t.shortTotal}, ${t.hyphens}`],
+          [b.em > 0 && Math.abs(b.em - b.box / 16) < 0.06 && tok.includes(`  --measure: ${b.em}em;`) && md.includes(`Набор: строка ~${ms} знаков (desktop)`), `--measure: ${b.em}em (блок ${b.box}px / 16px) в tokens.css, строка «Набор: строка ~${ms} знаков» в .md`],
+        ];
+        for (const [ok, note] of rows) { if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${f} ${note}`); }
       }
     }
   } finally { await br.close().catch(() => {}); }
