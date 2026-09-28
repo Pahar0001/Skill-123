@@ -91,10 +91,11 @@ export function requireChrome() {
   throw new Error('Не найден Chrome, Chromium или Edge. Укажите путь в переменной CHROME_PATH.');
 }
 
-/* protocolTimeout: зависшая вкладка (нехватка памяти) даёт ошибку через 90 с, а не держит съём двадцать минут */
+/* protocolTimeout: зависшая вкладка (нехватка памяти) даёт ошибку через 90 с, а не держит съём двадцать минут;
+   тяжёлой странице — больше: SITE_REWORK_PROTOCOL_TIMEOUT=<мс>, как у site-rework */
 export async function launch() {
   const puppeteer = loadPuppeteer();
-  return puppeteer.launch({ executablePath: requireChrome(), headless: true, protocolTimeout: 90000, args: ['--no-sandbox', '--hide-scrollbars'] });
+  return puppeteer.launch({ executablePath: requireChrome(), headless: true, protocolTimeout: Number(process.env.SITE_REWORK_PROTOCOL_TIMEOUT) > 0 ? Number(process.env.SITE_REWORK_PROTOCOL_TIMEOUT) : 90000, args: ['--no-sandbox', '--hide-scrollbars'] });
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
