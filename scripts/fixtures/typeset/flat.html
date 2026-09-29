@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Плоская разметка: h1 и ряд h2 в одном контейнере</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09): h1, сразу под ним h2 первой секции, её текст и кнопка, потом
+     h2 следующей секции — всё прямо в main, без обёрток. h2 из ряда одноуровневых заголовков — заголовок секции, а не
+     подзаголовок: не лид, кнопка секции — не кнопка первого экрана. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 16px; }
+h2 { font-size: 28px; line-height: 1.2; margin: 0 0 12px; }
+p { margin: 0 0 16px; }
+.btn { display: inline-block; padding: 12px 20px; background: #c43; color: #fff; text-decoration: none; border-radius: 6px; }
+.gap { margin-bottom: 48px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="h1">Меню ресторана у Волги</h1>
+  <h2 id="h2hot">Горячие блюда</h2>
+  <p id="phot">Уха по-рыбински, судак на углях, щучьи котлеты с пюре и томлёная говядина с овощами.</p>
+  <p class="gap"><a class="btn" id="order" href="#order">Заказать доставку</a></p>
+  <h2 id="h2cold">Закуски</h2>
+  <p>Сельдь с картофелем, паштет из печени и соленья по бабушкиному рецепту для всей компании.</p>
+</main>
+</body>
+</html>

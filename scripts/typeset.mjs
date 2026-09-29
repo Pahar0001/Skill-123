@@ -35,7 +35,11 @@
  *   --selftest    стенд fixtures/typeset на своём сервере (порт 4211–4219): index.html, hero-low.html, frame.html
  *                 (каркас, составной h1, <br>, ₽, local(), текст из данных), edge.html (без main: подзаголовок h2
  *                 с кнопкой, карточки со своим <header>, акцент inline-block, цепочка неразрывных), fixedwrap.html
- *                 (страница в закреплённом контейнере прокрутки); каждый случай сверяется с ожидаемым.
+ *                 (страница в закреплённом контейнере прокрутки), inner, inmain, inmain-sub, container-sub, flat
+ *                 (заголовок следующей секции — не подзаголовок, её кнопка — не кнопка первого экрана), flat-sub
+ *                 (подзаголовок своего кегля в плоской разметке — подзаголовок), h2h3 (h3 под h2
+ *                 мерится на близость), narrow-nomain, bs-nomain (каркас без main: узкая колонка, шапка в .container);
+ *                 каждый случай сверяется с ожидаемым.
  *   --help, -h    эта справка.
  * Неизвестный флаг — ошибка с кодом 1 и подсказкой. Адрес, экраны и значения флагов проверяются до
  * создания папок и запуска браузера.
@@ -72,9 +76,11 @@
  * Каркас (blocks[].frame) — общее для всех страниц: меню (nav), закреплённое (position: fixed; контейнер прокрутки
  * страницы — .page { position: fixed; inset: 0; overflow: auto } с половиной текста и больше — не в счёт), шапка
  * (role=banner или header вне article/aside/main/nav/section; без h1, ниже половины окна), подвал (role=contentinfo
- * или footer там же). header/footer без role — только шириной от половины окна, шапка — с началом на первом экране,
- * и не в повторяющемся компоненте (карточки на div со своим <header>: у предка до 4 уровней есть сосед с тем же тегом,
- * классом и своим header/footer). «Вне <main>» — когда в <main> лежит h1 и не меньше 30% текста. Шкала, основной кегль,
+ * или footer там же). header/footer без role — только шириной от половины окна или от 90% колонки, в которой стоит h1
+ * (узкая колонка без main), шапка — с началом на первом экране, и не в повторяющемся компоненте (карточки на div со
+ * своим <header>: у предка до 4 уровней есть сосед с тем же тегом и классом, а в нём по тому же пути тегов — такой же
+ * header/footer; шапка в .container рядом с .container, где карточки со своими header, — не повтор). «Вне <main>» —
+ * когда в <main> лежит h1 и не меньше 30% текста. Шкала, основной кегль,
  * hang, orphan, lead, num-unit, hyphen-break — по основному содержимому; пункты каркаса — одной строкой INFO (frame).
  *
  * Текст из данных (blocks[].fromData): страница запрашивается ещё раз (тот же адрес, без кэша) и её исходный HTML
@@ -98,8 +104,8 @@
  *   h-lines      h1: desktop ≤ 3 OK, 4–5 WARN, ≥ 6 FAIL; телефон и планшет ≤ 4, 5–6, ≥ 7; h2 > 3 (телефон > 4) WARN
  *   balance      последняя строка заголовка < 40% самой длинной без text-wrap: balance — INFO с рецептом
  *   proximity    h2–h4 ближе к блоку сверху, чем к своему тексту — WARN (> 0.75 — INFO); короткая подпись вплотную
- *                над заголовком (надзаголовок) — часть заголовка; сверху другой заголовок (подзаголовок под h1,
- *                h3 сразу под h2) — одна группа, не мерится (gaps.afterHead)
+ *                над заголовком (надзаголовок) — часть заголовка; подзаголовок h1 (hero.sub) с h1 — одна группа,
+ *                не мерится (gaps.afterHead); h3 сразу под h2 и прочие заголовки под заголовком мерятся как все
  *   justify      выключка по ширине у prose — WARN; зазор > 3 пробелов — FAIL
  *   hyphens      переносы в заголовках на desktop, без lang — WARN; > 2 переноса подряд — WARN; браузер не
  *                переносит — INFO «проверьте --browser firefox»
@@ -128,12 +134,15 @@
  *   nbsp, tnum   «привязано неразрывным пробелом N из M» (сколько непривязанных — в тексте из данных);
  *                колонка цифр без tabular-nums — INFO
  *   hero         первый экран: блок первого экрана — самый широкий предок h1 до main/body без следующего заголовка
- *                и без шапки или подвала сайта (hero.block). Подзаголовок — заголовок сразу под h1 (следующий
- *                видимый сосед h1 или его обёртки, или тот же hgroup), мельче 0.8 h1, не дальше max(48 px, кегль h1) —
- *                часть первого экрана, не «следующий заголовок» (hero.sub). Главная кнопка — первая залитая в этом
- *                блоке ниже h1 и до следующего заголовка (без него — 3 экрана), запасная — на первом экране в блоке,
- *                а если блок не определился (h1 прямо в main) — на первом экране не выше h1; кнопки полосы-анонса,
- *                шапки, меню, закреплённые вкладки и всё вне блока не в счёт — иначе «кнопка не найдена» (INFO).
+ *                и без шапки или подвала сайта (hero.block). Подзаголовок — заголовок того же блока сразу под h1
+ *                (тот же hgroup или следующий видимый сосед h1 либо его обёртки — сам заголовок или обёртка вокруг
+ *                него одного), мельче 0.8 h1, не дальше max(48 px, кегль h1) — часть первого экрана, не «следующий
+ *                заголовок» (hero.sub). Заголовок соседней секции (section, article, обёртка с текстом и кнопкой) и
+ *                заголовок из ряда одноуровневых (h1, h2, p, h2 в одном контейнере, тот же кегль) — не подзаголовок. Главная
+ *                кнопка — первая залитая в этом блоке ниже h1 и до следующего заголовка (без него — 3 экрана),
+ *                запасная — на первом экране в блоке; блок не определился (h1 прямо в main) — только до следующего
+ *                заголовка; кнопки полосы-анонса, шапки, меню, закреплённые вкладки и всё вне блока не в счёт —
+ *                иначе «кнопка не найдена» (INFO).
  *                Лид — подзаголовок или ближайший блочный абзац под h1 в том же блоке (строчный кусок вроде часов
  *                работы — только если блочного нет; крупный лид-display — если мельче 0.8 h1). Кнопка ниже окна —
  *                WARN (mobile-s с закреплённой панелью
@@ -586,15 +595,34 @@ async function measureInPage(o) {
   if (mainEl) { let inM = 0, all = 0; for (const b of blocks) if (!b.partOf) { all += b.textLen; if (mainEl.contains(b.el)) inM += b.textLen; } if (all && inM < all * 0.3) mainEl = null; }
   const SECTIONING = 'article, aside, main, nav, section, [role="main"], [role="article"], [role="complementary"], [role="region"]';
   /* шапка или подвал сайта, а не карточки: role=banner/contentinfo — всегда; <header>/<footer> — вне article, aside,
-     main, nav, section, шириной от половины окна и не в повторяющемся компоненте (у предка до 4 уровней нет соседа
-     с тем же тегом и классом и своим header/footer — карточки на div со своим <header>); шапка — без h1, ниже
-     половины окна и начинается на первом экране */
+     main, nav, section, не уже колонки страницы и не в повторяющемся компоненте; шапка — без h1, ниже половины окна
+     и начинается на первом экране.
+     Колонка: от половины окна или от 90% колонки, в которой стоит h1 (узкая колонка 660 px без main — шапка и подвал
+     в ней тоже каркас). Повтор: у предка до 4 уровней есть сосед с тем же тегом и классом, а в нём по тому же пути
+     тегов вниз лежит такой же header/footer (карточки на div со своим <header>). Шапка сайта в .container, у соседнего
+     .container которого внутри карточки со своими header, — не повтор: путь до них другой */
   const barMemo = new Map();
-  const repeated = (x, sel) => { for (let a = x.parentElement, dp = 0; a && a !== document.body && dp < 4; a = a.parentElement, dp++) { const p = a.parentElement; if (!p) break; for (const sb of p.children) if (sb !== a && sb.tagName === a.tagName && sb.className === a.className && sb.querySelector(sel)) return true; } return false; };
+  const colOf = (e) => { if (!e) return 0; const s = cs(e); return e.getBoundingClientRect().width - (parseFloat(s.paddingLeft) || 0) - (parseFloat(s.paddingRight) || 0) - (parseFloat(s.borderLeftWidth) || 0) - (parseFloat(s.borderRightWidth) || 0); };
+  const area = (e) => { const q = e.getBoundingClientRect(); return q.width * q.height; };
+  const h1Col = h1Els.length ? colOf(h1Els.reduce((a, e) => (area(e) > area(a) ? e : a)).parentElement) : 0;
+  const barWide = (q) => q.width >= vw * 0.5 || (h1Col > 0 && q.width >= h1Col * 0.9);
+  const repeated = (x) => {
+    const tags = [x.tagName];
+    for (let a = x.parentElement, dp = 0; a && a !== document.body && dp < 4; tags.unshift(a.tagName), a = a.parentElement, dp++) {
+      const p = a.parentElement; if (!p) break;
+      for (const sb of p.children) {
+        if (sb === a || sb.tagName !== a.tagName || sb.className !== a.className) continue;
+        let lvl = [sb];
+        for (const t of tags) lvl = lvl.flatMap((y) => [...y.children].filter((c) => c.tagName === t));
+        if (lvl.length) return true;
+      }
+    }
+    return false;
+  };
   const siteBar = (x) => {
     if (barMemo.has(x)) return barMemo.get(x);
     const role = x.getAttribute('role'); const isH = role === 'banner' || (role !== 'contentinfo' && x.tagName === 'HEADER'); const q = x.getBoundingClientRect();
-    const bar = role === 'banner' || role === 'contentinfo' || (!(x.parentElement && x.parentElement.closest(SECTIONING)) && q.width >= vw * 0.5 && !repeated(x, isH ? 'header' : 'footer') && (!isH || q.top + scrollY < vh));
+    const bar = role === 'banner' || role === 'contentinfo' || (!(x.parentElement && x.parentElement.closest(SECTIONING)) && barWide(q) && !repeated(x) && (!isH || q.top + scrollY < vh));
     const v = !bar ? null : !isH ? 'подвал' : !x.querySelector('h1') && q.height < vh * 0.5 ? 'шапка' : null;
     barMemo.set(x, v); return v;
   };
@@ -628,11 +656,9 @@ async function measureInPage(o) {
       const el = b.el.closest(HEAD_SEL) || b.el; const r = el.getBoundingClientRect();
       let p = sib(el, -1); const n = sib(el, 1); let kicker = null;
       if (p) { const pr = p.getBoundingClientRect(); const pt = (p.textContent || '').trim(); if (pt && pt.length <= 60 && parseFloat(cs(p).fontSize) < b.fs * 0.75 && r.top - pr.bottom <= 24 && pr.height < b.fs * 2) { kicker = sig(p); p = sib(p, -1); } }
-      /* сверху — другой заголовок (h1 и подзаголовок h2 под ним, h2 и h3 без текста между): это одна группа, близость
-         к «блоку сверху» не мерится */
-      const headOnly = (e) => { if (e.matches(HEAD_SEL)) return true; const hh = e.querySelector(HEAD_SEL); return !!hh && (hh.textContent || '').trim() === (e.textContent || '').trim(); };
-      const afterHead = !kicker && p && headOnly(p) ? sig(p) : null;
-      b.gaps = { kicker, afterHead, above: p && !afterHead ? Math.round(r.top - p.getBoundingClientRect().bottom) : null, below: n ? Math.round(n.getBoundingClientRect().top - r.bottom) : null, prev: p ? sig(p) : null, next: n ? sig(n) : null, position: cs(el).position };
+      /* подзаголовок h1 (hero.sub) близостью не мерится — это решается ниже, у первого экрана (gaps.afterHead);
+         остальные заголовки под заголовком (h3 сразу под h2) мерятся как все */
+      b.gaps = { kicker, above: p ? Math.round(r.top - p.getBoundingClientRect().bottom) : null, below: n ? Math.round(n.getBoundingClientRect().top - r.bottom) : null, prev: p ? sig(p) : null, next: n ? sig(n) : null, position: cs(el).position };
     }
     /* секция — для «почти одной оси» */
     const sec = b.el.closest('section') || (() => { for (let e = b.el.parentElement; e && e !== document.body; e = e.parentElement) { if ((e.parentElement && e.parentElement.tagName === 'MAIN') || e.getBoundingClientRect().width >= vw * 0.8) return e; } return null; })();
@@ -719,16 +745,25 @@ async function measureInPage(o) {
   if (h1) {
     const hb = h1.rect.y + h1.rect.h;
     const heads = top.filter((b) => b.id !== h1.id && b.role === 'semantic' && /^h[1-3]$/.test(b.headTag) && b.rect.y > hb).sort((a, b) => a.rect.y - b.rect.y);
-    /* подзаголовок: заголовок сразу под h1 (следующий видимый сосед h1 или его обёртки, или тот же hgroup), мельче
-       0.8 h1 и не дальше max(48 px, кегль h1) — часть первого экрана, а не граница поиска кнопки; он же лид */
+    /* подзаголовок: заголовок того же блока сразу под h1, мельче 0.8 h1 и не дальше max(48 px, кегль h1) — часть
+       первого экрана, а не граница поиска кнопки; он же лид. Того же блока — это тот же hgroup или следующий видимый
+       сосед h1 (или его обёртки, до 3 уровней), который сам этот заголовок или обёртка вокруг него одного. Сосед-секция
+       (section, article, aside, nav или обёртка, где кроме заголовка текст и кнопки) — следующая секция со своим
+       заголовком. Сосед из ряда одноуровневых заголовков (h1, h2, p, h2 в одном контейнере; тот же тег и тот же
+       кегль) — тоже заголовок секции; подзаголовок своего кегля в том же ряду — подзаголовок */
     let sub = null;
     const hHead = h1.el.closest(HEAD_SEL) || h1.el;
     if (heads[0] && heads[0].fs < h1.fs * 0.8 && heads[0].rect.y - hb <= Math.max(48, h1.fs)) {
       const sEl = heads[0].el.closest(HEAD_SEL) || heads[0].el;
-      const nextVis = (e) => { for (let y = e.nextElementSibling; y; y = y.nextElementSibling) { const q = y.getBoundingClientRect(); if (q.width > 0 && q.height > 0) return y; } return null; };
+      const shown = (y) => { const q = y.getBoundingClientRect(); return q.width > 0 && q.height > 0; };
+      const txt = (e) => (e.textContent || '').replace(/\s+/g, ' ').trim();
+      const nextVis = (e) => { for (let y = e.nextElementSibling; y; y = y.nextElementSibling) if (shown(y)) return y; return null; };
       let nx = null; for (let e = hHead, dp = 0; e && e !== document.body && dp < 3 && !nx; e = e.parentElement, dp++) nx = nextVis(e);
+      const alone = !!nx && (nx === sEl || (nx.contains(sEl) && !nx.matches('section, article, aside, nav, [role="region"], [role="article"]') && txt(nx) === txt(sEl)));
+      const sFs = parseFloat(cs(sEl).fontSize) || 0;
+      const series = alone && [...nx.parentElement.children].some((y) => y !== nx && y !== hHead && y.tagName === sEl.tagName && shown(y) && Math.abs((parseFloat(cs(y).fontSize) || 0) - sFs) < 0.5);
       const hg = hHead.closest('hgroup');
-      if ((nx && (nx === sEl || nx.contains(sEl))) || (hg && hg.contains(sEl))) sub = heads[0];
+      if ((hg && hg.contains(sEl)) || (alone && !series)) sub = heads[0];
     }
     const nextHead = heads[sub ? 1 : 0];
     const limit = nextHead ? nextHead.rect.y : hb + vh * 3;
@@ -742,7 +777,8 @@ async function measureInPage(o) {
     }
     const inHero = (el) => !heroEl || heroEl.contains(el);
     hero.block = heroEl ? sig(heroEl) : null;
-    if (sub) hero.sub = sub.sig;
+    /* подзаголовок и h1 — одна группа: близость подзаголовка к «блоку сверху» (к h1) не мерится */
+    if (sub) { hero.sub = sub.sig; if (sub.gaps) { sub.gaps.afterHead = h1.sig; sub.gaps.above = null; } }
     /* лид — подзаголовок или ближайший блочный абзац под h1 (не строчный кусок вроде часов работы); крупный лид
        (display) — если мельче h1 */
     const cand = top.filter((b) => b.id !== h1.id && !b.headTag && !b.frame && !b.nav && !b.inButton && !b.inLink && b.textLen >= 20 && (b.role !== 'display' || b.fs < h1.fs * 0.8) && b.rect.y >= hb - 4 && b.rect.y < vh * 1.5 && b.rect.x < h1.rect.x + h1.rect.w && b.rect.x + b.rect.w > h1.rect.x && inHero(b.el));
@@ -750,10 +786,11 @@ async function measureInPage(o) {
     lede = cand.filter((b) => !/^inline/.test(b.disp || '')).sort(byY)[0] || cand.sort(byY)[0] || null;
     if (sub && (!lede || sub.rect.y <= lede.rect.y)) lede = sub;
     const free = ctas.filter((c) => !c.nav && !c.fixed && !c.frame);
-    /* кнопка: в блоке первого экрана ниже h1 до следующего заголовка; запасной поиск — на первом экране в том же блоке,
-       а если блок не определился (h1 прямо в main) — на первом экране ниже верха h1 (полоса-анонс над ним не в счёт) */
+    /* кнопка: в блоке первого экрана ниже h1 до следующего заголовка; запасной поиск — на первом экране в том же блоке.
+       Блок не определился (h1 прямо в main) — только от верха h1 до следующего заголовка: кнопка секции за ним — не
+       кнопка первого экрана, полоса-анонс над h1 — тоже */
     cta = free.filter((c) => inHero(ctaEl.get(c)) && c.rect.y >= h1.rect.y - 4 && c.rect.y < limit).sort(byY)[0]
-      || free.filter((c) => onFirst(c.rect) && (heroEl ? heroEl.contains(ctaEl.get(c)) : c.rect.y >= h1.rect.y - 4)).sort(byY)[0] || null;
+      || (heroEl ? free.filter((c) => onFirst(c.rect) && heroEl.contains(ctaEl.get(c))).sort(byY)[0] : null) || null;
     if (!cta) { const far = free.filter((c) => c.rect.y >= h1.rect.y - 4).sort(byY)[0]; if (far) hero.farCta = { text: far.text, y: far.rect.y }; }
   }
   const brief = (b) => b && { id: b.id, sig: b.sig, text: b.text.slice(0, 80), fs: b.fs, lines: b.fsLines || b.lines.length, ...(b.fsLines ? { allLines: b.lines.length, fsMin: b.fsMin } : {}), chars: b.lines.map((l) => l.chars), x0: b.x0, rect: b.rect, align: b.align, fromData: b.fromData };
@@ -1800,6 +1837,35 @@ const SELFTEST = {
     ['контейнер прокрутки страницы — не закреплённый слой: висячее «и» у #hangp — WARN, итог не OK', (a) => { const b = a.byEl('hangp'); return [b && !b.frame && a.st('hang', 'hangp') === 'WARN' && a.res.verdict !== 'OK', `frame ${b ? b.frame : 'нет блока'}, hang ${a.st('hang', 'hangp')}, итог ${a.res.verdict}`]; }],
     ['текст ниже окна в контейнере прокрутки меряется: «или» у #low', (a) => { const b = a.byEl('low'); return [b && a.st('hang', 'low') === 'WARN', b ? `hang ${a.st('hang', 'low')}` : 'блока нет — обрезан контейнером']; }],
     ['h1 первого экрана найден, закреплённая вкладка внутри — каркас, шкала не пустая', (a) => { const h = a.d.hero.h1; const t = a.byEl('tab'); const s = summaryOf(a.d).sizes; return [h && /#h1/.test(h.sig) && t && t.frame === 'закреплённое' && s.length > 0, `h1 ${h ? h.sig : 'нет'}, вкладка ${t ? t.frame : 'нет блока'}, шкала ${s.join(', ') || 'пусто'}`]; }],
+  ],
+  /* третий круг 29.09 (стенды проверяющего): отрицательные случаи к подзаголовку, близости, запасной кнопке и каркасу */
+  'inner.html': [
+    ['заголовок соседней секции — не подзаголовок: h2#h2addr не sub и не лид, кнопка секции — не кнопка первого экрана', (a) => { const h = a.d.hero; return [!h.sub && !(h.lede && /#h2addr/.test(h.lede.sig)) && !h.cta && h.farCta && /Построить маршрут/.test(h.farCta.text), `подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, кнопка ${h.cta ? h.cta.sig : 'нет'}${h.farCta ? `, ближайшая ниже «${h.farCta.text}»` : ''}`]; }],
+    ['h2#h2addr под обёрткой h1 — не подзаголовок, близость мерится: сверху 16, снизу 16 — WARN', (a) => { const b = a.byEl('h2addr'); const g = b && b.gaps; return [g && g.above != null && !g.afterHead && a.st('proximity', 'h2addr') === 'WARN', g ? `сверху ${g.above}, снизу ${g.below}, afterHead ${g.afterHead || 'нет'}, proximity ${a.st('proximity', 'h2addr')}` : 'нет блока']; }],
+  ],
+  'inmain.html': [
+    ['h1 прямо в main: кнопка за следующим заголовком (#order под h2#h2hot) — не кнопка первого экрана, INFO «кнопка не найдена»', (a) => { const h = a.d.hero; const ln = a.res.lines.find((l) => l.rule === 'hero' && /кнопка не найдена/.test(l.details || '')); return [!h.block && !h.cta && h.farCta && /Заказать доставку/.test(h.farCta.text) && !!ln && h.lede && /#lede/.test(h.lede.sig), `блок ${h.block || 'нет'}, кнопка ${h.cta ? `${h.cta.sig} (${h.cta.rect.y}px)` : 'нет'}, «не найдена» ${!!ln}, лид ${h.lede ? h.lede.sig : 'нет'}`]; }],
+  ],
+  'inmain-sub.html': [
+    ['сразу под h1 — section со своим h2: не подзаголовок и не лид; её кнопка ниже окна — не кнопка первого экрана, WARN «ниже окна» нет', (a) => { const h = a.d.hero; const warn = a.res.lines.some((l) => l.rule === 'hero' && l.status === 'WARN' && /ниже окна/.test(l.details || '')); return [!h.sub && !h.cta && !warn && h.lede && !/#h2a/.test(h.lede.sig), `подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, кнопка ${h.cta ? `${h.cta.sig} (${h.cta.rect.y}px)` : 'нет'}, WARN ниже окна ${warn}`]; }],
+  ],
+  'container-sub.html': [
+    ['h1 и секции в одном контейнере: h2#h2a — не подзаголовок и не лид, кнопка секции — не кнопка первого экрана', (a) => { const h = a.d.hero; return [!h.sub && !(h.lede && /#h2a/.test(h.lede.sig)) && !h.cta, `подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, кнопка ${h.cta ? `${h.cta.sig} (${h.cta.rect.y}px)` : 'нет'}`]; }],
+  ],
+  'flat.html': [
+    ['ряд h2 прямо под h1 в одном контейнере: h2#h2hot — заголовок секции, не подзаголовок и не лид; кнопка секции — не кнопка первого экрана', (a) => { const h = a.d.hero; return [!h.sub && !(h.lede && /#h2hot/.test(h.lede.sig)) && !h.cta && h.farCta && /Заказать доставку/.test(h.farCta.text), `подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, кнопка ${h.cta ? h.cta.sig : 'нет'}`]; }],
+  ],
+  'flat-sub.html': [
+    ['плоская разметка, h2 своего кегля сразу под h1 — подзаголовок: лид, кнопка #book под ним — кнопка первого экрана, близость не мерится', (a) => { const h = a.d.hero; return [/#sub/.test(h.sub || '') && h.lede && /#sub/.test(h.lede.sig) && h.cta && /#book/.test(h.cta.sig) && h.cta.visible && a.st('proximity', 'sub') === 'none', `подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, кнопка ${h.cta ? `${h.cta.sig} видна ${h.cta.visible}` : 'нет'}, proximity ${a.st('proximity', 'sub')}`]; }],
+  ],
+  'h2h3.html': [
+    ['h3#h3hot сразу под h2 (4 px) и в 40 px от своего текста — близость мерится: WARN', (a) => { const b = a.byEl('h3hot'); const g = b && b.gaps; return [g && !g.afterHead && g.above != null && a.st('proximity', 'h3hot') === 'WARN', g ? `сверху ${g.above}, снизу ${g.below}, proximity ${a.st('proximity', 'h3hot')}` : 'нет блока']; }],
+  ],
+  'narrow-nomain.html': [
+    ['узкая колонка без main: header и footer в ней — шапка и подвал (каркас), кегли 15 и 13 не в шкале', (a) => { const h = a.byEl('brand'), f = a.byEl('fnote'); const s = summaryOf(a.d).sizes; return [h && h.frame === 'шапка' && f && f.frame === 'подвал' && !s.includes(15) && !s.includes(13), `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}, шкала ${s.join(', ')}`]; }],
+  ],
+  'bs-nomain.html': [
+    ['шапка и подвал в div.container без main — каркас; header и footer карточек div.post — основное (кегль 20 в шкале)', (a) => { const h = a.byEl('brand'), f = a.byEl('fnote'); const ph = a.d.blocks.find((b) => !b.partOf && /выбираем зерно/.test(b.text)); const pf = a.d.blocks.find((b) => !b.partOf && /^12 сентября$/.test(b.text)); const s = summaryOf(a.d).sizes; return [h && h.frame === 'шапка' && f && f.frame === 'подвал' && ph && !ph.frame && pf && !pf.frame && s.includes(20) && !s.includes(15), `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}, карточка ${ph ? ph.frame || 'основное' : 'нет блока'}/${pf ? pf.frame || 'основное' : 'нет блока'}, шкала ${s.join(', ')}`]; }],
   ],
 };
 

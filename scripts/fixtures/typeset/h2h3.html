@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>h3 прижат к h2 и оторван от своего текста</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09, из стендов проверяющего): h3 сразу под h2 (4 px) и в 40 px от
+     своего текста — близость мерится, WARN. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 16px; }
+h2 { font-size: 32px; line-height: 1.2; margin: 64px 0 4px; }
+h3 { font-size: 22px; line-height: 1.3; margin: 4px 0 40px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Меню ресторана у Волги</h1>
+  <p>Готовим из рыбы Рыбинского водохранилища и овощей с фермы по соседству каждый день.</p>
+  <h2 id="h2menu">Кухня</h2>
+  <h3 id="h3hot">Горячие блюда</h3>
+  <p id="phot">Уха по-рыбински, судак на углях, щучьи котлеты с пюре и томлёная говядина с овощами.</p>
+  <h3 id="h3cold">Закуски</h3>
+  <p>Сельдь с картофелем, паштет из печени и соленья по бабушкиному рецепту для всей компании.</p>
+</main>
+</body>
+</html>

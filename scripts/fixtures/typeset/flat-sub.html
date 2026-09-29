@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Плоская разметка: подзаголовок своего кегля и ряд h2</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09), пара к flat.html: всё прямо в main, но h2 сразу под h1 — своего
+     кегля (22 px против 28 px у заголовков секций). Это подзаголовок: он лид, кнопка под ним — кнопка первого экрана,
+     его близость к h1 не мерится. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 12px; }
+h2 { font-size: 28px; line-height: 1.2; margin: 0 0 12px; }
+h2.sub { font-size: 22px; font-weight: 400; margin: 0 0 20px; }
+p { margin: 0 0 16px; }
+.btn { display: inline-block; padding: 12px 20px; background: #c43; color: #fff; text-decoration: none; border-radius: 6px; }
+.gap { margin-bottom: 48px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="h1">Ресторан у Волги</h1>
+  <h2 class="sub" id="sub">Рыба Рыбинского водохранилища и овощи с фермы по соседству</h2>
+  <p class="gap"><a class="btn" id="book" href="#book">Забронировать стол</a></p>
+  <h2 id="h2hot">Горячие блюда</h2>
+  <p>Уха по-рыбински, судак на углях, щучьи котлеты с пюре и томлёная говядина с овощами.</p>
+  <h2 id="h2cold">Закуски</h2>
+  <p>Сельдь с картофелем, паштет из печени и соленья по бабушкиному рецепту для всей компании.</p>
+</main>
+</body>
+</html>

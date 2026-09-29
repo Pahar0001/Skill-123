@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>h1 прямо в main, сразу секция со своим h2 и кнопкой ниже окна</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09, из стендов проверяющего): сразу под h1 — section со своим h2
+     в 24 px от h1 и кнопкой далеко ниже окна. h2 секции — не подзаголовок, её кнопка — не кнопка первого экрана:
+     никакого WARN «кнопка ниже окна». Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 0; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 24px; }
+h2 { font-size: 28px; line-height: 1.2; margin: 0 0 12px; }
+.long { margin: 0 0 16px; }
+.btn { display: inline-block; padding: 12px 20px; background: #c43; color: #fff; text-decoration: none; border-radius: 6px; }
+section { margin-bottom: 48px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="h1">Политика конфиденциальности</h1>
+  <section id="s1">
+    <h2 id="h2a">Какие данные мы собираем</h2>
+    <p class="long">Имя и телефон, которые вы оставляете при бронировании стола, и больше ничего. Мы не собираем данные о посещениях сайта и не передаём ваши контакты третьим лицам.</p>
+    <p class="long">Телефон нужен, чтобы подтвердить бронь и предупредить, если в зале что-то изменится. Имя — чтобы администратор знал, кого встречать у входа в ресторан.</p>
+    <p class="long" style="margin-bottom: 900px">Если вы передумали, напишите нам, и мы удалим ваши данные в течение трёх рабочих дней после обращения.</p>
+    <a class="btn" id="del" href="#delete">Удалить мои данные</a>
+  </section>
+  <section id="s2">
+    <h2>Как с нами связаться</h2>
+    <p>Позвоните администратору или напишите на почту, указанную внизу страницы, в любой день недели.</p>
+  </section>
+</main>
+</body>
+</html>
