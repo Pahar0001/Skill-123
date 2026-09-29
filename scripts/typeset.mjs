@@ -33,7 +33,9 @@
  *   --strict      код выхода 1, если хоть один экран FAIL.
  *   --json <файл>|-  все протоколы запуска одним файлом; «-» — JSON в stdout, текст — в stderr.
  *   --selftest    стенд fixtures/typeset на своём сервере (порт 4211–4219): index.html, hero-low.html, frame.html
- *                 (каркас, составной h1, <br>, ₽, local(), текст из данных); каждый случай сверяется с ожидаемым.
+ *                 (каркас, составной h1, <br>, ₽, local(), текст из данных), edge.html (без main: подзаголовок h2
+ *                 с кнопкой, карточки со своим <header>, акцент inline-block, цепочка неразрывных), fixedwrap.html
+ *                 (страница в закреплённом контейнере прокрутки); каждый случай сверяется с ожидаемым.
  *   --help, -h    эта справка.
  * Неизвестный флаг — ошибка с кодом 1 и подсказкой. Адрес, экраны и значения флагов проверяются до
  * создания папок и запуска браузера.
@@ -51,9 +53,13 @@
  * Строка — новая, если центр части слова дальше max(4px, 0.5·line-height) от центра текущей (в блоке с разными
  * кеглями — по line-height каждого слова). Не берутся: svg, math, script, style, noscript, template, textarea,
  * code, pre, поля ввода; невидимое (итоговая прозрачность < 0.05, коробка до 2 px, clip до 1 px —
- * rect(0 0 0 0) и rect(1px 1px 1px 1px), clip-path: inset(50%) — sr-only), блок целиком за краем экрана или за
- * краем обрезающего предка. Видимый текст с aria-hidden берётся. white-space: nowrap и pre — только для шрифтов.
- * Заголовок, чей текст разложен по вложенным блокам, меряется целиком. Теневой DOM и iframe не обходятся.
+ * rect(0 0 0 0) и rect(1px 1px 1px 1px), clip-path: inset(50%) — sr-only; position: absolute/fixed за краем экрана —
+ * left: -9999px), блок целиком за краем экрана или за краем обрезающего предка (контейнер прокрутки страницы — во весь
+ * экран, overflow auto/scroll, от половины текста — не обрезает: текст ниже окна меряется). Видимый текст с aria-hidden
+ * берётся. white-space: nowrap и pre — только для шрифтов.
+ * Заголовок, чей текст разложен по вложенным блокам, меряется целиком: граница блочного вложенного (display: block,
+ * flex, grid) — разрыв, заданный разметкой, как <br>; inline-block стоит в строке — перенос перед ним обычный.
+ * Теневой DOM и iframe не обходятся.
  * Кегль и интерлиньяж заголовка — по самому крупному видимому тексту внутри (h1 16 px с надписью 109 px и подписью
  * 32 px — 109 px); строки для h-lines и первого экрана — строки этого текста, подпись не в счёт. Вертикальный текст
  * (writing-mode: vertical-*) строчными правилами не проверяется — строкой INFO.
@@ -63,10 +69,13 @@
  * остальное. Основной кегль — самый частый по длине текста у блоков от 40 знаков основного содержимого (каркас —
  * только если в основном таких нет). Экран: телефон — уже 600, планшет — 600–1023, desktop — от 1024.
  *
- * Каркас (blocks[].frame) — общее для всех страниц: меню (nav), закреплённое (position: fixed), шапка (header
- * вне article/aside/main/nav/section или role=banner, без h1 и ниже половины окна), подвал (footer там же или
- * role=contentinfo), «вне <main>» — когда в <main> лежит h1 и не меньше 30% текста. Шкала, основной кегль, hang,
- * orphan, lead, num-unit, hyphen-break — по основному содержимому; пункты каркаса — одной строкой INFO (frame).
+ * Каркас (blocks[].frame) — общее для всех страниц: меню (nav), закреплённое (position: fixed; контейнер прокрутки
+ * страницы — .page { position: fixed; inset: 0; overflow: auto } с половиной текста и больше — не в счёт), шапка
+ * (role=banner или header вне article/aside/main/nav/section; без h1, ниже половины окна), подвал (role=contentinfo
+ * или footer там же). header/footer без role — только шириной от половины окна, шапка — с началом на первом экране,
+ * и не в повторяющемся компоненте (карточки на div со своим <header>: у предка до 4 уровней есть сосед с тем же тегом,
+ * классом и своим header/footer). «Вне <main>» — когда в <main> лежит h1 и не меньше 30% текста. Шкала, основной кегль,
+ * hang, orphan, lead, num-unit, hyphen-break — по основному содержимому; пункты каркаса — одной строкой INFO (frame).
  *
  * Текст из данных (blocks[].fromData): страница запрашивается ещё раз (тот же адрес, без кэша) и её исходный HTML
  * сверяется с текстом на экране по текстовым узлам; чего в исходнике нет — вставлено скриптом после загрузки (API,
@@ -80,15 +89,17 @@
  *                для, при, без, над, под, или…) — WARN одной строкой со счётом; на первом экране (h1, лид,
  *                кнопка) — отдельная строка. Все блоки от 2 строк, кроме nav и каркаса; пометка [из данных]
  *   orphan       одно слово в последней строке: заголовок — WARN; абзац — если слово ≤ 12 знаков или
- *                строка < 20% ширины. Последняя строка после <br> или границы вложенного блока — не в счёт;
- *                два последних слова вместе шире колонки («Ближайшие события» на 320) — INFO «неустранимо»
- *                (неразрывный пробел дал бы вылет)
+ *                строка < 20% ширины. Последняя строка после <br> или границы блочного вложенного — не в счёт
+ *                (перенос перед акцентом inline-block — в счёт); хвост шире колонки — INFO «неустранимо»
+ *                (неразрывный пробел дал бы вылет): два последних слова вместе с полями inline-block и со словами,
+ *                уже привязанными неразрывным пробелом («Ближайшие события» на 320; «с&nbsp;томлёными томатами»)
  *   frame        каркас: его hang, orphan, lead, num-unit, hyphen-break и кегли, которых нет в основном, — INFO
  *   lead, num-unit, hyphen-break   строка начинается с же/ли/бы/тире; «1 000 | ₽»; разрыв «3D-|принтере»
  *   h-lines      h1: desktop ≤ 3 OK, 4–5 WARN, ≥ 6 FAIL; телефон и планшет ≤ 4, 5–6, ≥ 7; h2 > 3 (телефон > 4) WARN
  *   balance      последняя строка заголовка < 40% самой длинной без text-wrap: balance — INFO с рецептом
  *   proximity    h2–h4 ближе к блоку сверху, чем к своему тексту — WARN (> 0.75 — INFO); короткая подпись вплотную
- *                над заголовком (надзаголовок) — часть заголовка
+ *                над заголовком (надзаголовок) — часть заголовка; сверху другой заголовок (подзаголовок под h1,
+ *                h3 сразу под h2) — одна группа, не мерится (gaps.afterHead)
  *   justify      выключка по ширине у prose — WARN; зазор > 3 пробелов — FAIL
  *   hyphens      переносы в заголовках на desktop, без lang — WARN; > 2 переноса подряд — WARN; браузер не
  *                переносит — INFO «проверьте --browser firefox»
@@ -117,11 +128,15 @@
  *   nbsp, tnum   «привязано неразрывным пробелом N из M» (сколько непривязанных — в тексте из данных);
  *                колонка цифр без tabular-nums — INFO
  *   hero         первый экран: блок первого экрана — самый широкий предок h1 до main/body без следующего заголовка
- *                и без шапки или подвала сайта (hero.block). Главная кнопка — первая залитая в этом блоке ниже h1
- *                и до следующего заголовка (без него — 3 экрана); кнопки полосы-анонса, шапки, меню, закреплённые
- *                вкладки и всё вне блока не в счёт — иначе «кнопка не найдена» (INFO). Лид — ближайший блочный
- *                абзац под h1 в том же блоке (строчный кусок вроде часов работы — только если блочного нет; крупный
- *                лид-display — если мельче 0.8 h1). Кнопка ниже окна — WARN (mobile-s с закреплённой панелью
+ *                и без шапки или подвала сайта (hero.block). Подзаголовок — заголовок сразу под h1 (следующий
+ *                видимый сосед h1 или его обёртки, или тот же hgroup), мельче 0.8 h1, не дальше max(48 px, кегль h1) —
+ *                часть первого экрана, не «следующий заголовок» (hero.sub). Главная кнопка — первая залитая в этом
+ *                блоке ниже h1 и до следующего заголовка (без него — 3 экрана), запасная — на первом экране в блоке,
+ *                а если блок не определился (h1 прямо в main) — на первом экране не выше h1; кнопки полосы-анонса,
+ *                шапки, меню, закреплённые вкладки и всё вне блока не в счёт — иначе «кнопка не найдена» (INFO).
+ *                Лид — подзаголовок или ближайший блочный абзац под h1 в том же блоке (строчный кусок вроде часов
+ *                работы — только если блочного нет; крупный лид-display — если мельче 0.8 h1). Кнопка ниже окна —
+ *                WARN (mobile-s с закреплённой панелью
  *                действия — INFO); ось h1, лида и кнопки (у первого экрана по центру — центры), h1 к основному
  *                тексту вне 3–6× (телефон 2–3×) — INFO
  *   word-overflow, near-align   слово шире блока (предок не обрезает); левые края блоков секции расходятся на
@@ -149,11 +164,11 @@
  * FAIL с --strict; 3 — страница не открылась или упал браузер.
  *
  * Модуль: export LINES_FN — исходник замера строк для evaluateWith (как SIG_FN):
- *   const lines = eval(LINES_FN);  lines(el) → { lines[], lastLine { …, forced, tail, tailBox, fits }, hang[],
+ *   const lines = eval(LINES_FN);  lines(el) → { lines[], lastLine { …, forced, tail, tailBox, tailWords, tailText, fits }, hang[],
  *   lead[], numSplit[], broken[], shortTotal, shortNb, maxGap, space, fs, lh, ls, fsBy?, fsOwn?, mixed?, fsMin?,
  *   fsLines?, … }; lines(el, null, { deep: true }) — весь текст под el; lines.collect(root) → Map(блок → текстовые
  *   узлы). export measureLines(page, selector) — то же из Node.
- * Протокол: blocks[] — frame, fromData, disp, vertical; env.source { ok, chars | why }, env.main; hero.block;
+ * Протокол: blocks[] — frame, fromData, disp, vertical, gaps.afterHead; env.source { ok, chars | why }, env.main; hero.block, hero.sub;
  *   fonts.faces[].localOnly; fonts.glyphs { гарнитура: { знак: есть ли в файле } } (Chrome); rules.frame.
  */
 import fs from 'node:fs';
@@ -234,9 +249,12 @@ function linesFactory() {
     if (s.visibility === 'hidden' || s.visibility === 'collapse' || parseFloat(s.opacity) === 0) return true;
     if (clipTiny(s.clip) || /inset\(\s*(50|100)%/.test(s.clipPath || '')) return true;
     if (/hidden|clip/.test(s.overflow)) { const q = e.getBoundingClientRect(); if (q.width < 3 || q.height < 3) return true; }
+    /* текст для читалки, унесённый за край экрана (position: absolute; left: -9999px) */
+    if (/^(absolute|fixed)$/.test(s.position)) { const q = e.getBoundingClientRect(); if (q.right <= 0 || q.left >= innerWidth) return true; }
     return false;
   };
-  /* граница вложенного блока в deepNodes: разрыв строки задан разметкой, как <br> (null у collect — разделитель слов разбивки) */
+  /* граница вложенного блока в deepNodes: разрыв строки задан разметкой, как <br> (null у collect — разделитель слов разбивки).
+     Только у блочного вложенного (display: block, flex, grid…): inline-block стоит в строке, перенос перед ним — обычный */
   const EDGE = { edge: true };
   /* весь видимый текст под el, включая вложенные блоки (заголовок, разложенный по строкам-span) */
   function deepNodes(el) {
@@ -247,7 +265,7 @@ function linesFactory() {
         if (c.nodeType !== 1) continue;
         if (c.tagName === 'BR') { out.push(c); continue; }
         const k = kind(c); if (k === 'skip' || unseen(c)) continue;
-        if (k === 'own') { out.push(EDGE); walk(c); out.push(EDGE); } else walk(c);
+        if (k === 'own') { const sep = inlineBox(cs(c).display) ? null : EDGE; out.push(sep); walk(c); out.push(sep); } else walk(c);
       }
     };
     walk(el); return out;
@@ -351,22 +369,32 @@ function linesFactory() {
     const last = L[L.length - 1];
     let lastLine = null;
     if (last) {
-      /* \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0441\u0442\u0440\u043e\u043a\u0430 \u043f\u043e\u0441\u043b\u0435 <br> \u0438\u043b\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u0431\u043b\u043e\u043a\u0430 \u2014 \u0440\u0430\u0437\u0440\u044b\u0432 \u0437\u0430\u0434\u0430\u043d \u0440\u0430\u0437\u043c\u0435\u0442\u043a\u043e\u0439, \u0430 \u043d\u0435 \u043f\u0435\u0440\u0435\u043d\u043e\u0441\u043e\u043c */
+      /* последняя строка после <br> или границы блочного вложенного — разрыв задан разметкой, а не переносом */
       let forcedBr = false;
       if (L.length > 1 && !last.firstCont) { const prev = L[L.length - 2]; const pe0 = prev.it[prev.it.length - 1].wd.i1, st0 = last.it[0].wd.i0; forcedBr = forced.some((f) => f >= pe0 && f < st0); }
-      /* \u0445\u0432\u043e\u0441\u0442: \u0434\u0432\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0445 \u0441\u043b\u043e\u0432\u0430 \u0432\u043c\u0435\u0441\u0442\u0435 \u0441 \u043f\u0440\u043e\u0431\u0435\u043b\u043e\u043c \u2014 \u0448\u0438\u0440\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0438, \u0442\u043e \u043d\u0435\u0440\u0430\u0437\u0440\u044b\u0432\u043d\u044b\u0439 \u043f\u0440\u043e\u0431\u0435\u043b \u0434\u0430\u0441\u0442 \u0432\u044b\u043b\u0435\u0442, \u0430 \u043d\u0435 \u0438\u0441\u043f\u0440\u0430\u0432\u0438\u0442 */
-      let tail = null, tailBox = null;
+      /* хвост: два последних слова вместе с пробелом и со словами, уже привязанными к ним неразрывным пробелом
+         («с&nbsp;томлёными томатами» — три слова), и с полями inline-block (акцент-плашка). Шире колонки — неразрывный
+         пробел даст вылет, а не исправит. Колонка — у ближайшего блочного предка: inline-block и строчные не в счёт */
+      let tail = null, tailBox = null, tailWords = null, tailText = null;
       if (last.n === 1 && words.length >= 2 && !last.firstCont) {
-        const a = words[words.length - 2], b = words[words.length - 1];
+        const n = words.length; let s0 = n - 2; while (s0 > 0 && words[s0 - 1].nb) s0--;
+        const chain = words.slice(s0);
         const wW = (wd) => wd.pieces.reduce((x, p) => x + (p.right - p.left), 0);
-        tail = Math.round(wW(a) + (b.pe ? spaceOf(cs(b.pe)) : space) + wW(b));
-        let own = b.pe || el; while (own && own !== el && kind(own) === 'flow') own = own.parentElement;
+        let w = 0; const boxes = new Set();
+        chain.forEach((wd, k) => {
+          w += wW(wd); if (k) w += wd.pe ? spaceOf(cs(wd.pe)) : space;
+          for (let e = wd.pe; e && e !== el; e = e.parentElement) if (inlineBox(cs(e).display)) boxes.add(e);
+        });
+        for (const e of boxes) { const so = cs(e); for (const k of ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth', 'marginLeft', 'marginRight']) w += parseFloat(so[k]) || 0; }
+        tail = Math.round(w); tailWords = chain.length; tailText = chain.map((x) => x.w).join(' ');
+        const b = words[n - 1];
+        let own = b.pe || el; while (own && own !== el && (kind(own) === 'flow' || inlineBox(cs(own).display))) own = own.parentElement;
         if (!own || own === el) tailBox = box; else { const so = cs(own); const q = own.getBoundingClientRect(); tailBox = Math.max(1, q.width - (parseFloat(so.paddingLeft) || 0) - (parseFloat(so.paddingRight) || 0) - (parseFloat(so.borderLeftWidth) || 0) - (parseFloat(so.borderRightWidth) || 0)); }
         tailBox = Math.round(tailBox);
       }
-      lastLine = { n: last.n, chars: last.chars, share: r2(last.width / box), word: last.last, at: dr(last.it[last.it.length - 1].p), forced: forcedBr, tail, tailBox, fits: tail == null ? null : tail <= tailBox + 1 };
+      lastLine = { n: last.n, chars: last.chars, share: r2(last.width / box), word: last.last, at: dr(last.it[last.it.length - 1].p), forced: forcedBr, tail, tailBox, tailWords, tailText, fits: tail == null ? null : tail <= tailBox + 1 };
     }
-    /* \u0441\u0442\u0440\u043e\u043a\u0438 \u043a\u0440\u0443\u043f\u043d\u043e\u0433\u043e \u0442\u0435\u043a\u0441\u0442\u0430 \u2014 \u0443 \u0431\u043b\u043e\u043a\u0430 \u0441 \u0440\u0430\u0437\u043d\u044b\u043c\u0438 \u043a\u0435\u0433\u043b\u044f\u043c\u0438 (\u043d\u0430\u0434\u043f\u0438\u0441\u044c \u0438 \u043f\u043e\u0434\u043f\u0438\u0441\u044c \u0432 \u043e\u0434\u043d\u043e\u043c h1) */
+    /* строки крупного текста — у блока с разными кеглями (надпись и подпись в одном h1) */
     const fsLines = mixed ? L.filter((ln) => ln.it.some((x) => x.wd.pe && Math.abs((parseFloat(cs(x.wd.pe).fontSize) || 0) - fsMax) <= 0.5)).length : null;
     return {
       text: text.replace(/[ \t\n\r\f\v\u2028\u2029]+/g, ' ').trim(), words: words.length, fs, lhPx: r1(lhPx), lh: r2(lhPx / fs), ls: r3(lsPx / fs), box: Math.round(box),
@@ -421,8 +449,26 @@ async function measureInPage(o) {
   const srOnly = (el) => { for (let e = el, d = 0; e && d < 4; e = e.parentElement, d++) { const s = cs(e); if (clipTiny(s.clip) || /inset\(\s*(50|100)%/.test(s.clipPath || '')) return true; if (/hidden|clip/.test(s.overflow)) { const q = e.getBoundingClientRect(); if (q.width <= 2 || q.height <= 2) return true; } } return false; };
   const rectMemo = new Map();
   const clipRect = (e) => { if (!rectMemo.has(e)) { const s = cs(e); rectMemo.set(e, /visible/.test(s.overflowX) && /visible/.test(s.overflowY) ? null : e.getBoundingClientRect()); } return rectMemo.get(e); };
-  const clippedAway = (el, r) => { for (let e = el.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) { const q = clipRect(e); if (q && (r.right <= q.left + 1 || r.left >= q.right - 1 || r.bottom <= q.top + 1 || r.top >= q.bottom - 1)) return true; } return false; };
-  const fixedOf = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { const p = cs(e).position; if (p === 'fixed' || p === 'sticky') return p; } return null; };
+  /* контейнер прокрутки страницы: во весь экран (от 90% окна), прокручивается сам (overflow auto/scroll) и держит не
+     меньше половины текста — вся страница внутри .page { position: fixed; inset: 0; overflow: auto } или оболочки
+     приложения высотой в окно. Это не закреплённый слой и не обрезка: текст ниже окна в нём прокручивается */
+  const scrollerMemo = new Map(); let textAll = null;
+  const pageScroller = (e) => {
+    if (scrollerMemo.has(e)) return scrollerMemo.get(e);
+    let v = false; const s = cs(e);
+    if (/auto|scroll|overlay/.test(`${s.overflowY} ${s.overflowX}`)) {
+      const q = e.getBoundingClientRect();
+      if (q.width >= vw * 0.9 && q.height >= vh * 0.9) {
+        const len = (ns) => ns.reduce((a, n) => a + (n && n.nodeType === 3 ? n.nodeValue.trim().length : 0), 0);
+        if (textAll == null) { textAll = 0; for (const [, ns] of owners) textAll += len(ns); }
+        let inE = 0; for (const [o, ns] of owners) if (e.contains(o)) inE += len(ns);
+        v = textAll > 0 && inE >= textAll * 0.5;
+      }
+    }
+    scrollerMemo.set(e, v); return v;
+  };
+  const clippedAway = (el, r) => { for (let e = el.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) { const q = clipRect(e); if (q && !pageScroller(e) && (r.right <= q.left + 1 || r.left >= q.right - 1 || r.bottom <= q.top + 1 || r.top >= q.bottom - 1)) return true; } return false; };
+  const fixedOf = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { const p = cs(e).position; if ((p === 'fixed' || p === 'sticky') && !(p === 'fixed' && pageScroller(e))) return p; } return null; };
   const firstFam = (stack) => { const m = /^\s*(?:"([^"]+)"|'([^']+)'|([^,]+))/.exec(stack || ''); return m ? (m[1] || m[2] || m[3]).trim() : ''; };
   const dr = (q) => ({ x: Math.round(q.left + scrollX), y: Math.round(q.top + scrollY), w: Math.round(q.width), h: Math.round(q.height) });
 
@@ -539,13 +585,26 @@ async function measureInPage(o) {
   let mainEl = mains.find((mn) => h1Els.some((h) => mn.contains(h))) || (h1Els.length ? null : mains[0]) || null;
   if (mainEl) { let inM = 0, all = 0; for (const b of blocks) if (!b.partOf) { all += b.textLen; if (mainEl.contains(b.el)) inM += b.textLen; } if (all && inM < all * 0.3) mainEl = null; }
   const SECTIONING = 'article, aside, main, nav, section, [role="main"], [role="article"], [role="complementary"], [role="region"]';
+  /* шапка или подвал сайта, а не карточки: role=banner/contentinfo — всегда; <header>/<footer> — вне article, aside,
+     main, nav, section, шириной от половины окна и не в повторяющемся компоненте (у предка до 4 уровней нет соседа
+     с тем же тегом и классом и своим header/footer — карточки на div со своим <header>); шапка — без h1, ниже
+     половины окна и начинается на первом экране */
+  const barMemo = new Map();
+  const repeated = (x, sel) => { for (let a = x.parentElement, dp = 0; a && a !== document.body && dp < 4; a = a.parentElement, dp++) { const p = a.parentElement; if (!p) break; for (const sb of p.children) if (sb !== a && sb.tagName === a.tagName && sb.className === a.className && sb.querySelector(sel)) return true; } return false; };
+  const siteBar = (x) => {
+    if (barMemo.has(x)) return barMemo.get(x);
+    const role = x.getAttribute('role'); const isH = role === 'banner' || (role !== 'contentinfo' && x.tagName === 'HEADER'); const q = x.getBoundingClientRect();
+    const bar = role === 'banner' || role === 'contentinfo' || (!(x.parentElement && x.parentElement.closest(SECTIONING)) && q.width >= vw * 0.5 && !repeated(x, isH ? 'header' : 'footer') && (!isH || q.top + scrollY < vh));
+    const v = !bar ? null : !isH ? 'подвал' : !x.querySelector('h1') && q.height < vh * 0.5 ? 'шапка' : null;
+    barMemo.set(x, v); return v;
+  };
   const frameOf = (el) => {
     if (el.closest('nav, [role="navigation"]')) return 'меню';
     if (fixedOf(el) === 'fixed') return 'закреплённое';
     const hd = el.closest('header, [role="banner"]');
-    if (hd && (hd.getAttribute('role') === 'banner' || !(hd.parentElement && hd.parentElement.closest(SECTIONING))) && !hd.querySelector('h1') && hd.getBoundingClientRect().height < vh * 0.5) return 'шапка';
+    if (hd && siteBar(hd) === 'шапка') return 'шапка';
     const ft = el.closest('footer, [role="contentinfo"]');
-    if (ft && (ft.getAttribute('role') === 'contentinfo' || !(ft.parentElement && ft.parentElement.closest(SECTIONING)))) return 'подвал';
+    if (ft && siteBar(ft) === 'подвал') return 'подвал';
     if (mainEl && !mainEl.contains(el)) return 'вне <main>';
     return null;
   };
@@ -569,7 +628,11 @@ async function measureInPage(o) {
       const el = b.el.closest(HEAD_SEL) || b.el; const r = el.getBoundingClientRect();
       let p = sib(el, -1); const n = sib(el, 1); let kicker = null;
       if (p) { const pr = p.getBoundingClientRect(); const pt = (p.textContent || '').trim(); if (pt && pt.length <= 60 && parseFloat(cs(p).fontSize) < b.fs * 0.75 && r.top - pr.bottom <= 24 && pr.height < b.fs * 2) { kicker = sig(p); p = sib(p, -1); } }
-      b.gaps = { kicker, above: p ? Math.round((kicker ? r.top : r.top) - p.getBoundingClientRect().bottom) : null, below: n ? Math.round(n.getBoundingClientRect().top - r.bottom) : null, prev: p ? sig(p) : null, next: n ? sig(n) : null, position: cs(el).position };
+      /* сверху — другой заголовок (h1 и подзаголовок h2 под ним, h2 и h3 без текста между): это одна группа, близость
+         к «блоку сверху» не мерится */
+      const headOnly = (e) => { if (e.matches(HEAD_SEL)) return true; const hh = e.querySelector(HEAD_SEL); return !!hh && (hh.textContent || '').trim() === (e.textContent || '').trim(); };
+      const afterHead = !kicker && p && headOnly(p) ? sig(p) : null;
+      b.gaps = { kicker, afterHead, above: p && !afterHead ? Math.round(r.top - p.getBoundingClientRect().bottom) : null, below: n ? Math.round(n.getBoundingClientRect().top - r.bottom) : null, prev: p ? sig(p) : null, next: n ? sig(n) : null, position: cs(el).position };
     }
     /* секция — для «почти одной оси» */
     const sec = b.el.closest('section') || (() => { for (let e = b.el.parentElement; e && e !== document.body; e = e.parentElement) { if ((e.parentElement && e.parentElement.tagName === 'MAIN') || e.getBoundingClientRect().width >= vw * 0.8) return e; } return null; })();
@@ -655,24 +718,42 @@ async function measureInPage(o) {
   const hero = {}; let lede = null, cta = null;
   if (h1) {
     const hb = h1.rect.y + h1.rect.h;
-    const nextHead = top.filter((b) => b.id !== h1.id && b.role === 'semantic' && /^h[1-3]$/.test(b.headTag) && b.rect.y > hb).sort((a, b) => a.rect.y - b.rect.y)[0];
+    const heads = top.filter((b) => b.id !== h1.id && b.role === 'semantic' && /^h[1-3]$/.test(b.headTag) && b.rect.y > hb).sort((a, b) => a.rect.y - b.rect.y);
+    /* подзаголовок: заголовок сразу под h1 (следующий видимый сосед h1 или его обёртки, или тот же hgroup), мельче
+       0.8 h1 и не дальше max(48 px, кегль h1) — часть первого экрана, а не граница поиска кнопки; он же лид */
+    let sub = null;
+    const hHead = h1.el.closest(HEAD_SEL) || h1.el;
+    if (heads[0] && heads[0].fs < h1.fs * 0.8 && heads[0].rect.y - hb <= Math.max(48, h1.fs)) {
+      const sEl = heads[0].el.closest(HEAD_SEL) || heads[0].el;
+      const nextVis = (e) => { for (let y = e.nextElementSibling; y; y = y.nextElementSibling) { const q = y.getBoundingClientRect(); if (q.width > 0 && q.height > 0) return y; } return null; };
+      let nx = null; for (let e = hHead, dp = 0; e && e !== document.body && dp < 3 && !nx; e = e.parentElement, dp++) nx = nextVis(e);
+      const hg = hHead.closest('hgroup');
+      if ((nx && (nx === sEl || nx.contains(sEl))) || (hg && hg.contains(sEl))) sub = heads[0];
+    }
+    const nextHead = heads[sub ? 1 : 0];
     const limit = nextHead ? nextHead.rect.y : hb + vh * 3;
     /* блок первого экрана — самый широкий предок h1 до main/body, в котором нет следующего заголовка и нет шапки
        или подвала сайта: кнопки и лид ищутся в нём, а не в полосе-анонсе, шапке или закреплённой вкладке */
     const hEl = h1.el; const nEl = nextHead ? nextHead.el : null; let heroEl = null;
     for (let e = hEl.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
       if (e.matches('main, [role="main"]') || (nEl && e.contains(nEl)) || frameOf(e)) break;
-      if ([...e.querySelectorAll('header, footer, [role="banner"], [role="contentinfo"]')].some((x) => !x.contains(hEl) && !(heroEl && heroEl.contains(x)))) break;
+      if ([...e.querySelectorAll('header, footer, [role="banner"], [role="contentinfo"]')].some((x) => !x.contains(hEl) && !(heroEl && heroEl.contains(x)) && siteBar(x))) break;
       heroEl = e;
     }
     const inHero = (el) => !heroEl || heroEl.contains(el);
     hero.block = heroEl ? sig(heroEl) : null;
-    /* лид — ближайший блочный абзац под h1 (не строчный кусок вроде часов работы); крупный лид (display) — если мельче h1 */
+    if (sub) hero.sub = sub.sig;
+    /* лид — подзаголовок или ближайший блочный абзац под h1 (не строчный кусок вроде часов работы); крупный лид
+       (display) — если мельче h1 */
     const cand = top.filter((b) => b.id !== h1.id && !b.headTag && !b.frame && !b.nav && !b.inButton && !b.inLink && b.textLen >= 20 && (b.role !== 'display' || b.fs < h1.fs * 0.8) && b.rect.y >= hb - 4 && b.rect.y < vh * 1.5 && b.rect.x < h1.rect.x + h1.rect.w && b.rect.x + b.rect.w > h1.rect.x && inHero(b.el));
     const byY = (a, b) => (a.rect.y - b.rect.y) || (a.rect.x - b.rect.x);
     lede = cand.filter((b) => !/^inline/.test(b.disp || '')).sort(byY)[0] || cand.sort(byY)[0] || null;
+    if (sub && (!lede || sub.rect.y <= lede.rect.y)) lede = sub;
     const free = ctas.filter((c) => !c.nav && !c.fixed && !c.frame);
-    cta = free.filter((c) => inHero(ctaEl.get(c)) && c.rect.y >= h1.rect.y - 4 && c.rect.y < limit).sort(byY)[0] || (heroEl ? free.filter((c) => heroEl.contains(ctaEl.get(c)) && onFirst(c.rect)).sort(byY)[0] : null) || null;
+    /* кнопка: в блоке первого экрана ниже h1 до следующего заголовка; запасной поиск — на первом экране в том же блоке,
+       а если блок не определился (h1 прямо в main) — на первом экране ниже верха h1 (полоса-анонс над ним не в счёт) */
+    cta = free.filter((c) => inHero(ctaEl.get(c)) && c.rect.y >= h1.rect.y - 4 && c.rect.y < limit).sort(byY)[0]
+      || free.filter((c) => onFirst(c.rect) && (heroEl ? heroEl.contains(ctaEl.get(c)) : c.rect.y >= h1.rect.y - 4)).sort(byY)[0] || null;
     if (!cta) { const far = free.filter((c) => c.rect.y >= h1.rect.y - 4).sort(byY)[0]; if (far) hero.farCta = { text: far.text, y: far.rect.y }; }
   }
   const brief = (b) => b && { id: b.id, sig: b.sig, text: b.text.slice(0, 80), fs: b.fs, lines: b.fsLines || b.lines.length, ...(b.fsLines ? { allLines: b.lines.length, fsMin: b.fsMin } : {}), chars: b.lines.map((l) => l.chars), x0: b.x0, rect: b.rect, align: b.align, fromData: b.fromData };
@@ -1065,10 +1146,12 @@ function judge(d, ctx) {
     if (!headLike && !(b.lastLine.chars <= 12 || b.lastLine.share < 0.2)) continue;
     const pretty = /pretty/.test(`${b.textWrapStyle} ${b.textWrap}`);
     const unfix = b.lastLine.fits === false;
-    orph.push({ status: unfix ? 'INFO' : 'WARN', unfix, sig: b.sig, block: b.id, text: b.text, first: isHero(b), head: headLike, data: !!b.fromData, note: withData(b, `${S(b)} → «${b.lastLine.word}» (${b.lastLine.chars} зн.)${unfix ? ` [два последних слова ${b.lastLine.tail}px при колонке ${b.lastLine.tailBox}px]` : pretty ? ' [text-wrap: pretty есть, но не сработал]' : ''}`), marks: [b.lastLine.at], b });
+    const ll = b.lastLine; const chainN = ll.tailWords || 2;
+    const why = chainN > 2 ? `«${short(ll.tailText || '', 40)}» с уже стоящим неразрывным пробелом — ${ll.tail}px при колонке ${ll.tailBox}px` : `два последних слова ${ll.tail}px при колонке ${ll.tailBox}px`;
+    orph.push({ status: unfix ? 'INFO' : 'WARN', unfix, sig: b.sig, block: b.id, text: b.text, first: isHero(b), head: headLike, data: !!b.fromData, note: withData(b, `${S(b)} → «${ll.word}» (${ll.chars} зн.)${unfix ? ` [${why}]` : pretty ? ' [text-wrap: pretty есть, но не сработал]' : ''}`), marks: [ll.at], b });
   }
   emit('orphan', toFrame('orphan', orph), (st, g) => {
-    if (st === 'INFO') return [`одно слово в последней строке неустранимо: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g, 4)} — два последних слова вместе шире колонки: неразрывный пробел даст вылет за край; помогут короче текст, меньше кегль или шире колонка`];
+    if (st === 'INFO') return [`одно слово в последней строке неустранимо: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g, 4)} — последние слова вместе (с уже привязанными неразрывным пробелом) шире колонки: ещё один неразрывный пробел даст вылет за край; помогут короче текст, меньше кегль или шире колонка`];
     const fst = g.filter((x) => x.first), hd = g.filter((x) => !x.first && x.head), pr = g.filter((x) => !x.first && !x.head);
     const parts = [];
     if (fst.length) parts.push(`ПЕРВЫЙ ЭКРАН: ${ex(fst, 3)}`);
@@ -1167,7 +1250,7 @@ function judge(d, ctx) {
   if (h1r && h1r < (phone ? 1.6 : 2)) scaleItems.push({ status: 'INFO', kind: 'ratio', ratio: h1r, note: `h1 к основному тексту ${h1r} — плоская шкала (desktop 3–6×, телефон 2–3×); иерархию тогда держат вес, капс, цвет` });
   const bs = base && base.summary;
   emit('scale', scaleItems, (st, g) => ['шкала', g.map((x) => x.note).join('; ')], { baseMatch: (it) => bs && ((it.kind === 'count' && bs.sizes && bs.sizes.length >= it.n) || (it.kind === 'close' && (bs.closeLevels || []).some(([a, b]) => Math.abs(a - it.pair[0]) <= 1 && Math.abs(b - it.pair[1]) <= 1)) || (it.kind === 'ratio' && bs.h1Ratio && Math.abs(bs.h1Ratio - it.ratio) <= 0.25)) });
-  if (!scaleItems.length) L('OK', `шкала: кеглей с текстом от 20 знаков ${sig20.length}`, `${sig20.join(', ')}${levels.length ? `; уровни ${levels.map((l) => `${l.h} ${l.fs}`).join(' > ')}` : ''}; основной ${d.bodyFs}px`);
+  if (!scaleItems.length) L('OK', `шкала: кеглей с текстом от 20 знаков ${sig20.length}`, [sig20.join(', ') || 'в основном содержимом таких блоков нет', levels.length ? `уровни ${levels.map((l) => `${l.h} ${l.fs}`).join(' > ')}` : '', `основной ${d.bodyFs}px`].filter(Boolean).join('; '));
   /* каркас — одной строкой INFO: висячие, одинокие, тире, числа, дефисы и кегли шапки, подвала, анонса, меню */
   emit('frame', frameItems, (st, g) => {
     const labels = [...new Set(g.flatMap((x) => x.frames || [x.frame]).filter(Boolean))];
@@ -1606,7 +1689,7 @@ async function runSelftest({ browserKind, vps, explicitVp }) {
   try {
     for (const [name, vp] of order) {
       await open(!!vp.isMobile);
-      for (const pg of ['index.html', 'hero-low.html', 'frame.html']) {
+      for (const pg of Object.keys(SELFTEST)) {
         const t = Date.now();
         const pass = await runPass(browser, base + pg, name, vp, { crops: 12, cropsDir: path.join(outDir, `${pg.replace('.html', '')}-${name}`) });
         R[`${pg}|${name}`] = pass;
@@ -1701,6 +1784,22 @@ const SELFTEST = {
     ['₽ в NoRub: «в файле нет», совет — «Rub», где знак есть (только Chrome: CDP)', (a, e) => { if (e.gecko) return null; const it = a.items('fallback', 'p-rub'); return [it.some((x) => x.chars.includes('₽') && /в файле «NoRub» нет ₽/.test(x.note) && /есть в «Rub»/.test(x.note) && !/latin-ext/.test(x.note)), it.map((x) => x.note).join('; ') || 'нет']; }],
     ['текст из данных: висячее «до» — [из данных], совет — в данных; «по» в разметке — в исходном тексте', (a) => { const d0 = a.items('hang', 'p-data'), s0 = a.items('hang', 'p-src'); const ln = a.res.lines.find((l) => l.rule === 'hang' && l.status === 'WARN'); return [d0.some((x) => x.data) && s0.some((x) => !x.data) && ln && /в данных или типографом при выводе/.test(ln.details) && /в исходном тексте/.test(ln.details) && a.d.env.source && a.d.env.source.ok, `data ${d0.map((x) => x.data)}, src ${s0.map((x) => x.data)}; ${ln ? short(ln.details.split(' — ').slice(-1)[0], 120) : 'строки hang нет'}`]; }],
     ['вертикальная подпись — строчные правила не выносятся', (a) => [a.st('orphan', 'p-vert') === 'none' && a.st('leading', 'p-vert') === 'none' && a.res.lines.some((l) => /вертикальный текст/.test(l.what)), `orphan ${a.st('orphan', 'p-vert')}, leading ${a.st('leading', 'p-vert')}`]],
+  ],
+  /* второй круг 29.09: разметка без main, подзаголовок h2 в обёртке с кнопкой, карточки со своим <header>, акцент
+     inline-block, цепочка неразрывных пробелов */
+  'edge.html': [
+    ['первый экран: подзаголовок h2 под h1 — не граница: кнопка #cta в div.hero, лид — подзаголовок, анонс не в счёт, близость не мерится', (a) => { const h = a.d.hero; return [h.cta && /#cta/.test(h.cta.sig) && h.cta.visible && /#hero/.test(h.block || '') && /#sub/.test(h.sub || '') && h.lede && /#sub/.test(h.lede.sig) && a.st('proximity', 'sub') === 'none', `кнопка ${h.cta ? `${h.cta.sig} видна ${h.cta.visible}` : 'нет'}, блок ${h.block}, подзаголовок ${h.sub || 'нет'}, лид ${h.lede ? h.lede.sig : 'нет'}, proximity ${a.st('proximity', 'sub')}`]; }],
+    ['h1: текст для читалки за краем экрана (left: -9999px) не в тексте', (a) => { const h = a.d.hero.h1; return [h && /#h1/.test(h.sig) && /кофейня и пекарня/.test(h.text) && !/Ярославле/.test(h.text), h ? `«${h.text}»` : 'h1 нет']; }],
+    ['карточки на div со своим <header> — не шапка: висячее «и» и одинокое «булочки» у #ch2 — WARN, кегль 22 в шкале', (a) => { const b = a.byEl('ch2'); const s = summaryOf(a.d).sizes; return [b && !b.frame && a.st('hang', 'ch2') === 'WARN' && a.st('orphan', 'ch2') === 'WARN' && s.includes(22), `frame ${b ? b.frame : 'нет блока'}, hang ${a.st('hang', 'ch2')}, orphan ${a.st('orphan', 'ch2')}, шкала ${s.join(', ')}`]; }],
+    ['шапка и подвал сайта во всю ширину без main — каркас', (a) => { const h = a.byEl('head-note'), f = a.byEl('foot-note'); return [h && h.frame === 'шапка' && f && f.frame === 'подвал', `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}`]; }],
+    ['акцент inline-block последним словом — перенос обычный: одинокое «пироги» WARN, balance INFO', (a) => { const b = a.byEl('h2acc'); return [b && b.lastLine && !b.lastLine.forced && a.st('orphan', 'h2acc') === 'WARN' && a.st('balance', 'h2acc') === 'INFO', b ? `forced ${b.lastLine && b.lastLine.forced}, хвост ${b.lastLine && b.lastLine.tail}/${b.lastLine && b.lastLine.tailBox}px, orphan ${a.st('orphan', 'h2acc')}, balance ${a.st('balance', 'h2acc')}` : 'нет блока']; }, 'layout'],
+    ['«Хумус с&nbsp;томлёными томатами»: хвост с уже стоящим неразрывным шире колонки — orphan INFO «неустранимо», не совет', (a) => { const b = a.byEl('dish'); const it = a.items('orphan', 'dish'); return [b && b.lastLine && b.lastLine.tailWords === 3 && it.length === 1 && it[0].status === 'INFO' && it[0].unfix, b ? `слов в хвосте ${b.lastLine && b.lastLine.tailWords}, ${b.lastLine && b.lastLine.tail}/${b.lastLine && b.lastLine.tailBox}px; ${it.map((x) => x.status).join(',') || 'нет'}` : 'нет блока']; }],
+  ],
+  /* страница целиком в .page { position: fixed; inset: 0; overflow: auto } */
+  'fixedwrap.html': [
+    ['контейнер прокрутки страницы — не закреплённый слой: висячее «и» у #hangp — WARN, итог не OK', (a) => { const b = a.byEl('hangp'); return [b && !b.frame && a.st('hang', 'hangp') === 'WARN' && a.res.verdict !== 'OK', `frame ${b ? b.frame : 'нет блока'}, hang ${a.st('hang', 'hangp')}, итог ${a.res.verdict}`]; }],
+    ['текст ниже окна в контейнере прокрутки меряется: «или» у #low', (a) => { const b = a.byEl('low'); return [b && a.st('hang', 'low') === 'WARN', b ? `hang ${a.st('hang', 'low')}` : 'блока нет — обрезан контейнером']; }],
+    ['h1 первого экрана найден, закреплённая вкладка внутри — каркас, шкала не пустая', (a) => { const h = a.d.hero.h1; const t = a.byEl('tab'); const s = summaryOf(a.d).sizes; return [h && /#h1/.test(h.sig) && t && t.frame === 'закреплённое' && s.length > 0, `h1 ${h ? h.sig : 'нет'}, вкладка ${t ? t.frame : 'нет блока'}, шкала ${s.join(', ') || 'пусто'}`]; }],
   ],
 };
 

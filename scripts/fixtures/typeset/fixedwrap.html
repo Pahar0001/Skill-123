@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд типографики: страница в закреплённом контейнере</title>
+<!-- Пятая страница стенда typeset.mjs --selftest: вся страница внутри .page { position: fixed; inset: 0; overflow: auto }
+     (оболочка приложения). Это не закреплённый слой: текст в ней — основное содержимое, и текст ниже окна тоже
+     меряется. Закреплённая вкладка внутри неё — по-прежнему каркас. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F, U+0490-0491, U+2116; }
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: #fff; color: #111; font: 500 16px/1.55 'Full', system-ui, sans-serif; }
+.page { position: fixed; inset: 0; overflow: auto; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+h1 { margin: 32px 0 12px; font: 700 48px/1.1 'Full', system-ui, sans-serif; }
+h2 { margin: 40px 0 12px; font: 700 32px/1.2 'Full', system-ui, sans-serif; }
+.low { margin-top: 1400px; }
+.tab { position: fixed; right: 0; top: 40%; padding: 12px 10px; background: #c43; color: #fff; text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="page" id="page">
+  <div class="wrap">
+    <h1 id="h1">Кофейня у Волги</h1>
+    <p id="lede">Кофе, хлеб на закваске и завтраки весь день у набережной.</p>
+    <h2>О нас</h2>
+    <p id="hangp" class="fit" data-fit="Мы печём хлеб каждое утро и">Мы печём хлеб каждое утро и варим кофе с семи часов</p>
+    <p id="low" class="low fit" data-fit="Приходите на завтрак или">Приходите на завтрак или обед в любой день недели</p>
+  </div>
+  <a class="tab" id="tab" href="#booking">Забронировать столик</a>
+</div>
+<script>
+document.fonts.ready.then(() => {
+  for (const el of document.querySelectorAll('.fit')) {
+    el.style.width = 'max-content';
+    const t = el.firstChild; const i = t.nodeValue.indexOf(el.dataset.fit);
+    const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + el.dataset.fit.length);
+    el.style.width = Math.ceil(r.getBoundingClientRect().width + Number(el.dataset.pad || 4)) + 'px';
+  }
+});
+</script>
+</body>
+</html>
