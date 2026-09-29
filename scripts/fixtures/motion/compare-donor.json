@@ -1,0 +1,19 @@
+{
+  "_about": "motion.mjs selftest, сверка без браузера: донор — выдержка из donor2-menu.json (mamuka.rest/menu, 29.09.2026). m05 — чужой переход на элементе другого вида (пары быть не должно)",
+  "url": "https://mamuka.rest/menu/",
+  "viewport": "desktop",
+  "phases": { "scroll": true, "hover": true, "mouse": true, "clicks": true },
+  "items": [
+    { "id": "m01", "kind": "scroll-linked", "sub": "лента вбок", "trigger": "scroll", "target": "div.btn-nav-slider__items.swiper-wrapper",
+      "props": [{ "prop": "сдвиг X", "from": "0 px", "to": "-540.5 px" }],
+      "scroll": { "from": "верх блока на -4% экрана", "to": "на 1%", "rangePx": 4294, "coefficient": -0.096, "startPct": -4, "endPct": 1 }, "timing": {} },
+    { "id": "m02", "kind": "hover", "sub": "цвет", "component": "logo", "trigger": "hover", "target": "a.sidebar-logo.sidebar-logo--zakroma", "count": 7,
+      "props": [{ "prop": "фон", "from": "rgba(0, 0, 0, 0)", "to": "rgba(0, 0, 0, 0.3)" }], "timing": { "duration": 300, "easing": "ease" } },
+    { "id": "m03", "kind": "click", "sub": "меню", "component": "svg-значок", "trigger": "click", "target": "div.header-bottom-menu-switcher-trigger__icon",
+      "props": [{ "prop": "панель: сдвиг Y", "from": "-4 px", "to": "0 px" }, { "prop": "панель: прозрачность", "from": "0", "to": "1" }], "timing": { "duration": 300, "easing": "ease" } },
+    { "id": "m04", "kind": "hover", "sub": "линия", "component": "nav", "trigger": "hover", "target": "a.header-top-menu__item", "count": 2,
+      "props": [{ "prop": "::after transform", "from": "масштаб 1×0", "to": "нет" }], "timing": { "duration": 200, "easing": "ease-in" } },
+    { "id": "m05", "kind": "hover", "sub": "цвет", "component": "button", "trigger": "hover", "target": "a.btn.btn--red",
+      "props": [{ "prop": "фон", "from": "rgb(211, 0, 82)", "to": "rgb(150, 0, 60)" }], "timing": { "duration": 300, "easing": "ease" } }
+  ]
+}

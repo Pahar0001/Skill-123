@@ -1,0 +1,17 @@
+{
+  "_about": "motion.mjs selftest, сверка без браузера: наш — выдержка из menu-desktop.json (Эпицентр /menu, снят с --no-clicks). Лента едет прокруткой контейнера (scrollLeft), наведение рельса — тот же переход на «ссылке», а не на «логотипе»",
+  "url": "http://localhost:3000/menu",
+  "viewport": "desktop",
+  "phases": { "scroll": true, "hover": true, "mouse": true, "clicks": false },
+  "items": [
+    { "id": "m01", "kind": "scroll-linked", "sub": "лента вбок", "trigger": "scroll", "target": "div.mm-rib__track", "source": "scrollLeft контейнера (overflow-x)",
+      "props": [{ "prop": "сдвиг X", "from": "0 px", "to": "-1234 px" }],
+      "scroll": { "note": "лента прокручивается вбок (scrollLeft 0 → 1234 px) за прокруткой страницы", "rangePx": 17200, "coefficient": -0.07 }, "timing": {} },
+    { "id": "m02", "kind": "hover", "sub": "цвет", "component": "link", "trigger": "hover", "target": "a.rail__item.rail__item--mosty",
+      "props": [{ "prop": "фон", "from": "rgba(0, 0, 0, 0)", "to": "rgba(0, 0, 0, 0.3)" }, { "prop": "рамка", "from": "rgb(255, 255, 255)", "to": "rgba(0, 0, 0, 0)" }], "timing": { "duration": 300, "easing": "ease" } },
+    { "id": "m03", "kind": "hover", "sub": "линия", "component": "nav", "trigger": "hover", "target": "a.header__toplink",
+      "props": [{ "prop": "::after transform", "from": "масштаб 0×1", "to": "нет" }], "timing": { "duration": 200, "easing": "ease" } },
+    { "id": "m04", "kind": "hover", "sub": "цвет", "component": "link", "trigger": "hover", "target": "a.m-link",
+      "props": [{ "prop": "фон", "from": "rgb(211, 0, 82)", "to": "rgb(179, 0, 70)" }], "timing": { "duration": 300, "easing": "ease" } }
+  ]
+}

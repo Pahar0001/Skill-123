@@ -128,6 +128,19 @@
   .faq__item.open .faq__q svg { transform: rotate(90deg); }
   .faq__a { height: 0; overflow: hidden; transition: height .4s cubic-bezier(.2, .7, .2, 1); }
   .faq__a p { margin: 0; padding: 0 22px 18px; }
+  /* 18. лента разделов, которая едет вбок прокруткой своего контейнера (overflow-x, scrollLeft), а не transform:
+     при прокрутке страницы скрипт ставит в начало ленты пункт раздела, который сейчас читают (Эпицентр /menu) */
+  .rib { position: sticky; top: 0; z-index: 30; background: #f4f4f8; }
+  .rib__track { display: flex; gap: 10px; max-width: 520px; padding: 12px 0; overflow-x: auto; scrollbar-width: none; }
+  .rib__track span { flex: none; padding: 8px 18px; border-radius: 20px; background: #fff; white-space: nowrap; }
+  .rib-sec { height: 45vh; padding: 24px 0; border-top: 1px solid #d9d9e3; }
+  /* 19. появление WOW.js + animate.css (как у mamuka.rest): до входа в экран visibility: hidden и animation-name: none
+     в style, при входе — visible, animation-name из класса, длительность и задержка из data-wow-* */
+  .wowbox { height: 120px; border-radius: 16px; background: #2fb468; }
+  .wowbox--plain { margin-top: 16px; background: #b4822f; }
+  .animated { animation-duration: 1s; animation-fill-mode: both; }
+  .fadeInUp { animation-name: fadeInUp; }
+  @keyframes fadeInUp { from { opacity: 0; transform: translate3d(0, 100%, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
   @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -196,6 +209,19 @@
   <p class="blur" data-expect="reveal">Проявляется из размытия</p>
 </section>
 
+<section class="ribbon"><h2>Лента разделов</h2>
+  <nav class="rib"><div class="rib__track" data-expect="ribbon-scroll"><span>Завтраки</span><span>Салаты</span><span>Супы</span><span>Горячее</span><span>Гарниры</span><span>Десерты</span><span>Напитки</span><span>Бар</span></div></nav>
+  <div class="rib-sec">Завтраки</div><div class="rib-sec">Салаты</div><div class="rib-sec">Супы</div><div class="rib-sec">Горячее</div><div class="rib-sec">Гарниры</div><div class="rib-sec">Десерты</div>
+</section>
+
+<section><h2>Появление WOW.js</h2>
+  <div class="wowbox wow fadeInUp" data-wow-duration="0.8s" data-wow-delay="0.2s" data-expect="reveal-keyframes"></div>
+  <!-- .wow без класса анимации (WOW только показывает: visibility) и пустой .wow 0×0 (mamuka.rest/about: span.body-icon-main):
+       строк нет, в заметке — почему (без класса анимации; 0×0 на этом экране) -->
+  <div class="wowbox wowbox--plain wow" data-expect-not="reveal"></div>
+  <span class="wow slideInLeft"></span>
+</section>
+
 <section><h2>Наведение</h2>
   <div class="shop">
     <a class="item" href="#x" data-expect="hover"><div class="item__pic"><div></div></div><p>Карточка</p></a>
@@ -224,6 +250,9 @@
 </section>
 
 <section id="more-box"><h2>Раскрытие</h2>
+  <!-- кнопка с aria-expanded, которая уводит со страницы (location.href): клик пропускается «клик увёл со страницы»,
+       следующий клик (.more) проверяется как обычно -->
+  <p><button class="leave" aria-expanded="false" data-leave="1">Уйти на другую страницу</button></p>
   <button class="more" aria-expanded="false" aria-controls="more" data-expect="click-disclosure">Подробнее о печати</button>
   <div id="more" hidden><p>Принтер работает ночью, утром фигурку снимают со стола, убирают поддержки и шлифуют швы вручную перед покраской.</p></div>
 </section>
@@ -298,9 +327,21 @@
   const setMenu = (on) => { drawer.classList.toggle('open', on); burger.setAttribute('aria-expanded', String(on)); };
   burger.addEventListener('click', () => setMenu(!drawer.classList.contains('open')));
   addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+  /* вкладка пишет себя в адрес без перехода (history.replaceState, как фильтр заведений у Эпицентра): та же страница */
   for (const t of document.querySelectorAll('[role="tab"]')) t.addEventListener('click', () => {
     for (const x of document.querySelectorAll('[role="tab"]')) { const on = x === t; x.setAttribute('aria-selected', String(on)); document.getElementById(x.getAttribute('aria-controls')).hidden = !on; }
+    try { history.replaceState(null, '', `?tab=${t.id}${location.hash}`); } catch (e) { /* адрес не сменить — не важно */ }
   });
+  document.querySelector('.leave').addEventListener('click', () => { location.href = 'tilda.html'; });
+  /* лента разделов: в начало ленты — пункт раздела, чей верх поднялся выше трети экрана (scrollLeft, сразу) */
+  const ribTrack = document.querySelector('.rib__track'), ribSecs = [...document.querySelectorAll('.rib-sec')], ribChips = [...ribTrack.children];
+  addEventListener('scroll', () => { let i = 0; ribSecs.forEach((s, n) => { if (s.getBoundingClientRect().top <= innerHeight * 0.3) i = n; }); ribTrack.scrollLeft = ribChips[i].offsetLeft - ribTrack.offsetLeft; }, { passive: true });
+  /* WOW.js: скрыть до входа в экран, при входе — показать и запустить анимацию из класса с числами из data-wow-* */
+  for (const b of document.querySelectorAll('.wow')) { b.style.visibility = 'hidden'; b.style.animationName = 'none'; }
+  const wio = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { const b = e.target; wio.unobserve(b);
+    Object.assign(b.style, { visibility: 'visible', animationDuration: b.dataset.wowDuration || '', animationDelay: b.dataset.wowDelay || '', animationName: [...b.classList].find((c) => /^(fade|slide|zoom)In/.test(c)) || '' });
+    b.classList.add('animated'); } });
+  for (const b of document.querySelectorAll('.wow')) wio.observe(b);
   for (const q of document.querySelectorAll('.faq__item')) q.addEventListener('click', () => {
     const a = q.querySelector('.faq__a'); const open = q.classList.toggle('open'); a.style.height = open ? a.scrollHeight + 'px' : '0px';
   });
