@@ -11,7 +11,8 @@
 ## a11y.mjs
 
 ```
-node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--no-grain] [--strict]
+node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--strict]
+node a11y.mjs --selftest [--out папка]
 node a11y.mjs --help   (или -h)
 ```
 
@@ -20,7 +21,9 @@ node a11y.mjs --help   (или -h)
 | флаг | вид | из справки |
 |---|---|---|
 | `--no-grain` | переключатель | не учитывать слой зерна поверх текста в контрасте (см. ниже). |
+| `--selftest` | переключатель | стенды fixtures/a11y с ожиданиями: фокус на полях даты и времени, скрытый (кегль 0), |
 | `--strict` | переключатель | код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте. |
+| `--ignore` | со значением | CSS-селектор (список — через запятую) текста вне проверки контраста и кегля: логотип и |
 | `--out` | со значением | папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>), итог — <out>/a11y/<tag>.json. |
 | `--tag` | со значением | имя файла итога (по умолчанию имя экрана). |
 | `--viewport` | со значением | экран: пресет (desktop, laptop, tablet, mobile, mobile-s, android), запись ШxВ@плотность |
@@ -31,30 +34,37 @@ node a11y.mjs --help   (или -h)
 ## cliche.mjs
 
 ```
-node cliche.mjs <url> [--baseline <json>] [--taste [папка]] [--viewport desktop,mobile]
-node cliche.mjs baseline <url донора> [--out <файл.json|папка>] [--viewport desktop,mobile]
+node cliche.mjs <url> [--baseline <json>[,<json>…]] [--taste [папка]] [--viewport desktop,mobile]
+node cliche.mjs baseline <url донора> [--pages "/,/menu"] [--out <файл.json|папка>] [--viewport desktop,mobile]
 node cliche.mjs rules [--json]
+node cliche.mjs selftest [--no-browser]        (то же: --selftest)
 node cliche.mjs --help
 ```
 
-Команды: `baseline`, `rules`.
+Команды: `baseline`, `rules`, `selftest`.
 
 Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
-| `--shot` | переключатель | снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche-<экран>.png |
+| `--no-browser` | переключатель | selftest без стендов в браузере. |
+| `--selftest` | переключатель | (или команда selftest) проверки без браузера и стенды fixtures/cliche. |
+| `--shot` | переключатель | снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche[-<tag>]-<экран>.png |
 | `--strict` | переключатель | как у других скриптов; FAIL и без него даёт код 1. |
 | `--baseline` | со значением | база: файл «cliche.mjs baseline» донора (или результат прогона сайта «до»). |
 | `--decisions` | со значением | --decisions <json> файл обоснований, если он не в папке прогона. |
 | `--out` | со значением | в режиме baseline: файл .json или папка (там cliche-baseline.json). |
+| `--pages` | со значением | --pages "/,/a"     baseline: страницы донора от адреса; база одна — приём есть хоть на одной |
 | `--run` | со значением | папка прогона (синоним --out): там authorship-decisions.json, туда |
+| `--tag` | со значением | имя прогона в файлах: cliche/cliche-<имя>.json и cliche-<имя>-<экран>.png |
 | `--viewport` | со значением | экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android или |
 | `--viewports` | со значением | (baseline — desktop,mobile). --viewports — то же самое; оба сразу |
-| `--json` | значение необязательно | --json <файл>\|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в stdout. |
+| `--json` | значение необязательно | --json <файл>\|-    куда записать итог (по умолчанию <run>/cliche/cliche[-<tag>].json); «-» — JSON в stdout. |
 | `--taste` | значение необязательно | запреты пользователя из журнала вкуса (taste.mjs); без папки — |
 
 Коды выхода: 0 — OK/WARN, 1 — FAIL, 2 — неверные аргументы (нет адреса, флаг без значения, неизвестный экран) или файл, 3 — страница не открылась. Список правил с весами: node cliche.mjs rules
+
+Переменные окружения: `SITE_REWORK_DISMISS`.
 
 ## copy.mjs
 
@@ -103,7 +113,7 @@ node copy.mjs --help
 | `--taste-dir` | значение необязательно | --taste-dir <папка> журнал вкуса, если не ~/.claude/site-rework/taste (или SITE_REWORK_TASTE) |
 | `--viewport` | значение необязательно | адрес: экран (mobile по умолчанию; desktop, laptop, tablet, mobile-s, 320x568@2) |
 
-Коды выхода: 0 — OK или WARN; 1 — FAIL, неверные аргументы, страница не открылась, провал selftest.
+Коды выхода: 0 — OK или WARN; 1 — FAIL, неверные аргументы, страница не открылась, провал selftest. Без команды («copy.mjs <url\|файл> …») — код 1 и «нужна команда: lint\|snapshot\|…» с готовой строкой lint.
 
 ## diff.mjs
 
@@ -231,10 +241,12 @@ node media.mjs search "<запрос по-английски>" --kind photo|vide
 node media.mjs pick <папка поиска> <N> --seen "<что на кадре>" --caption "<подпись/роль>"
 node media.mjs import <url страницы> [<url или путь файла>] --license <id>
 node media.mjs credits <папка картинок сайта> [--md [<файл или папка>]]
+node media.mjs audit <карта фото.json> (или --map <карта>) [--root <папка сайта>] [--sources pexels,unsplash]
+node media.mjs --selftest [--out <папка>]
 node media.mjs <команда> --help (или -h, --h) — эта справка, код 0; команда при этом
 ```
 
-Команды: `doctor`, `search`, `pick`, `import`, `credits`.
+Команды: `doctor`, `search`, `pick`, `import`, `credits`, `audit`.
 
 Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
@@ -243,6 +255,7 @@ node media.mjs <команда> --help (или -h, --h) — эта справк�
 | `--fresh` | переключатель | [--fresh (без кэша ответов API)] |
 | `--not-editorial` | переключатель | --not-editorial; unsplash, kaboompics, adobe-stock-free — только файл, |
 | `--ok-flags` | переключатель | [--ok-flags]                     кадр с пометками берётся только с этим флагом |
+| `--selftest` | переключатель | node media.mjs --selftest [--out <папка>] |
 | `--author` | значение необязательно | [--author "…"] [--author-url …] [--title "…"] [--not-editorial] |
 | `--author-url` | значение необязательно | [--author "…"] [--author-url …] [--title "…"] [--not-editorial] |
 | `--avif` | значение необязательно | [--avif auto\|on\|off]             AVIF рядом с WebP (auto — если быстро) |
@@ -253,25 +266,34 @@ node media.mjs <команда> --help (или -h, --h) — эта справк�
 | `--dur` | значение необязательно | [--start <с>] [--dur <с>]        видео: откуда и сколько резать петлю (по умолчанию 8 с) |
 | `--fade` | значение необязательно | [--fade <с>]                     видео: длина наплыва на стыке (по умолчанию 1 с) |
 | `--file-url` | значение необязательно | --file-url, иначе не видно, не нейросеть ли это; Mixkit — поштучно, файл |
+| `--focus` | значение необязательно | [--focus attention\|entropy\|centre\|north\|south\|east\|west\|…]  куда тянуть обрезку |
+| `--format` | значение необязательно | [--format jpg\|webp\|avif]         по умолчанию — по расширению --name, иначе jpg |
 | `--frames` | значение необязательно | [--frames 8\|all]                 видео Commons: у скольких роликов собрать кадры из |
 | `--grain` | значение необязательно | [--look none\|duotone:#RRGGBB,#RRGGBB\|mono] [--contrast 0..1] [--grain 0..0.06] |
 | `--kind` | значение необязательно | node media.mjs search "<запрос по-английски>" --kind photo\|video |
 | `--license` | значение необязательно | node media.mjs import <url страницы> [<url или путь файла>] --license <id> |
 | `--look` | значение необязательно | [--look none\|duotone:#RRGGBB,#RRGGBB\|mono] [--contrast 0..1] [--grain 0..0.06] |
+| `--map` | значение необязательно | node media.mjs audit <карта фото.json> (или --map <карта>) [--root <папка сайта>] [--sources pexels,unsplash] |
 | `--md` | значение необязательно | node media.mjs credits <папка картинок сайта> [--md [<файл или папка>]] |
-| `--min` | значение необязательно | [--orient landscape\|portrait\|square] [--min <px по длинной стороне>] |
+| `--min` | значение необязательно | [--min <px по длинной стороне>] |
 | `--n` | значение необязательно | [--n 24]                         сколько кадров на лист (до 60) |
 | `--name` | значение необязательно | [--role hero\|section\|card\|loop] [--name <имя файлов>] [--dest <папка картинок сайта>] |
-| `--orient` | значение необязательно | [--orient landscape\|portrait\|square] [--min <px по длинной стороне>] |
+| `--need` | значение необязательно | [--need <px>]                    ширина кадра, нужная сайту (с учётом плотности экрана): |
+| `--orient` | значение необязательно | [--orient landscape\|portrait\|square\|any]  по умолчанию landscape для ролей hero и card и |
 | `--out` | значение необязательно | [--out <папка>] [--run <slug, url сайта или полный путь папки прогона>] |
 | `--profile` | значение необязательно | [--profile photo\|art]            photo — заведения, магазины, школы (по умолчанию); |
+| `--quality` | значение необязательно | [--quality N]                    1–100 (по умолчанию jpg 80, webp 76, avif 52) |
 | `--ratio` | значение необязательно | [--ratio 16:9]                   обрезать основной кадр |
 | `--role` | значение необязательно | [--role hero\|section\|card\|loop]  под что кадр: от роли зависит нужный размер |
+| `--root` | значение необязательно | --root — откуда считать пути вида /assets/img/…: по умолчанию ищется сам (папка карты, |
 | `--run` | значение необязательно | [--out <папка>] [--run <slug, url сайта или полный путь папки прогона>] |
 | `--seen` | значение необязательно | --seen … --caption … [и все флаги обработки pick: --ok-flags --role --name |
+| `--size` | значение необязательно | обрезка cover ровно под WxH (1000x700), по --focus |
 | `--sources` | значение необязательно | [--sources a,b,...]              свой список и порядок источников |
 | `--src-prefix` | значение необязательно | [--src-prefix img/]              префикс путей в разметке (по умолчанию имя --dest) |
-| `--start` | значение необязательно | --start --dur] [--run <slug, url сайта или папка прогона — как у search>] |
+| `--start` | значение необязательно | --start --dur --need --focus; точный режим --size --thumb --thumb-dir --format --quality] |
+| `--thumb` | значение необязательно | (--size, --thumb, --ratio, --crop-mobile); по умолчанию attention |
+| `--thumb-dir` | значение необязательно | [--thumb-dir thumb]              папка превью внутри --dest (по умолчанию thumb) |
 | `--title` | значение необязательно | [--author "…"] [--author-url …] [--title "…"] [--not-editorial] |
 
 Переменные окружения: `MEDIA_VIDEO_MODULE`, `SITE_REWORK_RUNS`, `UNSPLASH_ACCESS_KEY`, `UNSPLASH_APP_NAME`.
@@ -332,6 +354,7 @@ node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/
 
 ```
 node perf.mjs <url> [--viewport mobile] [--out папка] [--tag имя]
+node perf.mjs --selftest [--out папка]
 node perf.mjs --help   (или --h, -h)
 ```
 
@@ -340,6 +363,7 @@ node perf.mjs --help   (или --h, -h)
 | флаг | вид | из справки |
 |---|---|---|
 | `--overlay-only` | переключатель | только цена слоя, без замера загрузки (быстро: сеть не замедляется); итог — |
+| `--selftest` | переключатель | стенды fixtures/perf на своём сервере 127.0.0.1 без сжатия (desktop, сеть none, процессор ×1): |
 | `--strict` | переключатель | код выхода 1 при итоговом вердикте FAIL (для гейта); без флага — 0 при любом вердикте. |
 | `--cpu` | со значением | во сколько раз замедлить процессор (по умолчанию 4 на телефоне и планшете, 1 на десктопе). |
 | `--net` | со значением | сеть: fast3g, slow4g или none (по умолчанию fast3g на телефоне, none на десктопе). |
@@ -552,8 +576,8 @@ node shots.mjs <url> [--out папка] [--tag before|after] [--viewports deskto
 ## state.mjs
 
 ```
-node state.mjs <папка прогона> init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new [--force]
-node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor|new] [--url <адрес>] [--site-ignore "data,*.json"]
+node state.mjs <папка прогона> init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new [--donor <адрес донора>] [--force]
+node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor|new] [--url <адрес>] [--donor <адрес>|none] [--site-ignore "data,*.json"]
 node state.mjs <папка> add "<задача>" [--priority P2] [--area hero|mobile|3d|content|motion|...]
 node state.mjs <папка> set <id> impl=DONE runtime=VERIFIED --evidence runtime/desktop.json#5
 node state.mjs <папка> set <id> visual=VERIFIED --evidence after/home-mobile-first.png mobile=NA --note "почему"
@@ -564,15 +588,17 @@ node state.mjs <папка> show [--strict] [--json]
 
 Команды: `init`, `meta`, `add`, `set`, `stage`, `show`, `probe`.
 
-Неизвестный флаг — WARN, запуск идёт дальше.
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
 | `--force` | переключатель | init поверх существующего журнала; старый сохраняется рядом. |
 | `--json` | переключатель | (show) журнал с состоянием каждой клетки одним JSON: url, режим, папка |
+| `--selftest` | переключатель | журнал во временной папке: режим rework --donor (этапы, блок «Сверки», WARN |
 | `--strict` | переключатель | (show) код выхода 1, если итог не OK. |
 | `--area` | со значением | node state.mjs <папка> add "<задача>" [--priority P2] [--area hero\|mobile\|3d\|content\|motion\|...] |
 | `--check` | со значением | --check, --task    (probe) какой проверкой мерить доказательство и для какой задачи |
+| `--donor` | со значением | (init, meta) адрес донора, в языке которого переделывается свой сайт: только |
 | `--evidence` | со значением | доказательство для всех VERIFIED этого вызова. |
 | `--evidence-mobile` | со значением | --evidence-runtime, --evidence-visual, --evidence-mobile, --evidence-perf |
 | `--evidence-perf` | со значением | --evidence-runtime, --evidence-visual, --evidence-mobile, --evidence-perf |
@@ -709,7 +735,7 @@ node typeset.mjs --help   (или -h)
 
 | флаг | вид | из справки |
 |---|---|---|
-| `--selftest` | переключатель | стенд fixtures/typeset на своём сервере (порт 4211–4219): каждый случай сверяется с ожидаемым. |
+| `--selftest` | переключатель | стенд fixtures/typeset на своём сервере (порт 4211–4219): index.html, hero-low.html, frame.html |
 | `--strict` | переключатель | код выхода 1, если хоть один экран FAIL. |
 | `--baseline` | со значением | протокол донора или «до» того же экрана: правила стиля (leading, caps-track, scale, |
 | `--browser` | со значением | chrome (по умолчанию), firefox, edge. Firefox — для переносов (Chrome без окна не |
