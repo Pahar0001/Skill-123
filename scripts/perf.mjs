@@ -34,9 +34,12 @@
  *               <out>/perf/<tag>-overlay.json (не затирает полный замер <tag>.json).
  *   --strict    код выхода 1 при итоговом вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
  *   --selftest  стенды fixtures/perf на своём сервере 127.0.0.1 без сжатия (desktop, сеть none, процессор ×1):
- *               сдвиг вёрстки после load (источник, на сколько и когда), автослайдер со сменой LCP (пометка
+ *               сдвиг вёрстки после load (источник, на сколько и когда), сдвиг у края окна (обрезка краем — не
+ *               «смена высоты»; настоящая смена высоты остаётся), автослайдер со сменой LCP (пометка
  *               и медиана по первому элементу), «сервер не сжимает» на локальном адресе (INFO, вердикт веса
- *               по gzip). Протоколы — во временной папке или в --out; код 1, если ожидание не сошлось.
+ *               по gzip); без браузера — подписи источника сдвига у всех краёв окна (низ, верх, блок от x 0,
+ *               коробка во всю высоту окна) и у старого протокола без размера окна. Протоколы — во временной
+ *               папке или в --out; код 1, если ожидание не сошлось.
  *   --help, --h, -h  эта справка.
  *
  * Что измеряется: TTFB, FCP, LCP (с элементом), CLS (с источниками сдвигов), долгие задачи (каждая — начало, длительность,
@@ -82,6 +85,18 @@
  * крупнейших сдвига прогона с медианным CLS: «0.18 на 1850 мс (после load): section.promo в main#top —
  * вниз на 120 px (y 64 → 184)»; в таблице у CLS — крупнейший. Все сдвиги — в JSON (cls.perRun, до 300 на
  * прогон). Сдвиги сразу после ввода человека (hadRecentInput) в CLS не идут и здесь не считаются.
+ * Коробки источника — видимая часть в окне: край блока за краем окна обрезан. Поэтому рядом с коробками в
+ * JSON — размер окна (vw, vh; без полос прокрутки), и размер («высота 100 → 140», «ширина …») пишется, только
+ * если ни в одной из коробок этот край не касается края окна; касается — «низ у края окна — видна часть
+ * коробки, размер не сравнивался» («низ был у края окна» — касался до сдвига). Раньше блок, чей низ уехал за
+ * низ окна, давал «вниз на 15 px (y 687 → 702), высота 206 → 198» (702 + 198 = 900 — низ окна), обратный
+ * сдвиг — «высота 198 → 206». Верх за верхом окна — сдвиг по низу («вниз на 50 px (низ 100 → 150)»), левый
+ * край за краем — по правому. Начало текста — с пробелами на месте <br> и границ блоков («Забронировать
+ * стол», а не «Забронироватьстол»), на момент сдвига. В обработчике сдвигов (он работает внутри замеряемой
+ * загрузки) — только обход узлов, пробел у <br> и тегов-блоков, без стиля и раскладки: getComputedStyle и
+ * clientWidth там сами давали долгую задачу — 127 мс на /menu «Эпицентра» при процессоре ×4. После замера
+ * текст узла, который ещё на странице и не менялся, уточняется по стилю (пробел и у flex-элемента a или span),
+ * и дописывается размер окна.
  *
  * LCP сменился. Если среди кандидатов до прокрутки замера позже чем через 1.5 с после прежнего крупнейшим
  * стал другой элемент (или другой файл у того же) — картинка после картинки или текст после текста, на том
@@ -261,13 +276,45 @@ async function selftest() {
         top ? '' : 'сдвигов нет',
         top && top.phase === 'afterLoad' ? '' : `крупнейший сдвиг не «после load» (${top ? top.phase : '—'})`,
         top && top.sources.some((s) => /article\.news/.test(s.el) && s.prev && s.cur && s.cur.y - s.prev.y >= 150) ? '' : 'среди источников нет article.news со сдвигом вниз от 150 px',
+        top && top.sources.some((s) => /article\.news/.test(s.el) && /^Новости Открыли запись/.test(s.text || '')) ? '' : `текст источника article.news не «Новости Открыли запись…» (${top ? (top.sources.find((s) => /article\.news/.test(s.el)) || {}).text : '—'}): отступы разметки съели предел знаков`,
         /крупнейшие — что сдвинулось.*\n\s+[\d.]+ на \d+ мс \(после load\): .*article\.news.* — вниз на 1[56]\d px/.test(so) ? '' : 'в выводе нет строки крупнейшего сдвига «… article.news … вниз на 160 px»',
         j.compression.local === true && /локальный сервер без прокси/.test((j.checks['JS по сети'] || {}).note || '') ? '' : 'сжатие: нет пометки «локальный сервер без прокси» в JSON или у строки «JS по сети»',
         /^INFO Сжатие текста: .*локальный сервер без прокси; на бою сжатие может делать Caddy\/nginx/m.test(so) ? '' : 'в выводе нет «INFO Сжатие текста … локальный сервер без прокси»',
       ];
     } },
+    { page: 'edge.html', runs: 1, why: 'низ блока уходит за край окна — не «смена высоты»; настоящая смена высоты остаётся; текст через <br> — с пробелом', check: (j, so) => {
+      const src = (j.cls.perRun[0].shifts || []).flatMap((x) => x.sources || []).filter((s) => /div\.edge/.test(s.el));
+      const top = (so.split(/крупнейшие[^\n]*\n/)[1] || '').split(/\n(?! {4})/)[0];
+      return [
+        src.some((s) => s.prev && s.cur && s.vh && s.cur.y + s.cur.h >= s.vh - 1 && s.prev.y + s.prev.h < s.vh - 1) ? '' : 'в JSON нет источника div.edge, чей низ ушёл за край окна (с размером окна vh)',
+        /div\.edge[^«;\n]*«Значок у низа окна» — вниз на 15 px \(y \d+ → \d+\), низ у края окна — видна часть коробки, размер не сравнивался/.test(top) ? '' : 'в «крупнейших» нет «div.edge «Значок у низа окна» — вниз на 15 px (…), низ у края окна — … размер не сравнивался»',
+        /div\.edge[^;\n]*вверх на \d+ px \(y \d+ → \d+\), низ был у края окна/.test(top) ? '' : 'нет обратного случая «div.edge … вверх … низ был у края окна»',
+        /div\.edge[^;\n]*высота/.test(top) ? 'у div.edge «высота» — обрезка краем окна выдана за смену размера' : '',
+        /div\.grow[^;\n]*высота 100 → 140/.test(top) ? '' : 'нет контроля «div.grow … высота 100 → 140» (настоящая смена высоты)',
+      ];
+    } },
   ];
   let bad = 0, n = 0;
+  /* без браузера: подписи источников сдвига у краёв окна (shiftText). Коробки источника — видимая часть в
+     окне; стенд edge.html проверяет низ окна вживую, здесь — все края и старые протоколы без vw/vh */
+  const SHIFT = [
+    { why: 'низ ушёл за низ окна (mamuka.rest)', s: { el: 'span.i', prev: { x: 700, y: 687, w: 37, h: 206 }, cur: { x: 700, y: 702, w: 37, h: 198 }, vw: 1440, vh: 900 }, has: ['— вниз на 15 px (y 687 → 702), низ у края окна — видна часть коробки, размер не сравнивался'], not: ['высота'] },
+    { why: 'обратно: низ был у края окна', s: { el: 'span.i', prev: { x: 700, y: 702, w: 37, h: 198 }, cur: { x: 700, y: 679, w: 37, h: 206 }, vw: 1440, vh: 900 }, has: ['— вверх на 23 px (y 702 → 679), низ был у края окна — видна часть коробки, размер не сравнивался'], not: ['высота'] },
+    { why: 'верх за верхом окна — сдвиг по низу', s: { el: 'div.top', prev: { x: 100, y: 0, w: 300, h: 60 }, cur: { x: 100, y: 0, w: 300, h: 75 }, vw: 1440, vh: 900 }, has: ['— вниз на 15 px (низ 60 → 75), верх у края окна — видна часть коробки, размер не сравнивался'], not: ['высота'] },
+    { why: 'настоящая смена высоты вдали от краёв', s: { el: 'div.grow', prev: { x: 100, y: 74, w: 600, h: 100 }, cur: { x: 100, y: 89, w: 600, h: 140 }, vw: 1440, vh: 900 }, has: ['— вниз на 15 px (y 74 → 89), высота 100 → 140'], not: ['у края окна'] },
+    { why: 'блок во всю ширину от x 0 — без пометки о крае', s: { el: 'section.s', prev: { x: 0, y: 100, w: 1425, h: 200 }, cur: { x: 0, y: 115, w: 1425, h: 200 }, vw: 1425, vh: 900 }, has: ['— вниз на 15 px (y 100 → 115)'], not: ['край', 'ширина'] },
+    { why: 'коробка во всю высоту окна', s: { el: 'main.m', prev: { x: 100, y: 0, w: 600, h: 900 }, cur: { x: 100, y: 0, w: 600, h: 900 }, vw: 1440, vh: 900 }, has: ['— коробка во всю высоту окна: по видимой части сдвиг не виден'], not: ['высота'] },
+    { why: 'старый протокол без размера окна: низ совпал — размер не пишется', s: { el: 'span.i', prev: { x: 700, y: 687, w: 37, h: 213 }, cur: { x: 700, y: 702, w: 37, h: 198 } }, has: ['— вниз на 15 px (y 687 → 702)'], not: ['высота', 'у края окна'] },
+  ];
+  {
+    const miss = [];
+    for (const c of SHIFT) {
+      let t; try { t = shiftText(c.s); } catch (e) { miss.push(`${c.why}: упала — ${e.message}`); continue; }
+      const m = [...c.has.filter((x) => !t.includes(x)).map((x) => `нет «${x}»`), ...c.not.filter((x) => t.includes(x)).map((x) => `лишнее «${x}»`)];
+      if (m.length) miss.push(`${c.why}: ${m.join('; ')} — вышло «${t}»`);
+    }
+    if (miss.length) { bad++; console.log(`FAIL подписи сдвига у краёв окна (без браузера): ${miss.join(' | ')}`); } else console.log(`OK   подписи сдвига у краёв окна (без браузера): ${SHIFT.length} случаев`);
+  }
   try {
     for (const c of CASES) {
       const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'perf', `${tag}.json`);
@@ -282,7 +329,7 @@ async function selftest() {
       console.log(`     ${c.page}: ${Math.round((Date.now() - t0) / 100) / 10} с, протокол ${jf}`);
     }
   } finally { server.close(); }
-  console.log(`\n${bad ? 'FAIL' : 'OK'}: стендов ${n}, не сошлось ${bad}`);
+  console.log(`\n${bad ? 'FAIL' : 'OK'}: стендов ${n} и подписи сдвига без браузера (${SHIFT.length}), не сошлось ${bad}`);
   return bad ? 1 : 0;
 }
 
@@ -588,7 +635,44 @@ async function measure() {
          координатах окна), когда. Узел описывается сразу — потом его могут убрать; не больше 300 сдвигов */
       rw.shifts = [];
       const box = (q) => (q ? { x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.width), h: Math.round(q.height) } : null);
-      const lite = (el) => { let where = null; for (let p = el.parentElement, i = 0; p && p !== document.body && i < 10; p = p.parentElement, i++) if (p.id) { where = sig(p); break; } return { el: sig(el), where, text: String(el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) }; };
+      /* начало текста: textContent склеивал строки через <br> и блоки («Забронировать<br>стол» →
+         «Забронироватьстол»). Обход узлов до 40 знаков, script и style — мимо; пробел — у <br> и тегов-блоков
+         (div, p, li, h1…), а со стилем (styled) — и у любого не строчного блока (flex-элемент a или span).
+         В обработчике сдвигов — только без стиля: он работает внутри замеряемой загрузки, и getComputedStyle
+         или clientWidth там заставляли страницу пересчитать стиль и раскладку — на /menu «Эпицентра» при
+         процессоре ×4 это была своя долгая задача 127 мс в замере. Текст со стилем и размер окна — в refine() */
+      const BLOCK = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|BUTTON|DD|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LABEL|LI|MAIN|NAV|OL|OPTION|P|PRE|SECTION|TABLE|TD|TH|TR|UL)$/;
+      /* пробелы сжимаются сразу: отступы разметки — узлы из одних пробелов, и без сжатия пять таких узлов
+         (55 знаков на глубине 3–7) съедали предел — от «Ресторан Мосты 2 этаже…» оставалось «Ресторан» */
+      const textOf = (el, styled) => {
+        let out = ''; let steps = 0;
+        const w = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.nodeType === 1 && /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/.test(n.tagName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+        for (let n = w.nextNode(); n && out.length < 60 && steps < 400; n = w.nextNode(), steps++) {
+          if (n.nodeType === 3) { const t = n.data.replace(/\s+/g, ' '); out += !out || out.endsWith(' ') ? t.replace(/^ /, '') : t; continue; }
+          if (!out || out.endsWith(' ')) continue;
+          if (BLOCK.test(n.tagName)) { out += ' '; continue; }
+          if (styled) { const d = getComputedStyle(n).display; if (d && d !== 'contents' && !/^inline/.test(d)) out += ' '; }
+        }
+        return out.trim().slice(0, 40).trimEnd();
+      };
+      rw.shiftNodes = [];
+      const lite = (el) => { let where = null; for (let p = el.parentElement, i = 0; p && p !== document.body && i < 10; p = p.parentElement, i++) if (p.id) { where = sig(p); break; } rw.shiftNodes.push(el); return { el: sig(el), where, text: textOf(el, false), ni: rw.shiftNodes.length - 1 }; };
+      /* после замера (perf зовёт перед чтением сдвигов, вне окон вердикта): текст со стилем — у узлов, которые
+         ещё на странице и чей текст с момента сдвига не менялся (исчезнувший блок, который скрипт потом
+         переписал, остаётся с текстом на момент сдвига: «Ресторан Мосты 2 этаже…», а не «Ресторан»); у всех
+         источников — размер окна без полос прокрутки (vw, vh): коробки источника — видимая часть в окне, и
+         уход края за окно нельзя выдавать за смену высоты или ширины. Меньшее из innerWidth и clientWidth:
+         полоса прокрутки могла появиться посреди загрузки */
+      rw.refine = () => {
+        const de = document.documentElement; const std = document.compatMode === 'CSS1Compat' && de;
+        const V = { vw: Math.min(innerWidth, std && de.clientWidth ? de.clientWidth : innerWidth), vh: Math.min(innerHeight, std && de.clientHeight ? de.clientHeight : innerHeight) };
+        for (const sh of rw.shifts) {
+          for (const s of sh.sources) {
+            if (s.ni != null) { const n = rw.shiftNodes[s.ni]; if (n && n.isConnected && textOf(n, false) === s.text) s.text = textOf(n, true); delete s.ni; }
+            Object.assign(s, V);
+          }
+        }
+      };
       try {
         new PerformanceObserver((l) => {
           for (const e of l.getEntries()) {
@@ -623,6 +707,8 @@ async function measure() {
     const m = await page.evaluate(() => {
       const n = performance.getEntriesByType('navigation')[0] || {}; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)]));
       const rw = window.__rw || {}; const r0 = (v) => (v == null ? null : Math.round(v));
+      /* текст источников сдвига со стилем и размер окна — сейчас, после замера, а не в обработчике */
+      try { if (rw.refine) rw.refine(); } catch { /* страница переопределила что-то своё — текст без стиля */ }
       return { ttfb: Math.round(n.responseStart || 0), domContentLoaded: Math.round(n.domContentLoadedEventEnd || 0), load: Math.round(n.loadEventEnd || 0), fcp: p['first-contentful-paint'] || null, lcpCandidates: rw.lcp || [], cls: Math.round((rw.cls || 0) * 1000) / 1000, shifts: rw.shifts || [], longList: rw.long || [], scrollStart: r0(rw.scrollStart), scrollEnd: r0(rw.scrollEnd), nodes: document.getElementsByTagName('*').length, images: [...document.images].filter((i) => i.naturalWidth > 0).length, fonts: [...document.fonts].filter((f) => f.status === 'loaded').length, canvases: document.querySelectorAll('canvas').length, animations: document.getAnimations().length };
     });
     Object.assign(m, lcpOf(m), longOf(m), clsOf(m)); m.lcpSwitch = lcpSwitchOf(m);
@@ -789,23 +875,42 @@ async function compressionOf(list) {
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;
 const mbs = (b) => (b == null ? '?' : `${r2(b / MB)} МБ`);
-/* источник сдвига словами: элемент, где он, куда и на сколько (коробки — в координатах окна) */
-const shiftText = (s) => {
+/* источник сдвига словами: элемент, где он, куда и на сколько (коробки — в координатах окна). Объявление
+   функции, а не const: selftest (он идёт раньше этой строки) проверяет её без браузера */
+function shiftText(s) {
   if (!s) return '';
   const p = s.prev, c = s.cur; const empty = (q) => !q || (!q.w && !q.h);
   const who = `${s.el}${s.where ? ` в ${s.where}` : ''}${s.text ? ` «${s.text.length > 24 ? s.text.slice(0, 24) + '…' : s.text}»` : ''}`;
   if (empty(p) && !empty(c)) return `${who} — появился (y ${c.y}, ${c.w}×${c.h})`;
   if (!empty(p) && empty(c)) return `${who} — исчез (был y ${p.y}, ${p.w}×${p.h})`;
   if (empty(p) || empty(c)) return `${who} — коробки нет`;
-  const dy = c.y - p.y, dx = c.x - p.x; const parts = [];
-  if (dy) parts.push(`${dy > 0 ? 'вниз' : 'вверх'} на ${Math.abs(dy)} px (y ${p.y} → ${c.y})`);
-  if (dx) parts.push(`${dx > 0 ? 'вправо' : 'влево'} на ${Math.abs(dx)} px (x ${p.x} → ${c.x})`);
-  /* коробки — видимая часть в окне: блок, уехавший вниз за край окна, «укорачивается» (низ тот же) — это не
-     смена размера, а обрезка краем окна; размер — только если край не совпал */
-  if (c.h !== p.h && Math.abs((c.y + c.h) - (p.y + p.h)) > 1) parts.push(`высота ${p.h} → ${c.h}`);
-  if (c.w !== p.w && Math.abs((c.x + c.w) - (p.x + p.w)) > 1) parts.push(`ширина ${p.w} → ${c.w}`);
-  return `${who} — ${parts.join(', ') || 'сдвиг меньше 1 px'}`;
-};
+  /* коробки — видимая часть в окне: край блока за краем окна обрезан. Блок, чей низ уехал за низ окна,
+     «укорачивается» (mamuka.rest: y 687 → 702, «высота 206 → 198», а 702 + 198 = 900 — низ окна) — это не
+     смена размера. Размер — только если ни в одной из коробок этот край не касается края окна (размер окна —
+     в источнике, vw и vh; в старых протоколах его нет — тогда как раньше, по совпавшему краю). Сдвиг — по
+     краю, который не обрезан: верх за верхом окна — по низу */
+  const H = s.vh || 0, W = s.vw || 0;
+  const cutT = (q) => q.y <= 0, cutL = (q) => q.x <= 0;
+  const cutB = (q) => (H ? q.y + q.h >= H - 1 : false), cutR = (q) => (W ? q.x + q.w >= W - 1 : false);
+  const T = cutT(p) || cutT(c), B = cutB(p) || cutB(c), Lf = cutL(p) || cutL(c), Rt = cutR(p) || cutR(c);
+  const byBottom = T && !B, byRight = Lf && !Rt;
+  const dy = byBottom ? (c.y + c.h) - (p.y + p.h) : c.y - p.y, dx = byRight ? (c.x + c.w) - (p.x + p.w) : c.x - p.x;
+  /* пометка о крае — только там, где она объясняет строку: размер не сравнивался или сдвиг взят по низу
+     (правому краю). «У края», а не «за краем»: коробка ровно у края окна тоже y 0 */
+  const parts = [], edge = [];
+  const was = (f, name) => (f(c) ? `${name} у края окна` : `${name} был у края окна`);
+  const vNote = c.h !== p.h || (byBottom && dy), hNote = c.w !== p.w || (byRight && dx);
+  if (B && vNote) edge.push(was(cutB, 'низ')); if (T && vNote) edge.push(was(cutT, 'верх'));
+  if (Rt && hNote) edge.push(was(cutR, 'правый край')); if (Lf && hNote) edge.push(was(cutL, 'левый край'));
+  if (dy) parts.push(`${dy > 0 ? 'вниз' : 'вверх'} на ${Math.abs(dy)} px (${byBottom ? `низ ${p.y + p.h} → ${c.y + c.h}` : `y ${p.y} → ${c.y}`})`);
+  if (dx) parts.push(`${dx > 0 ? 'вправо' : 'влево'} на ${Math.abs(dx)} px (${byRight ? `правый край ${p.x + p.w} → ${c.x + c.w}` : `x ${p.x} → ${c.x}`})`);
+  const oldH = !H && Math.abs((c.y + c.h) - (p.y + p.h)) <= 1, oldW = !W && Math.abs((c.x + c.w) - (p.x + p.w)) <= 1;
+  if (c.h !== p.h && !T && !B && !oldH) parts.push(`высота ${p.h} → ${c.h}`);
+  if (c.w !== p.w && !Lf && !Rt && !oldW) parts.push(`ширина ${p.w} → ${c.w}`);
+  if (!parts.length && T && B) parts.push('коробка во всю высоту окна: по видимой части сдвиг не виден');
+  const sizeSkipped = (c.h !== p.h && (T || B)) || (c.w !== p.w && (Lf || Rt));
+  return `${who} — ${parts.join(', ') || 'сдвиг меньше 1 px'}${edge.length ? `, ${edge.join(', ')}${sizeSkipped ? ' — видна часть коробки, размер не сравнивался' : ''}` : ''}`;
+}
 const lines = [];
 const table = {};
 let worst = 'OK';

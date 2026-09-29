@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд perf: сдвиг у края окна</title>
+<!-- Стенд perf.mjs --selftest (edge, desktop 1440×900). Коробки источников сдвига (LayoutShiftAttribution) — видимая
+     часть в окне. Блок div.edge высотой 206 px стоит низом в 7 px от низа окна (y 687 при окне 900, как значок
+     на mamuka.rest). Через 0.5 с после load над ним вставляется полоса 15 px: он уходит вниз, низ — за край окна,
+     видимая часть 198 px. Раньше: «вниз на 15 px (y 687 → 702), высота 206 → 198» — обрезку краем окна выдавали
+     за смену высоты. Через 1 с div.grow (далеко от краёв) сдвигается на 15 px и растёт 100 → 140 — настоящая смена
+     высоты, она в строке остаётся. Через 1.5 с всё возвращается: div.edge уходит вверх, видна целиком — и тут не
+     «высота 144 → 206», а «низ был у края окна». Текст div.edge — «Значок<br>у низа окна»: в выводе с пробелом. -->
+<style>
+html { overflow-y: scroll; }
+body { margin: 0; background: #fff; color: #1d1d1f; font: 16px/1.55 system-ui, sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+h1 { margin: 0; padding: 24px 0 16px; font-size: 28px; line-height: 1.2; }
+.bar { height: 15px; background: #ffe7a8; }
+.grow { box-sizing: border-box; height: 100px; padding: 16px; background: #eef3f8; }
+.edge { box-sizing: border-box; height: 206px; padding: 16px; background: #0e1b2c; color: #fff; }
+</style>
+</head>
+<body>
+<main id="top">
+  <h1>Сдвиг у края окна</h1>
+  <div class="grow">Карточка, которая сдвигается и растёт</div>
+  <div id="sp"></div>
+  <div class="edge">Значок<br>у низа окна</div>
+</main>
+<script>
+/* низ div.edge — в 7 px от низа окна: высота прокладки по месту, до первой отрисовки (не сдвиг) */
+const edge = document.querySelector('.edge'), grow = document.querySelector('.grow'), sp = document.getElementById('sp');
+sp.style.height = Math.max(0, Math.round(innerHeight - 7 - edge.getBoundingClientRect().bottom)) + 'px';
+const bar = () => { const b = document.createElement('div'); b.className = 'bar'; return b; };
+addEventListener('load', () => {
+  setTimeout(() => edge.before(bar()), 500);
+  setTimeout(() => { grow.before(bar()); grow.style.height = '140px'; }, 1000);
+  setTimeout(() => { document.querySelectorAll('.bar').forEach((b) => b.remove()); grow.style.height = ''; }, 1500);
+});
+</script>
+</body>
+</html>

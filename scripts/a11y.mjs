@@ -22,8 +22,10 @@
  *   --no-grain  не учитывать слой зерна поверх текста в контрасте (см. ниже).
  *   --strict    код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
  *   --selftest  стенды fixtures/a11y с ожиданиями: фокус на полях даты и времени, скрытый (кегль 0),
- *               декоративный (aria-hidden) текст и логотип, подписи над фото и градиентами, закреплённая
- *               лента с пилюлями. Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
+ *               декоративный (aria-hidden) текст и логотип, подписи над фото и градиентами (и подписи в
+ *               разных местах одного фона), закреплённая лента с пилюлями, светлый слой поверх подложки
+ *               шапки и пилюль после прокрутки, плашка активной пилюли отдельным слоем (и лента, накрытая
+ *               окном cookie). Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
  *               временной папке или в --out; код 1, если хоть одно ожидание не сошлось.
  *   --help, -h  эта справка.
  * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict,
@@ -49,10 +51,17 @@
  * Контраст считается у всего видимого текста; при больше 5000 текстовых элементов — первые 5000 и
  * WARN «взято N из M (обрезано)».
  * Текст на картинке, градиенте или чужой подложке мерится по снимку у каждого элемента, до 150 за запуск.
- * Одинаковые — только подписи того же класса и цвета над тем же фоном (тот же файл картинки, та же запись
- * градиента или цвет подложки): таких мерится не больше трёх, остальные — «повтор того же фона». Раньше
- * ключом был класс картинки: на афише из 7 карточек мерились 3, карточки 4–7 над другими фото — нет, а
- * вердикт OK. В строке — «измерено N из M»; упёрлись в предел 150 — WARN «не измерено K, смотреть глазами».
+ * Фон — пиксели под коробками строк своего текста (как у закреплённого текста на прокрутке), а не под всей
+ * коробкой элемента: поля и скруглённые углы тёмной пилюли на белой ленте, значок рядом с подписью, фото
+ * вдали от короткой подписи во всю ширину карточки давали худшие 10% «1:1». Строк нет — коробка элемента.
+ * Одинаковые — только подписи того же класса и цвета над тем же фоном (тот же файл картинки с тем же
+ * object-fit и object-position, та же запись градиента или картинки фоном с тем же background-position и
+ * background-size, или цвет подложки) и на том же месте этого фона: центр текста в той же клетке коробки
+ * фона (по высоте не меньше 8 полос и не выше 120 px, по ширине не меньше 4 и не шире 200 px). Таких мерится
+ * не больше трёх, остальные — «повтор того же фона». Раньше ключом был класс картинки: на афише из 7 карточек
+ * мерились 3, карточки 4–7 над другими фото — нет, а вердикт OK; а место не учитывалось: шесть белых подписей
+ * над одним градиентом «сверху чёрный, снизу белый» мерились три верхние, белые над белым шли «повтором».
+ * В строке — «измерено N из M»; упёрлись в предел 150 — WARN «не измерено K, смотреть глазами».
  *
  * Вне проверки контраста и кегля. Текст кеглем 0 (номер телефона рядом со значком — «для читалки») на
  * экране не нарисован: это скрытый текст, а не «мелкий текст 0px» — WARN с советом прятать обрезкой
@@ -173,15 +182,22 @@
  * блоки: шапка и меню раньше закреплённых секций, и не больше трёх одинаковых). Закреплённый текст
  * ищется наверху и на высоте одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
  * Своя подложка. Текст закреплённого блока на своём фоне (пилюля ленты разделов, кнопка шапки с заливкой)
- * лежит над цветом этой подложки, а не над секцией под блоком: он мерится по цветам, без снимка и на любой
- * высоте — и тогда, когда лента, прокрученная к активному разделу, увела его за свой край («обрезан») или
- * его перекрыло окно. Подложка — фоны по цепочке от текста до закреплённого блока до первого непрозрачного
- * (без картинок и градиентов, без mix-blend-mode, сама подложка без прозрачности). Непрозрачная — замер
- * точный; полупрозрачная (плашка rgba(…, .96)) — худший случай между подложкой над чёрным и над белым: если
- * и он проходит норму — замер по подложке, иначе по снимку, как раньше. Пилюли, которые наверху уже за
- * краем горизонтально прокручиваемой ленты (overflow-x auto/scroll), в список берутся, если у них
- * непрозрачная подложка. В строке — «по снимку N, по своей подложке M (из них K за краем ленты или
- * перекрыты)»; раньше лента, уехавшая к активному разделу, давала «обрезан 6, замеров 0 — смотреть глазами».
+ * лежит над цветом этой подложки, а не над секцией под блоком. Видимый на высоте текст мерится по снимку, как
+ * и весь закреплённый текст: на снимке есть и то, что лежит между подложкой и текстом (светлый ::before шапки
+ * после прокрутки, дочерний слой, картинка). По цветам подложки, без снимка, мерится только текст, которого на
+ * снимке этой высоты нет: лента, прокрученная к активному разделу, увела его за свой край («обрезан»), он вне
+ * окна или его перекрыло окно. Подложка — фоны по цепочке от текста до закреплённого блока до первого
+ * непрозрачного (без картинок и градиентов, без mix-blend-mode, сама подложка без прозрачности). Не
+ * подложка, если между ней и текстом что-то нарисовано: ::before или ::after с фоном у звена цепочки, не меньше
+ * половины текста по ширине и высоте (полоска подчёркивания активной пилюли и точка-значок — не в счёт), или
+ * другой потомок подложки с фоном или картинкой под центром текста; такой текст на этой высоте — «обрезан»
+ * (или «вне окна», «перекрыт») в «не мерились». Непрозрачная — замер точный; полупрозрачная (плашка
+ * rgba(…, .96)) — худший случай между подложкой над чёрным и над белым: если и он не проходит норму — не
+ * мерится. Пилюли, которые наверху уже за краем горизонтально прокручиваемой ленты (overflow-x auto/scroll),
+ * в список берутся, если у них непрозрачная подложка. В строке — «по снимку N, по своей подложке M» (M — тот
+ * самый текст за краем, вне окна или перекрытый); раньше лента, уехавшая к активному разделу, давала «обрезан
+ * 6, замеров 0 — смотреть глазами». Одно время по подложке мерился и видимый текст — шапка #111 со светлым
+ * ::before поверх после прокрутки давала OK 18.88:1 вместо FAIL 1.18:1.
  *
  * Строгий CSP. Свои стили (текст прозрачным на время снимка фона, пробы зерна) вставляются элементом
  * <style>; если CSP страницы (style-src без 'unsafe-inline') его не применил — сконструированной
@@ -334,7 +350,7 @@ function domInPage({ isMobile, map, ignore }) {
     let X = P(fg), Y = P(null); let bgNode = null;
     for (let i = 0; i < chain.length; i++) {
       if (i > 0 && X.a >= 0.999 && Y.a >= 0.999 && rest[i] >= 0.999) break;
-      if (st[i].backgroundImage && st[i].backgroundImage !== 'none') return { imageBg: true, fg, alpha: fg.a * rest[0], bgId: st[i].backgroundImage };
+      if (st[i].backgroundImage && st[i].backgroundImage !== 'none') return { imageBg: true, fg, alpha: fg.a * rest[0], bgId: `${st[i].backgroundImage}|${st[i].backgroundPosition}|${st[i].backgroundSize}`, bgEl: chain[i] };
       const bg = P(parseC(st[i].backgroundColor)); X = over(X, bg); Y = over(Y, bg);
       if (!bgNode && Y.a >= 0.999) bgNode = chain[i];
       if (ops[i] < 1) { X = mul(X, ops[i]); Y = mul(Y, ops[i]); }
@@ -403,17 +419,33 @@ function domInPage({ isMobile, map, ignore }) {
   /* что лежит под текстом — для ключа «тот же фон»: файл картинки или постера, запись фона (картинка,
      градиент, цвет); холст, iframe и picture — сам элемент */
   function bgIdOf(e, k) {
-    if (e.tagName === 'IMG') return e.currentSrc || e.src || `${sig(e)}#${k}`;
-    if (e.tagName === 'VIDEO') return e.currentSrc || e.poster || e.src || `${sig(e)}#${k}`;
+    const s = getComputedStyle(e);
+    /* кадр спрайта или сдвинутая картинка — другой участок того же файла: место и размер — в отпечатке */
+    if (e.tagName === 'IMG') return `${e.currentSrc || e.src || `${sig(e)}#${k}`}|${s.objectFit}|${s.objectPosition}`;
+    if (e.tagName === 'VIDEO') return `${e.currentSrc || e.poster || e.src || `${sig(e)}#${k}`}|${s.objectFit}|${s.objectPosition}`;
     if (/^(CANVAS|IFRAME|PICTURE)$/.test(e.tagName)) return `${sig(e)}#${k}`;
-    const s = getComputedStyle(e); return s.backgroundImage && s.backgroundImage !== 'none' ? s.backgroundImage : s.backgroundColor;
+    return s.backgroundImage && s.backgroundImage !== 'none' ? `${s.backgroundImage}|${s.backgroundPosition}|${s.backgroundSize}` : s.backgroundColor;
   }
+  /* место текста на фоне — клетка его коробки, где центр текста: по высоте не меньше 8 полос и не выше
+     120 px, по ширине не меньше 4 и не шире 200 px. Одна картинка или градиент во весь блок (сверху чёрный,
+     снизу белый) под подписями в разных местах — разный фон; одна и та же карточка с подписью внизу — та же клетка */
+  const cell = (dx, dy, W, H) => {
+    const ny = Math.max(8, Math.ceil(H / 120)), nx = Math.max(4, Math.ceil(W / 200));
+    const q = (v, S, n) => Math.min(n - 1, Math.max(0, Math.floor(v / Math.max(1, S) * n)));
+    return `${q(dx, W, nx)}.${q(dy, H, ny)}/${nx}x${ny}`;
+  };
   const coveredByImage = (el) => {
     const r = el.getBoundingClientRect(); const fx = fixedOf(el); const cx = (r.left + r.right) / 2;
     const mine = (i) => i.e !== el && !i.e.contains(el) && !el.contains(i.e) && cx >= i.l && cx <= i.r;
     const cyV = (r.top + r.bottom) / 2, cyD = cyV + scrollY;
     const hit = fx ? imgLike.filter((i) => mine(i) && cyV >= i.vt && cyV <= i.vb) : imgLike.filter((i) => !i.fx && mine(i) && cyD >= i.t && cyD <= i.b);
-    return hit.length ? { sig: hit.map((i) => sig(i.e)).join('+'), id: hit.map((i) => i.id).join('+') } : null;
+    return hit.length ? { sig: hit.map((i) => sig(i.e)).join('+'), id: hit.map((i) => i.id).join('+'), place: hit.map((i) => (fx ? cell(cx - i.l, cyV - i.vt, i.r - i.l, i.vb - i.vt) : cell(cx - i.l, cyD - i.t, i.r - i.l, i.b - i.t))).join('+') } : null;
+  };
+  /* место текста на фоне предка (градиент, картинка фоном); вынесенный за коробку предка — полоса документа */
+  const placeOn = (el, c) => {
+    const r = el.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    if (c.bgEl) { const b = c.bgEl.getBoundingClientRect(); return cell(cx - b.left, cy - b.top, b.width, b.height); }
+    return c.displaced ? `y${Math.floor((cy + (fixedOf(el) ? 0 : scrollY)) / 120)}` : '';
   };
   /* короткий отпечаток строки (адрес картинки data: бывает в сотни КБ) */
   const idh = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36) + ':' + s.length; };
@@ -435,10 +467,11 @@ function domInPage({ isMobile, map, ignore }) {
     const label = `${sig(el)} «${el.textContent.trim().slice(0, 30)}» ${Math.round(size)}px`;
     if (c.imageBg) {
       contrast.unknown++;
-      /* ключ «не больше трёх одинаковых»: подпись без id (у карточек он у каждой свой), цвет и отпечаток фона
+      /* ключ «не больше трёх одинаковых»: подпись без id (у карточек он у каждой свой), цвет, отпечаток фона
          под текстом — что лежит сверху (пункт меню на плашке и такой же поверх фото — разные случаи) и фон
-         предка (градиент, картинка) */
-      const key = sig(el).replace(/#[^.]*/, '') + '|' + hex(c.fg) + '|' + (under ? under.sig : c.displaced ? 'вынесен' : '') + '|' + idh([under ? under.id : '', c.bgId || ''].join('|')); contrast.perSig = contrast.perSig || {}; contrast.perSig[key] = (contrast.perSig[key] || 0) + 1;
+         предка (градиент, картинка), — и место текста на этом фоне (cell): раньше шесть подписей над одним
+         градиентом «сверху чёрный, снизу белый» были «повтором того же фона», и белые над белым не мерились */
+      const key = sig(el).replace(/#[^.]*/, '') + '|' + hex(c.fg) + '|' + (under ? under.sig : c.displaced ? 'вынесен' : '') + '|' + idh([under ? under.id : '', c.bgId || ''].join('|')) + '|' + (under ? under.place : '') + '|' + placeOn(el, c); contrast.perSig = contrast.perSig || {}; contrast.perSig[key] = (contrast.perSig[key] || 0) + 1;
       if (contrast.perSig[key] > IMG_SAME) { contrast.imgRepeat.n++; if (contrast.imgRepeat.ex.length < 4) contrast.imgRepeat.ex.push(`${sig(el)} «${el.textContent.trim().slice(0, 24)}»`); continue; }
       if (contrast.imgList.length >= IMG_LIMIT) { contrast.imgOverLimit++; continue; }
       { const idx = contrast.imgList.length; el.setAttribute('data-rw-imgbg', idx); const fgG = grain(c.fg); contrast.imgList.push({ idx, sig: sig(el), text: el.textContent.trim().slice(0, 30), fg: hex(c.fg), fgRgb: { r: c.fg.r, g: c.fg.g, b: c.fg.b }, fgGrain: map ? { r: fgG.r, g: fgG.g, b: fgG.b } : null, alpha: r2(Math.min(1, c.alpha)), size: Math.round(size), need, fixed: fixedOf(el) }); }
@@ -548,9 +581,13 @@ function stickyInPage(host) {
    первого непрозрачного. Над подложкой текст лежит всегда, на любой высоте прокрутки, — фон секции под
    блоком ему не важен. null — подложки нет (цепочка прозрачна), на пути картинка или градиент, где-то в
    предках mix-blend-mode, подложка полупрозрачна как группа (opacity), центр текста вне её коробки.
-   exact — подложка непрозрачна: b0 — её цвет, f — цвет текста над ней (с альфой и opacity текста).
-   Иначе подложка полупрозрачна: b0 и b1 — она над чёрным и над белым, f — цвет текста (только непрозрачный
-   текст, иначе null); ratio — худший случай между ними (1, если яркость текста между ними) */
+   Подложка не берётся (null), если между ней и текстом что-то нарисовано: ::before или ::after с фоном у
+   звена цепочки от текста до подложки, накрывающий текст (не меньше половины его ширины и высоты: полоска
+   подчёркивания и точка-значок — не в счёт), или другой потомок подложки с фоном или картинкой под центром
+   текста (дочерний слой) — цвет подложки тогда не фон текста. exact — подложка непрозрачна: b0 — её цвет, f —
+   цвет текста над ней (с альфой и opacity текста). Иначе подложка полупрозрачна: b0 и b1 — она над чёрным и
+   над белым, f — цвет текста (только непрозрачный текст, иначе null); ratio — худший случай между ними (1,
+   если яркость текста между ними). self — подложка у самого текста (пилюля): её подпись в выводе не нужна */
 function plateInPage(el, host) {
   const layers = [];
   for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
@@ -563,9 +600,29 @@ function plateInPage(el, host) {
   if (!layers.length) return null;
   for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const m = getComputedStyle(n).mixBlendMode; if (m && m !== 'normal') return null; }
   const pe = layers[layers.length - 1].n; if (eff(pe) < 0.99) return null;
+  const r = el.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
   if (pe !== el) {
-    const r = el.getBoundingClientRect(), q = pe.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const q = pe.getBoundingClientRect();
     if (cx < q.left - 1 || cx > q.right + 1 || cy < q.top - 1 || cy > q.bottom + 1) return null;
+  }
+  /* слои между подложкой и текстом: псевдоэлементы звеньев цепочки (размер — используемый, Chrome отдаёт его
+     в px; «auto» — считается накрывающим) и чужие потомки подложки под центром текста */
+  const paints = (s) => { const c = hexc(s.backgroundColor); const a = c ? (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) : 0; return a > 0.004 || (!!s.backgroundImage && s.backgroundImage !== 'none'); };
+  const chain = []; for (let n = el; n && n.nodeType === 1; n = n.parentElement) { chain.push(n); if (n === pe) break; }
+  for (const n of chain) {
+    for (const w of ['::before', '::after']) {
+      const s = getComputedStyle(n, w);
+      if (!s.content || s.content === 'none' || s.content === 'normal' || s.display === 'none' || s.visibility !== 'visible' || parseFloat(s.opacity) <= 0.05 || !paints(s)) continue;
+      const pw = parseFloat(s.width), ph = parseFloat(s.height);
+      if (!(pw < r.width * 0.5 || ph < r.height * 0.5)) return null;
+    }
+  }
+  const inner = pe.querySelectorAll('*'); if (inner.length > 1500) return null;
+  for (const d of inner) {
+    if (chain.includes(d) || el.contains(d) || d.contains(el)) continue;
+    const q = d.getBoundingClientRect(); if (q.width < 1 || q.height < 1 || cx < q.left || cx > q.right || cy < q.top || cy > q.bottom) continue;
+    const s = getComputedStyle(d); if (s.visibility !== 'visible' || eff(d) <= 0.05) continue;
+    if (/^(IMG|VIDEO|CANVAS|IFRAME|PICTURE|SVG)$/i.test(d.tagName) || paints(s)) return null;
   }
   const s = getComputedStyle(el); const fill = s.webkitTextFillColor; const c = hexc(fill && fill !== s.color ? fill : s.color); if (!c) return null;
   const fg = { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) };
@@ -577,7 +634,7 @@ function plateInPage(el, host) {
   const hx = (o) => '#' + [o.r, o.g, o.b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
   const size = parseFloat(s.fontSize); const need = size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5;
   const exact = layers[layers.length - 1].a >= 0.99;
-  const base = { plate: sig(pe), fgHex: hx(fg), size, need, alpha: ta };
+  const base = { plate: sig(pe), self: pe === el, fgHex: hx(fg), size, need, alpha: ta };
   if (exact) { const f = { r: fg.r * ta + b0.r * (1 - ta), g: fg.g * ta + b0.g * (1 - ta), b: fg.b * ta + b0.b * (1 - ta) }; return { ...base, exact: true, f, b0, b1: b0, ratio: rt(lum(f), lum(b0)), bgHex: hx(b0) }; }
   if (ta < 0.99) return null;
   const Lf = lum(fg), L0 = lum(b0), L1 = lum(b1);
@@ -734,12 +791,14 @@ function fixedStateInPage({ ids }) {
     const host = el.__rwFxHost;
     if (host && host.isConnected) { const k = stk(host); if (k && k.state !== 'закреплён') return { i, state: 'не закреплён', why: k.state }; }
     if (!vis(el)) return { i, state: 'скрыт' };
-    /* своя подложка (plateInPage): фон — сама подложка на любой высоте, и за краем ленты («обрезан»), и под
-       перекрывшим окном; полупрозрачная — только если худший случай проходит норму, иначе по снимку, как раньше.
-       seen — что было бы без подложки (виден, обрезан, вне окна, перекрыт) */
+    /* своя подложка (plateInPage) — только для текста, которого на снимке этой высоты нет: за краем ленты
+       («обрезан»), вне окна, под перекрывшим окном. Полупрозрачная — только если худший случай проходит норму.
+       seen — что было без подложки (обрезан, вне окна, перекрыт). Видимый текст мерится по снимку (ниже) */
     const pin = el.__rwFxPin && el.__rwFxPin.isConnected ? el.__rwFxPin : null;
-    const pl = pin ? plt(el, pin) : null; const plOk = !!pl && (pl.exact || pl.ratio >= pl.need);
-    const viaPlate = (seen) => (plOk ? { i, state: 'подложка', seen, ratio: pl.ratio, exact: pl.exact, f: pl.f, b0: pl.b0, b1: pl.b1, hex: pl.fgHex, bg: pl.bgHex, plate: pl.plate, size: pl.size, need: pl.need, alpha: pl.alpha } : null);
+    let pl; const plate = () => (pl === undefined ? (pl = pin ? plt(el, pin) : null) : pl);
+    /* now — подпись элемента на этой высоте: классы меняются при прокрутке (активная пилюля), а подпись в
+       списке снята наверху — «a.chip.is-active «Закуски»» на высоте, где активна уже другая */
+    const viaPlate = (seen) => { const p = plate(); return p && (p.exact || p.ratio >= p.need) ? { i, state: 'подложка', now: sig(el), seen, ratio: p.ratio, exact: p.exact, f: p.f, b0: p.b0, b1: p.b1, hex: p.fgHex, bg: p.bgHex, plate: p.plate, self: p.self, size: p.size, need: p.need, alpha: p.alpha } : null; };
     /* коробки строк тянутся на всю длину текста, и за край блока с overflow ≠ visible (многоточие,
        max-width) — там букв нет, на снимке под ними страница за плашкой. Коробки обрезаются по самому
        элементу и предкам с overflow; на absolute/fixed цепочка кончается (предки выше его не режут) */
@@ -787,7 +846,10 @@ function fixedStateInPage({ ids }) {
       }
     } finally { if (pe[0]) el.style.setProperty('pointer-events', pe[0], pe[1]); else el.style.removeProperty('pointer-events'); }
     if (!hit) return viaPlate('обрезан') || { i, state: 'обрезан' };
-    { const vpl = viaPlate('виден'); if (vpl) return vpl; }
+    /* видимый текст — по снимку, как раньше, и при своей подложке: на снимке есть всё, что лежит между подложкой
+       и текстом (светлый ::before шапки после прокрутки, дочерний слой, картинка); подложка — только вместо
+       «обрезан», «вне окна» и «перекрыт», где снимка нет. Раньше и видимый мерился по подложке: шапка #111 со
+       светлым ::before поверх давала OK 18.88:1 вместо FAIL 1.18:1 */
     /* смешение с фоном (mix-blend-mode у самого текста или предка): текст рисуется смешанным цветом */
     let blend = 'normal';
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const m = getComputedStyle(n).mixBlendMode; if (m && m !== 'normal') { blend = m; break; } }
@@ -796,7 +858,7 @@ function fixedStateInPage({ ids }) {
     const fa = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
     let sec = null; for (const n of secs) { const r = n.getBoundingClientRect(); if (cy >= r.top && cy < r.bottom && cx >= r.left && cx <= r.right) sec = Number(n.getAttribute('data-rw-sec')); }
     const size = parseFloat(s.fontSize);
-    return { i, state: 'виден', fg: { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) }, hex: c.slice(0, 7), alpha: Math.min(1, fa * eff(el)), size, need: size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5, rects, sec, blend };
+    return { i, state: 'виден', now: sig(el), fg: { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) }, hex: c.slice(0, 7), alpha: Math.min(1, fa * eff(el)), size, need: size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5, rects, sec, blend };
   });
   /* iw — ширина видимой области в CSS-пикселях (масштаб снимка считается от неё), ox, oy — её смещение
      в окне раскладки (на него сдвигаются коробки строк перед выборкой пикселей) */
@@ -998,7 +1060,7 @@ async function fixedOnScroll(page, map) {
     out.results.push(res);
     for (const s of plated) {
       const it = byIdx.get(s.i);
-      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(s.alpha), blend: null, size: Math.round(s.size), need: s.need, p10: r2(s.ratio), median: r2(s.ratio), tone: 'своя подложка', section: null, sectionBg: null, plate: s.plate, plateBg: s.bg, exact: s.exact, seen: s.seen };
+      const rec = { y: st.at, approach, sig: s.now || it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(s.alpha), blend: null, size: Math.round(s.size), need: s.need, p10: r2(s.ratio), median: r2(s.ratio), tone: 'своя подложка', section: null, sectionBg: null, plate: s.plate, plateSelf: !!s.self, plateBg: s.bg, exact: s.exact, seen: s.seen };
       res.measured++; res.byPlate++; out.measured++; out.byPlate++; if (s.seen !== 'виден') out.plateAway++;
       if (!out.worst || s.ratio / s.need < out.worst.p10 / out.worst.need) out.worst = rec;
       if (s.ratio < s.need) out.failures.push(rec);
@@ -1028,7 +1090,7 @@ async function fixedOnScroll(page, map) {
       const lo = bgL[Math.floor(bgL.length * 0.1)], mid = bgL[Math.floor(bgL.length / 2)], hi = bgL[Math.floor(bgL.length * 0.9)];
       const tone = (hi + 0.05) / (lo + 0.05) > 3 ? 'пёстрый' : mid >= 0.45 ? 'светлый' : mid <= 0.12 ? 'тёмный' : 'средний по яркости';
       const sec = s.sec != null ? scan.sections[s.sec] : null;
-      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), blend: bf ? s.blend : null, size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
+      const rec = { y: st.at, approach, sig: s.now || it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(al), blend: bf ? s.blend : null, size: Math.round(s.size), need: s.need, p10: r2(p10), median: r2(median), tone, section: sec ? `${sec.sig}${sec.title ? ` «${sec.title}»` : ''}` : null, sectionBg: sec ? sec.bg : null };
       res.measured++; out.measured++;
       if (!out.worst || p10 / s.need < out.worst.p10 / out.worst.need) out.worst = rec;
       if (p10 < s.need) out.failures.push(rec);
@@ -1196,6 +1258,16 @@ async function selftest() {
     { page: 'ribbon.html', viewport: 'mobile-s', expect: [
       { line: /^контраст закреплённого текста/, status: 'FAIL', has: ['по своей подложке', 'Скидки', '#BBBBBB на #FFFFFF'], not: ['замеров 0', 'смотреть глазами'] },
     ] },
+    { page: 'bigbg.html', viewport: 'desktop', expect: [
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 12 из 12', '6 ниже нормы', 'Подпись четвёртая над белым', 'Цифра шестая над белым'], not: ['повтор того же фона', 'над тёмным'], why: 'одна картинка и один градиент, подписи в разных местах — не «повтор того же фона»' },
+    ] },
+    { page: 'plate-overlay.html', viewport: 'mobile-s', expect: [
+      { line: /^контраст по снимку фона/, status: 'OK', has: ['измерено 6 из 6'], why: 'наверху слоя нет; фон — под строками текста, углы пилюли на белой ленте не в счёт' },
+      { line: /^контраст закреплённого текста/, status: 'FAIL', has: ['a «Раздел один» #FFFFFF', '1.18:1', 'обрезан'], not: ['по своей подложке'], why: 'видимый — по снимку (светлый ::before поверх #111); пилюли за краем под ::after — не по подложке' },
+    ] },
+    { page: 'plate-layer.html', viewport: 'mobile-s', expect: [
+      { line: /^контраст закреплённого текста/, status: 'OK', has: ['по своей подложке', 'перекрыт'], not: ['#FFFFFF на #FFFFFF'], why: 'видимая активная пилюля — по снимку; под накрытой окном активной лежит плашка-span — не «белое на белом» по цвету ленты; подчёркивание ::after 2px подложку не отменяет' },
+    ] },
   ];
   const here = path.dirname(fileURLToPath(import.meta.url));
   const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'a11y-selftest-'));
@@ -1285,26 +1357,33 @@ try {
         await sleep(120);
         /* коробка и видимая область — из страницы: boundingBox отдаёт координаты окна раскладки, а снимок —
            видимая область (у страницы без meta viewport на телефоне 1 CSS-пиксель на снимке — 0.8 точки, а
-           не 2: вырезка уходила за снимок, элемент молча шёл в «пропущено») */
-        const g = await h.evaluate((el) => { const r = el.getBoundingClientRect(); const vv = window.visualViewport; return { x: r.left, y: r.top, w: r.width, h: r.height, VX: vv ? vv.offsetLeft : 0, VY: vv ? vv.offsetTop : 0, VW: vv ? vv.width : innerWidth, VH: vv ? vv.height : innerHeight }; });
+           не 2: вырезка уходила за снимок, элемент молча шёл в «пропущено»). Фон берётся под коробками строк
+           своего текста, как у закреплённого текста на прокрутке, а не под всей коробкой элемента: поля и
+           скруглённые углы пилюли (белая лента за тёмной пилюлей), значок рядом с подписью и фото вдали от
+           короткой подписи во всю ширину карточки давали худшие 10% «1:1». Строк нет — коробка элемента */
+        const g = await h.evaluate((el) => {
+          const r = el.getBoundingClientRect(); const vv = window.visualViewport; const rects = [];
+          for (const n of el.childNodes) {
+            if (n.nodeType !== 3 || !n.textContent.trim()) continue;
+            const rg = document.createRange(); rg.selectNodeContents(n);
+            for (const q of rg.getClientRects()) if (q.width >= 1 && q.height >= 1) rects.push({ x: q.left, y: q.top, w: q.width, h: q.height });
+          }
+          return { x: r.left, y: r.top, w: r.width, h: r.height, rects: rects.length ? rects : [{ x: r.left, y: r.top, w: r.width, h: r.height }], lines: rects.length, VX: vv ? vv.offsetLeft : 0, VY: vv ? vv.offsetTop : 0, VW: vv ? vv.width : innerWidth, VH: vv ? vv.height : innerHeight };
+        });
         if (g.w < 4 || g.h < 4 || g.w * g.h > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
-        /* снимок окна и вырезка по координатам окна: снимок элемента у закреплённых (position: fixed)
+        /* снимок окна и выборка по координатам окна: снимок элемента у закреплённых (position: fixed)
            и прокрученных элементов брал не ту область */
-        const bx = g.x - g.VX, by = g.y - g.VY; const x0 = Math.max(0, bx), y0 = Math.max(0, by);
-        const cw = Math.min(g.w - (x0 - bx), g.VW - x0), chh = Math.min(g.h - (y0 - by), g.VH - y0);
         const buf = await page.screenshot({ type: 'png' });
         await h.evaluate((el) => el.classList.remove('rw-hide-text'));
-        const shot = sharp(buf); const meta = await shot.metadata(); const kS = meta.width / (g.VW || vp.width);
-        const left = Math.round(x0 * kS), top = Math.round(y0 * kS);
-        const ew = Math.min(meta.width - left, Math.round(cw * kS)), eh = Math.min(meta.height - top, Math.round(chh * kS));
-        if (!(ew >= 1 && eh >= 1)) { imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'вне снимка', by: null }); continue; }
-        const { data, info } = await shot.extract({ left, top, width: ew, height: eh }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const kS = info.width / (g.VW || vp.width);
+        const px = sampleRects(data, info, g.rects.map((q) => ({ ...q, x: q.x - g.VX, y: q.y - g.VY })), kS);
+        if (!px.length) { imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'вне снимка', by: null }); continue; }
+        if (g.lines) imgContrast.byLines = (imgContrast.byLines || 0) + 1;
         /* цвет текста над пикселем фона: альфа и opacity смешивают его с этим пикселем; слой зерна
            уже есть на снимке фона — к цвету текста он применяется отдельно (fgGrain) */
-        const F = it.fgGrain || it.fgRgb; const a = it.alpha;
-        const n = info.width * info.height; const stride = Math.max(1, Math.floor(n / 4000)); const ratios = [];
-        for (let p = 0; p < n; p += stride) {
-          const i = p * 4; const R = data[i], G = data[i + 1], Bb = data[i + 2];
+        const F = it.fgGrain || it.fgRgb; const a = it.alpha; const ratios = [];
+        for (const [R, G, Bb] of px) {
           const l = lumRgb(R, G, Bb); const fl = lumRgb(a * F.r + (1 - a) * R, a * F.g + (1 - a) * G, a * F.b + (1 - a) * Bb);
           ratios.push((Math.max(l, fl) + 0.05) / (Math.min(l, fl) + 0.05));
         }
@@ -1354,7 +1433,7 @@ const vrImg = vrI.failed ? `видимая область ${vrI.failed} раз �
    одинаковых — фон и цвет те же, что у измеренных) и предел за запуск (WARN — смотреть глазами) */
 const rep = C.imgRepeat || { n: 0, ex: [] }, over = C.imgOverLimit || 0;
 imgContrast.total = C.unknown; imgContrast.repeat = rep.n; imgContrast.overLimit = over;
-const repTxt = rep.n ? `повтор того же фона у той же подписи ${rep.n} — не мерились (фон и цвет те же, что у трёх измеренных): ${rep.ex.join(', ')}${rep.n > rep.ex.length ? ' …' : ''}` : '';
+const repTxt = rep.n ? `повтор того же фона у той же подписи ${rep.n} — не мерились (тот же фон, то же место текста на нём и тот же цвет, что у трёх измеренных): ${rep.ex.join(', ')}${rep.n > rep.ex.length ? ' …' : ''}` : '';
 const overTxt = over ? `упёрлись в предел ${C.imgLimit || 150} за запуск: не измерено ${over} — смотреть глазами` : '';
 if (C.unknown && imgContrast.error) L('WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): не измерен — ${imgContrast.error}`, `${C.unknown} элементов на картинке, градиенте или чужой подложке не проверены — смотреть глазами`);
 else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg || over ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured} из ${C.unknown}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${rep.n ? `, повтор того же фона ${rep.n}` : ''}${over ? `, сверх предела ${over}` : ''}`, [imgContrast.failures.length ? `${imgContrast.failures.length} ниже нормы: ${imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ')}${imgContrast.failures.length > 6 ? ` | и ещё ${imgContrast.failures.length - 6}` : ''}` : imgContrast.measured ? 'измеренные — не ниже нормы (по худшим 10% фона)' : sharp ? '' : 'нет sharp — не измерено', covTxt, overTxt, repTxt, vrImg].filter(Boolean).join('; '));
@@ -1384,14 +1463,14 @@ if (fx && !fx.none) {
   } else {
     const who = [...new Set(fx.items.map((it) => `${it.kind} ${it.host}`))].slice(0, 4).join(', ');
     const up = fx.results.filter((r) => r.approach === 'снизу').length;
-    const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${fx.byPlate ? ` (по снимку ${fx.measured - fx.byPlate}, по своей подложке ${fx.byPlate}${fx.plateAway ? `, из них ${fx.plateAway} на той высоте за краем ленты, вне окна или перекрыты — цвет свой, фон под блоком не важен` : ''})` : ''}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
+    const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${fx.byPlate ? ` (по снимку ${fx.measured - fx.byPlate}, по своей подложке ${fx.byPlate} — текст на той высоте за краем ленты, вне окна или перекрыт, снимка под ним нет: цвет подложки свой, фон под блоком не важен)` : ''}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
     if (fx.failures.length) {
       /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над секцией … (фон под текстом светлый): a «Каталог» … 1.07:1»;
          текст на своей подложке — своей группой: секция под блоком ему не важна */
       const groups = new Map();
       for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} ${f.plate ? '— текст на своей подложке (фон под блоком не важен)' : `над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
       const one = (f) => (f.plate
-        ? `${f.sig} «${f.text}» ${f.fg} на ${f.plateBg}${f.plate !== f.sig ? ` (подложка ${f.plate})` : ''} ${f.size}px — ${f.p10}:1 (нужно ${f.need}:1)${f.seen && f.seen !== 'виден' ? ` [на этой высоте ${f.seen}]` : ''}`
+        ? `${f.sig} «${f.text}» ${f.fg} на ${f.plateBg}${!f.plateSelf && f.plate !== f.sig ? ` (подложка ${f.plate})` : ''} ${f.size}px — ${f.p10}:1 (нужно ${f.need}:1)${f.seen && f.seen !== 'виден' ? ` [на этой высоте ${f.seen}]` : ''}`
         : `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`);
       const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map(one).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
       L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${rtlWide && fx.failures.some((f) => !f.section) ? rtlTxt : ''}${unpTxt}${vrTxt}`);
@@ -1402,7 +1481,7 @@ if (fx && !fx.none) {
       else L('WARN', head, `ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами${unpTxt}${vrTxt}`);
     }
     /* видимая область не вернулась на исходное место — снимки могли быть не там, где шапка: не OK, а WARN */
-    else { const w = fx.worst; L(vrF ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px ${w.plate ? `на своей подложке ${w.plateBg}${w.plate !== w.sig ? ` (${w.plate})` : ''}` : `над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`}${unpTxt}${vrTxt}`); }
+    else { const w = fx.worst; L(vrF ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px ${w.plate ? `на своей подложке ${w.plateBg}${!w.plateSelf && w.plate !== w.sig ? ` (подложка ${w.plate})` : ''}` : `над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`}${unpTxt}${vrTxt}`); }
   }
 }
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
