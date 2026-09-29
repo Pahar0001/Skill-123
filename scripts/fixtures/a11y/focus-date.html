@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: фокус на полях даты и времени</title>
+<!-- Стенд a11y.mjs --selftest (focus-date). Поля даты и времени с рамкой 2px по :focus-visible — фокус виден
+     (раньше el.blur() не снимал фокус с внутреннего сегмента поля даты, стиль «до» совпадал со стилем
+     в фокусе — ложный FAIL). Контроль: текстовое поле #bad и поле даты #dNone без рамки — FAIL остаётся. -->
+<style>
+body { margin: 0; padding: 24px 16px; background: #fff; color: #111; font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 480px; margin: 0 auto; }
+label { display: block; margin: 16px 0 4px; }
+input, button { font: 16px/1.4 system-ui, sans-serif; padding: 10px 12px; min-height: 44px; border: 1px solid #767676; border-radius: 6px; background: #fff; color: #111; }
+input:focus-visible, button:focus-visible { outline: 2px solid #D30052; outline-offset: 2px; box-shadow: inset 0 0 0 1px #D30052; }
+#bad:focus, #bad:focus-visible, #dNone:focus, #dNone:focus-visible { outline: none; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Бронь стола</h1>
+  <form onsubmit="return false">
+    <label for="bName">Имя</label>
+    <input id="bName" type="text" autocomplete="name">
+    <label for="bDate">Дата</label>
+    <input id="bDate" type="date">
+    <label for="bTime">Время</label>
+    <input id="bTime" type="time">
+    <label for="bad">Комментарий (рамки фокуса нет — контроль)</label>
+    <input id="bad" type="text">
+    <label for="dNone">Другая дата (рамки фокуса нет — контроль)</label>
+    <input id="dNone" type="date">
+    <p><button type="submit">Забронировать</button></p>
+  </form>
+</main>
+</body>
+</html>

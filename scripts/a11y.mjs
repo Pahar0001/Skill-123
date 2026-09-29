@@ -2,7 +2,8 @@
 /**
  * Доступность: то, что можно проверить в живом DOM без чтения экрана.
  *
- *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--no-grain] [--strict]
+ *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--strict]
+ *   node a11y.mjs --selftest [--out папка]
  *   node a11y.mjs --help   (или -h)
  *
  * Флаги:
@@ -12,8 +13,18 @@
  *               файлы). --viewports — то же самое (синоним).
  *   --out       папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>), итог — <out>/a11y/<tag>.json.
  *   --tag       имя файла итога (по умолчанию имя экрана).
+ *   --ignore    CSS-селектор (список — через запятую) текста вне проверки контраста и кегля: логотип и
+ *               знаки, которых WCAG 1.4.3 не касается (logotypes), — --ignore ".logo__sub, .brand-mark".
+ *               Исключается совпавший элемент и всё внутри него. Без флага то же даёт атрибут
+ *               data-a11y-logo на логотипе. Исключённое — строкой INFO со счётом и примерами; селектор,
+ *               который ничего не нашёл, — WARN; неверный селектор — ошибка с кодом 1 (проверяется в
+ *               браузере, после открытия страницы).
  *   --no-grain  не учитывать слой зерна поверх текста в контрасте (см. ниже).
  *   --strict    код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
+ *   --selftest  стенды fixtures/a11y с ожиданиями: фокус на полях даты и времени, скрытый (кегль 0),
+ *               декоративный (aria-hidden) текст и логотип, подписи над фото и градиентами, закреплённая
+ *               лента с пилюлями. Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
+ *               временной папке или в --out; код 1, если хоть одно ожидание не сошлось.
  *   --help, -h  эта справка.
  * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict,
  * вердикт FAIL. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и запуска
@@ -37,6 +48,21 @@
  * проверки тексту ставится pointer-events:auto (частый .hero__content{pointer-events:none}).
  * Контраст считается у всего видимого текста; при больше 5000 текстовых элементов — первые 5000 и
  * WARN «взято N из M (обрезано)».
+ * Текст на картинке, градиенте или чужой подложке мерится по снимку у каждого элемента, до 150 за запуск.
+ * Одинаковые — только подписи того же класса и цвета над тем же фоном (тот же файл картинки, та же запись
+ * градиента или цвет подложки): таких мерится не больше трёх, остальные — «повтор того же фона». Раньше
+ * ключом был класс картинки: на афише из 7 карточек мерились 3, карточки 4–7 над другими фото — нет, а
+ * вердикт OK. В строке — «измерено N из M»; упёрлись в предел 150 — WARN «не измерено K, смотреть глазами».
+ *
+ * Вне проверки контраста и кегля. Текст кеглем 0 (номер телефона рядом со значком — «для читалки») на
+ * экране не нарисован: это скрытый текст, а не «мелкий текст 0px» — WARN с советом прятать обрезкой
+ * (sr-only: clip или clip-path) или дать ссылке aria-label. Текст внутри aria-hidden="true" — оформление,
+ * скрытое от читалок (бегущая лента, крупные буквы фоном): WCAG 1.4.3 чисто декоративного текста не
+ * касается — строка INFO «декоративный, вне 1.4.3» со счётом и примерами; под aria-hidden 20 текстов и
+ * больше, и это от четверти всего текста, — ещё WARN: так прячут от читалок и содержимое (обёртка страницы
+ * с aria-hidden, забытая после закрытия окна), и его контраст тогда не мерился. Логотип (WCAG: logotypes) —
+ * атрибут data-a11y-logo на нём или --ignore <селектор>, тоже INFO. Всё это не входит и в закреплённый
+ * текст на прокрутке.
  * Ещё: мелкий текст; картинки без alt, поля без подписи, кнопки и ссылки без имени,
  * порядок заголовков, число h1, lang, запрет масштабирования, положительный tabindex,
  * видимость фокуса при обходе клавишей Tab, размер целей нажатия на телефоне (24 px),
@@ -146,6 +172,16 @@
  * а блок во весь экран — секции ищутся в нём. Берётся до 40 элементов (больше — сначала мелкие
  * блоки: шапка и меню раньше закреплённых секций, и не больше трёх одинаковых). Закреплённый текст
  * ищется наверху и на высоте одного экрана: шапка, ставшая fixed только после прокрутки, тоже в счёт.
+ * Своя подложка. Текст закреплённого блока на своём фоне (пилюля ленты разделов, кнопка шапки с заливкой)
+ * лежит над цветом этой подложки, а не над секцией под блоком: он мерится по цветам, без снимка и на любой
+ * высоте — и тогда, когда лента, прокрученная к активному разделу, увела его за свой край («обрезан») или
+ * его перекрыло окно. Подложка — фоны по цепочке от текста до закреплённого блока до первого непрозрачного
+ * (без картинок и градиентов, без mix-blend-mode, сама подложка без прозрачности). Непрозрачная — замер
+ * точный; полупрозрачная (плашка rgba(…, .96)) — худший случай между подложкой над чёрным и над белым: если
+ * и он проходит норму — замер по подложке, иначе по снимку, как раньше. Пилюли, которые наверху уже за
+ * краем горизонтально прокручиваемой ленты (overflow-x auto/scroll), в список берутся, если у них
+ * непрозрачная подложка. В строке — «по снимку N, по своей подложке M (из них K за краем ленты или
+ * перекрыты)»; раньше лента, уехавшая к активному разделу, давала «обрезан 6, замеров 0 — смотреть глазами».
  *
  * Строгий CSP. Свои стили (текст прозрачным на время снимка фона, пробы зерна) вставляются элементом
  * <style>; если CSP страницы (style-src без 'unsafe-inline') его не применил — сконструированной
@@ -156,7 +192,8 @@
  *
  * Мелкий текст: видимый текст кеглем меньше 12 px — WARN, меньше 10 px — FAIL (подписи вроде
  * «не обязательно» 9 px читать трудно, особенно на телефоне). Скрытый для глаз текст
- * (sr-only: коробка 1–2 px или clip) не в счёт.
+ * (sr-only: коробка 1–2 px или clip) не в счёт; кегль меньше 1 px — скрытый текст, своей строкой WARN
+ * (см. «Вне проверки контраста и кегля»), декоративный под aria-hidden и логотип — в строке INFO.
  *
  * Фокус. Обход клавишей Tab идёт на СВЕЖЕЙ странице — отдельная вкладка, без прокруток и кликов:
  * после проверок контраста фокус оставался в нижней панели, обход проходил 1 элемент и писал OK
@@ -171,7 +208,12 @@
  * (прозрачность до 0.05, clip или clip-path inset(50%) как у sr-only, коробка до 2×2 без крупных
  * детей) не в счёт: FAIL с пометкой «рамка только у самого элемента, а он невидим». Рамка с плавным
  * переходом (transition) меряется конечной: идущие переходы завершаются перед каждым снимком стиля
- * (раньше сразу после blur() стиль был тем же, что в фокусе, — ложный FAIL). Фокус внутри iframe
+ * (раньше сразу после blur() стиль был тем же, что в фокусе, — ложный FAIL). Поле даты и времени (date,
+ * time, datetime-local, month, week) в Chrome держит фокус с клавиатуры во внутреннем сегменте (теневой DOM
+ * поля), и el.blur() его не снимает: activeElement и :focus остаются, стиль «после blur» совпадал со стилем в
+ * фокусе — ложный FAIL «не видно фокуса на: input#bDate» при рамке 2px. Если после blur() элемент всё ещё в
+ * фокусе, фокус уводится на временный невидимый элемент вне поля (tabindex=-1, за краем окна), стиль
+ * снимается, элемент убирается, фокус возвращается полю (:focus-visible возвращается с ним). Фокус внутри iframe
  * (карта, видео): activeElement страницы — сам iframe, его стиль не меняется; видимость там не
  * проверяется, Tab жмётся, пока фокус не вернётся в страницу (до 40 раз), в выводе — «внутри iframe
  * не проверялся». Не вернулся — WARN, не ложный FAIL «не видно фокуса на iframe» и не «ловушка».
@@ -180,7 +222,10 @@
  * которое работает на любом адресе и даёт список конкретных элементов.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   launch, openPage, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir, loadSharp,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, VIEWPORTS,
@@ -189,14 +234,18 @@ import {
 import { findTextureLayers } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-grain', 'strict'], values: ['viewport', 'viewports', 'out', 'tag'], strict: true });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-grain', 'strict', 'selftest'], values: ['viewport', 'viewports', 'out', 'tag', 'ignore'], strict: true });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
 /* WARN lib (свой стиль не вставился) — строкой вердикта и в json, а не посреди вывода */
 collectWarnings();
-for (const k of ['viewport', 'viewports', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
+for (const k of ['viewport', 'viewports', 'out', 'tag', 'ignore']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
+if (opt.selftest) process.exit(await selftest());
 if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)');
+/* --ignore: CSS-селектор логотипа и знаков вне проверки контраста и кегля; правильность — в браузере */
+const IGNORE = opt.ignore === undefined ? null : String(opt.ignore).trim();
+if (IGNORE === '') die('--ignore: нужен CSS-селектор, например --ignore ".logo__sub, .brand-mark" (подробно: --help)');
 const url = pos[0];
 {
   let ok = false; try { ok = /^(https?|file|data|about):$/i.test(new URL(url).protocol); } catch { /* не адрес */ }
@@ -217,9 +266,9 @@ const [vpName, vp] = oneViewport('desktop');
 const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'a11y'));
 const tag = opt.tag || vpName;
 const sharp = loadSharp();
-const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, vis: VISIBLE_FN, hexc: HEX_FN };
-/* закреплённый текст на прокрутке: ещё stk — положение sticky-блока (stickyInPage) */
-const FX_DEPS = { ...DEPS, stk: stickyInPage.toString() };
+const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, vis: VISIBLE_FN, hexc: HEX_FN, exc: excludedInPage.toString() };
+/* закреплённый текст на прокрутке: ещё stk — положение sticky-блока (stickyInPage), plt — своя подложка (plateInPage) */
+const FX_DEPS = { ...DEPS, stk: stickyInPage.toString(), plt: plateInPage.toString() };
 
 /* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
 
@@ -251,7 +300,16 @@ function revealInPage() {
   return { hidden: els.length, shown: shown.length, still: els.filter((el) => !shown.includes(el)).map((el) => sig(el)).slice(0, 8) };
 }
 
-function domInPage({ isMobile, map }) {
+/* текст вне проверки контраста и кегля: логотип (data-a11y-logo), --ignore <селектор>, декоративный
+   под aria-hidden="true" (WCAG 1.4.3 не касается логотипов и чистого оформления). Причина или null */
+function excludedInPage(el, ignore) {
+  if (el.closest('[data-a11y-logo]')) return 'логотип';
+  if (ignore) { try { if (el.closest(ignore)) return 'ignore'; } catch (e) { /* неверный селектор — проверен до замера */ } }
+  if (el.closest('[aria-hidden="true"]')) return 'aria-hidden';
+  return null;
+}
+
+function domInPage({ isMobile, map, ignore }) {
   const V = (el) => vis(el);
   const parseC = (css) => { const h = hexc(css); if (!h) return null; return { r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16), a: h.length > 7 ? parseInt(h.slice(7, 9), 16) / 255 : 1 }; };
   const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
@@ -276,7 +334,7 @@ function domInPage({ isMobile, map }) {
     let X = P(fg), Y = P(null); let bgNode = null;
     for (let i = 0; i < chain.length; i++) {
       if (i > 0 && X.a >= 0.999 && Y.a >= 0.999 && rest[i] >= 0.999) break;
-      if (st[i].backgroundImage && st[i].backgroundImage !== 'none') return { imageBg: true, fg, alpha: fg.a * rest[0] };
+      if (st[i].backgroundImage && st[i].backgroundImage !== 'none') return { imageBg: true, fg, alpha: fg.a * rest[0], bgId: st[i].backgroundImage };
       const bg = P(parseC(st[i].backgroundColor)); X = over(X, bg); Y = over(Y, bg);
       if (!bgNode && Y.a >= 0.999) bgNode = chain[i];
       if (ops[i] < 1) { X = mul(X, ops[i]); Y = mul(Y, ops[i]); }
@@ -284,7 +342,7 @@ function domInPage({ isMobile, map }) {
     /* фон дал предок, но под текстом его нет (текст вынесен fixed/absolute за его коробку) — по снимку */
     if (bgNode && bgNode !== document.documentElement && bgNode !== document.body) {
       const a = el.getBoundingClientRect(), b = bgNode.getBoundingClientRect(); const cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2;
-      if (cx < b.left - 1 || cx > b.right + 1 || cy < b.top - 1 || cy > b.bottom + 1) return { imageBg: true, displaced: true, fg, alpha: fg.a * rest[0] };
+      if (cx < b.left - 1 || cx > b.right + 1 || cy < b.top - 1 || cy > b.bottom + 1) return { imageBg: true, displaced: true, fg, alpha: fg.a * rest[0], bgId: 'вынесен ' + sig(bgNode) };
     }
     X = over(X, canvasBg); Y = over(Y, canvasBg);
     return { fg: { r: X.r, g: X.g, b: X.b }, bg: { r: Y.r, g: Y.g, b: Y.b }, raw: fg, alpha: fg.a, opacity: rest[0] };
@@ -308,7 +366,18 @@ function domInPage({ isMobile, map }) {
      clip-path inset(50%), или коробка тоньше 3 px (у legend.sr-only к 1 px ширины добавляются поля
      браузера, и проверка «коробка до 2×2» его пропускала — «перекрыт span, смотреть глазами») */
   const srOnly = (el) => { const s = getComputedStyle(el); if (/rect\(0(px)?,? 0(px)?/.test(s.clip) || /inset\(50%\)/.test(s.clipPath)) return true; if (s.display === 'contents') return false; const r = el.getBoundingClientRect(); return r.width <= 2 || r.height <= 2; };
-  const allText = [...document.body.querySelectorAll('*')].filter((el) => { if (el instanceof SVGElement || !ownText(el) || !V(el) || srOnly(el)) return false; if (clipped(el)) { clippedCount++; return false; } return true; });
+  /* вне проверки контраста и кегля (со счётом и примерами — строки WARN и INFO): кегль меньше 1 px —
+     скрытый текст (номер у значка «для читалки»), на экране не нарисован; логотип, --ignore и
+     декоративный под aria-hidden — excludedInPage */
+  const zeroFont = { n: 0, ex: [] }; const excluded = { 'aria-hidden': { n: 0, ex: [] }, 'логотип': { n: 0, ex: [] }, ignore: { n: 0, ex: [] } };
+  const note = (b, el) => { b.n++; if (b.ex.length < 4) b.ex.push(`${sig(el)} «${el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30)}»`); };
+  const allText = [...document.body.querySelectorAll('*')].filter((el) => {
+    if (el instanceof SVGElement || !ownText(el) || !V(el) || srOnly(el)) return false;
+    if (clipped(el)) { clippedCount++; return false; }
+    if (parseFloat(getComputedStyle(el).fontSize) < 1) { note(zeroFont, el); return false; }
+    const why = exc(el, ignore); if (why) { note(excluded[why], el); return false; }
+    return true;
+  });
   /* контраст — у всего текста (раньше молча у первых 600: бледная подпись в конце каталога не мерилась);
      предел TEXT_LIMIT только от зависания на гигантских страницах, и тогда вывод говорит «N из M (обрезано)» — WARN */
   const TEXT_LIMIT = 5000;
@@ -330,14 +399,29 @@ function domInPage({ isMobile, map }) {
     const s = getComputedStyle(e); const bi = s.backgroundImage;
     if (bi && bi !== 'none' && !/^linear-gradient\(rgba\(0, 0, 0, 0\)/.test(bi)) return true;
     const c = parseC(s.backgroundColor); return !!(c && c.a > 0.05);
-  }).map((e) => { const r = e.getBoundingClientRect(); const fx = fixedOf(e); const oy = fx ? 0 : scrollY; return { e, fx, l: r.left, t: r.top + oy, r: r.right, b: r.bottom + oy, vt: r.top, vb: r.bottom }; });
+  }).map((e, k) => { const r = e.getBoundingClientRect(); const fx = fixedOf(e); const oy = fx ? 0 : scrollY; return { e, fx, l: r.left, t: r.top + oy, r: r.right, b: r.bottom + oy, vt: r.top, vb: r.bottom, id: bgIdOf(e, k) }; });
+  /* что лежит под текстом — для ключа «тот же фон»: файл картинки или постера, запись фона (картинка,
+     градиент, цвет); холст, iframe и picture — сам элемент */
+  function bgIdOf(e, k) {
+    if (e.tagName === 'IMG') return e.currentSrc || e.src || `${sig(e)}#${k}`;
+    if (e.tagName === 'VIDEO') return e.currentSrc || e.poster || e.src || `${sig(e)}#${k}`;
+    if (/^(CANVAS|IFRAME|PICTURE)$/.test(e.tagName)) return `${sig(e)}#${k}`;
+    const s = getComputedStyle(e); return s.backgroundImage && s.backgroundImage !== 'none' ? s.backgroundImage : s.backgroundColor;
+  }
   const coveredByImage = (el) => {
     const r = el.getBoundingClientRect(); const fx = fixedOf(el); const cx = (r.left + r.right) / 2;
     const mine = (i) => i.e !== el && !i.e.contains(el) && !el.contains(i.e) && cx >= i.l && cx <= i.r;
     const cyV = (r.top + r.bottom) / 2, cyD = cyV + scrollY;
     const hit = fx ? imgLike.filter((i) => mine(i) && cyV >= i.vt && cyV <= i.vb) : imgLike.filter((i) => !i.fx && mine(i) && cyD >= i.t && cyD <= i.b);
-    return hit.length ? hit.map((i) => sig(i.e)).join('+') : null;
+    return hit.length ? { sig: hit.map((i) => sig(i.e)).join('+'), id: hit.map((i) => i.id).join('+') } : null;
   };
+  /* короткий отпечаток строки (адрес картинки data: бывает в сотни КБ) */
+  const idh = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36) + ':' + s.length; };
+  /* по снимку — у каждого элемента, до IMG_LIMIT за запуск; «одинаковые» (не больше трёх) — та же подпись
+     без id, тот же цвет и тот же фон под текстом (файл картинки, запись градиента), а не класс картинки:
+     карточки 4–7 афиши над другими фото раньше не мерились вовсе */
+  const IMG_LIMIT = 150, IMG_SAME = 3;
+  contrast.imgRepeat = { n: 0, ex: [] }; contrast.imgOverLimit = 0; contrast.imgLimit = IMG_LIMIT;
   const r2 = (v) => Math.round(v * 100) / 100;
   const add = (bucket, key, rec, example) => { const f = bucket[key] || (bucket[key] = { ...rec, count: 0, examples: [] }); f.count++; if (f.examples.length < 3) f.examples.push(example); };
   contrast.total = allText.length; contrast.considered = textEls.length;
@@ -351,11 +435,13 @@ function domInPage({ isMobile, map }) {
     const label = `${sig(el)} «${el.textContent.trim().slice(0, 30)}» ${Math.round(size)}px`;
     if (c.imageBg) {
       contrast.unknown++;
-      /* по снимку — до 60 элементов, но не больше трёх одинаковых (по тегу и классам): сто карточек одного вида не нужны */
-      /* ключ ограничения «не больше трёх одинаковых»: подпись без id (у карточек он у каждой свой) и то,
-         что лежит под текстом (пункт меню на плашке и такой же на плашке поверх фото — разные случаи) */
-      const key = sig(el).replace(/#[^.]*/, '') + '|' + hex(c.fg) + '|' + (under || (c.displaced ? 'вынесен' : '')); contrast.perSig = contrast.perSig || {}; contrast.perSig[key] = (contrast.perSig[key] || 0) + 1;
-      if (contrast.imgList.length < 60 && contrast.perSig[key] <= 3) { const idx = contrast.imgList.length; el.setAttribute('data-rw-imgbg', idx); const fgG = grain(c.fg); contrast.imgList.push({ idx, sig: sig(el), text: el.textContent.trim().slice(0, 30), fg: hex(c.fg), fgRgb: { r: c.fg.r, g: c.fg.g, b: c.fg.b }, fgGrain: map ? { r: fgG.r, g: fgG.g, b: fgG.b } : null, alpha: r2(Math.min(1, c.alpha)), size: Math.round(size), need, fixed: fixedOf(el) }); }
+      /* ключ «не больше трёх одинаковых»: подпись без id (у карточек он у каждой свой), цвет и отпечаток фона
+         под текстом — что лежит сверху (пункт меню на плашке и такой же поверх фото — разные случаи) и фон
+         предка (градиент, картинка) */
+      const key = sig(el).replace(/#[^.]*/, '') + '|' + hex(c.fg) + '|' + (under ? under.sig : c.displaced ? 'вынесен' : '') + '|' + idh([under ? under.id : '', c.bgId || ''].join('|')); contrast.perSig = contrast.perSig || {}; contrast.perSig[key] = (contrast.perSig[key] || 0) + 1;
+      if (contrast.perSig[key] > IMG_SAME) { contrast.imgRepeat.n++; if (contrast.imgRepeat.ex.length < 4) contrast.imgRepeat.ex.push(`${sig(el)} «${el.textContent.trim().slice(0, 24)}»`); continue; }
+      if (contrast.imgList.length >= IMG_LIMIT) { contrast.imgOverLimit++; continue; }
+      { const idx = contrast.imgList.length; el.setAttribute('data-rw-imgbg', idx); const fgG = grain(c.fg); contrast.imgList.push({ idx, sig: sig(el), text: el.textContent.trim().slice(0, 30), fg: hex(c.fg), fgRgb: { r: c.fg.r, g: c.fg.g, b: c.fg.b }, fgGrain: map ? { r: fgG.r, g: fgG.g, b: fgG.b } : null, alpha: r2(Math.min(1, c.alpha)), size: Math.round(size), need, fixed: fixedOf(el) }); }
       continue;
     }
     contrast.checked++;
@@ -410,7 +496,7 @@ function domInPage({ isMobile, map }) {
   const smallInputsAll = isMobile ? [...document.querySelectorAll('input, select, textarea')].filter((i) => (i.tagName !== 'INPUT' || TEXT_TYPES.test(i.type)) && V(i) && parseFloat(getComputedStyle(i).fontSize) < 16).map((el) => `${sig(el)} ${Math.round(parseFloat(getComputedStyle(el).fontSize) * 10) / 10}px`) : [];
   const smallInputs = smallInputsAll.slice(0, 6);
   let reduced = false; for (const sh of document.styleSheets) { try { const walk = (rs) => { for (const r of rs) { if (r.type === CSSRule.MEDIA_RULE) { if (/prefers-reduced-motion/.test(r.conditionText)) reduced = true; walk(r.cssRules); } } }; walk(sh.cssRules); } catch { /* кросс-домен */ } }
-  return { contrast, smallText, clippedText: clippedCount, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, targetsCount: targetsAll.length, smallInputs, smallInputsCount: smallInputsAll.length, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
+  return { contrast, smallText, clippedText: clippedCount, zeroFont, excluded, ignoreFound: ignore ? (() => { try { return document.querySelectorAll(ignore).length; } catch (e) { return -1; } })() : null, imgsNoAlt, imgsNoAltCount: [...document.images].filter((i) => V(i) && !i.hasAttribute('alt')).length, decorativeEmpty, unlabeled, nameless, headings: { count: hs.length, h1: hs.filter((h) => h === 1).length, skips }, lang: document.documentElement.lang || null, zoomBlocked: /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?(\D|$)/i.test(vpMeta), positiveTabindex: document.querySelectorAll('[tabindex]:not([tabindex="0"]):not([tabindex="-1"])').length, targets, targetsCount: targetsAll.length, smallInputs, smallInputsCount: smallInputsAll.length, reducedMotionRule: reduced, autoplayVideo: [...document.querySelectorAll('video[autoplay]')].filter((v) => !v.muted).length, skipLink: !!document.querySelector('a[href^="#"][class*="skip"], a[href="#main"], a[href="#content"]'), landmarks: { main: document.querySelectorAll('main, [role=main]').length, nav: document.querySelectorAll('nav, [role=navigation]').length, header: document.querySelectorAll('header, [role=banner]').length, footer: document.querySelectorAll('footer, [role=contentinfo]').length }, iframesNoTitle: [...document.querySelectorAll('iframe')].filter((f) => !f.title).length };
 }
 
 /* ---------- закреплённый текст на прокрутке: функции страницы ---------- */
@@ -458,12 +544,52 @@ function stickyInPage(host) {
   return { state: cT + mt + H > spot + 1.5 ? 'уехал' : above ? 'не доехал' : 'закреплён', top: null, bottom, rTop, rH, lo: doc(cT) + mt + H + bottom - rH, hi: host.__rwStickNB != null ? host.__rwStickNB + bottom - rH : null };
 }
 
+/* своя подложка текста закреплённого блока: фоны по цепочке от текста до хозяина (host, включительно) до
+   первого непрозрачного. Над подложкой текст лежит всегда, на любой высоте прокрутки, — фон секции под
+   блоком ему не важен. null — подложки нет (цепочка прозрачна), на пути картинка или градиент, где-то в
+   предках mix-blend-mode, подложка полупрозрачна как группа (opacity), центр текста вне её коробки.
+   exact — подложка непрозрачна: b0 — её цвет, f — цвет текста над ней (с альфой и opacity текста).
+   Иначе подложка полупрозрачна: b0 и b1 — она над чёрным и над белым, f — цвет текста (только непрозрачный
+   текст, иначе null); ratio — худший случай между ними (1, если яркость текста между ними) */
+function plateInPage(el, host) {
+  const layers = [];
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+    const s = getComputedStyle(n);
+    if (s.backgroundImage && s.backgroundImage !== 'none') return null;
+    const c = hexc(s.backgroundColor); const a = c ? (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) : 0;
+    if (a > 0.004) { layers.push({ n, r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16), a }); if (a >= 0.99) break; }
+    if (n === host) break;
+  }
+  if (!layers.length) return null;
+  for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const m = getComputedStyle(n).mixBlendMode; if (m && m !== 'normal') return null; }
+  const pe = layers[layers.length - 1].n; if (eff(pe) < 0.99) return null;
+  if (pe !== el) {
+    const r = el.getBoundingClientRect(), q = pe.getBoundingClientRect(); const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    if (cx < q.left - 1 || cx > q.right + 1 || cy < q.top - 1 || cy > q.bottom + 1) return null;
+  }
+  const s = getComputedStyle(el); const fill = s.webkitTextFillColor; const c = hexc(fill && fill !== s.color ? fill : s.color); if (!c) return null;
+  const fg = { r: parseInt(c.slice(1, 3), 16), g: parseInt(c.slice(3, 5), 16), b: parseInt(c.slice(5, 7), 16) };
+  const ta = Math.min(1, (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) * eff(el));
+  const comp = (base) => layers.reduceRight((o, L) => ({ r: L.r * L.a + o.r * (1 - L.a), g: L.g * L.a + o.g * (1 - L.a), b: L.b * L.a + o.b * (1 - L.a) }), base);
+  const b0 = comp({ r: 0, g: 0, b: 0 }), b1 = comp({ r: 255, g: 255, b: 255 });
+  const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const rt = (l1, l2) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  const hx = (o) => '#' + [o.r, o.g, o.b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  const size = parseFloat(s.fontSize); const need = size >= 24 || (size >= 18.66 && parseInt(s.fontWeight) >= 700) ? 3 : 4.5;
+  const exact = layers[layers.length - 1].a >= 0.99;
+  const base = { plate: sig(pe), fgHex: hx(fg), size, need, alpha: ta };
+  if (exact) { const f = { r: fg.r * ta + b0.r * (1 - ta), g: fg.g * ta + b0.g * (1 - ta), b: fg.b * ta + b0.b * (1 - ta) }; return { ...base, exact: true, f, b0, b1: b0, ratio: rt(lum(f), lum(b0)), bgHex: hx(b0) }; }
+  if (ta < 0.99) return null;
+  const Lf = lum(fg), L0 = lum(b0), L1 = lum(b1);
+  return { ...base, exact: false, f: fg, b0, b1, ratio: Lf >= Math.min(L0, L1) && Lf <= Math.max(L0, L1) ? 1 : Math.min(rt(Lf, L0), rt(Lf, L1)), bgHex: `${hx(b0)}…${hx(b1)}` };
+}
+
 /* текст в блоках position: fixed или sticky, видимый в окне сейчас: метка data-rw-fx=<номер>.
    Повторный вызов добавляет только новые (шапка, ставшая fixed после прокрутки). band — где по
    высоте окна стоит центр текста, когда блок закреплён (у sticky — по его top или bottom). У sticky
    ещё lo…hi — высоты прокрутки, на которых он закреплён (stk), и never — не закрепляется нигде
    (участок короче 8 px): такие высоты мерить незачем, там это обычный текст своей секции */
-function fixedTextInPage({ limit }) {
+function fixedTextInPage({ limit, ignore }) {
   /* «за краем» — по видимой области (visualViewport), а не по окну раскладки: у dir=rtl шире экрана на
      телефоне окно раскладки 820, а видно 320 — текст на 320…820 на снимок не попадал и потом числился
      «вне окна» (шум в WARN). band — по-прежнему в пределах innerHeight: это высота прокрутки окна */
@@ -494,16 +620,24 @@ function fixedTextInPage({ limit }) {
     }
     return false;
   };
+  /* между текстом и закреплённым блоком — лента, прокручиваемая по горизонтали (overflow-x auto/scroll) */
+  const hScroll = (el, host) => { for (let n = el.parentElement; n && n.nodeType === 1; n = n.parentElement) { if (/(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true; if (n === host) break; } return false; };
   const seen = new Set(); const found = [];
   for (const h of hosts) {
     for (const el of [h, ...h.querySelectorAll('*')]) {
       if (seen.has(el)) continue; seen.add(el);
       if (el instanceof SVGElement || el.hasAttribute('data-rw-fx') || !ownText(el) || !vis(el)) continue;
       const r = el.getBoundingClientRect(); if (r.width <= 2 || r.height <= 2) continue; /* sr-only */
+      /* скрытый текст кеглем 0, логотип, --ignore и декоративный под aria-hidden — вне проверки, как в основном проходе */
+      if (parseFloat(getComputedStyle(el).fontSize) < 1 || exc(el, ignore)) continue;
       const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
-      if (cx < VX || cy < VY || cx > vw || cy > vb) continue; /* закрытое меню за краем видимой области */
-      if (clipped(el, cx, cy)) continue;
-      const host = hostOf(el); const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
+      const host = hostOf(el);
+      /* за краем видимой области (закрытое меню) или обрезан предком — не берётся; кроме пилюли ленты,
+         прокручиваемой по горизонтали, на своей непрозрачной подложке: её контраст от прокрутки не зависит
+         и мерится по подложке (лента на нижних высотах уезжает к активному разделу) */
+      const away = cx < VX || cy < VY || cx > vw || cy > vb || clipped(el, cx, cy);
+      if (away && !(hScroll(el, host) && (plt(el, host) || {}).exact)) continue;
+      const hs = getComputedStyle(host); const hr = host.getBoundingClientRect();
       let band = cy; const k = hs.position === 'sticky' ? stk(host) : null;
       /* место sticky в окне — от верха прокрутки (окна или блока __rwScroller) */
       if (k && k.top != null) band = k.rTop + k.top + (cy - hr.top); else if (k && k.bottom != null) band = k.rTop + k.rH - k.bottom - (hr.bottom - cy);
@@ -519,8 +653,10 @@ function fixedTextInPage({ limit }) {
   let n = window.__rwFxN || 0; const items = [];
   for (const f of take) {
     const idx = n++; f.el.setAttribute('data-rw-fx', idx);
-    /* хозяин sticky — ссылкой на узле (DOM не меняется): на каждой высоте fixedStateInPage спрашивает stk(хозяин) */
+    /* хозяин sticky — ссылкой на узле (DOM не меняется): на каждой высоте fixedStateInPage спрашивает stk(хозяин);
+       хозяин любого закреплённого — __rwFxPin: до него ищется своя подложка (plt) */
     if (f.stick) f.el.__rwFxHost = f.host;
+    f.el.__rwFxPin = f.host;
     const st = f.stick ? { lo: Math.round(Math.max(0, f.stick.lo ?? 0)), hi: f.stick.hi == null ? null : Math.round(f.stick.hi), never: f.never, why: f.stick.why || null } : null;
     items.push({ idx, sig: sig(f.el), text: f.el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30), host: sig(f.host), kind: kindOf(f.el, f.host), pos: f.pos, band: Math.round(f.band), ...(st ? { sticky: st } : {}) });
   }
@@ -598,6 +734,12 @@ function fixedStateInPage({ ids }) {
     const host = el.__rwFxHost;
     if (host && host.isConnected) { const k = stk(host); if (k && k.state !== 'закреплён') return { i, state: 'не закреплён', why: k.state }; }
     if (!vis(el)) return { i, state: 'скрыт' };
+    /* своя подложка (plateInPage): фон — сама подложка на любой высоте, и за краем ленты («обрезан»), и под
+       перекрывшим окном; полупрозрачная — только если худший случай проходит норму, иначе по снимку, как раньше.
+       seen — что было бы без подложки (виден, обрезан, вне окна, перекрыт) */
+    const pin = el.__rwFxPin && el.__rwFxPin.isConnected ? el.__rwFxPin : null;
+    const pl = pin ? plt(el, pin) : null; const plOk = !!pl && (pl.exact || pl.ratio >= pl.need);
+    const viaPlate = (seen) => (plOk ? { i, state: 'подложка', seen, ratio: pl.ratio, exact: pl.exact, f: pl.f, b0: pl.b0, b1: pl.b1, hex: pl.fgHex, bg: pl.bgHex, plate: pl.plate, size: pl.size, need: pl.need, alpha: pl.alpha } : null);
     /* коробки строк тянутся на всю длину текста, и за край блока с overflow ≠ visible (многоточие,
        max-width) — там букв нет, на снимке под ними страница за плашкой. Коробки обрезаются по самому
        элементу и предкам с overflow; на absolute/fixed цепочка кончается (предки выше его не режут) */
@@ -622,10 +764,10 @@ function fixedStateInPage({ ids }) {
       }
     }
     if (!raw) return { i, state: 'скрыт' };
-    if (!rects.length) return { i, state: 'обрезан' };
+    if (!rects.length) return viaPlate('обрезан') || { i, state: 'обрезан' };
     const l = Math.min(...rects.map((r) => r.x)), t = Math.min(...rects.map((r) => r.y)), rr = Math.max(...rects.map((r) => r.x + r.w)), b = Math.max(...rects.map((r) => r.y + r.h));
     const cx = (l + rr) / 2, cy = (t + b) / 2;
-    if (!inView(cx, cy)) return { i, state: 'вне окна' };
+    if (!inView(cx, cy)) return viaPlate('вне окна') || { i, state: 'вне окна' };
     /* точка проверки — середина первой строки в видимой области (середина блока из двух строк может
        прийтись на просвет между ними). pointer-events у текста на время проверки — auto инлайном с
        !important (перебивает и правило сайта с !important): elementsFromPoint не видит pointer-events: none */
@@ -641,10 +783,11 @@ function fixedStateInPage({ ids }) {
            (overflow, clip-path), на снимке его нет */
         if (n.contains(el)) break;
         const s = getComputedStyle(n); const c = hexc(s.backgroundColor); const a = c ? (c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1) : 0;
-        if (/^(IMG|VIDEO|CANVAS|IFRAME)$/.test(n.tagName) || s.backgroundImage !== 'none' || a >= 0.99) return { i, state: 'перекрыт', by: sg(n) };
+        if (/^(IMG|VIDEO|CANVAS|IFRAME)$/.test(n.tagName) || s.backgroundImage !== 'none' || a >= 0.99) return viaPlate('перекрыт') || { i, state: 'перекрыт', by: sg(n) };
       }
     } finally { if (pe[0]) el.style.setProperty('pointer-events', pe[0], pe[1]); else el.style.removeProperty('pointer-events'); }
-    if (!hit) return { i, state: 'обрезан' };
+    if (!hit) return viaPlate('обрезан') || { i, state: 'обрезан' };
+    { const vpl = viaPlate('виден'); if (vpl) return vpl; }
     /* смешение с фоном (mix-blend-mode у самого текста или предка): текст рисуется смешанным цветом */
     let blend = 'normal';
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const m = getComputedStyle(n).mixBlendMode; if (m && m !== 'normal') { blend = m; break; } }
@@ -775,14 +918,16 @@ async function fixedOnScroll(page, map) {
   await resetView(page);
   await scrollToY(page, 0); await sleep(400);
   const scan = await evaluateWith(page, sectionsInPage, null, DEPS);
-  const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT }, FX_DEPS);
+  const a = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT, ignore: IGNORE }, FX_DEPS);
   let b = { items: [], total: 0 };
   if (scan.maxScroll > 0 && a.items.length < FX_LIMIT) {
     await scrollToY(page, Math.min(scan.viewH, scan.maxScroll)); await sleep(500); await settleAnimations(page, 1500);
-    b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length }, FX_DEPS);
+    b = await evaluateWith(page, fixedTextInPage, { limit: FX_LIMIT - a.items.length, ignore: IGNORE }, FX_DEPS);
   }
   const items = [...a.items, ...b.items];
-  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'обрезан': 0, 'прозрачный цвет': 0, 'смешение цвета': 0, 'вне снимка': 0, 'нет': 0, 'не закреплён': 0 }, measured: 0, worst: null };
+  /* byPlate — замеров по своей подложке (без снимка), plateAway — из них текст на той высоте за краем ленты,
+     вне окна или перекрыт (цвет свой — фон под блоком не важен) */
+  const out = { items, total: a.total + b.total, sections: scan.sections, docH: scan.docH, maxScroll: scan.maxScroll, positions: [], how: '', results: [], failures: [], skipped: { 'скрыт': 0, 'вне окна': 0, 'перекрыт': 0, 'обрезан': 0, 'прозрачный цвет': 0, 'смешение цвета': 0, 'вне снимка': 0, 'нет': 0, 'не закреплён': 0, 'подложка с зерном': 0 }, measured: 0, byPlate: 0, plateAway: 0, worst: null };
   if (!items.length) return { ...out, none: true };
   if (!sharp) return { ...out, error: 'нет sharp — снимки фона не разобрать' };
   /* полосы: высота в окне и участок прокрутки, где текст там стоит. fixed и sticky, закреплённый с верха
@@ -835,10 +980,29 @@ async function fixedOnScroll(page, map) {
       if (shownN(st2) > n1) { st = st2; approach = 'снизу'; } else if (shownN(st2) < n1 || y2 !== y) st = await goTo(y, Math.max(0, y - 160));
     }
     for (const s of st.items) if (s.state === 'виден' && s.blend && s.blend !== 'normal' && !BLEND[s.blend]) s.state = 'смешение цвета';
+    /* своя подложка с зерном поверх: цвета пересчитываются через отображение зерна; полупрозрачная
+       подложка, у которой с зерном худший случай ниже нормы, — не мерится (снимок на этой высоте не делался) */
+    for (const s of st.items) {
+      if (s.state !== 'подложка') continue;
+      if (map) {
+        const G = (c) => ({ r: f1(map[0], c.r), g: f1(map[1], c.g), b: f1(map[2], c.b) }); const Lf = lumRgb(...Object.values(G(s.f))), L0 = lumRgb(...Object.values(G(s.b0))), L1 = lumRgb(...Object.values(G(s.b1)));
+        const rt = (x, z) => (Math.max(x, z) + 0.05) / (Math.min(x, z) + 0.05);
+        s.ratio = s.exact ? rt(Lf, L0) : Lf >= Math.min(L0, L1) && Lf <= Math.max(L0, L1) ? 1 : Math.min(rt(Lf, L0), rt(Lf, L1));
+        if (!s.exact && s.ratio < s.need) s.state = 'подложка с зерном';
+      }
+    }
     const shown = st.items.filter((s) => s.state === 'виден');
-    const res = { y, scrollY: st.at, approach, measured: 0, skipped: {} };
-    for (const s of st.items) if (s.state !== 'виден') { out.skipped[s.state] = (out.skipped[s.state] || 0) + 1; res.skipped[s.state] = (res.skipped[s.state] || 0) + 1; }
+    const plated = st.items.filter((s) => s.state === 'подложка');
+    const res = { y, scrollY: st.at, approach, measured: 0, byPlate: 0, skipped: {} };
+    for (const s of st.items) if (s.state !== 'виден' && s.state !== 'подложка') { out.skipped[s.state] = (out.skipped[s.state] || 0) + 1; res.skipped[s.state] = (res.skipped[s.state] || 0) + 1; }
     out.results.push(res);
+    for (const s of plated) {
+      const it = byIdx.get(s.i);
+      const rec = { y: st.at, approach, sig: it.sig, text: it.text, host: it.host, kind: it.kind, fg: s.hex, alpha: r2(s.alpha), blend: null, size: Math.round(s.size), need: s.need, p10: r2(s.ratio), median: r2(s.ratio), tone: 'своя подложка', section: null, sectionBg: null, plate: s.plate, plateBg: s.bg, exact: s.exact, seen: s.seen };
+      res.measured++; res.byPlate++; out.measured++; out.byPlate++; if (s.seen !== 'виден') out.plateAway++;
+      if (!out.worst || s.ratio / s.need < out.worst.p10 / out.worst.need) out.worst = rec;
+      if (s.ratio < s.need) out.failures.push(rec);
+    }
     if (!shown.length) continue;
     await page.evaluate(() => document.documentElement.classList.add('rw-hide-fx'));
     let buf;
@@ -951,12 +1115,24 @@ function focusStepInPage({ props }) {
   const settle = () => { if (typeof CSSTransition === 'undefined' || !document.getAnimations) return; for (const a of document.getAnimations()) if (a instanceof CSSTransition) { try { a.finish(); } catch { /* уже кончился */ } } };
   const snap = () => { settle(); return cand.map(([, n]) => { const s = getComputedStyle(n); return props.map((p) => s[p]); }); };
   const focused = snap(); const shown = cand.map(([, n]) => seen(n));
-  el.blur(); const base = snap(); el.focus({ preventScroll: true }); settle();
+  el.blur();
+  /* поле даты и времени в Chrome: фокус с клавиатуры — во внутреннем сегменте (теневой DOM поля), и blur()
+     его не снимает: activeElement и :focus остаются, стиль «после blur» — тот же, что в фокусе (ложный FAIL
+     на input date/time с рамкой 2px). Тогда фокус уводится на временный невидимый элемент вне поля */
+  let sink = null;
+  if (document.activeElement === el || el.matches(':focus')) {
+    sink = document.createElement('span'); sink.tabIndex = -1; sink.setAttribute('aria-hidden', 'true');
+    for (const [k, v] of [['position', 'fixed'], ['left', '-9999px'], ['top', '0px'], ['width', '1px'], ['height', '1px'], ['overflow', 'hidden'], ['opacity', '0'], ['pointer-events', 'none']]) sink.style.setProperty(k, v, 'important');
+    document.body.appendChild(sink); sink.focus({ preventScroll: true });
+  }
+  const stuck = !!sink && (document.activeElement === el || el.matches(':focus'));
+  const base = snap(); if (sink) sink.remove(); el.focus({ preventScroll: true }); settle();
   const moved = cand.map((_, k) => props.some((p, j) => focused[k][j] !== base[k][j]));
-  if (moved[0] && shown[0]) return { sig: sig(el), changed: true, same: false, type };
+  const how = sink ? { sink: true, stuck } : {};
+  if (moved[0] && shown[0]) return { sig: sig(el), changed: true, same: false, type, ...how };
   const k = cand.findIndex(([kind], i) => i > 0 && moved[i] && shown[i]);
-  if (k > 0) return { sig: sig(el), changed: true, via: `${cand[k][0]} ${sig(cand[k][1])}`, same: false, type };
-  return { sig: sig(el), changed: false, hiddenOwn: moved[0], same: false, type };
+  if (k > 0) return { sig: sig(el), changed: true, via: `${cand[k][0]} ${sig(cand[k][1])}`, same: false, type, ...how };
+  return { sig: sig(el), changed: false, hiddenOwn: moved[0], same: false, type, ...how };
 }
 async function focusWalk(page) {
   /* остановки Tab: группа радиокнопок с одним name — одна остановка (Tab заходит в группу один раз),
@@ -989,17 +1165,68 @@ async function focusWalk(page) {
       if (!left) { focus.iframeStuck = cur.sig; break; }
       skipPress = true; continue;
     }
-    if (!cur.changed) { focus.invisible.push(cur.sig); if (cur.hiddenOwn) focus.hiddenOwn.push(cur.sig); }
+    /* blur() не снял фокус (поле даты и времени) — база снята уводом фокуса на временный элемент;
+       не ушёл и так — сравнивать не с чем: не FAIL, а «не проверить» */
+    if (cur.sink) (focus.sinkUsed = focus.sinkUsed || []).push(cur.sig);
+    if (!cur.changed && cur.stuck) (focus.unmeasured = focus.unmeasured || []).push(cur.sig);
+    else if (!cur.changed) { focus.invisible.push(cur.sig); if (cur.hiddenOwn) focus.hiddenOwn.push(cur.sig); }
     else if (cur.via) focus.via.push({ sig: cur.sig, via: cur.via });
   }
   return focus;
 }
 
+/* ---------- --selftest: стенды fixtures/a11y с ожиданиями ---------- */
+/* Каждый стенд — отдельный запуск этого же скрипта (один браузер за раз), ожидания — по строкам вердикта
+   в JSON: статус и подстроки, которые в строке есть (has) и которых нет (not). Зовётся до любых констант
+   прогона (функция поднимается), поэтому всё нужное — внутри */
+async function selftest() {
+  const CASES = [
+    { page: 'focus-date.html', viewport: 'mobile-s', expect: [
+      { line: /^фокус:/, status: 'FAIL', has: ['не видно фокуса на: input#bad, input#dNone;', 'blur() не снимал фокус'], why: 'рамка 2px по :focus-visible у полей даты и времени видна; контроль — поля без рамки' },
+    ] },
+    { page: 'hidden-text.html', viewport: 'desktop', args: ['--ignore', '.brand-mark'], expect: [
+      { line: /^мелкий текст/, status: 'OK', why: 'кегль 0 — не «мелкий 0px»; логотип и --ignore вне кегля' },
+      { line: /^скрытый текст кеглем 0/, status: 'WARN', has: ['a.phone', 'aria-label'] },
+      { line: /^контраст: проверено/, status: 'FAIL', has: ['p.control'], not: ['logo__sub', 'ТОРТЫ', 'brand-mark', 'a.phone'] },
+      { line: /^вне проверки контраста и кегля/, status: 'INFO', has: ['aria-hidden="true" — 1', 'логотип (data-a11y-logo) — 2', '--ignore «.brand-mark» — 1'] },
+    ] },
+    { page: 'cards.html', viewport: 'desktop', expect: [
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 25 из 27', 'повтор того же фона 2', '16 ниже нормы'], not: ['не измерялось'] },
+    ] },
+    { page: 'ribbon.html', viewport: 'mobile-s', expect: [
+      { line: /^контраст закреплённого текста/, status: 'FAIL', has: ['по своей подложке', 'Скидки', '#BBBBBB на #FFFFFF'], not: ['замеров 0', 'смотреть глазами'] },
+    ] },
+  ];
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'a11y-selftest-'));
+  let bad = 0, n = 0;
+  for (const c of CASES) {
+    const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'a11y', `${tag}.json`);
+    try { fs.rmSync(jf, { force: true }); } catch { /* нет */ }
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), pathToFileURL(path.join(here, 'fixtures', 'a11y', c.page)).href, '--viewport', c.viewport, '--out', out, '--tag', tag, ...(c.args || [])], { encoding: 'utf8', timeout: 300000 });
+    let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch { /* нет итога */ }
+    if (!j) { bad++; n++; console.log(`FAIL ${c.page}: нет итога (код ${r.status}) — ${String(r.stderr || r.stdout || '').trim().slice(-300)}`); continue; }
+    for (const e of c.expect) {
+      n++;
+      const ln = j.lines.find((l) => e.line.test(l.what)); const txt = ln ? `${ln.what} — ${ln.details || ''}` : '';
+      const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
+      if (miss.length) { bad++; console.log(`FAIL ${c.page} ${c.viewport} ${e.line.source}: ${miss.join('; ')}${e.why ? ` (${e.why})` : ''}\n     ${txt.slice(0, 400)}`); }
+      else console.log(`OK   ${c.page} ${c.viewport} ${e.line.source} — ${ln.status}`);
+    }
+    console.log(`     ${c.page}: ${Math.round((Date.now() - t0) / 100) / 10} с, протокол ${jf}`);
+  }
+  console.log(`\n${bad ? 'FAIL' : 'OK'}: ожиданий ${n}, не сошлось ${bad}`);
+  return bad ? 1 : 0;
+}
+
 /* ---------- прогон ---------- */
 const browser = await launch();
-let dom, focus, reveal, sc, grain = null, fx = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
+let dom, focus, reveal, sc, grain = null, fx = null, badIgnore = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
 try {
   const page = await openPage(browser, url, vp);
+  /* --ignore: неверный CSS-селектор — ошибка до замера (код 1), а не молча «ничего не исключено» */
+  if (IGNORE) { const bad = await page.evaluate((s) => { try { document.querySelector(s); return null; } catch (e) { return String(e.message || e); } }, IGNORE); if (bad) { badIgnore = bad; throw new Error('--ignore'); } }
   await forceInstantScroll(page);
   /* исходное положение видимой области — до всякой прокрутки: к нему, а не к началу страницы, её
      возвращает resetView (у dir=rtl шире экрана это scrollX −500; сдвиг видимой области при
@@ -1011,7 +1238,7 @@ try {
   reveal = await evaluateWith(page, revealInPage, null, DEPS).catch(() => null);
   if (!opt['no-grain']) grain = await grainMap(page).catch((e) => ({ error: String(e.message || e).slice(0, 200) }));
   const map = grain && grain.map && !grain.identity ? grain.map : null;
-  dom = await evaluateWith(page, domInPage, { isMobile: !!vp.isMobile, map }, DEPS);
+  dom = await evaluateWith(page, domInPage, { isMobile: !!vp.isMobile, map, ignore: IGNORE }, DEPS);
 
   /* контраст на картинках и градиентах: прячем текст, снимаем фон за ним, считаем по пикселям */
   if (sharp && dom.contrast.imgList.length) {
@@ -1101,7 +1328,10 @@ try {
   await fp.bringToFront();
   focus = await focusWalk(fp);
   await fp.close();
+} catch (e) {
+  if (!badIgnore) throw e;
 } finally { await browser.close(); }
+if (badIgnore) die(`--ignore «${IGNORE}»: неверный CSS-селектор (${badIgnore.slice(0, 160)})`);
 
 /* ---------- вердикты ---------- */
 if (dom.clippedText) console.log(`Текст за краем обрезающего блока (слайд за краем, заглушка): ${dom.clippedText} — не проверялся`);
@@ -1120,8 +1350,14 @@ const covTxt = imgContrast.coveredList.length ? `не измерены — ${img
 /* возврат видимой области перед замером закреплённого текста на картинке не удался — снимок мог лечь не под текстом */
 const vrI = viewReset.img || { resets: viewReset.resets, failed: viewReset.failed };
 const vrImg = vrI.failed ? `видимая область ${vrI.failed} раз из ${vrI.resets} не вернулась на исходное место перед замером закреплённого текста — снимок мог лечь не под текстом, смотреть глазами` : '';
+/* сколько из текста на картинке не мерилось и почему: повтор того же фона у той же подписи (не больше трёх
+   одинаковых — фон и цвет те же, что у измеренных) и предел за запуск (WARN — смотреть глазами) */
+const rep = C.imgRepeat || { n: 0, ex: [] }, over = C.imgOverLimit || 0;
+imgContrast.total = C.unknown; imgContrast.repeat = rep.n; imgContrast.overLimit = over;
+const repTxt = rep.n ? `повтор того же фона у той же подписи ${rep.n} — не мерились (фон и цвет те же, что у трёх измеренных): ${rep.ex.join(', ')}${rep.n > rep.ex.length ? ' …' : ''}` : '';
+const overTxt = over ? `упёрлись в предел ${C.imgLimit || 150} за запуск: не измерено ${over} — смотреть глазами` : '';
 if (C.unknown && imgContrast.error) L('WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): не измерен — ${imgContrast.error}`, `${C.unknown} элементов на картинке, градиенте или чужой подложке не проверены — смотреть глазами`);
-else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${C.unknown > C.imgList.length ? `, не измерялось ${C.unknown - C.imgList.length}` : ''}`, [imgContrast.failures.length ? imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ') : imgContrast.measured ? 'измеренные — не ниже нормы' : sharp ? '' : 'нет sharp — не измерено', covTxt, vrImg].filter(Boolean).join('; '));
+else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg || over ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured} из ${C.unknown}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${rep.n ? `, повтор того же фона ${rep.n}` : ''}${over ? `, сверх предела ${over}` : ''}`, [imgContrast.failures.length ? `${imgContrast.failures.length} ниже нормы: ${imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ')}${imgContrast.failures.length > 6 ? ` | и ещё ${imgContrast.failures.length - 6}` : ''}` : imgContrast.measured ? 'измеренные — не ниже нормы (по худшим 10% фона)' : sharp ? '' : 'нет sharp — не измерено', covTxt, overTxt, repTxt, vrImg].filter(Boolean).join('; '));
 if (fx && !fx.none) {
   const T = 'контраст закреплённого текста на прокрутке';
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
@@ -1148,12 +1384,16 @@ if (fx && !fx.none) {
   } else {
     const who = [...new Set(fx.items.map((it) => `${it.kind} ${it.host}`))].slice(0, 4).join(', ');
     const up = fx.results.filter((r) => r.approach === 'снизу').length;
-    const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
+    const head = `${T}: ${fx.positions.length} ${fx.positions.length === 1 ? 'высота' : fx.positions.length < 5 ? 'высоты' : 'высот'} (${fx.how}; ${fx.positions.join(', ')} px${up ? `; на ${up} — при прокрутке вверх: при прокрутке вниз текст прятался` : ''}), ${fx.items.length}${fx.total > fx.items.length ? ` из ${fx.total}` : ''} элементов (${who}), замеров ${fx.measured}${fx.byPlate ? ` (по снимку ${fx.measured - fx.byPlate}, по своей подложке ${fx.byPlate}${fx.plateAway ? `, из них ${fx.plateAway} на той высоте за краем ленты, вне окна или перекрыты — цвет свой, фон под блоком не важен` : ''})` : ''}${sk ? `; не мерились на части высот: ${sk}` : ''}`;
     if (fx.failures.length) {
-      /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над секцией … (фон под текстом светлый): a «Каталог» … 1.07:1» */
+      /* группы «высота + блок + секция»: «на 1840 px меню nav.menu над секцией … (фон под текстом светлый): a «Каталог» … 1.07:1»;
+         текст на своей подложке — своей группой: секция под блоком ему не важна */
       const groups = new Map();
-      for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
-      const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
+      for (const f of fx.failures) { const g = `на ${f.y} px${f.approach === 'снизу' ? ' (прокрутка вверх)' : ''} ${f.kind} ${f.host} ${f.plate ? '— текст на своей подложке (фон под блоком не важен)' : `над ${f.section ? `секцией ${f.section}` : 'местом вне секций'} (фон под текстом ${f.tone})`}`; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
+      const one = (f) => (f.plate
+        ? `${f.sig} «${f.text}» ${f.fg} на ${f.plateBg}${f.plate !== f.sig ? ` (подложка ${f.plate})` : ''} ${f.size}px — ${f.p10}:1 (нужно ${f.need}:1)${f.seen && f.seen !== 'виден' ? ` [на этой высоте ${f.seen}]` : ''}`
+        : `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''}${f.blend ? ` (mix-blend-mode ${f.blend})` : ''} ${f.size}px — ${f.p10}:1 (медиана ${f.median}:1, нужно ${f.need}:1)`);
+      const det = [...groups.entries()].slice(0, 4).map(([g, list]) => `${g}: ${list.slice(0, 3).map(one).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''}`).join(' | ');
       L('FAIL', head, `${det}${groups.size > 4 ? ` | и ещё ${groups.size - 4} мест` : ''}${rtlWide && fx.failures.some((f) => !f.section) ? rtlTxt : ''}${unpTxt}${vrTxt}`);
     } else if (!fx.measured) {
       /* ни одного замера только потому, что sticky на этих высотах не закреплён, — мерить нечего: OK с пометкой */
@@ -1162,7 +1402,7 @@ if (fx && !fx.none) {
       else L('WARN', head, `ни одного замера: закреплённый текст на этих высотах спрятан, за окном или снимком, перекрыт, обрезан предком или смешан режимом, который не мерится, — смотреть глазами${unpTxt}${vrTxt}`);
     }
     /* видимая область не вернулась на исходное место — снимки могли быть не там, где шапка: не OK, а WARN */
-    else { const w = fx.worst; L(vrF ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})${unpTxt}${vrTxt}`); }
+    else { const w = fx.worst; L(vrF ? 'WARN' : 'OK', head, `везде не ниже нормы; худшее — ${w.p10}:1 (нужно ${w.need}:1): ${w.sig} «${w.text}» на ${w.y} px ${w.plate ? `на своей подложке ${w.plateBg}${w.plate !== w.sig ? ` (${w.plate})` : ''}` : `над ${w.section ? `секцией ${w.section}` : 'местом вне секций'} (фон под текстом ${w.tone})`}${unpTxt}${vrTxt}`); }
   }
 }
 if (grain && grain.error) L('WARN', 'зерно поверх текста: не измерено', grain.error);
@@ -1180,6 +1420,21 @@ else if (grain && grain.layers && grain.layers.length) {
   const st = g.some((x) => x.status === 'FAIL') ? 'FAIL' : g.length ? 'WARN' : 'OK';
   L(st, `мелкий текст: проверено ${dom.smallText.checked} элементов, мельче 12px — ${g.reduce((a, x) => a + x.count, 0)}`, g.length ? g.slice(0, 5).map((x) => `${x.size}px (${x.status === 'FAIL' ? 'меньше 10' : 'меньше 12'}) ×${x.count}: ${x.examples.join(', ')}`).join(' | ') : 'везде от 12px');
 }
+/* кегль 0 — скрытый текст, а не «мелкий 0px»: приём рабочий, но хрупкий — совет, как прятать надёжнее */
+if (dom.zeroFont && dom.zeroFont.n) L('WARN', `скрытый текст кеглем 0: ${dom.zeroFont.n}`, `${dom.zeroFont.ex.join(', ')}${dom.zeroFont.n > dom.zeroFont.ex.length ? ' …' : ''} — на экране не нарисован, в контраст и кегль не входит; прятать текст для читалки надёжнее обрезкой (класс sr-only: clip: rect(0 0 0 0) или clip-path: inset(50%), коробка 1×1) или дать ссылке aria-label, а кегль 0 оставить только пробелам между блоками`);
+/* вне 1.4.3: декоративный под aria-hidden, логотип, --ignore — INFO со счётом и примерами; --ignore, который ничего не нашёл, — WARN */
+{
+  const E = dom.excluded || {}; const parts = [];
+  if (E['aria-hidden'] && E['aria-hidden'].n) parts.push(`декоративный под aria-hidden="true" — ${E['aria-hidden'].n}: ${E['aria-hidden'].ex.join(', ')}${E['aria-hidden'].n > E['aria-hidden'].ex.length ? ' …' : ''} (скрыт от читалок; WCAG 1.4.3 чистого оформления не касается)`);
+  if (E['логотип'] && E['логотип'].n) parts.push(`логотип (data-a11y-logo) — ${E['логотип'].n}: ${E['логотип'].ex.join(', ')}${E['логотип'].n > E['логотип'].ex.length ? ' …' : ''}`);
+  if (E.ignore && E.ignore.n) parts.push(`--ignore «${IGNORE}» — ${E.ignore.n}: ${E.ignore.ex.join(', ')}${E.ignore.n > E.ignore.ex.length ? ' …' : ''}`);
+  if (parts.length) L('INFO', 'вне проверки контраста и кегля (декоративный, вне 1.4.3; логотип)', parts.join(' | '));
+  /* aria-hidden на большой части текста — уже не оформление: скрытым от читалок бывает и содержимое (обёртка
+     с aria-hidden, забытая после закрытия окна) — тогда это ошибка доступности, а его контраст не мерился */
+  const ah = (E['aria-hidden'] || { n: 0 }).n, shareAh = ah / Math.max(1, ah + C.total);
+  if (ah >= 20 && shareAh >= 0.25) L('WARN', `aria-hidden="true" скрывает ${ah} текстов из ${ah + C.total} (${Math.round(shareAh * 100)}%)`, 'для оформления это много: проверить, не спрятано ли от читалок содержимое (обёртка страницы с aria-hidden, забытая после закрытия окна) — тогда это ошибка доступности, а контраст этого текста не мерился');
+  if (IGNORE && !(E.ignore && E.ignore.n)) L('WARN', `--ignore «${IGNORE}»: ничего не исключено`, dom.ignoreFound ? `селектор нашёл ${dom.ignoreFound} элементов, но видимого текста в них нет` : 'селектор ничего не нашёл на странице — опечатка или другая разметка');
+}
 L(dom.imgsNoAltCount ? 'FAIL' : 'OK', `картинки без alt: ${dom.imgsNoAltCount}`, dom.imgsNoAlt.join(', ') || `у декоративных alt="" — ${dom.decorativeEmpty}`);
 L(dom.unlabeled.length ? 'FAIL' : 'OK', `поля без подписи: ${dom.unlabeled.length}`, dom.unlabeled.join(', '));
 L(dom.nameless.length ? 'FAIL' : 'OK', `кнопки и ссылки без имени: ${dom.nameless.length}`, dom.nameless.join(', '));
@@ -1189,8 +1444,12 @@ L(dom.zoomBlocked ? 'FAIL' : 'OK', 'масштабирование', dom.zoomBlo
 L(dom.positiveTabindex ? 'WARN' : 'OK', `положительный tabindex: ${dom.positiveTabindex}`, dom.positiveTabindex ? 'ломает естественный порядок обхода' : '');
 {
   const f = focus; const short = f.visited < f.expected;
-  const st = f.invisible.length ? 'FAIL' : f.trapped || f.iframeStuck ? 'WARN' : short ? 'WARN' : f.focusables ? 'OK' : 'OK';
-  const inFrames = f.iframes.length ? `; внутри iframe (${f.iframes.slice(0, 3).join(', ')}) фокус не проверялся — чужой документ` : '';
+  const unm = f.unmeasured || [], sinks = f.sinkUsed || [];
+  const st = f.invisible.length ? 'FAIL' : f.trapped || f.iframeStuck || unm.length ? 'WARN' : short ? 'WARN' : f.focusables ? 'OK' : 'OK';
+  /* поле даты и времени: blur() не снимает фокус с внутреннего сегмента — база снята уводом фокуса */
+  const inFrames = (f.iframes.length ? `; внутри iframe (${f.iframes.slice(0, 3).join(', ')}) фокус не проверялся — чужой документ` : '')
+    + (sinks.length ? `; у ${sinks.length} (${sinks.slice(0, 4).join(', ')}) blur() не снимал фокус (поле даты и времени — фокус во внутреннем сегменте), стиль без фокуса снят уводом фокуса на временный элемент` : '')
+    + (unm.length ? `; не проверить — фокус не уходил и с временного элемента: ${unm.slice(0, 4).join(', ')} — смотреть глазами` : '');
   /* фокус на подписи, соседе или обёртке — не провал, но пусть будет видно, где он нарисован */
   const hid = f.hiddenOwn || [], via = f.via || [];
   const viaTxt = via.length ? `; у ${via.length} — на подписи, соседе или обёртке: ${via.slice(0, 4).map((v) => `${v.sig} → ${v.via}`).join(', ')}${via.length > 4 ? ` и ещё ${via.length - 4}` : ''}` : '';

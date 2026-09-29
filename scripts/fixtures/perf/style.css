@@ -1,0 +1,10 @@
+/* Стенд perf.mjs --selftest: общие стили slider.html и cls.html */
+body { margin: 0; background: #fff; color: #1d1d1f; font: 16px/1.55 system-ui, sans-serif; }
+.top { padding: 12px 24px; border-bottom: 1px solid #e5e5e5; }
+.brand { margin: 0; font-size: 14px; font-weight: 600; }
+.hero { position: relative; height: 460px; overflow: hidden; max-width: 800px; margin: 0 auto; background: #0e1b2c; }
+.hero__slide { display: block; width: 800px; max-width: 100%; height: auto; }
+main { max-width: 720px; margin: 0 auto; padding: 24px; }
+.news h1, main h1 { font-size: 28px; line-height: 1.2; margin: 0 0 16px; }
+.promo { box-sizing: border-box; height: 160px; margin: 0; padding: 24px; background: #ffe7a8; font-size: 20px; }
+.filler { height: 1800px; background: linear-gradient(#f6f6f6, #fff); }

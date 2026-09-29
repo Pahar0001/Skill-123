@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: закреплённая лента с пилюлями</title>
+<!-- Стенд a11y.mjs --selftest (ribbon, mobile-s). Закреплённая лента разделов (nav.rib, fixed) — пилюли на своей
+     непрозрачной подложке: белая #333333 на #FFFFFF, активная — белый текст на графите. Лента прокручивается
+     по горизонтали и при прокрутке страницы сама уезжает к активному разделу. Наверху видны пилюли 0–3;
+     разделы 0–3 того же тёмного фона, что и первый экран, поэтому высота замера одна — в первом светлом
+     разделе, где лента уже уехала к пилюле 4, а 0–3 за её краем: раньше «обрезан 4, замеров 0 — смотреть
+     глазами». Ждём: замеры по подложке пилюли, без «замеров 0». Последняя пилюля «Скидки» — #BBBBBB на
+     #FFFFFF (1.9:1) и наверху за краем ленты: по подложке она FAIL (контроль, что замер не пустой). -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+.rib { position: fixed; top: 0; left: 0; right: 0; z-index: 10; background: rgba(248, 248, 248, .96); }
+.rib__track { display: flex; gap: 8px; padding: 12px 16px; overflow-x: auto; scrollbar-width: none; }
+.chip { flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 20px; background: #fff; color: #333; text-decoration: none; white-space: nowrap; font-size: 15px; }
+.chip.is-active { background: #2b2b2b; color: #fff; }
+.chip--sale { color: #BBBBBB; }
+.hero { min-height: 400px; padding: 96px 16px 32px; background: #1c1c1c; color: #fff; }
+section { padding: 32px 16px; }
+.dark { min-height: 300px; background: #1c1c1c; color: #fff; }
+.light { min-height: 700px; background: #fff; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<nav class="rib" aria-label="Разделы меню"><div class="rib__track" id="track"></div></nav>
+<header class="hero"><h1>Меню</h1><p>Разделы — в ленте сверху.</p></header>
+<main id="secs"></main>
+<script>
+const names = ['Закуски', 'Салаты', 'Супы', 'Горячее', 'Гриль', 'Паста', 'Пицца', 'Гарниры', 'Соусы', 'Десерты', 'Напитки', 'Скидки'];
+const track = document.getElementById('track'), secs = document.getElementById('secs');
+names.forEach((n, i) => {
+  const a = document.createElement('a'); a.className = 'chip' + (i === names.length - 1 ? ' chip--sale' : ''); a.href = '#s' + i; a.textContent = n; track.appendChild(a);
+  const s = document.createElement('section'); s.id = 's' + i; s.className = i < 4 ? 'dark' : 'light'; s.innerHTML = `<h2>${n}</h2><p>Блюда раздела «${n}».</p>`; secs.appendChild(s);
+});
+const chips = [...track.children], list = [...secs.children];
+function sync() {
+  let cur = 0; for (const [i, s] of list.entries()) if (s.getBoundingClientRect().top < 120) cur = i;
+  chips.forEach((c, i) => c.classList.toggle('is-active', i === cur));
+  track.scrollLeft = Math.max(0, chips[cur].offsetLeft - 16);
+}
+addEventListener('scroll', sync, { passive: true }); sync();
+</script>
+</body>
+</html>
