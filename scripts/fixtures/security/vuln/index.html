@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Стенд с нарочными дырами</title>
+  <!-- сторонний счётчик: должен попасть в «счётчики и реклама» (WARN) -->
+  <script src="https://mc.yandex.ru/metrika/tag.js"></script>
+</head>
+<body>
+  <h1>Нарочно дырявый стенд</h1>
+  <!-- личные данные методом GET: имя и телефон уедут в адрес — FAIL -->
+  <form id="bad" method="get">
+    <input name="phone" placeholder="Телефон">
+    <input name="name" placeholder="Имя">
+    <button>Отправить</button>
+  </form>
+  <!-- чужой встроенный фрейм: действует в контексте страницы — WARN -->
+  <iframe src="https://ads.example.net/x" title="реклама"></iframe>
+  <!-- ключ прямо в коде страницы — FAIL; значение это официальный пример AWS -->
+  <script>var apiKey = "AKIAIOSFODNN7EXAMPLE"; /* gitleaks:allow тестовый ключ-пример */</script>
+</body>
+</html>
