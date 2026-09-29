@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — первый экран на position: fixed</title>
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest): первый экран — закреплённый слой на всё окно
+  (.hero, position: fixed), содержимое едет поверх него с отступом в высоту окна. Слой есть уже при загрузке —
+  это не «открытое меню»: --scroll без WARN «прокрутка идёт при открытом меню/диалоге».
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  .hero { position: fixed; inset: 0; z-index: 0; display: grid; place-items: center; background: linear-gradient(135deg, #1b1b1b, #3a2a30); color: #fff; }
+  .hero h1 { margin: 0; font-size: 56px; }
+  main { position: relative; z-index: 1; margin-top: 100vh; padding: 48px 32px; background: #faf8f4; }
+  .tall { height: 1400px; }
+</style>
+</head>
+<body>
+<section class="hero"><h1>Квартал вечеров</h1></section>
+<main>
+  <h2>Содержимое поверх первого экрана</h2>
+  <div class="tall"></div>
+</main>
+</body>
+</html>

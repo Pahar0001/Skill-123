@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — прокрутка с находками</title>
+<!--
+  Стенд runtime.mjs --scroll: находки, которые должны остаться после правок (node runtime.mjs --selftest).
+  Вердикт шага — WARN:
+    .narrow      неразрывная строка в коробке 120 px — «текст шире коробки» (горизонтальное письмо)
+    .cover       svg 120×120 поверх абзаца «Текст под картинкой» — «текст перекрыт картинкой: 1»
+                 отдельной строкой WARN с селектором
+    .never       блок появления (класс reveal) без скрипта — «не появились: 1 (div.never.reveal «Так и не
+                 появился»)»
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .narrow { width: 120px; padding: 8px; background: #fff; border: 1px solid #ddd; }
+  .narrow span { white-space: nowrap; }
+  .box { position: relative; margin: 32px 0; }
+  .cover { position: absolute; left: 40px; top: -20px; }
+  .tall { height: 1200px; }
+  .never { opacity: 0; transition: opacity .4s; padding: 40px; background: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Прокрутка с находками</h1>
+  <div class="narrow"><span>Неразрывнаядлиннаястрока</span></div>
+  <div class="box">
+    <p class="under">Текст под картинкой, которую положили сверху</p>
+    <svg class="cover" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" fill="#d30052"/></svg>
+  </div>
+  <div class="tall"></div>
+  <div class="never reveal">Так и не появился</div>
+  <div class="tall"></div>
+</main>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — меню на весь экран</title>
+<!--
+  Стенд runtime.mjs --click … --scroll и --nav (node runtime.mjs --selftest):
+    #burger      открывает #drawer — закреплённый слой на весь экран поверх страницы, страница под замком
+                 (body.is-locked, main скрыт — как у «Эпицентра»); --click "#burger" --scroll: WARN «прокрутка
+                 идёт при открытом меню/диалоге» (раньше молчаливый OK, а переполнение мерилось по меню)
+    --click "#burger" --click "#close" --scroll — меню закрыто, без предупреждения
+    #more        открывает маленький список (не на весь экран) — перед --scroll без предупреждения
+    nav          меню ведёт на другие страницы (якорей нет) — --nav: INFO «якорей нет», не WARN
+    --eval       длинная строка (document.body.dataset.long, 1200 знаков) — целиком в JSON steps[].details
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; height: 64px; padding: 0 16px; background: #fff; border-bottom: 1px solid #ddd; }
+  header nav { display: flex; gap: 16px; }
+  @media (max-width: 700px) { header nav { display: none; } }
+  #burger { margin-left: auto; width: 44px; height: 44px; }
+  #drawer { position: fixed; inset: 0; z-index: 20; display: none; padding: 80px 24px; background: #1b1b1b; color: #fff; }
+  #drawer.is-open { display: block; }
+  #drawer a { display: block; color: #fff; font-size: 28px; }
+  #close { position: absolute; top: 16px; right: 16px; width: 44px; height: 44px; }
+  .more { position: relative; }
+  #list { position: absolute; top: 48px; left: 0; display: none; padding: 8px 12px; background: #fff; border: 1px solid #ddd; }
+  #list.is-open { display: block; }
+  main { padding: 32px 16px; }
+  /* страница под замком, пока открыто меню: под слоем elementsFromPoint не отдаёт ничего, кроме body и html */
+  body.is-locked { overflow: hidden; }
+  body.is-locked main { visibility: hidden; }
+  .tall { height: 1600px; background: linear-gradient(#faf8f4, #efe7da); }
+</style>
+</head>
+<body data-long="">
+<header>
+  <nav><a href="/menu">Меню</a><a href="/afisha">Афиша</a><a href="/booking">Бронь</a><a href="/contacts">Контакты</a></nav>
+  <span class="more"><button id="more" type="button" aria-expanded="false">Ещё</button><span id="list">Банкеты · Кейтеринг</span></span>
+  <button id="burger" type="button" aria-expanded="false" aria-controls="drawer">☰</button>
+</header>
+<div id="drawer" role="dialog" aria-label="Меню"><button id="close" type="button">✕</button><a href="/menu">Меню</a><a href="/afisha">Афиша</a><a href="/booking">Бронь</a></div>
+<main>
+  <h1>Меню на весь экран</h1>
+  <p>Текст страницы под меню.</p>
+  <div class="tall"></div>
+</main>
+<script>
+  document.body.dataset.long = Array.from({ length: 60 }, (_, i) => `строка ${String(i + 1).padStart(2, '0')}`).join(' | ') + ' | КОНЕЦ';
+  const drawer = document.getElementById('drawer'); const burger = document.getElementById('burger');
+  burger.addEventListener('click', () => { drawer.classList.add('is-open'); document.body.classList.add('is-locked'); burger.setAttribute('aria-expanded', 'true'); });
+  document.getElementById('close').addEventListener('click', () => { drawer.classList.remove('is-open'); document.body.classList.remove('is-locked'); burger.setAttribute('aria-expanded', 'false'); });
+  const more = document.getElementById('more');
+  more.addEventListener('click', () => { const l = document.getElementById('list'); l.classList.toggle('is-open'); more.setAttribute('aria-expanded', String(l.classList.contains('is-open'))); });
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — прокрутка без находок</title>
+<!--
+  Стенд runtime.mjs --scroll: страница, на которой прокрутке находить нечего (node runtime.mjs --selftest).
+  Вердикт шага — OK; раньше здесь было три ложных WARN:
+    .tab span    закреплённая вкладка с writing-mode: vertical-rl и line-height: 1 — глифы шире строки
+                 на пару пикселей по горизонтали; раньше WARN «текст шире коробки», теперь — не находка
+                 (у вертикального письма сверяется высота, а не ширина)
+    .reveal      блок появления ниже первого экрана (IntersectionObserver) — в строке прокрутки назван
+                 селектором (классы — после прохода) и текстом: «ждали появления: 1 (section.reveal.in
+                 «Появляется при прокрутке») — не появились: 0»
+    .card__tip   подсказка при наведении ниже первого экрана (opacity 0, .card:hover .card__tip) — не
+                 «появление при прокрутке», отдельно «показываются при наведении», без WARN
+    .rail__tip   подсказки закреплённого рельса (position: fixed у предка) — после --eval с прокруткой вниз
+                 раньше «не появились: span.rail__tip ×3»
+  Строка «текст перекрыт картинкой: OK» печатается всегда — видно, что проверка шла.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 96px; }
+  .tall { height: 1200px; background: linear-gradient(#faf8f4, #efe7da); }
+  .tab { position: fixed; right: 0; top: 40%; display: flex; align-items: center; padding: 12px 6px; background: #1b1b1b; color: #fff; text-decoration: none; }
+  .tab span { writing-mode: vertical-rl; white-space: nowrap; line-height: 1; font: 600 20px/1 "Segoe UI", system-ui, sans-serif; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .4s, transform .4s; padding: 40px; background: #fff; }
+  .reveal.in { opacity: 1; transform: none; }
+  .card { position: relative; margin: 48px 0; padding: 24px; background: #fff; border: 1px solid #ddd; }
+  .card__tip { position: absolute; left: 24px; top: -44px; height: 40px; padding: 8px 12px; background: #1b1b1b; color: #fff; opacity: 0; transition: opacity .2s; }
+  .card:hover .card__tip { opacity: 1; }
+  .rail { position: fixed; left: 0; top: 120px; display: grid; gap: 8px; }
+  .rail__item { position: relative; display: block; width: 56px; height: 56px; background: #1b1b1b; }
+  .rail__tip { position: absolute; left: 64px; top: 8px; height: 40px; padding: 8px 12px; white-space: nowrap; background: #1b1b1b; color: #fff; opacity: 0; transform: translateX(-6px); transition: opacity .2s, transform .2s; }
+  .rail__item:hover .rail__tip { opacity: 1; transform: none; }
+</style>
+</head>
+<body>
+<a class="tab" href="#book"><span>Забронировать</span></a>
+<nav class="rail">
+  <a class="rail__item" href="#1"><span class="rail__tip">Ресторан · 2 этаж</span></a>
+  <a class="rail__item" href="#2"><span class="rail__tip">Караоке · 3 этаж</span></a>
+  <a class="rail__item" href="#3"><span class="rail__tip">Бильярд · 3 этаж</span></a>
+</nav>
+<main>
+  <h1>Прокрутка без находок</h1>
+  <div class="tall"></div>
+  <section class="reveal">Появляется при прокрутке</section>
+  <div class="card"><span class="card__tip">Подсказка при наведении</span>Карточка с подсказкой</div>
+  <div class="tall"></div>
+  <footer id="end">Подвал</footer>
+</main>
+<script>
+  const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — поля формы</title>
+<!--
+  Стенд runtime.mjs --type и --select (node runtime.mjs --selftest):
+    #d, #t, #dt, #m   input type=date, time, datetime-local, month внутри формы: --type "#d=2026-10-10"
+                      ставит значение (value + input/change), а не набирает клавиши по локали
+                      (раньше в поле «61010-02-20» и FAIL «маска переписывает»)
+    #dbad             type=date и значение не в формате поля («10.10.2026») — набирается клавишами, как
+                      раньше (порядок полей даты — по локали браузера): в поле 2026-10-10, OK
+    #dnone            type=date и «завтра» — не дата ни в каком виде: FAIL с подсказкой формата ГГГГ-ММ-ДД,
+                      а не «маска переписывает»
+    #venue            select внутри формы: выбор ничего на странице не меняет — OK со значением, не WARN
+    #loose            select вне формы без эффекта — WARN «после выбора ничего не изменилось», как раньше
+    #filter           select вне формы, выбор меняет текст #out — OK с изменениями DOM
+    #name             обычное текстовое поле — набор клавишами, как раньше
+-->
+<style>
+  body { margin: 0; padding: 32px; font: 16px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  form, .loose { display: grid; gap: 12px; max-width: 360px; margin-bottom: 32px; }
+  label { display: grid; gap: 4px; }
+  input, select { font: inherit; padding: 6px 8px; }
+</style>
+</head>
+<body>
+<form id="f" onsubmit="return false">
+  <label>Имя <input id="name" name="name" type="text"></label>
+  <label>Дата <input id="d" name="date" type="date"></label>
+  <label>Дата (по локали) <input id="dbad" name="date2" type="date"></label>
+  <label>Дата (не дата) <input id="dnone" name="date3" type="date"></label>
+  <label>Время <input id="t" name="time" type="time" value="19:00"></label>
+  <label>Дата и время <input id="dt" name="dt" type="datetime-local"></label>
+  <label>Месяц <input id="m" name="month" type="month"></label>
+  <label>Куда
+    <select id="venue" name="venue">
+      <option value="">Не важно</option>
+      <option value="mosty">Мосты — ресторан</option>
+      <option value="oktava">Октава — караоке-клуб</option>
+    </select>
+  </label>
+</form>
+<div class="loose">
+  <select id="loose"><option value="1">Один</option><option value="2">Два</option></select>
+  <select id="filter" onchange="document.getElementById('out').textContent = 'Показано: ' + this.value">
+    <option value="all">Все</option><option value="bar">Бары</option>
+  </select>
+  <p id="out">Показано: all</p>
+</div>
+<script>
+  /* событие change у поля даты — как у настоящей формы брони: запоминает выбранное */
+  document.getElementById('d').addEventListener('change', (e) => { document.body.dataset.date = e.target.value; });
+</script>
+</body>
+</html>
