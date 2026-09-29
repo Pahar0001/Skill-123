@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Меню и афиша — стенд «Эпицентра»</title>
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; }
+  .hero__logo, .hero__sub { display: block; }
+  /* визуально скрытое продолжение заголовка: в браузере position:absolute делает span блочным */
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .dish__credit { display: block; font-size: 11px; color: #888; }
+</style>
+</head>
+<body>
+<!-- стенд copy.mjs selftest по «Эпицентру» (epicentr-mamuka 29.09):
+     · h1 с визуально скрытым span, двоеточие в середине заголовка — не «двоеточие в конце» (в режиме адреса span
+       блочный и был отдельным прогоном: WARN copy-heading);
+     · подписи авторов фото (small.dish__credit, figcaption) и юридические строки под карточками — не повтор
+       (copy-repeat: 31 из 36 WARN на /menu); одна подпись у нескольких фото — подсказка «проверить, не один ли кадр»;
+       фотобанк в обычном абзаце подписью его не делает (заявления сверяются — второй круг 29.09);
+     · «приз за лучший номер» — условие конкурса, не пустая оценка (copy-buzz); «лучший кофе», «за лучшую цену» — оценка.
+     Числа без единиц (CC BY-SA 4.0) — не заявления. -->
+<main>
+  <h1 class="hero__h1" data-expect="">
+    <span class="hero__logo">Эпицентр</span>
+    <span class="sr">— квартал развлечений в&nbsp;Рыбинске:</span>
+    <span class="hero__sub">ресторан, караоке, бильярд, лаундж-бар</span>
+  </h1>
+
+  <section class="dishes">
+    <h2>Закуски</h2>
+    <article class="dish"><div class="dish__body"><h3>Сырная тарелка</h3><p>Три сыра, мёд и грецкий орех.</p>
+      <small class="dish__credit" data-expect="" data-expect-note="copy-repeat">Фото: KQuhen · CC BY-SA 4.0 · Wikimedia Commons</small></div></article>
+    <article class="dish"><div class="dish__body"><h3>Брускетта с томатами</h3><p>Хлеб на гриле, томаты и базилик.</p>
+      <small class="dish__credit" data-expect="">Фото: KQuhen · CC BY-SA 4.0 · Wikimedia Commons</small></div></article>
+    <article class="dish"><div class="dish__body"><h3>Чай облепиховый</h3><p>Облепиха, мёд и имбирь.</p>
+      <small class="dish__credit" data-expect="">Фото: Lachlan Hardy · CC BY 2.0 · Wikimedia Commons</small></div></article>
+    <figure><figcaption data-expect="" data-expect-note="copy-repeat">Фото: iram shehzad, бесплатная лицензия Pexels</figcaption></figure>
+    <figure><figcaption data-expect="">Фото: iram shehzad, бесплатная лицензия Pexels</figcaption></figure>
+    <p class="note" data-expect="">Чрезмерное употребление алкоголя вредит вашему здоровью.</p>
+    <p class="note" data-expect="">Чрезмерное употребление алкоголя вредит вашему здоровью.</p>
+    <p class="note" data-expect="">Внешний вид блюда может отличаться от фотографии на сайте.</p>
+    <p class="note" data-expect="">Внешний вид блюда может отличаться от фотографии на сайте.</p>
+    <!-- второй круг 29.09: подпись узнаётся по строению, а не по названию фотобанка. Фотобанк в конце обычного абзаца,
+         подпись со скидкой и «Фото: сделаем…» в small — не подписи: заявления сверяются, повтор остаётся повтором -->
+    <p data-expect="copy-unverified">Бесплатная доставка за 30 минут, фото с Unsplash.</p>
+    <figure><figcaption data-expect="copy-unverified">Фото: Иван Петров · Pexels. Скидка 20% на первый заказ.</figcaption></figure>
+    <div><small data-expect="">Фото: сделаем на память в конце вечера для каждого гостя</small></div>
+    <div><small data-expect="copy-repeat">Фото: сделаем на память в конце вечера для каждого гостя</small></div>
+  </section>
+
+  <section class="afisha">
+    <h2>Афиша</h2>
+    <p data-expect="">Свободная сцена, живой саксофон и приз залу за лучший номер вечера.</p>
+    <p data-expect="">Голосуем за лучшую песню вечера, победитель выбирает следующую.</p>
+    <p data-expect="copy-buzz">Лучший кофе к десерту.</p>
+    <p data-expect="copy-buzz">Закажите стол за лучшую цену.</p>
+    <!-- обычный текст дважды — повтор, как раньше (второй раз) -->
+    <p data-expect="">Караоке-зал открыт по пятницам и субботам до утра.</p>
+    <p data-expect="copy-repeat">Караоке-зал открыт по пятницам и субботам до утра.</p>
+  </section>
+</main>
+</body>
+</html>

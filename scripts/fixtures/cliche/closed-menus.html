@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: закрытые меню не в счёт</title>
+<!-- Стенд cliche.mjs selftest (второй круг 29.09): живой «Эпицентр» жалобу уже не воспроизводит (у .drawer теперь
+     visibility:hidden), поэтому каждый способ закрыть меню — здесь отдельной панелью с парой «залитая + контурная» на
+     первом экране. Ни одна пара не должна дать hero-two-ctas; в счёт идёт только видимая пара #ctaLive. До правки
+     обрезка формой (clip-path inset / circle / polygon, clip: rect у большой панели) в счёт шла и в master, и в копии.
+     Классы без «menu» и «nav»: такие блоки hero-two-ctas пропускает по имени, а здесь проверяется скрытость. -->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; color: #222; background: #fff; overflow-x: hidden; }
+  .btn { display: inline-block; height: 44px; line-height: 44px; padding: 0 20px; background: #1f5f8b; color: #fff; text-decoration: none; border-radius: 4px; }
+  .btn.o { background: transparent; color: #1f5f8b; border: 1px solid #1f5f8b; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+  .hero { min-height: 560px; padding: 40px; }
+  .hero h1 { font-size: 48px; margin: 0 0 24px; }
+  section { min-height: 700px; padding: 40px; }
+  /* панели поверх первого экрана: fixed на весь экран или absolute в первом экране */
+  .full { position: fixed; inset: 0; background: #f4f4f4; }
+  /* без ширины: панель шире телефона (40 + 420 > 390) раздвигает страницу, окно отъезжает (innerHeight 996 при
+     100vh = 844), и «ниже окна» на телефоне уже видно */
+  .box { position: absolute; left: 16px; right: 16px; top: 260px; background: #eee; }
+  .p-display { display: none; }
+  .p-visibility { visibility: hidden; }
+  .p-opacity { opacity: 0; }
+  .p-up { transform: translateY(-100%); }
+  .p-side { transform: translateX(100%); }
+  .p-below { top: 100vh; }
+  .p-left { left: -9999px; }
+  .p-inset { clip-path: inset(0 0 100% 0); }
+  .p-inset-side { clip-path: inset(0 0 0 100%); }
+  .p-inset50 { clip-path: inset(50%); }
+  .p-circle { clip-path: circle(0 at 100% 0); }
+  .p-ellipse { clip-path: ellipse(0 0 at 50% 50%); }
+  .p-polygon { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+  .p-rect { clip: rect(0 0 0 0); }
+  .p-height { height: 0; overflow: hidden; }
+  .p-scale { transform: scale(0); }
+</style>
+</head>
+<body>
+<div class="full p-up" id="pUp"><div class="row"><a class="btn" href="#u1">Вверх: бронь</a><a class="btn o" href="#u2">Вверх: меню</a></div></div>
+<div class="full p-side" id="pSide"><div class="row"><a class="btn" href="#s1">Вбок: бронь</a><a class="btn o" href="#s2">Вбок: меню</a></div></div>
+<div class="full p-below" id="pBelow"><div class="row"><a class="btn" href="#b1">Вниз: бронь</a><a class="btn o" href="#b2">Вниз: меню</a></div></div>
+<div class="full p-inset" id="pInset"><div class="row" style="padding:120px 40px"><a class="btn" href="#i1">Шторка: заказать</a><a class="btn o" href="#i2">Шторка: подробнее</a></div></div>
+<div class="full p-inset-side" id="pInsetSide"><div class="row" style="padding:200px 40px"><a class="btn" href="#j1">Шторка вбок: заказать</a><a class="btn o" href="#j2">Шторка вбок: подробнее</a></div></div>
+<div class="full p-circle" id="pCircle"><div class="row" style="padding:300px 40px"><a class="btn" href="#c1">Круг: заказать</a><a class="btn o" href="#c2">Круг: подробнее</a></div></div>
+<div class="full p-ellipse" id="pEllipse"><div class="row" style="padding:380px 40px"><a class="btn" href="#e1">Эллипс: заказать</a><a class="btn o" href="#e2">Эллипс: подробнее</a></div></div>
+<div class="full p-polygon" id="pPolygon"><div class="row" style="padding:460px 40px"><a class="btn" href="#g1">Многоугольник: заказать</a><a class="btn o" href="#g2">Многоугольник: подробнее</a></div></div>
+<dialog id="pDialog"><div class="row"><a class="btn" href="#d1">Окно: да</a><a class="btn o" href="#d2">Окно: нет</a></div></dialog>
+<main>
+  <div class="hero" id="hero">
+    <h1>Четыре вечера под одной крышей</h1>
+    <div class="row" id="ctaLive"><a class="btn" href="#book">Забронировать стол</a><a class="btn o" href="#menu">Смотреть меню</a></div>
+    <div class="box p-display" id="pDisplay"><div class="row"><a class="btn" href="#x1">display: да</a><a class="btn o" href="#x2">display: нет</a></div></div>
+    <div class="box p-visibility" id="pVisibility"><div class="row"><a class="btn" href="#v1">visibility: да</a><a class="btn o" href="#v2">visibility: нет</a></div></div>
+    <div class="box p-opacity" id="pOpacity"><div class="row"><a class="btn" href="#o1">opacity: да</a><a class="btn o" href="#o2">opacity: нет</a></div></div>
+    <div class="box" id="pAria" aria-hidden="true"><div class="row"><a class="btn" href="#a1" tabindex="-1">aria: да</a><a class="btn o" href="#a2" tabindex="-1">aria: нет</a></div></div>
+    <div class="box" id="pInert" inert><div class="row"><a class="btn" href="#n1">inert: да</a><a class="btn o" href="#n2">inert: нет</a></div></div>
+    <div class="box" id="pHiddenAttr" hidden><div class="row"><a class="btn" href="#h1">hidden: да</a><a class="btn o" href="#h2">hidden: нет</a></div></div>
+    <div class="box p-left" id="pLeft"><div class="row"><a class="btn" href="#l1">Влево: да</a><a class="btn o" href="#l2">Влево: нет</a></div></div>
+    <div class="box p-inset50" id="pInset50"><div class="row"><a class="btn" href="#k1">inset50: да</a><a class="btn o" href="#k2">inset50: нет</a></div></div>
+    <div class="box p-rect" id="pRect"><div class="row"><a class="btn" href="#r1">clip: да</a><a class="btn o" href="#r2">clip: нет</a></div></div>
+    <div class="box p-height" id="pHeight"><div class="row"><a class="btn" href="#t1">Высота 0: да</a><a class="btn o" href="#t2">Высота 0: нет</a></div></div>
+    <div class="box p-scale" id="pScale"><div class="row"><a class="btn" href="#z1">Масштаб 0: да</a><a class="btn o" href="#z2">Масштаб 0: нет</a></div></div>
+    <details class="box" id="pDetails"><summary>Ещё</summary><div class="row"><a class="btn" href="#q1">Раскрыть: да</a><a class="btn o" href="#q2">Раскрыть: нет</a></div></details>
+  </div>
+  <section><p>Раздел с обычным абзацем текста, чтобы страница была длиннее экрана.</p></section>
+</main>
+</body>
+</html>

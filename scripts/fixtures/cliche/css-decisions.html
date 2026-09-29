@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: обоснование с block у правил CSS</title>
+<!-- Стенд cliche.mjs selftest (второй круг 29.09): у находок из CSS (bounce-ease, hover-lift, transition-all) своего
+     элемента нет, и обоснование с block «#hero» не действовало никогда (случай opara: пружина входа первого экрана).
+     Теперь находка ведётся к элементам своего селектора:
+       · .hero__title — пружина прямо в правиле: элемент в #hero;
+       · .hero .btn — пружина через своё свойство var(--spring), объявленное в :root: элементы в #hero;
+       · @keyframes pop 50% — элемента нет: block не проверить, в причине — «page без block»;
+       · .card:hover — подъём у карточек вне #hero: не покрыт. -->
+<style>
+  :root { --spring: cubic-bezier(.34, 1.56, .64, 1); }
+  body { margin: 0; font: 16px/1.5 Georgia, serif; color: #222; background: #fff; }
+  .hero { min-height: 520px; padding: 40px; }
+  .hero__title { font-size: 48px; margin: 0 0 24px; animation: rise .9s cubic-bezier(.22, 1.18, .36, 1) both; }
+  .hero .btn { display: inline-block; height: 44px; line-height: 44px; padding: 0 20px; background: #1f5f8b; color: #fff; text-decoration: none; transition: transform .3s var(--spring); }
+  @keyframes rise { from { transform: translateY(46px); } }
+  @keyframes pop { 50% { transform: scale(1.1); animation-timing-function: cubic-bezier(.5, 1.8, .5, 1); } }
+  .cards { display: flex; gap: 16px; padding: 40px; }
+  .card { width: 200px; height: 160px; background: #f2f2f2; transition: transform .2s ease; }
+  .card:hover { transform: translateY(-4px); }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero" id="hero">
+    <h1 class="hero__title">Кофейня у вокзала</h1>
+    <a class="btn" href="#menu">Меню</a>
+  </div>
+  <section class="cards"><div class="card">Эспрессо</div><div class="card">Капучино</div><div class="card">Раф</div></section>
+</main>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: окно выбора города уводит на другую страницу</title>
+<!-- Стенд cliche.mjs selftest: как у mamuka.rest/menu — окно выбора города поверх страницы, выбор города
+     запоминается и уводит на другую страницу (hero-two.html). SITE_REWORK_DISMISS=".city li" нажимает его;
+     cliche.mjs должен открыть этот адрес заново и мерить его, а не ту страницу (movedTo в open.consent).
+     Своя черта страницы — сетка из 4 фото-карточек (photo-cards 4); у hero-two.html её нет. -->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; color: #222; background: #fff; }
+  main { padding: 40px; }
+  h1 { font-size: 48px; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 240px); gap: 16px; }
+  .card { display: block; height: 300px; color: #222; text-decoration: none; }
+  .card i { display: block; height: 220px; background: #8a6d4f linear-gradient(135deg, #8a6d4f, #3b2c1f); }
+  .card img { display: block; width: 240px; height: 220px; }
+  section { min-height: 900px; }
+  .city { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; }
+  .city ul { background: #fff; list-style: none; margin: 0; padding: 24px 32px; }
+  .city li { padding: 8px 0; cursor: pointer; font-size: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Меню</h1>
+  <section>
+    <div class="grid">
+      <a class="card" href="#1"><img alt="" width="240" height="220" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='220'%3E%3Crect width='240' height='220' fill='%238a6d4f'/%3E%3C/svg%3E"><span>Борщ</span></a>
+      <a class="card" href="#2"><img alt="" width="240" height="220" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='220'%3E%3Crect width='240' height='220' fill='%236d4f8a'/%3E%3C/svg%3E"><span>Пельмени</span></a>
+      <a class="card" href="#3"><img alt="" width="240" height="220" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='220'%3E%3Crect width='240' height='220' fill='%234f8a6d'/%3E%3C/svg%3E"><span>Блины</span></a>
+      <a class="card" href="#4"><img alt="" width="240" height="220" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='220'%3E%3Crect width='240' height='220' fill='%238a4f4f'/%3E%3C/svg%3E"><span>Сырники</span></a>
+    </div>
+  </section>
+</main>
+<script>
+  /* выбор запоминается (как cookie города у mamuka.rest); без выбора — окно, выбор уводит на другую страницу */
+  var picked = false; try { picked = localStorage.getItem('city') === 'yar'; } catch (e) {}
+  if (!picked) {
+    var box = document.createElement('div'); box.className = 'city';
+    box.innerHTML = '<ul><li>Ярославль</li><li>Рыбинск</li></ul>';
+    document.body.appendChild(box);
+    box.addEventListener('click', function (ev) {
+      if (!ev.target.closest('li')) return;
+      try { localStorage.setItem('city', 'yar'); } catch (e) {}
+      location.href = 'hero-two.html';
+    });
+  }
+</script>
+</body>
+</html>

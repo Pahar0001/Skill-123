@@ -14,15 +14,29 @@
  *   ВОПРОС              — запрет пользователя спорит с явной чертой нового донора:
  *                         спросить пользователя, а не блокировать молча.
  *
- *   node cliche.mjs <url> [--baseline <json>] [--taste [папка]] [--viewport desktop,mobile]
- *                         [--run <папка прогона>] [--decisions <json>] [--shot] [--json <файл>|-]
- *   node cliche.mjs baseline <url донора> [--out <файл.json|папка>] [--viewport desktop,mobile]
+ *   node cliche.mjs <url> [--baseline <json>[,<json>…]] [--taste [папка]] [--viewport desktop,mobile]
+ *                         [--run <папка прогона>] [--decisions <json>] [--tag <имя>] [--shot] [--json <файл>|-]
+ *   node cliche.mjs baseline <url донора> [--pages "/,/menu"] [--out <файл.json|папка>] [--viewport desktop,mobile]
  *   node cliche.mjs rules [--json]
+ *   node cliche.mjs selftest [--no-browser]        (то же: --selftest)
  *   node cliche.mjs --help
  *
  * Флаги:
  *   --baseline <json>  база: файл `cliche.mjs baseline` донора (или результат прогона сайта «до»).
  *                      Без базы — только список черт страницы, вердикт по запретам и весу 3.
+ *                      Несколько файлов — через запятую или флагом повторно: приём «есть у донора»,
+ *                      если он есть хоть в одном (страницы донора, снятые отдельно); у правила
+ *                      в пометке — страница донора, где он найден («у донора 8 на /menu»).
+ *   --pages "/,/a"     baseline: страницы донора от адреса — каждая меряется, база одна: приём есть хоть
+ *                      на одной (у правила — страница, где он сильнее); в файле pages и perPage. Без
+ *                      baseline — ошибка (код 2): страницы своего сайта — отдельными запусками с --tag.
+ *   --tag <имя>        имя прогона в файлах: <run>/cliche/cliche-<имя>.json и cliche-<имя>-<экран>.png
+ *                      (baseline — cliche-baseline-<имя>.json); без тега — cliche.json, как раньше, и
+ *                      прогоны «до» и «после» друг друга затирают. Буквы, цифры, «-», «_», «.».
+ *   --selftest         (или команда selftest) сравнение, слияние баз, обоснования, флаги — без браузера;
+ *                      стенды fixtures/cliche (скрытое и закрытые меню, заголовки на div, одна метка капсом,
+ *                      обоснования с block у правил CSS, --tag, baseline --pages) — в браузере.
+ *   --no-browser       selftest без стендов в браузере.
  *   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
  *                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste. Действуют общие запреты
  *                      (область general и старые записи без области) и запреты с областью site
@@ -38,8 +52,8 @@
  *                      базы вверх (до 3 уровней), где лежит state.json или authorship-decisions.json;
  *                      иначе runDir (lib.mjs): ~/.claude/site-rework/runs/<адрес>.
  *   --decisions <json> файл обоснований, если он не в папке прогона.
- *   --shot             снимок страницы с обводкой того, что пошло в счёт: <run>/cliche/cliche-<экран>.png
- *   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в
+ *   --shot             снимок страницы с обводкой того, что пошло в счёт: <run>/cliche/cliche[-<tag>]-<экран>.png
+ *   --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche[-<tag>].json); «-» — JSON в
  *                      stdout вместо текста.
  *   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
  *   --strict           принимается для единообразия с другими скриптами: FAIL и так даёт код 1.
@@ -67,6 +81,23 @@
  * Фото-карточки — сетка, где у ≥75% карточек картинка занимает ≥35% площади: плитка «ещё» того же размера
  *   без картинки — часть сетки. Перед замером страница проходится до низа, картинки, которые прокрутка
  *   запустила, догружаются (до 4 с); ещё не загруженная <img> считается по атрибутам width/height.
+ * Скрытое не в счёт: display и visibility (checkVisibility), закреплённое (fixed) целиком за окном — меню,
+ *   уехавшее вверх или вбок transform'ом; прочее левее или правее страницы и выше её верха; обрезанное — overflow
+ *   предков и форма clip-path (inset, circle, ellipse, polygon: прямоугольник, в который вписана форма) или clip: rect()
+ *   у себя и предков: sr-only, шторка «inset(0 0 100% 0)», меню-круг «circle(0 at 100% 0)»; ссылки, кнопки и поля под
+ *   aria-hidden="true" или inert (дубль слайда, закрытая панель). Видимое украшение под aria-hidden (огромное слово в
+ *   подвале) — в счёт: его видно. Стенды: fixtures/cliche/hidden.html, closed-menus.html (19 способов закрыть меню).
+ * Заголовок — по роли: h1–h3, [role=heading] уровня 1–3 и крупная надпись-блок (div, p, span) от max(24 px,
+ *   основной кегль × 1.15), не ссылка и не в шапке; основной кегль — больше всего знаков в абзацах от 40 знаков.
+ *   Идёт в надзаголовок (eyebrow), двоеточие (heading-colon) и section-template: у mamuka.rest нет h1–h6.
+ * Порог приёма — только у проверяемой страницы: caps-microlabel от 4 меток (меньше — «ниже порога», не в
+ *   счёт); у донора метки пишутся от одной — две метки «ПРОШЕДШИЕ» уже его язык.
+ * section-template у донора: разделов с заголовком меньше 4, но заголовки одного стиля (от 2, ≥ 75%) — «есть у
+ *   донора»; разделы не выделены (уже 90% ширины), но крупные заголовки страницы (от 28 px, кроме h1 и подвала)
+ *   одного стиля — тоже; заголовков у донора нет вовсе — «не измерено у донора» (WARN), а не «нет».
+ * Окна перед замером закрываются, как у discover (closeConsent): cookie и SITE_REWORK_DISMISS — окно выбора
+ *   города mamuka.rest иначе лежит поверх каждой страницы донора; итог — open.consent и строка «окно». Выбор в окне
+ *   увёл на другую страницу (mamuka.rest/menu → главная) — адрес открывается заново и мерится он (open.consent.movedTo).
  *
  * Tilda-донор: служебное конструктора (плашка Made on Tilda, t-mbfix, полоса T360 — IS_TILDA_SERVICE_FN) и обрезанное
  *   артбордом (заглушка «Zero Block») — вне индекса; кегли и радиусы — на экране, computed × zoom (Zero Block при
@@ -78,13 +109,22 @@
  *   FAIL — есть ЗАПРЕЩЁН; правило веса 3 «НЕТ У ДОНОРА» без записи в authorship-decisions.json;
  *          «размножено» больше ×2 у правила веса 2–3 (обоснование этого не снимает — снизить частоту);
  *   WARN — «НЕТ У ДОНОРА» веса 1–2 без записи; «размножено» у правила веса 1; ВОПРОС пользователю;
- *          нет базы (тогда правило веса 3 без записи — WARN, а не FAIL);
+ *          «не измерено у донора» без записи; нет базы (тогда правило веса 3 без записи — WARN, а не FAIL);
  *   OK   — остальное. Индекс = сумма весов правил в счёте (+ вес ещё раз за запрет) — для
  *          сравнения «до/после», сам по себе ничего не значит.
  *
  * authorship-decisions.json (в папке прогона) — правило → блок → почему:
- *   { "pill-everywhere": { "form": "кнопка донора — контурная пилюля 292×60, взята как есть" } }
- *   или список [{ "rule": "…", "block": "…", "why": "…" }]. Ключи с «_» — комментарии.
+ *   [{ "rule": "photo-cards", "page": "/", "block": "#mhDishes", "why": "сетка блюд донора с /menu" }]
+ *   page — путь страницы («/», «/menu»; список через запятую или массив; «*» — все), block — CSS-селектор блока
+ *   (находка внутри него — el.closest): обоснование снимает правило только на этих страницах и только у
+ *   находок в этих блоках; остальные находки правила — «обосновано N из M», FAIL/WARN как без обоснования.
+ *   block с кириллицей, «метка: …» или словом, которое не тег HTML («hero», «hero cards»), — подпись, не селектор.
+ *   Прежний вид { "правило": { "метка": "почему" } } (или { "метка": { "why", "page", "block" } }) и список
+ *   [{ "rule", "block": "hero", "why" }] без page и селектора — на всех страницах, как раньше.
+ *   Правила по тексту CSS (bounce-ease, hover-lift, transition-all) своего элемента не имеют: находка ведётся к
+ *   элементам селектора своего правила (у «--spring: cubic-bezier(…)» — правил с var(--spring)), блок её покрывает,
+ *   если в нём все эти элементы. Селектор ничего не нашёл (@keyframes 50%, :root) — в причине «page без block».
+ *   Селектор, которого на странице нет или который неверен, назван в причине. Ключи с «_» — комментарии.
  *   Обоснование снимает только «НЕТ У ДОНОРА». Запрет снимает только пользователь
  *   (taste.mjs add --by user --verdict accepted …).
  *
@@ -97,7 +137,8 @@
  * ширины экрана), бледный градиент linear.app (ai-palette — только насыщенные точки). Смысла он
  * не видит: подпись капсом у донора и у нас выглядят одинаково, поэтому решает сравнение с донором.
  *
- * Экспорт: RULES, MODES, measureViewport, compareResult, loadDecisions, printResult.
+ * Экспорт: RULES, MODES, measureViewport, compareResult, loadDecisions, pageMatches, mergeResults, mergeBaselines,
+ *   printResult.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -105,8 +146,10 @@ import { fileURLToPath } from 'node:url';
 import {
   launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, scrollToY, evaluateWith, hexColors,
   EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
-  EFFECTIVE_ZOOM_FN, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings,
+  EFFECTIVE_ZOOM_FN, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings, closeConsent, pagesFrom,
 } from './lib.mjs';
+/* необязательное из lib (checkOpenModal — проверка открытого окна после closeConsent): есть не во всех версиях */
+import * as LIB from './lib.mjs';
 import { tasteDir, activeBans, bansElsewhere, readJournal, baselineResult, conflictsWith, runKey } from './taste.mjs';
 /* общий словарь пустых оценок (copy-buzz) — один на cliche.mjs и copy.mjs; английские слова — здесь */
 import { buzzSource } from './copy-rules.mjs';
@@ -132,7 +175,7 @@ export const RULES = {
   'left-stripe': { w: 3, mode: 'role', t: 'цветная полоска слева у карточки' },
   'centered-hero': { w: 2, mode: 'role', t: 'первый экран по центру' },
   'hero-two-ctas': { w: 2, mode: 'role', t: 'две кнопки рядом на первом экране (залитая + контурная)' },
-  'caps-microlabel': { w: 2, mode: 'length', t: 'мелкий капс с разрядкой на подписях, ценах, подвале' },
+  'caps-microlabel': { w: 2, mode: 'length', min: 4, t: 'мелкий капс с разрядкой на подписях, ценах, подвале' },
   'pill-everywhere': { w: 2, mode: 'share', t: 'все кнопки — пилюли' },
   'uniform-radius': { w: 2, mode: 'share', t: 'одно скругление 6–20 px на всех коробках' },
   'soft-shadow': { w: 2, mode: 'role', t: 'мягкая тень «0 20 40» под карточками' },
@@ -163,20 +206,31 @@ export const MODES = {
   role: 'есть у донора или нет',
   base: 'только с базой: сравнение с донором напрямую',
 };
+/* правила по тексту CSS: своего элемента у находки нет — только селектор правила (обоснование с block — по его элементам) */
+const CSS_RULES = new Set(['hover-lift', 'transition-all', 'bounce-ease']);
 const W3 = '███', W2 = '██░', W1 = '█░░';
 const WMARK = { 3: W3, 2: W2, 1: W1 };
 
 const HELP = `cliche.mjs — шаблонность страницы числами и сравнение с донором
 
-  node cliche.mjs <url> [--baseline <json>] [--taste [папка]] [--viewport desktop,mobile]
-                        [--run <папка прогона>] [--decisions <json>] [--shot] [--json <файл>|-]
-  node cliche.mjs baseline <url донора> [--out <файл.json|папка>] [--viewport desktop,mobile]
+  node cliche.mjs <url> [--baseline <json>[,<json>…]] [--taste [папка]] [--viewport desktop,mobile]
+                        [--run <папка прогона>] [--decisions <json>] [--tag <имя>] [--shot] [--json <файл>|-]
+  node cliche.mjs baseline <url донора> [--pages "/,/menu"] [--out <файл.json|папка>] [--viewport desktop,mobile]
   node cliche.mjs rules [--json]
+  node cliche.mjs selftest [--no-browser]        (то же: --selftest)
   node cliche.mjs --help
 
 Флаги:
   --baseline <json>  база: файл «cliche.mjs baseline» донора (или результат прогона сайта «до»).
                      Без базы — только список черт страницы; вердикт по запретам и весу 3.
+                     Несколько файлов — через запятую или флагом повторно: приём «есть у донора»,
+                     если он есть хоть в одном («у донора 8 на /menu»).
+  --pages "/,/a"     baseline: страницы донора от адреса; база одна — приём есть хоть на одной
+                     странице (pages и perPage в файле). Без baseline — код 2.
+  --tag <имя>        имя прогона в файлах: cliche/cliche-<имя>.json и cliche-<имя>-<экран>.png
+                     (baseline — cliche-baseline-<имя>.json); без тега — cliche.json, как раньше.
+  --selftest         (или команда selftest) проверки без браузера и стенды fixtures/cliche.
+  --no-browser       selftest без стендов в браузере.
   --taste [папка]    запреты пользователя из журнала вкуса (taste.mjs); без папки —
                      SITE_REWORK_TASTE или ~/.claude/site-rework/taste. Действуют общие запреты и
                      запреты с областью site этого прогона (имя папки --run сверяется с полем run
@@ -190,13 +244,20 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
                      authorship-decisions.json от файла базы вверх (до 3 уровней), иначе
                      ~/.claude/site-rework/runs/<адрес>.
   --decisions <json> файл обоснований, если он не в папке прогона.
-  --shot             снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche-<экран>.png
-  --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche.json); «-» — JSON в stdout.
+  --shot             снимок с обводкой того, что пошло в счёт: <run>/cliche/cliche[-<tag>]-<экран>.png
+  --json <файл>|-    куда записать итог (по умолчанию <run>/cliche/cliche[-<tag>].json); «-» — JSON в stdout.
   --out              в режиме baseline: файл .json или папка (там cliche-baseline.json).
   --strict           как у других скриптов; FAIL и без него даёт код 1.
   --help, -h, --h    эта справка.
 
-Пометки: есть у донора · НЕТ У ДОНОРА · размножено ×N · ЗАПРЕЩЁН пользователем · ВОПРОС пользователю.
+Пометки: есть у донора · НЕТ У ДОНОРА · размножено ×N · ЗАПРЕЩЁН пользователем · ВОПРОС пользователю ·
+ниже порога (caps-microlabel меньше 4 у проверяемой страницы) · не измерено у донора (section-template).
+Скрытое не в счёт: display, visibility, закреплённое целиком за окном (закрытое меню), вне страницы,
+обрезанное overflow или формой clip-path / clip (sr-only, шторка inset(0 0 100% 0), круг circle(0));
+ссылки и кнопки под aria-hidden или inert. Видимое украшение под aria-hidden — в счёт.
+Заголовок — по роли: h1–h3, role=heading и крупная надпись на div/p от max(24 px, основной × 1.15).
+Окна (cookie, SITE_REWORK_DISMISS) перед замером закрываются, как у discover; выбор в окне увёл на
+другую страницу — адрес открывается заново («увело на … — адрес открыт заново»).
 Сравнение: декоративные приёмы (length) — частота на 10 000 px страницы, «размножено» при > ×2;
 функциональные (share) — доля внутри своего класса (пилюли среди кнопок); остальные (role) — есть
 у донора или нет; font-swapped и accent-added сверяются с базой по гарнитурам и оттенку.
@@ -204,13 +265,18 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
 Акцент — цвет действий: заливка кнопок (первый экран первым); заливок нет — цвет ссылок при
 наведении; фоны секций, шапки и подвала — не акцент. Фото-сетка — картинка у ≥75% карточек
 (плитка «ещё» без картинки — часть сетки); картинки, запущенные прокруткой, догружаются до замера.
-База версии ниже 3 снята до этих правил — пересобрать (cliche.mjs baseline).
+База версии ниже 4 снята до этих правил — пересобрать (cliche.mjs baseline … --pages).
 
 Вердикт: FAIL — ЗАПРЕЩЁН; вес 3 «НЕТ У ДОНОРА» без обоснования; «размножено» > ×2 (вес 2–3).
-         WARN — «НЕТ У ДОНОРА» веса 1–2 без обоснования; «размножено» веса 1; ВОПРОС; нет базы.
+         WARN — «НЕТ У ДОНОРА» веса 1–2 без обоснования; «размножено» веса 1; ВОПРОС;
+         «не измерено у донора»; нет базы.
          OK — остальное.
-Обоснования: <run>/authorship-decisions.json — { "правило": { "блок": "почему" } }; снимают только
-«НЕТ У ДОНОРА». Запрет снимает только пользователь (taste.mjs add --by user --verdict accepted).
+Обоснования: <run>/authorship-decisions.json — [{ "rule", "page": "/путь", "block": "#селектор", "why" }]:
+только на этих страницах и у находок в этом блоке (остальные — «обосновано N из M»); без page и
+селектора ({ "правило": { "метка": "почему" } }, block-подпись «hero») — на всех страницах. У правил
+CSS (bounce-ease, hover-lift, transition-all) блок — по элементам селектора правила; нет элементов —
+только page. Снимают только «НЕТ У ДОНОРА».
+Запрет снимает только пользователь (taste.mjs add --by user --verdict accepted).
 
 Коды выхода: 0 — OK/WARN, 1 — FAIL, 2 — неверные аргументы (нет адреса, флаг без значения,
 неизвестный экран) или файл, 3 — страница не открылась.
@@ -222,7 +288,7 @@ const HELP = `cliche.mjs — шаблонность страницы числа�
    CSS zoom (Tilda Zero Block при upscale=window: кегль и радиус на экране = computed × zoom), svc — служебное Tilda
    (плашка Made on Tilda, t-mbfix, полоса T360 — вне индекса), buzz — словарь пустых оценок (copy-rules.mjs).
    ====================================================================== */
-function inPage(RULE_IDS) {
+function inPage({ ids: RULE_IDS, blocks: BLOCK_SELS = [] }) {
   const vw = innerWidth, vh = innerHeight;
   const docH = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
   const found = Object.fromEntries(RULE_IDS.map((id) => [id, { items: [], info: {} }]));
@@ -232,20 +298,93 @@ function inPage(RULE_IDS) {
   /* кегль на экране: computed × zoom (у Tilda Zero Block при upscale=window computed мельче экрана: madeon 40 → 48 px) */
   const fpx = (el) => { const v = px(cs(el).fontSize); const z = Z(el); return z === 1 ? v : Math.round(v * z * 100) / 100; };
   const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }; };
-  /* какая доля элемента не обрезана предками с overflow hidden/clip: заглушка Tilda «Zero Block»
-     лежит в артборде шириной 0 с overflow:hidden — в DOM она есть, на экране её нет */
+  /* обрезка формой у самого элемента: clip-path inset / circle / ellipse / polygon (прямоугольник, в который вписана
+     форма) и clip: rect() у absolute и fixed — в пикселях его коробки { l, t, r, b }; null — не обрезает или форму не
+     понять (url(), path()). Закрытая панель «clip-path: inset(0 0 100% 0)», «circle(0 at 100% 0)», «inset(50%)»,
+     «clip: rect(0 0 0 0)» — пустой прямоугольник (второй круг 29.09: полноэкранная панель с двумя кнопками,
+     закрытая clip-path, шла в hero-two-ctas и в master, и в копии). Форма — в своих координатах, в окно переводится
+     при каждом вызове: страница прокручивается (ai-palette), и закреплённое едет вместе с окном */
+  const shapeM = new Map();
+  const lenOf = (v, ref) => { v = String(v || '').trim(); const k = { left: 0, top: 0, center: 50, right: 100, bottom: 100 }[v]; if (k !== undefined) return k / 100 * ref; if (/%$/.test(v)) return parseFloat(v) / 100 * ref; if (/px$/.test(v) || /^-?[\d.]+$/.test(v)) return parseFloat(v); return NaN; };
+  const splitTop = (s) => { const out = []; let d = 0, cur = ''; for (const ch of s) { if (ch === '(') d++; if (ch === ')') d--; if (ch === ',' && !d) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map((x) => x.trim()); };
+  const shapeLocal = (el) => {
+    let v = shapeM.get(el); if (v !== undefined) return v; v = null;
+    const s = cs(el); const cp = String(s.clipPath || 'none').trim(); const cl = String(s.clip || 'auto').trim();
+    if (cp !== 'none' || /^rect\(/.test(cl)) {
+      const w = el.offsetWidth || el.getBoundingClientRect().width, h = el.offsetHeight || el.getBoundingClientRect().height;
+      const m = /^(inset|circle|ellipse|polygon)\((.*)\)/.exec(cp);
+      if (m) {
+        const body = m[2].trim();
+        if (m[1] === 'inset') {
+          const a = body.split(/\s+round\s+/)[0].trim().split(/\s+/);
+          const t = lenOf(a[0], h), rt = lenOf(a[1] ?? a[0], w), b = lenOf(a[2] ?? a[0], h), l = lenOf(a[3] ?? a[1] ?? a[0], w);
+          if ([t, rt, b, l].every(Number.isFinite)) v = { l, t, r: w - rt, b: h - b };
+        } else if (m[1] === 'polygon') {
+          const pts = splitTop(body.replace(/^(nonzero|evenodd)\s*,\s*/, '')).map((p) => p.split(/\s+/)).map(([x, y]) => [lenOf(x, w), lenOf(y, h)]);
+          if (pts.length && pts.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) {
+            let A = 0; pts.forEach(([x1, y1], i) => { const [x2, y2] = pts[(i + 1) % pts.length]; A += x1 * y2 - x2 * y1; });
+            const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+            v = Math.abs(A) / 2 < 1 ? { l: 0, t: 0, r: 0, b: 0 } : { l: Math.min(...xs), t: Math.min(...ys), r: Math.max(...xs), b: Math.max(...ys) };
+          }
+        } else {
+          const [rad, at] = body.split(/\s+at\s+/);
+          const pos = String(at || 'center center').trim().split(/\s+/);
+          const cx = lenOf(pos[0], w), cy = lenOf(pos[1] ?? 'center', h);
+          const rs = String(rad || '').trim().split(/\s+/).filter(Boolean);
+          const side = (kw, ds) => (kw === 'farthest-side' ? Math.max(...ds) : kw === 'closest-side' ? Math.min(...ds) : NaN);
+          const one = (x, ref, ds) => (/side$/.test(x) ? side(x, ds) : lenOf(x, ref));
+          let rx, ry;
+          if (m[1] === 'circle') rx = ry = one(rs[0] || 'closest-side', Math.hypot(w, h) / Math.SQRT2, [cx, w - cx, cy, h - cy]);
+          else { rx = one(rs[0] || 'closest-side', w, [cx, w - cx]); ry = one(rs[1] || 'closest-side', h, [cy, h - cy]); }
+          if ([cx, cy, rx, ry].every(Number.isFinite)) v = { l: cx - rx, t: cy - ry, r: cx + rx, b: cy + ry };
+        }
+      }
+      /* clip: rect(верх, право, низ, лево) — только у absolute и fixed; auto — край коробки */
+      const c = /^rect\((.*)\)$/.exec(cl);
+      if (c && /absolute|fixed/.test(s.position)) {
+        const a = c[1].split(/\s*,\s*|\s+/); const val = (x, d) => (x === 'auto' ? d : lenOf(x, 0));
+        const q = { t: val(a[0], 0), r: val(a[1], w), b: val(a[2], h), l: val(a[3], 0) };
+        if ([q.t, q.r, q.b, q.l].every(Number.isFinite)) v = v ? { l: Math.max(v.l, q.l), t: Math.max(v.t, q.t), r: Math.min(v.r, q.r), b: Math.min(v.b, q.b) } : q;
+      }
+    }
+    shapeM.set(el, v); return v;
+  };
+  /* форма элемента в координатах окна (масштаб transform — по отношению коробки на экране к offsetWidth/Height) */
+  const shapeBox = (el) => {
+    const v = shapeLocal(el); if (!v) return null;
+    const r = el.getBoundingClientRect(); const w = el.offsetWidth || r.width, h = el.offsetHeight || r.height;
+    const kx = w ? r.width / w : 1, ky = h ? r.height / h : 1;
+    return { L: r.left + v.l * kx, T: r.top + v.t * ky, R: r.left + v.r * kx, B: r.top + v.b * ky };
+  };
+  /* какая доля элемента не обрезана: предками с overflow hidden/clip (заглушка Tilda «Zero Block» лежит в артборде
+     шириной 0 с overflow:hidden — в DOM она есть, на экране её нет) и формой clip-path / clip у себя и у предков */
   const clipShare = (el) => {
     const r = el.getBoundingClientRect(); let L = r.left, T = r.top, R = r.right, B = r.bottom;
+    const cut = (q) => { if (!q) return; L = Math.max(L, q.L); T = Math.max(T, q.T); R = Math.min(R, q.R); B = Math.min(B, q.B); };
+    cut(shapeBox(el));
     for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
       const s = getComputedStyle(p);
       if (/hidden|clip/.test(s.overflowX)) { const q = p.getBoundingClientRect(); L = Math.max(L, q.left); R = Math.min(R, q.right); }
       if (/hidden|clip/.test(s.overflowY)) { const q = p.getBoundingClientRect(); T = Math.max(T, q.top); B = Math.min(B, q.bottom); }
+      cut(shapeBox(p));
       if (s.position === 'fixed') break;
     }
     return (Math.max(0, R - L) * Math.max(0, B - T)) / Math.max(1, r.width * r.height);
   };
-  /* служебное Tilda — не язык страницы: вне индекса; обрезанное артбордом (заглушка «Zero Block») отсекает clipShare */
-  const visible = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; return eff(el) > 0.05 && clipShare(el) > 0.1 && !svc(el); };
+  /* скрытое не в счёт (epicentr-mamuka 29.09: hero-two-ctas засчитывался по ссылкам закрытого бокового меню #drawer):
+     display и visibility — через eff (checkVisibility); вне экрана — закреплённое (fixed у себя или предка) целиком
+     за окном (меню, уехавшее вверх или вбок transform'ом), остальное — левее или правее страницы и выше её верха;
+     обрезанное — clipShare: overflow предков и форма clip-path (inset, circle, ellipse, polygon) или clip: rect() у
+     себя и предков — sr-only, закрытая панель «inset(0 0 100% 0)», меню-круг «circle(0 at 100% 0)»; действия (ссылка,
+     кнопка, поле) под aria-hidden="true" или inert — не действия ни для кого (дубль слайда, закрытая панель).
+     Видимое украшение под aria-hidden (огромное слово в подвале, дубль бегущей строки) — в счёт: его видно */
+  const fixM = new Map();
+  const fixedOf = (el) => { if (!el || el === document.body || el === document.documentElement) return false; let v = fixM.get(el); if (v === undefined) { v = cs(el).position === 'fixed' || fixedOf(el.parentElement); fixM.set(el, v); } return v; };
+  const offscreen = (el, r) => (fixedOf(el) ? r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw : r.right + scrollX <= 0 || r.left + scrollX >= vw || r.bottom + scrollY <= 0);
+  const ACTION = 'a, button, input, select, textarea, summary, [role=button], [role=link]';
+  const muted = (el) => el.matches(ACTION) && !!el.closest('[aria-hidden="true"], [inert]');
+  /* служебное Tilda — не язык страницы: вне индекса; обрезанное артбордом (заглушка «Zero Block») и формой отсекает clipShare */
+  const visible = (el) => { if (!el || !el.getBoundingClientRect) return false; const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return false; if (offscreen(el, r) || muted(el)) return false; return eff(el) > 0.05 && clipShare(el) > 0.1 && !svc(el); };
   const sel = (el) => {
     const part = (e) => {
       if (e.id && !/^\d|rec\d/.test(e.id)) return '#' + CSS.escape(e.id);
@@ -256,7 +395,10 @@ function inPage(RULE_IDS) {
     for (let i = 0; e && e !== document.body && i < 3; i++) { const p = part(e); out.unshift(p); if (p.startsWith('#')) break; e = e.parentElement; }
     return out.join(' > ');
   };
-  const add = (id, el, note, extra) => { if (!found[id]) return; const r = rectOf(el); found[id].items.push({ sel: sel(el), note: note || '', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h), ...(extra || {}) }); };
+  /* блоки из authorship-decisions.json (поле block — CSS-селектор): в каких из них лежит находка (el.closest) —
+     обоснование с block снимает правило только там */
+  const blocksOf = (el) => { const out = []; BLOCK_SELS.forEach((s, i) => { try { if (el.closest(s)) out.push(i); } catch { /* неверный селектор — видно по page.blocks */ } }); return out; };
+  const add = (id, el, note, extra) => { if (!found[id]) return; const r = rectOf(el); found[id].items.push({ sel: sel(el), note: note || '', x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h), ...(BLOCK_SELS.length ? { blocks: blocksOf(el) } : {}), ...(extra || {}) }); };
   /* цвет: {r,g,b,a} из любой CSS-записи (rgb, oklch, lab, color-mix…) через hex из lib.mjs */
   const col = (css) => { const h = hex(css); if (!h) return null; return { r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16), a: h.length > 7 ? parseInt(h.slice(7, 9), 16) / 255 : 1 }; };
   const COLOR_RE = /(?:rgba?|hsla?|oklch|oklab|lab|lch|color)\([^()]*\)|#[0-9a-f]{3,8}\b/gi;
@@ -308,7 +450,24 @@ function inPage(RULE_IDS) {
   const isPill = (e) => { const r = e.getBoundingClientRect(); return radius(e) >= Math.min(r.height, r.width) / 2 - 1.5; };
 
   /* ===== типографика ===== */
-  const headings = vis.filter((e) => /^H[1-3]$/.test(e.tagName) || (fpx(e) >= 40 && textOf(e).length > 1 && textOf(e).length < 120 && ownText(e).length > 1));
+  /* заголовок по роли, а не по тегу (mamuka.rest: ни одного h1–h6, заголовки разделов — div и p 44/28 px, на телефоне
+     мельче 40 px): h1–h3, [role=heading] уровня 1–3 и крупная надпись-блок — кегль от max(24 px, основной × 1.15),
+     свой текст 2–120 знаков с буквами, не ссылка, не кнопка и не поле, не в шапке и меню, не внутри другого заголовка.
+     Основной кегль — тот, которым набрано больше всего знаков в абзацах (свой текст от 40 знаков). */
+  const bodyHist = {};
+  for (const e of vis) { const t = ownText(e); if (t.length < 40) continue; const f = Math.round(fpx(e)); if (f >= 40) continue; bodyHist[f] = (bodyHist[f] || 0) + t.length; }
+  const bodyFs = +((Object.entries(bodyHist).sort((a, b) => b[1] - a[1])[0] || ['16'])[0]);
+  const headMin = Math.max(24, Math.round(bodyFs * 1.15 * 10) / 10);
+  const HEAD_DISPLAY = /^(block|flex|grid|list-item|table-caption|flow-root|inline-block|inline-flex|inline-grid)$/;
+  const headTag = (e) => /^H[1-3]$/.test(e.tagName) || (e.getAttribute('role') === 'heading' && +(e.getAttribute('aria-level') || 2) <= 3);
+  const headLike = (e) => {
+    if (e.matches('a, button, label, input, select, textarea, option, [role=button], [role=link]') || e.closest('nav, header, button, [role=navigation], [role=button]')) return false;
+    if (e.parentElement && e.parentElement.closest('h1, h2, h3, h4, h5, h6, [role=heading]')) return false;
+    const t = ownText(e); if (t.length < 2 || t.length > 120 || !/[A-Za-zА-Яа-яЁё]{2}/.test(t)) return false;
+    return fpx(e) >= headMin && HEAD_DISPLAY.test(cs(e).display) && textOf(e).length <= 120;
+  };
+  const hs3 = vis.filter((e) => headTag(e) || headLike(e));
+  const headings = vis.filter((e) => hs3.includes(e) || (fpx(e) >= 40 && textOf(e).length > 1 && textOf(e).length < 120 && ownText(e).length > 1));
   const caps = []; let spacedAll = 0; const spacedEx = [];
   for (const e of vis) {
     const t = ownText(e); if (t.length < 2) continue;
@@ -335,13 +494,14 @@ function inPage(RULE_IDS) {
   const capsRest = caps.filter((e) => ![...eyebrowSet].some((x) => x === e || x.contains(e)));
   const ctx = (e) => (e.closest('form') ? 'форма' : e.closest('footer, .foot, [class*=footer]') ? 'подвал' : e.closest('header') ? 'шапка' : 'страница');
   found['caps-microlabel'].info = { spacedAll, spacedExamples: spacedEx, capsSmall: caps.length };
-  if (capsRest.length >= 4) {
+  /* метки пишутся все, от одной: у донора и две метки «ПРОШЕДШИЕ» — его язык. Порог приёма (RULES min: 4) — только для
+     проверяемой страницы, в compareResult: меньше 4 — «ниже порога», не в счёт */
+  if (capsRest.length >= 1) {
     const byCtx = {}; capsRest.forEach((e) => { byCtx[ctx(e)] = (byCtx[ctx(e)] || 0) + 1; });
     capsRest.forEach((e) => add('caps-microlabel', e, `«${ownText(e).slice(0, 30)}» ${fpx(e)}px ${lsEm(e).toFixed(2)}em · ${ctx(e)}`));
     found['caps-microlabel'].info.byContext = byCtx;
   }
-  const hs3 = vis.filter((e) => /^H[1-3]$/.test(e.tagName));
-  found['heading-colon'].info = { headings: hs3.length, midColon: hs3.filter((h) => /[:：]\s*\S/.test(textOf(h))).length };
+  found['heading-colon'].info = { headings: hs3.length, byRole: hs3.filter((h) => !headTag(h)).length, bodyFs, headMin, midColon: hs3.filter((h) => /[:：]\s*\S/.test(textOf(h))).length };
   for (const h of hs3) { const t = textOf(h); if (/[:：]\s*$/.test(t)) add('heading-colon', h, `«${t.slice(0, 40)}» ${h.tagName.toLowerCase()}`); }
   for (const h of vis.filter((e) => /^H[12]$/.test(e.tagName) && fpx(e) >= 40)) {
     const hs = cs(h);
@@ -567,10 +727,19 @@ function inPage(RULE_IDS) {
   let run = 1, bestRun = 1, bestEnd = 0;
   for (let i = 2; i < seq.length; i++) { if (seq[i].bg === seq[i - 2].bg && seq[i].bg !== seq[i - 1].bg) { run = run < 2 ? 3 : run + 1; if (run > bestRun) { bestRun = run; bestEnd = i; } } else run = 1; }
   if (bestRun >= 5) for (let i = bestEnd - bestRun + 1; i <= bestEnd; i++) add('alternating-bands', seq[i].s, seq[i].bg);
-  const headKey = (s) => { const sr = s.getBoundingClientRect(); const h = [...s.querySelectorAll('h1, h2, h3')].find((x) => visible(x) && x.getBoundingClientRect().top - sr.top < 320); if (!h) return null; const st = cs(h); return { h, k: [st.fontFamily.split(',')[0], Math.round(px(st.fontSize)), st.textTransform, st.fontWeight, st.textAlign].join('|') }; };
+  /* заголовок раздела — первый заголовок по роли (hs3: h1–h3 и крупная надпись на div/p) в 320 px от верха раздела */
+  const headKey = (s) => { const sr = s.getBoundingClientRect(); const h = hs3.find((x) => s.contains(x) && x.getBoundingClientRect().top - sr.top < 320); if (!h) return null; const st = cs(h); return { h, k: [st.fontFamily.split(',')[0], Math.round(px(st.fontSize)), st.textTransform, st.fontWeight, st.textAlign].join('|') }; };
   const keys = seq.map((x) => ({ ...x, hk: headKey(x.s) })).filter((x) => x.hk);
   const kc = {}; keys.forEach((x) => { kc[x.hk.k] = (kc[x.hk.k] || 0) + 1; });
   const topK = Object.entries(kc).sort((a, b) => b[1] - a[1])[0];
+  /* сколько разделов с заголовком и сколько из них одного стиля — пишется всегда: у донора с 2–3 разделами приёма
+     «≥ 4 одинаковых» нет, но язык тот же (все заголовки одного стиля) — compareResult это различает */
+  /* запасной признак для донора: крупные заголовки страницы (от 28 px, кроме h1 и подвала) одного стиля — разделы
+     mamuka.rest на компьютере уже 90% ширины (1280 из 1440) и разделами не выделяются, а заголовки у них одни */
+  const bigHeads = hs3.filter((h) => fpx(h) >= 28 && h.tagName !== 'H1' && !h.closest('footer'));
+  const hsc = {}; bigHeads.forEach((h) => { const st = cs(h); const k = [st.fontFamily.split(',')[0], Math.round(px(st.fontSize)), st.textTransform, st.fontWeight, st.textAlign].join('|'); hsc[k] = (hsc[k] || 0) + 1; });
+  const hTop = Object.entries(hsc).sort((a, b) => b[1] - a[1])[0];
+  found['section-template'].info = { sections: keys.length, top: topK ? { style: topK[0], count: topK[1] } : null, heads: { count: bigHeads.length, top: hTop ? { style: hTop[0], count: hTop[1] } : null } };
   if (topK && topK[1] >= 4) keys.filter((x) => x.hk.k === topK[0]).forEach((x) => add('section-template', x.s, `«${textOf(x.hk.h).slice(0, 30)}» ${topK[0]}`));
   /* подвал */
   const footer = document.querySelector('footer') || sections[sections.length - 1];
@@ -618,7 +787,9 @@ function inPage(RULE_IDS) {
   (bodyText.match(BUZZ) || []).slice(0, 20).forEach((w) => found['copy-buzz'].items.push({ sel: 'текст', note: w }));
   vis.filter((e) => /^([^\s.!]+\.\s){2,}[^\s.!]+\.$/.test(ownText(e))).forEach((e) => add('copy-triad', e, `«${ownText(e)}»`));
 
-  found.page = { vw, vh, docH, sections: seq.length, buttons: buttonLike.length, pills: pills.length, boxes: boxes.length, capsTotal: caps.length, spacedAll, headings: hs3.length, fonts, fine: fine.length, hoverLinks };
+  found.page = { vw, vh, docH, sections: seq.length, buttons: buttonLike.length, pills: pills.length, boxes: boxes.length, capsTotal: caps.length, spacedAll, headings: hs3.length, bodyFs, fonts, fine: fine.length, hoverLinks };
+  /* селекторы блоков из обоснований: сколько элементов нашлось (-1 — селектор неверный) */
+  if (BLOCK_SELS.length) found.page.blocks = BLOCK_SELS.map((s) => { try { return document.querySelectorAll(s).length; } catch { return -1; } });
   return found;
 }
 
@@ -635,15 +806,54 @@ function revealCandidates() {
   return out;
 }
 
-/* CSS-текст: наведение, переходы, кривые, появления */
+/* CSS-текст: наведение, переходы, кривые, появления. У находок hover-lift, transition-all, bounce-ease — { text, sel }:
+   sel — селектор правила (у пружины в своём свойстве «--spring: cubic-bezier(…)» — селекторы правил с var(--spring)),
+   по нему measureViewport находит элементы для обоснований с block */
 function cssRules(cssText) {
   const hits = { 'hover-lift': [], 'transition-all': [], 'bounce-ease': [], 'fade-up-css': [] };
   const flat = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
-  for (const m of flat.matchAll(/([^{}]*:hover[^{}]*)\{([^{}]*)\}/g)) { const t = /translateY\(\s*-(\d+(?:\.\d+)?)px/.exec(m[2]) || /translate\(\s*0(?:px)?\s*,\s*-(\d+(?:\.\d+)?)px/.exec(m[2]); if (t && +t[1] >= 2 && +t[1] <= 8) hits['hover-lift'].push(m[1].trim().slice(0, 60) + ` → −${t[1]}px`); }
-  for (const m of flat.matchAll(/([^{}]*)\{[^{}]*transition(?:-property)?\s*:\s*all\b[^{}]*\}/g)) hits['transition-all'].push(m[1].trim().slice(0, 60));
-  for (const m of flat.matchAll(/cubic-bezier\(\s*([\d.]+)\s*,\s*([\d.-]+)\s*,\s*([\d.]+)\s*,\s*([\d.-]+)\s*\)/g)) if (+m[2] > 1.05 || +m[4] > 1.05 || +m[2] < -0.05) hits['bounce-ease'].push(m[0]);
+  /* селектор правила, в котором стоит место i: ближайшая незакрытая «{» слева, текст перед ней — от «}», «{» или «;» */
+  const ruleAt = (i) => {
+    let d = 0;
+    for (let k = i - 1; k >= 0; k--) {
+      const ch = flat[k];
+      if (ch === '}') d++;
+      else if (ch === '{') { if (d) d--; else return flat.slice(Math.max(flat.lastIndexOf('}', k - 1), flat.lastIndexOf('{', k - 1), flat.lastIndexOf(';', k - 1)) + 1, k).trim(); }
+    }
+    return '';
+  };
+  for (const m of flat.matchAll(/([^{}]*:hover[^{}]*)\{([^{}]*)\}/g)) { const t = /translateY\(\s*-(\d+(?:\.\d+)?)px/.exec(m[2]) || /translate\(\s*0(?:px)?\s*,\s*-(\d+(?:\.\d+)?)px/.exec(m[2]); if (t && +t[1] >= 2 && +t[1] <= 8) hits['hover-lift'].push({ text: m[1].trim().slice(0, 60) + ` → −${t[1]}px`, sel: m[1].trim() }); }
+  for (const m of flat.matchAll(/([^{}]*)\{[^{}]*transition(?:-property)?\s*:\s*all\b[^{}]*\}/g)) hits['transition-all'].push({ text: m[1].trim().slice(0, 60), sel: m[1].trim() });
+  for (const m of flat.matchAll(/cubic-bezier\(\s*([\d.]+)\s*,\s*([\d.-]+)\s*,\s*([\d.]+)\s*,\s*([\d.-]+)\s*\)/g)) {
+    if (!(+m[2] > 1.05 || +m[4] > 1.05 || +m[2] < -0.05)) continue;
+    const decl = flat.slice(Math.max(flat.lastIndexOf(';', m.index), flat.lastIndexOf('{', m.index)) + 1, m.index);
+    const v = /^\s*(--[\w-]+)\s*:/.exec(decl);
+    let sel = ruleAt(m.index);
+    if (v) { const uses = [...flat.matchAll(new RegExp(`var\\(\\s*${v[1].replace(/[-]/g, '\\-')}(?![\\w-])`, 'g'))].map((u) => ruleAt(u.index)).filter(Boolean); if (uses.length) sel = [...new Set(uses)].join(', '); }
+    hits['bounce-ease'].push({ text: m[0], sel, via: v ? v[1] : null, kf: /^(?:from|to|[\d.]+%)(?:\s*,\s*(?:from|to|[\d.]+%))*$/i.test(sel) });
+  }
   for (const m of flat.matchAll(/([^{}]*)\{([^{}]*)\}/g)) if (/opacity\s*:\s*0\s*[;}]?/.test(m[2] + ';') && /translate(?:Y|3d)?\(\s*(?:0(?:px)?\s*,\s*)?(\d{1,2})px/.test(m[2])) hits['fade-up-css'].push(m[1].trim().slice(0, 60));
   return hits;
+}
+
+/* Находки из CSS — к элементам (в странице): у правила CSS своего элемента нет, у его селектора есть. Состояния
+   (:hover, :focus…) и псевдоэлементы снимаются; в счёт — показанные элементы, кроме html и body. Блок обоснования
+   покрывает находку, если в нём все её элементы. → [{ els, blocks }] по порядку sels; els 0 — селектор на странице
+   ничего не нашёл (@keyframes 50%, :root без var(), неверный) */
+function cssItemBlocks({ sels, blocks }) {
+  const split = (s) => { const out = []; let d = 0, cur = ''; for (const ch of String(s || '')) { if (ch === '(' || ch === '[') d++; if (ch === ')' || ch === ']') d--; if (ch === ',' && !d) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out.map((x) => x.trim()).filter(Boolean); };
+  const STATE = /::?(?:hover|focus-visible|focus-within|focus|active|visited|target|before|after|first-line|first-letter|placeholder|marker|selection|backdrop)(?![\w-])|::?-(?:webkit|moz|ms)-[\w-]+/g;
+  return sels.map((sel) => {
+    const els = new Set();
+    for (const part of split(sel)) {
+      const q = part.replace(STATE, '').trim(); if (!q || /[>+~]$/.test(q)) continue;
+      try { document.querySelectorAll(q).forEach((e) => { if (e !== document.documentElement && e !== document.body && e.getClientRects().length) els.add(e); }); } catch { /* 50% в @keyframes, неверный селектор */ }
+    }
+    const list = [...els];
+    if (!list.length) return { els: 0, blocks: [] };
+    const out = []; blocks.forEach((b, i) => { try { if (list.every((e) => e.closest(b))) out.push(i); } catch { /* неверный селектор блока — видно по page.blocks */ } });
+    return { els: list.length, blocks: out };
+  });
 }
 
 /* ленивые картинки: прокрутка запустила загрузку — ждём, пока догрузятся (не дольше ms), иначе фото-карточка
@@ -725,6 +935,66 @@ function groupAccents(raw) {
   return Object.values(groups).map((g) => ({ hex: Object.entries(g.hexes).sort((a, b) => b[1] - a[1])[0][0], hue: g.hue, count: g.count, fill: g.fill, first: g.first, hover: g.hover }))
     .sort((a, b) => (b.first - a.first) || (b.fill - a.fill) || (b.count - a.count));
 }
+/* акценты нескольких страниц (уже сгруппированные) — снова по корзинам оттенка: счёт складывается, признаки — «или» */
+function mergeAccents(list) {
+  const groups = {};
+  for (const a of list || []) {
+    const k = a.hue === null || a.hue === undefined ? 'x' : Math.round(a.hue / 30) % 12;
+    const g = groups[k] || (groups[k] = { best: a, hue: a.hue, count: 0, fill: false, first: false, hover: false });
+    g.count += a.count || 1; g.fill = g.fill || !!a.fill; g.first = g.first || !!a.first; g.hover = g.hover || !!a.hover;
+    const pr = (x) => (x.first ? 2 : 0) + (x.fill ? 1 : 0);
+    if (pr(a) > pr(g.best) || (pr(a) === pr(g.best) && (a.count || 0) > (g.best.count || 0))) g.best = a;
+  }
+  return Object.values(groups).map((g) => ({ hex: g.best.hex, hue: g.hue, count: g.count, fill: g.fill, first: g.first, hover: g.hover }))
+    .sort((a, b) => (b.first - a.first) || (b.fill - a.fill) || (b.count - a.count));
+}
+
+/**
+ * Результаты одного экрана с нескольких страниц донора (или из нескольких файлов базы) → один результат-база:
+ * приём «есть у донора», если он есть хоть на одной странице. У правила берётся страница, где приём сильнее
+ * (length — частота на 10 000 px, share — доля в классе, остальные — число; section-template без находок —
+ * больше заголовков одного стиля), её высота (docH) и адрес (from); on — страницы, где приём есть. Гарнитуры
+ * складываются (font-swapped), акценты сливаются по оттенку (accent-added).
+ */
+export function mergeResults(list) {
+  const rs = (list || []).filter((r) => r && r.rules);
+  if (rs.length <= 1) return rs[0] || null;
+  const first = rs[0];
+  const fonts = {};
+  for (const r of rs) for (const [role, m] of Object.entries((r.page && r.page.fonts) || {})) { fonts[role] = fonts[role] || {}; for (const [f, n] of Object.entries(m)) fonts[role][f] = (fonts[role][f] || 0) + n; }
+  /* сначала — сработал ли приём (доля в классе считается и без срабатывания: 4 коробки из 4 — ещё не приём),
+     потом его величина */
+  const rank = (e, mode) => (e.count > 0 ? 1e6 : 0) + (mode === 'length' ? e.per10kpx || 0 : mode === 'share' ? e.classShare || (e.info && e.info.share) || 0 : e.count || 0);
+  const tie = (e) => Math.max((e.info && e.info.top && e.info.top.count) || 0, (e.info && e.info.heads && e.info.heads.top && e.info.heads.top.count) || 0);
+  const out = { ...first, urls: [...new Set(rs.flatMap((r) => r.urls || [r.url]))], merged: rs.length, page: { ...first.page, fonts }, rules: {} };
+  for (const id of new Set(rs.flatMap((r) => Object.keys(r.rules)))) {
+    const es = rs.map((r) => ({ r, e: r.rules[id] })).filter((x) => x.e);
+    const mode = (RULES[id] || es[0].e).mode;
+    const best = es.slice().sort((a, b) => rank(b.e, mode) - rank(a.e, mode) || tie(b.e) - tie(a.e))[0];
+    const m = { ...best.e, docH: best.e.docH || (best.r.page && best.r.page.docH), from: best.e.from || best.r.url, on: [...new Set(es.filter((x) => x.e.count).flatMap((x) => x.e.on || [x.r.url]))] };
+    if (id === 'accent-added') m.info = { ...(best.e.info || {}), accents: mergeAccents(es.flatMap((x) => (x.e.info && x.e.info.accents) || [])) };
+    out.rules[id] = m;
+  }
+  return out;
+}
+
+/**
+ * Несколько файлов базы (или прогонов сайта «до») → один документ базы: экраны по имени; где имени нет —
+ * экран того же класса ширины (baselineResult). → { kind, version (наименьшая), url, urls, files, viewports }
+ */
+export function mergeBaselines(docs) {
+  if (docs.length === 1) return docs[0].json;
+  const names = [...new Set(docs.flatMap((d) => (d.json.viewports ? Object.keys(d.json.viewports) : [d.json.viewport || 'desktop'])))];
+  const viewports = {};
+  for (const vn of names) {
+    const vp = parseViewport(vn); const wide = vp && vp.width ? vp.width >= 1024 : ['desktop', 'laptop'].includes(vn);
+    const list = docs.map((d) => baselineResult(d.json, vn, vp)).filter((r) => r && r.page && ((r.page.vw || 0) >= 1024) === wide);
+    if (list.length) viewports[vn] = mergeResults(list);
+  }
+  const urls = [...new Set(Object.values(viewports).flatMap((r) => r.urls || [r.url]))];
+  return { kind: 'cliche-baseline', version: Math.min(...docs.map((d) => d.json.version || 1)), url: docs[0].json.url || urls[0], urls, files: docs.map((d) => d.file), viewports };
+}
+
 /** Акцент строкой: «#6A4EE1×1 (заливка, первый экран)». */
 const accentText = (a) => `${a.hex}×${a.count}${a.first ? ' (заливка, первый экран)' : a.fill ? ' (заливка)' : a.hover ? ' (ссылки при наведении)' : ''}`;
 /** Пометка к акценту, когда заливок не было и наводилась мышь. */
@@ -733,14 +1003,41 @@ const hoverNote = (h) => (h ? ` [насыщенной заливки у кноп
 /* ======================================================================
    Замер одного экрана: открыть, прокрутить, посчитать. Возвращает результат без сравнения.
    ====================================================================== */
-export async function measureViewport(browser, url, vpName, vp, { keepPage = false } = {}) {
+export async function measureViewport(browser, url, vpName, vp, { keepPage = false, blockSels = [] } = {}) {
   const page = await preparePage(browser, vp, {});
   const cssTexts = [];
   page.on('response', async (r) => { try { if (r.request().resourceType() === 'stylesheet' && r.ok()) cssTexts.push(await r.text()); } catch { /* тело недоступно */ } });
   try {
     await gotoRetry(page, url, { timeout: 90000 });
+    /* адрес, куда пришли (с переадресацией сервера: /menu → /menu/), — до окон: SITE_REWORK_DISMISS жмёт уже
+       waitForOverlay (lib), и сравнивать с адресом после него поздно */
+    const landed = page.url();
     await page.evaluate(() => document.fonts.ready).catch(() => {});
-    const overlay = await waitForOverlay(page, 5000);
+    /* окна согласия и выбора города (SITE_REWORK_DISMISS — как у discover и typeset): у mamuka.rest окно выбора
+       города лежит поверх всех страниц, его кнопки и метки иначе идут в базу донора. Открытое окно — после
+       closeConsent (ворота, которые он закроет, — не WARN) */
+    const overlay = await waitForOverlay(page, 5000, { modalCheck: false });
+    const consent = await closeConsent(page).catch((e) => ({ found: false, error: String(e && e.message || e).slice(0, 120) }));
+    /* выбор в окне может увести на другую страницу (mamuka.rest: «Ярославль» на /menu открывает главную, и мерилась
+       главная — 3132 px вместо 18 976) — выбор запомнен, открыть нужный адрес ещё раз */
+    const pressed = (consent && consent.found) || ((overlay && overlay.dismiss) || []).some((d) => d && d.found);
+    const bare = (u) => String(u).replace(/#.*$/, '').replace(/\/+$/, '');
+    if (pressed && bare(page.url()) === bare(landed)) await page.waitForNavigation({ timeout: 2500, waitUntil: 'domcontentloaded' }).catch(() => {});
+    if (bare(page.url()) !== bare(landed)) {
+      consent.movedTo = page.url();
+      await gotoRetry(page, url, { timeout: 90000 });
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      await waitForOverlay(page, 5000, { modalCheck: false });
+      const again = await closeConsent(page).catch(() => null);
+      if (again && again.found) consent.again = again.closed ? 'закрыто' : 'не закрылось';
+      if (bare(page.url()) !== bare(landed)) consent.again = `снова увело на ${page.url()} — мерилась она`;
+    }
+    if (typeof LIB.checkOpenModal === 'function') await LIB.checkOpenModal(page).catch(() => null);
+    /* нажатое по SITE_REWORK_DISMISS уже в waitForOverlay (lib) — closeConsent его не жмёт снова: в итог из overlay */
+    if (consent && !consent.dismiss && overlay && overlay.dismiss && overlay.dismiss.length) {
+      consent.dismiss = overlay.dismiss;
+      if (!consent.found && overlay.dismiss.some((d) => d && d.found)) Object.assign(consent, { found: true, closed: overlay.dismiss.every((d) => !d.found || d.gone || d.nav), kind: 'dismiss', pick: (overlay.dismiss.find((d) => d.found) || {}).label || null });
+    }
     await forceInstantScroll(page);
     await sleep(1200);
     const reveal = await page.evaluate(revealCandidates);
@@ -749,7 +1046,7 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
     /* картинки, которые прокрутка запустила (ленивые), — догрузить до замера сеток */
     const images = await page.evaluate(waitImagesInPage, 4000).catch(() => null);
     const inline = await page.evaluate(() => [...document.querySelectorAll('style:not([data-rw])')].map((s) => s.textContent).join('\n'));
-    const found = await evaluateWith(page, inPage, Object.keys(RULES), { eff: EFFECTIVE_OPACITY_FN, hex: HEX_FN, zoom: EFFECTIVE_ZOOM_FN, svc: IS_TILDA_SERVICE_FN, buzz: BUZZ_RE });
+    const found = await evaluateWith(page, inPage, { ids: Object.keys(RULES), blocks: blockSels }, { eff: EFFECTIVE_OPACITY_FN, hex: HEX_FN, zoom: EFFECTIVE_ZOOM_FN, svc: IS_TILDA_SERVICE_FN, buzz: BUZZ_RE });
     const css = cssRules(cssTexts.join('\n') + '\n' + inline);
     const P = found.page; delete found.page;
     const hoverLinks = P.hoverLinks || []; delete P.hoverLinks;
@@ -768,9 +1065,18 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
     A.info = { accents: groupAccents(rawAcc), ...(hover ? { hover } : {}) };
     found['fade-up-reveal'] = { items: reveal.map((r) => ({ sel: r.sel, note: `сдвиг ${r.ty}px`, y: r.y, h: r.h, w: r.w, x: r.x })), info: { cssRules: css['fade-up-css'].length, blocks: reveal.length } };
     if (reveal.length < 6 && css['fade-up-css'].length < 3) found['fade-up-reveal'].items = [];
-    for (const k of ['hover-lift', 'transition-all', 'bounce-ease']) found[k] = { items: css[k].slice(0, 30).map((s) => ({ sel: s, note: 'правило CSS' })), info: { rules: css[k].length } };
+    /* у пружины в пометке — селектор правила (где она), у hover-lift и transition-all он уже в тексте */
+    for (const k of CSS_RULES) found[k] = { items: css[k].slice(0, 30).map((x) => ({ sel: x.text, note: k === 'bounce-ease' && x.sel ? `правило CSS · ${x.kf ? '@keyframes, шаг ' : ''}${x.sel.slice(0, 70)}${x.via ? ` (через ${x.via})` : ''}` : 'правило CSS', css: x.sel || '' })), info: { rules: css[k].length } };
+    /* обоснования с block: находки из CSS — к элементам своего селектора (второй круг 29.09, случай opara: пружина входа
+       первого экрана с block «#hero» не покрывалась никогда — у правила CSS нет элемента) */
+    if (blockSels.length) {
+      const cssItems = [...CSS_RULES].flatMap((k) => found[k].items);
+      const got = cssItems.length ? await page.evaluate(cssItemBlocks, { sels: cssItems.map((i) => i.css), blocks: blockSels }).catch(() => null) : null;
+      if (got) cssItems.forEach((i, n) => { i.blocks = got[n].blocks; i.els = got[n].els; });
+    }
     const docArea = P.vw * P.docH;
-    const result = { url, viewport: vpName, date: new Date().toISOString(), page: P, open: { attempt: (page.gotoInfo || {}).attempt || 1, waitUntil: (page.gotoInfo || {}).waitUntil || 'networkidle2', overlay: overlay.overlay || null, stuck: !!sc.stuck, reachedBottom: !!sc.reachedBottom, images }, rules: {} };
+    const cons = consent && (consent.found || consent.error || consent.dismiss) ? { found: !!consent.found, closed: !!consent.closed, kind: consent.kind || null, pick: consent.pick || null, ...(consent.movedTo ? { movedTo: consent.movedTo, reopened: true, ...(consent.again ? { again: consent.again } : {}) } : {}), ...(consent.error ? { error: consent.error } : {}), ...(consent.dismiss ? { dismiss: consent.dismiss.map((d) => (d.found ? `${d.spec}: нажато` : `${d.spec}: ${d.why || 'не найдено'}`)) } : {}) } : null;
+    const result = { url, viewport: vpName, date: new Date().toISOString(), page: P, open: { attempt: (page.gotoInfo || {}).attempt || 1, waitUntil: (page.gotoInfo || {}).waitUntil || 'networkidle2', overlay: overlay.overlay || null, consent: cons, stuck: !!sc.stuck, reachedBottom: !!sc.reachedBottom, images }, rules: {} };
     for (const [id, meta] of Object.entries(RULES)) {
       const f = found[id] || { items: [], info: {} };
       const items = f.items || [];
@@ -778,6 +1084,8 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
       const kept = []; for (const r of rects) if (!kept.some((k) => r.x >= k.x - 1 && r.y >= k.y - 1 && r.x + r.w <= k.x + k.w + 1 && r.y + r.h <= k.y + k.h + 1)) kept.push(r);
       const area = kept.reduce((a, r) => a + r.w * r.h, 0);
       const entry = { weight: meta.w, mode: meta.mode, title: meta.t, count: items.length, share: +(area / docArea * 100).toFixed(1), per10kpx: +(items.length / (P.docH / 10000)).toFixed(2), items: items.slice(0, 40), info: f.info || {} };
+      /* блоки обоснований у всех находок (items режутся до 40, покрытие считается по всем) */
+      if (blockSels.length) entry.itemBlocks = items.map((i) => i.blocks || []);
       if (meta.mode === 'share') entry.classShare = (f.info && f.info.share) || 0;
       result.rules[id] = entry;
     }
@@ -797,24 +1105,65 @@ const fontTotals = (fonts) => { const tot = {}; let all = 0; for (const r of Obj
 const topFam = (roleMap) => { const e = Object.entries(roleMap || {}).sort((a, b) => b[1] - a[1]); const s = e.reduce((a, [, n]) => a + n, 0) || 1; return e.slice(0, 2).map(([f, n]) => `${f} ${Math.round(n / s * 100)}%`).join(', '); };
 const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
 
-/** Файл обоснований: { правило: { блок: почему } } или [{ rule, block, why }]. → { file, exists, map, bad } */
+/* block — CSS-селектор, если похож на него: #id, .класс, [атрибут], составной, без кириллицы; имена тегов в нём — только
+   теги HTML (main, footer, section > div). Иначе это подпись — «главная: хиты кухни», «hero», «hero cards» (старый
+   список [{ rule, block: "hero", why }] из reference/authorship.md, второй круг 29.09: «hero» считался селектором тега,
+   на странице ничего не находил, и обоснование переставало действовать), и область задаёт только page */
+const HTML_TAGS = new Set(('a abbr address article aside audio b blockquote body button canvas caption cite code dd details dialog div dl dt em '
+  + 'fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup html i iframe img input label legend li main mark menu nav ol p '
+  + 'picture pre q s section select small span strong sub summary sup svg table tbody td textarea tfoot th thead time tr u ul video').split(' '));
+const selectorLike = (s) => {
+  if (typeof s !== 'string') return false; const t = s.trim();
+  if (!t || t === '*' || /[А-Яа-яЁё]/.test(t) || !/^[#.[:*a-z]/i.test(t) || /:\s/.test(t)) return false;
+  const bare = t.replace(/\[[^\]]*\]/g, '[]').replace(/\([^)]*\)/g, '()');
+  return [...bare.matchAll(/(?:^|[\s>+~,(])([a-z][a-z0-9-]*)/gi)].every((m) => HTML_TAGS.has(m[1].toLowerCase()));
+};
+const asList = (v) => (v == null || v === '' ? null : (Array.isArray(v) ? v : String(v).split(',')).map((x) => String(x).trim()).filter(Boolean));
+
+/**
+ * Файл обоснований: { правило: { метка: почему | { why, page, block } } } или [{ rule, block, page, why }].
+ * page — путь страницы («/», «/menu»; список через запятую или массив; «*» — все), block — CSS-селектор блока
+ * (el.closest): обоснование снимает «НЕТ У ДОНОРА» только на этих страницах и только у находок в этих блоках.
+ * Без page и селектора — на всех страницах (прежний вид, ключ-метка). → { file, exists, map, bad, sels }:
+ * map[правило] = [{ block, page, sel, selIdx, why }], sels — селекторы для замера в странице.
+ */
 export function loadDecisions(file) {
-  const out = { file, exists: false, map: {}, bad: [] };
+  const out = { file, exists: false, map: {}, bad: [], sels: [] };
   if (!file || !fs.existsSync(file)) return out;
   out.exists = true;
   const j = readJson(file);
   if (!j) { out.bad.push('не читается как JSON'); return out; }
   const list = Array.isArray(j) ? j : Array.isArray(j.decisions) ? j.decisions
-    : Object.entries(j).filter(([k]) => !k.startsWith('_')).flatMap(([rule, v]) => (typeof v === 'string' ? [{ rule, block: '*', why: v }] : v && typeof v === 'object' ? Object.entries(v).filter(([b]) => !b.startsWith('_')).map(([block, why]) => ({ rule, block, why: typeof why === 'string' ? why : why && why.why })) : []));
+    : Object.entries(j).filter(([k]) => !k.startsWith('_')).flatMap(([rule, v]) => (typeof v === 'string' ? [{ rule, label: '*', why: v }] : v && typeof v === 'object' ? Object.entries(v).filter(([b]) => !b.startsWith('_')).map(([label, why]) => (typeof why === 'string' ? { rule, label, why } : { rule, label, ...(why || {}) })) : []));
   for (const d of list) {
     if (!d || !d.rule) { out.bad.push('запись без rule'); continue; }
     if (!RULES[d.rule]) { out.bad.push(`неизвестное правило ${d.rule}`); continue; }
     const why = String(d.why || '').trim();
-    if (why.length < 8) { out.bad.push(`${d.rule}/${d.block || '*'}: пустое «почему»`); continue; }
-    (out.map[d.rule] = out.map[d.rule] || []).push({ block: d.block || '*', why });
+    const name = d.block || d.label || '*';
+    if (why.length < 8) { out.bad.push(`${d.rule}/${name}: пустое «почему»`); continue; }
+    const sel = d.selector || d.sel || (selectorLike(d.block) ? String(d.block).trim() : null);
+    let selIdx = null;
+    if (sel) { selIdx = out.sels.indexOf(sel); if (selIdx < 0) { out.sels.push(sel); selIdx = out.sels.length - 1; } }
+    (out.map[d.rule] = out.map[d.rule] || []).push({ block: name, page: asList(d.page), sel, selIdx, why });
   }
   return out;
 }
+
+/* путь страницы для сверки с page обоснования: «/», «/menu»; файл — путь файла; /index.html — «/» */
+const pathKey = (u) => { let p; try { const x = new URL(u); p = x.protocol === 'file:' ? decodeURIComponent(x.pathname) : x.pathname; } catch { p = String(u).replace(/[?#].*$/, ''); } p = p.replace(/\/index\.html?$/i, '/').replace(/\/+$/, ''); return p || '/'; };
+/** Действует ли обоснование на странице url: page не задан или «*» — везде; путь — точно (у file:// — концом пути). */
+export function pageMatches(pages, url) {
+  if (!pages || !pages.length) return true;
+  const me = pathKey(url); const file = /^file:/i.test(String(url));
+  let raw = ''; try { raw = decodeURIComponent(new URL(url).pathname); } catch { /* не адрес */ }
+  return pages.some((p) => {
+    if (p === '*') return true;
+    if (/^(https?|file):/i.test(p)) return pathKey(p) === me;
+    const s = String(p).replace(/^\/+/, ''); const q = pathKey('/' + s);
+    return me === q || (file && !!s && (raw.endsWith('/' + s) || me.endsWith(q)));
+  });
+}
+const scopeText = (x) => `${x.page ? x.page.join(',') + ' ' : ''}${x.sel || (x.block && x.block !== '*' ? x.block : x.page ? '' : 'все страницы')}`.trim();
 
 /**
  * Сравнить результат экрана с базой донора, запретами и обоснованиями; дописывает в результат
@@ -845,10 +1194,16 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
 
   let index = 0;
   const banConflicts = new Set(base && bans ? conflictsWith(bans, base).map((c) => c.rule) : []);
+  /* база из нескольких страниц донора (mergeResults): у правила своя страница-источник и своя высота */
+  const onPage = (d) => (d && d.from && base && d.from !== base.url ? ` на ${pathKey(d.from)}` : '');
+  const blockCounts = (P && P.blocks) || [];
   for (const [id, e] of Object.entries(result.rules)) {
-    delete e.mark; delete e.ratio; delete e.banned; delete e.question; delete e.decision; delete e.allowed; delete e.counts; delete e.donorNote;
+    delete e.mark; delete e.ratio; delete e.banned; delete e.question; delete e.decision; delete e.decisionPartial; delete e.allowed; delete e.counts; delete e.donorNote;
     const d = base && base.rules ? base.rules[id] || { count: 0 } : null;
-    if (!e.count) { if (d && d.count) e.donorNote = `у донора есть (${d.count}), здесь нет`; continue; }
+    if (!e.count) { if (d && d.count) e.donorNote = `у донора есть (${d.count}${onPage(d)}), здесь нет`; continue; }
+    /* порог приёма — только у проверяемой страницы: две метки капсом — ещё не «мелкий капс везде» */
+    const min = (RULES[id] || {}).min;
+    if (min && e.count < min) { e.mark = 'ниже порога'; e.counts = false; e.donorNote = `меньше ${min} — приёмом не считается${d && d.count ? `; у донора ${d.count}${onPage(d)}` : ''}`; continue; }
     /* пометка относительно донора */
     if (!d) e.mark = 'без базы';
     else if (id === 'font-swapped') e.mark = 'НЕТ У ДОНОРА';
@@ -859,11 +1214,22 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
       const donorAcc = ((d.info && d.info.accents) || []).map(accentText).join(', ');
       if (!alien.length) { e.mark = 'есть у донора'; e.donorNote = `у донора: ${donorAcc}`; }
       else { e.mark = 'НЕТ У ДОНОРА'; e.donorNote = dh.length ? `у донора акцент другого цвета: ${donorAcc}` : 'у донора нет насыщенного цвета действий: ни заливки кнопок, ни ссылок при наведении, ни меток'; }
+    } else if (id === 'section-template' && !d.count) {
+      /* у донора разделов с заголовком меньше 4, но все одного стиля — язык тот же; заголовков у донора не нашлось
+         вовсе — сравнить не с чем, а не «нет» (заголовки на div считаются с 29.09, старая база их не видела) */
+      const di = d.info || {};
+      const bySec = di.sections >= 2 && di.top ? { n: di.sections, top: di.top, what: 'заголовки разделов' } : null;
+      const byHead = di.heads && di.heads.count >= 2 && di.heads.top ? { n: di.heads.count, top: di.heads.top, what: 'крупные заголовки страницы' } : null;
+      const src = [bySec, byHead].filter(Boolean).find((s) => s.top.count >= 2 && s.top.count / s.n >= 0.75);
+      if (di.sections === undefined) e.mark = 'НЕТ У ДОНОРА';
+      else if (src) { e.mark = 'есть у донора'; e.donorNote = `у донора ${src.what} одного стиля: ${src.top.count} из ${src.n}${onPage(d)} (${src.top.style})`; }
+      else if (!di.sections && !(di.heads && di.heads.count)) { e.mark = 'не измерено у донора'; e.donorNote = 'у донора не найдено ни одного заголовка раздела — сравнить не с чем'; }
+      else { e.mark = 'НЕТ У ДОНОРА'; e.donorNote = `у донора заголовков разделов ${di.sections}, одного стиля ${di.top ? di.top.count : 0}; крупных заголовков ${di.heads ? di.heads.count : 0}, одного стиля ${di.heads && di.heads.top ? di.heads.top.count : 0}`; }
     } else if (!d.count) e.mark = 'НЕТ У ДОНОРА';
     else if (e.mode === 'length') {
       const ratio = d.per10kpx ? e.per10kpx / d.per10kpx : Infinity;
       e.ratio = +ratio.toFixed(2);
-      e.donorNote = `у донора ${d.count} на ${base.page.docH} px (${d.per10kpx} на 10 000), здесь ${e.count} на ${P.docH} px (${e.per10kpx})`;
+      e.donorNote = `у донора ${d.count} на ${d.docH || base.page.docH} px${onPage(d)} (${d.per10kpx} на 10 000), здесь ${e.count} на ${P.docH} px (${e.per10kpx})`;
       e.mark = e.count > d.count && ratio > 2 ? 'размножено' : 'есть у донора';
     } else if (e.mode === 'share') {
       const di = d.info || {};
@@ -872,7 +1238,7 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
       e.donorNote = id === 'pill-everywhere' ? `пилюль среди кнопок: у донора ${Math.round(ds * 100)}% (${(d.info || {}).pills}/${(d.info || {}).buttons}), здесь ${Math.round((e.classShare || 0) * 100)}% (${e.info.pills}/${e.info.buttons})` : `доля в классе: у донора ${Math.round(ds * 100)}%, здесь ${Math.round((e.classShare || 0) * 100)}%`;
       e.mark = ratio > 2 ? 'размножено' : 'есть у донора';
     } else e.mark = 'есть у донора';
-    if (e.mark === 'есть у донора' && !e.donorNote && d) e.donorNote = `у донора ${d.count}`;
+    if (e.mark === 'есть у донора' && !e.donorNote && d) e.donorNote = `у донора ${d.count}${onPage(d)}`;
     /* запрет пользователя */
     const ban = bans && bans[id];
     if (ban) {
@@ -881,41 +1247,70 @@ export function compareResult(result, base, { bans = null, decisions = null, bas
       else if (banConflicts.has(id)) { e.question = `запрет пользователя (${ban.date}${ban.scope === 'site' ? ', только этот сайт' : ''}) «${ban.quote}» спорит с чертой донора (у донора ${d.count}) — спросить: держится ли запрет для этого донора`; warn.push(`${id}: ВОПРОС пользователю — запрет спорит с донором`); }
       else { e.banned = `ЗАПРЕЩЁН пользователем (${ban.date}${ban.block ? ', ' + ban.block : ''}${ban.scope === 'site' ? `, только прогон ${ban.run}` : ''}): «${ban.quote}»`; fail.push(`${id}: ЗАПРЕЩЁН пользователем${ban.scope === 'site' ? ` (для этого сайта)` : ''}`); }
     }
-    /* обоснование */
-    const dec = decisions && decisions.map[id];
-    if (dec && dec.length) e.decision = dec;
+    /* обоснование: действует на своих страницах (page) и только на находки в своих блоках (block — селектор) */
+    const decAll = (decisions && decisions.map[id]) || [];
+    const here = decAll.filter((x) => pageMatches(x.page, result.url));
+    if (here.some((x) => x.sel == null)) e.decision = here.filter((x) => x.sel == null);
+    else if (here.length) {
+      const blocks = e.itemBlocks || (e.items || []).map((i) => i.blocks || []);
+      const hit = (b) => here.filter((x) => b.includes(x.selIdx));
+      const covered = blocks.filter((b) => hit(b).length).length;
+      if (e.count && covered >= e.count) e.decision = here.filter((x) => blocks.some((b) => b.includes(x.selIdx)));
+      else {
+        const miss = (e.items || []).filter((i) => !hit(i.blocks || []).length).map((i) => i.sel);
+        const none = here.filter((x) => blockCounts[x.selIdx] === 0 || blockCounts[x.selIdx] === -1).map((x) => `${x.sel} ${blockCounts[x.selIdx] === -1 ? '(неверный селектор)' : '(на странице нет)'}`);
+        /* находка из CSS, у селектора которой на странице нет элемента (@keyframes, :root без var(), селектор ничего не
+           нашёл), блоком не покрывается никогда — сказать, что ей нужен page без block */
+        const noEl = CSS_RULES.has(id) ? (e.items || []).filter((i) => !(i.els > 0) && !hit(i.blocks || []).length).length : 0;
+        e.decisionPartial = { covered, total: e.count, by: here.map((x) => x.sel), uncovered: [...new Set(miss)].slice(0, 3), ...(none.length ? { notFound: none } : {}), ...(noEl ? { cssNoEl: noEl } : {}) };
+      }
+    }
     const counted = e.mark !== 'есть у донора';
     e.counts = counted || !!e.banned;
     if (counted) index += e.weight;
     if (e.banned) index += e.weight;
-    if (e.mark === 'НЕТ У ДОНОРА' && !e.decision) (e.weight >= 3 ? fail : warn).push(`${id}: вес ${e.weight}, НЕТ У ДОНОРА без обоснования`);
+    const dp = e.decisionPartial;
+    const partial = dp ? ` (обосновано ${dp.covered} из ${dp.total} — блоки ${dp.by.join(', ')}; без обоснования: ${dp.uncovered.join('; ') || '—'}${dp.notFound ? `; ${dp.notFound.join(', ')}` : ''}${dp.cssNoEl ? `; у ${dp.cssNoEl} — правило CSS без элемента на странице: block их не покроет, для них обоснование — page без block` : ''})` : '';
+    if (e.mark === 'НЕТ У ДОНОРА' && !e.decision) (e.weight >= 3 ? fail : warn).push(`${id}: вес ${e.weight}, НЕТ У ДОНОРА без обоснования${partial}`);
     if (e.mark === 'размножено') (e.weight >= 2 ? fail : warn).push(`${id}: размножено ×${e.ratio} (порог ×2)`);
-    if (e.mark === 'без базы' && e.weight >= 3 && !e.decision) warn.push(`${id}: вес 3 (без базы — сравнить не с чем)`);
+    if (e.mark === 'не измерено у донора' && !e.decision) warn.push(`${id}: вес ${e.weight}, не измерено у донора — сверить глазами или записать обоснование`);
+    if (e.mark === 'без базы' && e.weight >= 3 && !e.decision) warn.push(`${id}: вес 3 (без базы — сравнить не с чем)${partial}`);
   }
   if (!base) warn.push('нет --baseline: вердикт только по запретам и весу 3');
   else if (!baseExact) warn.push(`база снята на другом экране (${base.viewport}) — частоты и доли неточны`);
   if (result.open && result.open.stuck) warn.push('страница не прокрутилась — появления и нижние блоки недостоверны');
-  for (const w of result.warnings || []) warn.push(`свой стиль: ${w}`);
+  for (const w of result.warnings || []) warn.push(libLabel(w));
   result.index = index;
   result.reasons = { fail, warn };
   result.verdict = fail.length ? 'FAIL' : warn.length ? 'WARN' : 'OK';
   return result;
 }
 
+/* WARN из lib с подписью: открытое окно (checkOpenModal) — как есть, остальное — свой стиль не вставился (CSP) */
+const libLabel = (w) => (/^на странице открыто окно/.test(w) ? w : `свой стиль: ${w}`);
+
 /* ---------- печать ---------- */
-const ORDER = (e) => (e.banned ? 0 : e.mark === 'НЕТ У ДОНОРА' && e.weight >= 3 ? 1 : e.mark === 'размножено' ? 2 : e.question ? 3 : e.mark === 'НЕТ У ДОНОРА' ? 4 : e.mark === 'без базы' ? 5 : 6);
+const ORDER = (e) => (e.banned ? 0 : e.mark === 'НЕТ У ДОНОРА' && e.weight >= 3 ? 1 : e.mark === 'размножено' ? 2 : e.question ? 3 : e.mark === 'НЕТ У ДОНОРА' || e.mark === 'не измерено у донора' ? 4 : e.mark === 'без базы' ? 5 : 6);
 export function printResult(r, { log = console.log } = {}) {
   const P = r.page;
   log(`\nШаблонность: ${r.url} · ${r.viewport} ${P.vw}×${P.vh} · страница ${P.docH} px · секций ${P.sections}` + (r.open && r.open.attempt > 1 ? ` · открылась с ${r.open.attempt}-й попытки (${r.open.waitUntil})` : ''));
   const T = r.taste;
   const tasteLine = T ? `${T.bans.length} запрет(ов)${T.bans.length ? ' — ' + T.bans.map((id) => `${id}${T.scopes && T.scopes[id] === 'site' ? ' (только этот сайт)' : ''}`).join(', ') : ''}${T.elsewhere && T.elsewhere.length ? `; запретов других сайтов ${T.elsewhere.length} — здесь не действуют` : ''}; прогон ${T.run || '—'}` : 'не подключён';
-  log(`база: ${r.baseline ? `${r.baseline.url} (${r.baseline.viewport}${r.baseline.exact ? '' : ', ДРУГОЙ ЭКРАН'})` : 'нет'} · журнал вкуса: ${tasteLine} · обоснования: ${r.decisions ? `${r.decisions.file}${r.decisions.exists ? ` (${r.decisions.rules} правил)` : ' (файла нет)'}` : '—'}`);
-  if (r.baseline && (r.baseline.version || 0) < 3) log('      база снята версией до правки акцента и фото-сеток (кнопки Framer, наведение ссылок, плитка «ещё» в сетке) — пересобрать: cliche.mjs baseline <донор> --out <файл>');
+  const B = r.baseline;
+  const baseWhere = B ? `${B.url}${B.urls && B.urls.length > 1 ? ` + ${B.urls.filter((u) => u !== B.url).map(pathKey).join(', ')} (страниц ${B.urls.length})` : ''}` : '';
+  log(`база: ${B ? `${baseWhere} (${B.viewport}${B.exact ? '' : ', ДРУГОЙ ЭКРАН'})${B.files && B.files.length > 1 ? ` из ${B.files.length} файлов` : ''}` : 'нет'} · журнал вкуса: ${tasteLine} · обоснования: ${r.decisions ? `${r.decisions.file}${r.decisions.exists ? ` (${r.decisions.rules} правил)` : ' (файла нет)'}` : '—'}`);
+  if (B && (B.version || 0) < 3) log('      база снята версией до правки акцента и фото-сеток (кнопки Framer, наведение ссылок, плитка «ещё» в сетке) — пересобрать: cliche.mjs baseline <донор> --out <файл>');
+  else if (B && (B.version || 0) < 4) log('      база снята версией до 29.09 (скрытое в счёте, заголовки только h1–h3, мелкий капс донора от 4 меток, без окна выбора города) — пересобрать: cliche.mjs baseline <донор> --pages "/,…" --out <файл>');
+  const cons = r.open && r.open.consent;
+  if (cons && (cons.found || cons.dismiss)) log(`окно на странице: ${cons.found ? `${cons.closed ? 'закрыто' : 'НЕ закрылось'}${cons.pick ? ` («${cons.pick}»)` : ''}${cons.movedTo ? ` · увело на ${cons.movedTo} — адрес открыт заново${cons.again ? ` (окно снова: ${cons.again})` : ''}` : ''}` : 'не найдено'}${cons.dismiss ? ` · SITE_REWORK_DISMISS: ${cons.dismiss.join('; ')}` : ''}`);
   const hit = Object.entries(r.rules).filter(([, e]) => e.count).sort((a, b) => ORDER(a[1]) - ORDER(b[1]) || b[1].weight - a[1].weight || b[1].share - a[1].share);
   log(`индекс ${r.index ?? '—'} · сработало правил ${hit.length}, в счёт ${hit.filter(([, e]) => e.counts).length}\n`);
   for (const [id, e] of hit) {
     const mark = e.mark === 'размножено' ? `размножено ×${e.ratio}` : e.mark || '';
-    const tags = [mark, e.banned ? '✗ ' + e.banned : '', e.question ? '? ВОПРОС: ' + e.question : '', e.allowed || '', e.decision ? `обосновано: ${e.decision.map((x) => `${x.block} — ${x.why}`).join(' | ').slice(0, 140)}` : ''].filter(Boolean);
+    const dp = e.decisionPartial;
+    const tags = [mark, e.banned ? '✗ ' + e.banned : '', e.question ? '? ВОПРОС: ' + e.question : '', e.allowed || '',
+      e.decision ? `обосновано: ${e.decision.map((x) => `${scopeText(x) ? scopeText(x) + ' ' : ''}— ${x.why}`).join(' | ').slice(0, 160)}` : '',
+      dp ? `обосновано ${dp.covered} из ${dp.total} (${dp.by.join(', ')})${dp.notFound ? ` · ${dp.notFound.join(', ')}` : ''}${dp.cssNoEl ? ` · без элемента ${dp.cssNoEl} (правило CSS) — для них page без block` : ''}` : ''].filter(Boolean);
     log(`${e.counts ? WMARK[e.weight] : '···'} ${id.padEnd(20)} ${String(e.count).padStart(3)} шт ${String(e.share).padStart(5)}% стр.  ${tags.join(' · ')}`);
     log(`    ${e.title}` + (e.donorNote ? `  [${e.donorNote}]` : ''));
     const uniq = []; for (const i of e.items) { const s = `${i.sel}${i.note ? ' — ' + i.note : ''}`; if (!uniq.includes(s)) uniq.push(s); }
@@ -957,11 +1352,182 @@ async function shotMarks(page, r, file) {
 }
 
 /* ======================================================================
+   selftest: сравнение, слияние баз, обоснования и флаги — без браузера; стенды fixtures/cliche — в браузере
+   ====================================================================== */
+async function selftest(opt = {}) {
+  const SELF = fileURLToPath(import.meta.url);
+  const FIX = path.join(path.dirname(SELF), 'fixtures', 'cliche');
+  const os = await import('node:os');
+  const { spawnSync } = await import('node:child_process');
+  const { pathToFileURL } = await import('node:url');
+  let n = 0, bad = 0;
+  const say = (ok, msg) => { n++; if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${msg}`); };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cliche-selftest-'));
+  /* синтетический результат: все правила с нулём, over — { правило: { count, info, items, itemBlocks } } */
+  const fake = (url, over = {}, page = {}) => {
+    const P = { vw: 1440, vh: 900, docH: 5000, sections: 5, fonts: { heading: {}, text: {}, button: {}, small: {} }, ...page };
+    return { url, viewport: P.vw >= 1024 ? 'desktop' : 'mobile', page: P, open: {}, rules: Object.fromEntries(Object.entries(RULES).map(([id, m]) => {
+      const o = over[id] || {}; const count = o.count || 0;
+      const items = o.items || Array.from({ length: count }, (_, i) => ({ sel: `div.item${i}`, note: '' }));
+      return [id, { weight: m.w, mode: m.mode, title: m.t, count, share: 0, per10kpx: +(count / (P.docH / 10000)).toFixed(2), items, info: o.info || {}, ...(o.itemBlocks ? { itemBlocks: o.itemBlocks } : {}), ...(m.mode === 'share' ? { classShare: o.classShare || 0 } : {}) }];
+    })) };
+  };
+  const decFrom = (obj) => { const f = path.join(tmp, `dec-${n}.json`); fs.writeFileSync(f, JSON.stringify(obj)); return loadDecisions(f); };
+
+  /* 1. порог caps-microlabel — только у проверяемой страницы */
+  {
+    const r = compareResult(fake('http://s/', { 'caps-microlabel': { count: 2 } }), null);
+    const e = r.rules['caps-microlabel'];
+    say(e.mark === 'ниже порога' && e.counts === false && r.index === 0, `caps-microlabel: 2 метки у проверяемой страницы — «ниже порога», не в счёт (пометка ${e.mark}, индекс ${r.index})`);
+    const donor = fake('https://donor/', { 'caps-microlabel': { count: 2 } }, { vw: 390, vh: 844, docH: 3396 });
+    const r2 = compareResult(fake('http://s/', { 'caps-microlabel': { count: 7 } }, { vw: 390, vh: 844, docH: 7108 }), donor);
+    say(r2.rules['caps-microlabel'].mark === 'есть у донора', `caps-microlabel: у донора 2 метки на 3396 px, у нас 7 на 7108 px — «есть у донора» (${r2.rules['caps-microlabel'].mark}; ${r2.rules['caps-microlabel'].donorNote})`);
+  }
+  /* 2. section-template: язык донора — все заголовки разделов одного стиля, даже если разделов меньше 4 */
+  {
+    const site = () => fake('http://s/', { 'section-template': { count: 4, info: { sections: 4, top: { style: 'IBM Plex Serif|44|none|500|start', count: 4 } } } });
+    const same = compareResult(site(), fake('https://donor/', { 'section-template': { info: { sections: 2, top: { style: 'IBM Plex Serif|44|none|500|start', count: 2 } } } }));
+    const none = compareResult(site(), fake('https://donor/', { 'section-template': { info: { sections: 0, top: null } } }));
+    const old = compareResult(site(), fake('https://donor/', {}));
+    say(same.rules['section-template'].mark === 'есть у донора' && none.rules['section-template'].mark === 'не измерено у донора' && none.reasons.warn.some((w) => /не измерено у донора/.test(w)) && old.rules['section-template'].mark === 'НЕТ У ДОНОРА',
+      `section-template: донор 2 из 2 одного стиля — «${same.rules['section-template'].mark}»; заголовков у донора 0 — «${none.rules['section-template'].mark}» и WARN; старая база без info — «${old.rules['section-template'].mark}»`);
+  }
+  /* 3. база с нескольких страниц: приём есть хоть на одной — «есть у донора», с пометкой страницы */
+  {
+    const home = fake('https://donor/', { eyebrow: { count: 1 } }, { docH: 3132, fonts: { heading: { 'IBM Plex Serif': 100 }, text: {}, button: {}, small: {} } });
+    const menu = fake('https://donor/menu', { 'photo-cards': { count: 8 } }, { docH: 6000, fonts: { heading: {}, text: { 'Roboto Slab': 300 }, button: {}, small: {} } });
+    const m = mergeResults([home, menu]);
+    const r = compareResult(fake('http://s/', { 'photo-cards': { count: 12 }, eyebrow: { count: 1 } }), m);
+    say(m.rules['photo-cards'].count === 8 && m.rules['photo-cards'].from === 'https://donor/menu' && m.urls.length === 2 && m.page.fonts.text['Roboto Slab'] === 300 && r.rules['photo-cards'].mark === 'есть у донора' && /\/menu/.test(r.rules['photo-cards'].donorNote) && r.rules.eyebrow.mark === 'есть у донора',
+      `mergeResults: фото-сетка с /menu донора — «${r.rules['photo-cards'].mark}» [${r.rules['photo-cards'].donorNote}], надзаголовок с главной — «${r.rules.eyebrow.mark}», гарнитуры сложены`);
+    /* доля в классе считается и без срабатывания: 4 коробки r6 из 4 на главной (share 1, приёма нет) не должны
+       перебить 120 из 120 на /menu (mamuka.rest, телефон) */
+    const mr = mergeResults([fake('https://donor/', { 'uniform-radius': { count: 0, classShare: 1 } }), fake('https://donor/menu', { 'uniform-radius': { count: 120, classShare: 1 } })]);
+    say(mr.rules['uniform-radius'].count === 120 && mr.rules['uniform-radius'].from === 'https://donor/menu', `mergeResults, режим share: сработавший приём (/menu, 120) главнее доли без срабатывания (главная, 4 из 4) — count ${mr.rules['uniform-radius'].count}`);
+    const heads = compareResult(fake('http://s/', { 'section-template': { count: 4, info: { sections: 4, top: { style: 'A|44|none|500|start', count: 4 } } } }), fake('https://donor/', { 'section-template': { info: { sections: 1, top: { style: 'A|44|none|500|start', count: 1 }, heads: { count: 2, top: { style: 'A|44|none|500|start', count: 2 } } } } }));
+    say(heads.rules['section-template'].mark === 'есть у донора' && /крупные заголовки/.test(heads.rules['section-template'].donorNote), `section-template: разделы донора не выделены (1), но крупные заголовки одного стиля 2 из 2 — «${heads.rules['section-template'].mark}»`);
+    const docs = [{ json: { kind: 'cliche-baseline', version: 4, url: 'https://donor/', viewports: { desktop: home } }, file: 'a.json' }, { json: { kind: 'cliche-baseline', version: 3, url: 'https://donor/menu', viewports: { desktop: menu } }, file: 'b.json' }];
+    const mb = mergeBaselines(docs);
+    say(mb.version === 3 && mb.viewports.desktop.rules['photo-cards'].count === 8 && mb.urls.length === 2 && mb.files.length === 2, `mergeBaselines: два файла базы — один документ (версия — наименьшая ${mb.version}, страниц ${mb.urls.length})`);
+  }
+  /* 4. обоснования: page и block снимают правило только там */
+  {
+    const dec = decFrom([{ rule: 'eyebrow', page: '/', block: '#hero', why: 'надзаголовок донора над первым заголовком' }]);
+    say(dec.sels.length === 1 && dec.map.eyebrow[0].sel === '#hero' && dec.map.eyebrow[0].page[0] === '/', `loadDecisions: [{ rule, page, block }] — селектор ${dec.map.eyebrow[0].sel}, страница ${dec.map.eyebrow[0].page}`);
+    const one = compareResult(fake('http://s/', { eyebrow: { count: 2, itemBlocks: [[0], []] } }), fake('https://donor/', {}), { decisions: dec });
+    const all = compareResult(fake('http://s/', { eyebrow: { count: 2, itemBlocks: [[0], [0]] } }), fake('https://donor/', {}), { decisions: dec });
+    const other = compareResult(fake('http://s/menu', { eyebrow: { count: 1, itemBlocks: [[0]] } }), fake('https://donor/', {}), { decisions: dec });
+    say(one.verdict === 'FAIL' && one.reasons.fail.some((x) => /обосновано 1 из 2/.test(x)) && all.verdict !== 'FAIL' && !!all.rules.eyebrow.decision && other.verdict === 'FAIL' && !other.rules.eyebrow.decision,
+      `block/page: обосновано 1 из 2 — FAIL (${(one.reasons.fail[0] || '').slice(0, 90)}…); оба в #hero — снято; на /menu обоснование для «/» не действует`);
+    const legacy = decFrom({ eyebrow: { 'главная: надзаголовок': 'как у донора: один надзаголовок на страницу' } });
+    const lg = compareResult(fake('http://s/menu', { eyebrow: { count: 1 } }), fake('https://donor/', {}), { decisions: legacy });
+    say(!legacy.sels.length && !!lg.rules.eyebrow.decision && lg.verdict !== 'FAIL', 'прежний вид { правило: { метка: почему } } — действует на всех страницах, как раньше');
+    say(pageMatches(['/menu'], 'http://x/menu/') && !pageMatches(['/menu'], 'http://x/kids/menu') && pageMatches(['/'], 'http://x/index.html') && pageMatches(['index.html'], 'file:///C:/w/site/index.html') && pageMatches(['*'], 'http://x/a'), 'pageMatches: «/menu» = /menu/, ≠ /kids/menu; «/» = /index.html; файл — концом пути; «*» — везде');
+    /* второй круг 29.09: старый список [{ rule, block: "hero" }] (reference/authorship.md) — block-подпись, действует
+       везде, как раньше; «hero» считался селектором тега и на странице ничего не находил. Тег HTML и составной — селекторы */
+    const lab = decFrom([{ rule: 'eyebrow', block: 'hero', why: 'старый список: block — подпись, не селектор' }, { rule: 'eyebrow', block: 'hero cards', why: 'подпись латиницей из двух слов' }, { rule: 'caps-microlabel', block: 'main', why: 'тег HTML — селектор блока' }, { rule: 'photo-cards', block: 'section.cards > div', why: 'составной селектор блока' }]);
+    const lr = compareResult(fake('http://s/menu', { eyebrow: { count: 1 } }), fake('https://donor/', {}), { decisions: lab });
+    say(JSON.stringify(lab.sels) === '["main","section.cards > div"]' && lab.map.eyebrow.every((x) => x.sel == null) && !!lr.rules.eyebrow.decision && lr.verdict !== 'FAIL',
+      `block «hero» и «hero cards» — подписи (обоснование действует на всех страницах, как в старом списке); «main» и «section.cards > div» — селекторы (${JSON.stringify(lab.sels)})`);
+    /* правило CSS с block: находки покрываются по элементам своего селектора (itemBlocks из страницы, els — сколько
+       элементов); у находки без элемента — «page без block» в причине (случай opara, cc-skeptic/dec-css.mjs) */
+    const cssDec = decFrom([{ rule: 'bounce-ease', page: '/', block: '#hero', why: 'пружина первого экрана — как у сайта «до» (JS)' }]);
+    const cssFake = (bl, els) => fake('http://s/', { 'bounce-ease': { count: bl.length, items: bl.map((b, i) => ({ sel: `cubic-bezier(.22, 1.18, .36, ${i + 1})`, note: 'правило CSS', css: '.hero__title', blocks: b, els: els[i] })), itemBlocks: bl } });
+    const cAll = compareResult(cssFake([[0], [0]], [2, 1]), fake('https://donor/', {}), { decisions: cssDec });
+    const cPart = compareResult(cssFake([[0], []], [2, 0]), fake('https://donor/', {}), { decisions: cssDec });
+    const cOld = compareResult(fake('http://s/', { 'bounce-ease': { count: 2, itemBlocks: [[], []], items: [{ sel: '.x0', note: 'правило CSS' }, { sel: '.x1', note: 'правило CSS' }] } }), fake('https://donor/', {}), { decisions: cssDec });
+    const cw = cPart.reasons.warn.find((x) => /bounce-ease/.test(x)) || '';
+    const ow = cOld.reasons.warn.find((x) => /bounce-ease/.test(x)) || '';
+    say(!!cAll.rules['bounce-ease'].decision && !cAll.reasons.warn.some((x) => /bounce-ease/.test(x)) && cPart.rules['bounce-ease'].decisionPartial.cssNoEl === 1 && /обосновано 1 из 2/.test(cw) && /page без block/.test(cw) && /обосновано 0 из 2/.test(ow) && /page без block/.test(ow),
+      `правило CSS с block: элементы селектора в #hero — обосновано; у одной находки элемента нет — «обосновано 1 из 2» и «page без block»; находки без элементов (замер без block) — тоже подсказка (${cw.replace(/^.*?\(/, '(').slice(0, 150)}…)`);
+  }
+  /* 5. флаги */
+  {
+    const node = (args) => spawnSync(process.execPath, [SELF, ...args], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+    const t1 = node(['http://localhost:9/', '--tag', 'до/после']);
+    const t2 = node(['http://localhost:9/', '--pages', '/,/menu']);
+    const t3 = node(['http://localhost:9/', '--baseline', `${path.join(tmp, 'нет.json')},${path.join(tmp, 'нет2.json')}`]);
+    say(t1.status === 2 && /--tag/.test(t1.stderr) && t2.status === 2 && /только для baseline/.test(t2.stderr) && t3.status === 2 && /нет файла базы/.test(t3.stderr), `флаги: --tag с «/» — код 2; --pages без baseline — код 2; --baseline a,b без файлов — код 2 (${t3.stderr.trim().slice(0, 60)}…)`);
+    const h = node(['--help']);
+    say(h.status === 0 && /--tag/.test(h.stdout) && /--pages/.test(h.stdout) && /selftest/.test(h.stdout), '-h называет --tag, --pages и selftest');
+  }
+
+  /* 6. стенды в браузере: скрытое, заголовки на div, одна метка капсом, блоки обоснований */
+  if (!opt['no-browser']) {
+    const url = (f) => pathToFileURL(path.join(FIX, f)).href;
+    let browser = null;
+    try {
+      browser = await launch();
+      const [[, dsk]] = pickViewports('desktop'); const [[, mob]] = pickViewports('mobile');
+      const hd = await measureViewport(browser, url('hidden.html'), 'desktop', dsk, { blockSels: ['footer', '#nope', '::bad('] });
+      const hm = await measureViewport(browser, url('hidden.html'), 'mobile', mob);
+      say(hd.rules['hero-two-ctas'].count === 0 && hm.rules['hero-two-ctas'].count === 0, `hidden.html: меню за экраном (fixed + translateY(-100%)), панель visibility:hidden, боковое меню и дубль под aria-hidden — hero-two-ctas 0 (компьютер ${hd.rules['hero-two-ctas'].count}, телефон ${hm.rules['hero-two-ctas'].count}; было 3)`);
+      say(hd.rules['giant-footer-word'].count === 1, `hidden.html: видимое украшение под aria-hidden — в счёт (giant-footer-word ${hd.rules['giant-footer-word'].count})`);
+      const gw = hd.rules['giant-footer-word'];
+      say(JSON.stringify(hd.page.blocks) === '[1,0,-1]' && JSON.stringify(gw.itemBlocks) === '[[0]]', `блоки обоснований в странице: footer 1, #nope 0, неверный −1 (${JSON.stringify(hd.page.blocks)}); находка в подвале — в блоке 0 (${JSON.stringify(gw.itemBlocks)})`);
+      const two = await measureViewport(browser, url('hero-two.html'), 'desktop', dsk);
+      say(two.rules['hero-two-ctas'].count === 1, `hero-two.html: видимая пара «залитая + контурная» — hero-two-ctas 1 (${two.rules['hero-two-ctas'].count})`);
+      /* второй круг 29.09: 19 способов закрыть меню, каждый — пара кнопок на первом экране; в счёте только видимая
+         #ctaLive. master: 13 пар, копия первого круга: 6 (шторка clip-path inset, круг, эллипс, многоугольник) */
+      for (const [vn, vp] of [['desktop', dsk], ['mobile', mob]]) {
+        const cm = await measureViewport(browser, url('closed-menus.html'), vn, vp);
+        const sels = cm.rules['hero-two-ctas'].items.map((i) => i.sel);
+        say(sels.length === 1 && sels[0] === '#ctaLive', `closed-menus.html (${vn}): закрытые меню — display, visibility, opacity, aria-hidden, inert, hidden, dialog, details, за окном вверх / вбок / вниз / влево, clip-path inset / circle / ellipse / polygon, clip: rect, высота 0, масштаб 0 — не в счёт; hero-two-ctas только у видимой пары (${sels.join(' | ') || 'нет'})`);
+      }
+      /* находки из CSS — к элементам своего селектора (второй круг 29.09, случай opara): пружина в .hero__title и через
+         var(--spring) у .hero .btn — в #hero; @keyframes pop — без элемента; .card:hover — три карточки вне #hero */
+      const cd = await measureViewport(browser, url('css-decisions.html'), 'desktop', dsk, { blockSels: ['#hero'] });
+      const be = cd.rules['bounce-ease'], hl = cd.rules['hover-lift'];
+      const cdDec = decFrom([{ rule: 'bounce-ease', block: '#hero', why: 'пружина входа первого экрана — как у сайта «до»' }, { rule: 'hover-lift', block: '#hero', why: 'подъём кнопки первого экрана — как у донора' }]);
+      const cdr = compareResult(cd, fake('https://donor/', {}), { decisions: cdDec });
+      const bp = cdr.rules['bounce-ease'].decisionPartial || {}; const hp = cdr.rules['hover-lift'].decisionPartial || {};
+      say(be.count === 3 && JSON.stringify(be.itemBlocks) === '[[0],[0],[]]' && JSON.stringify(be.items.map((i) => i.els)) === '[1,1,0]' && bp.covered === 2 && bp.cssNoEl === 1 && /\.hero \.btn \(через --spring\)/.test(be.items[0].note)
+        && hl.count === 1 && JSON.stringify(hl.itemBlocks) === '[[]]' && hl.items[0].els === 3 && hp.covered === 0 && !hp.cssNoEl,
+        `css-decisions.html: bounce-ease к элементам — var(--spring) → .hero .btn и .hero__title в #hero, @keyframes без элемента (обосновано ${bp.covered} из ${be.count}, без элемента ${bp.cssNoEl || 0}); hover-lift .card:hover — ${hl.items[0] ? hl.items[0].els : '—'} элемента вне #hero (обосновано ${hp.covered} из ${hl.count})`);
+      const dm = await measureViewport(browser, url('div-headings.html'), 'mobile', mob);
+      const dd = await measureViewport(browser, url('div-headings.html'), 'desktop', dsk);
+      const st = dm.rules['section-template'].info || {};
+      say(dm.rules.eyebrow.count === 1 && dd.rules.eyebrow.count === 1 && st.sections === 4 && dm.rules['section-template'].count === 4 && dm.page.bodyFs === 20, `div-headings.html: заголовки на div и p по кеглю — надзаголовок и на телефоне (28 px; было 0), разделов с заголовком ${st.sections}, основной текст ${dm.page.bodyFs}px`);
+      const cm = compareResult(dm, null).rules['caps-microlabel'];
+      say(dm.rules['caps-microlabel'].count === 1 && cm.mark === 'ниже порога', `div-headings.html: одна метка «ПРОШЕДШИЕ» записана (caps-microlabel ${dm.rules['caps-microlabel'].count}; было 0), у проверяемой страницы — «${cm.mark}»`);
+      /* окно выбора города уводит на другую страницу (mamuka.rest/menu → главная): адрес открыть заново и мерить его */
+      const keep = process.env.SITE_REWORK_DISMISS; process.env.SITE_REWORK_DISMISS = '.city li';
+      let ct = null;
+      try { ct = await measureViewport(browser, url('city.html'), 'desktop', dsk); } finally { if (keep === undefined) delete process.env.SITE_REWORK_DISMISS; else process.env.SITE_REWORK_DISMISS = keep; }
+      const cc = (ct && ct.open && ct.open.consent) || {};
+      say(!!cc.movedTo && /hero-two\.html$/.test(cc.movedTo) && ct.rules['photo-cards'].count === 4 && ct.rules['hero-two-ctas'].count === 0,
+        `city.html: выбор города увёл на ${cc.movedTo ? path.basename(new URL(cc.movedTo).pathname) : '—'} — адрес открыт заново, мерился он (photo-cards ${ct ? ct.rules['photo-cards'].count : '—'}, у hero-two.html 0; hero-two-ctas ${ct ? ct.rules['hero-two-ctas'].count : '—'})`);
+    } catch (e) { say(false, `стенды в браузере: ${String(e && e.message || e).slice(0, 200)}`); }
+    finally { if (browser) await browser.close().catch(() => {}); }
+    /* командная строка — после закрытия своего браузера (один браузер за раз): --tag, baseline --pages */
+    const node = (args) => spawnSync(process.execPath, [SELF, ...args], { encoding: 'utf8', timeout: 300000, windowsHide: true });
+    const run = path.join(tmp, 'run');
+    const a = node([url('hero-two.html'), '--viewport', 'desktop', '--run', run, '--tag', 'before', '--shot']);
+    const b = node([url('hero-two.html'), '--viewport', 'desktop', '--run', run]);
+    const has = (f) => fs.existsSync(path.join(run, 'cliche', f));
+    say(a.status === 0 && b.status === 0 && has('cliche-before.json') && has('cliche-before-desktop.png') && has('cliche.json') && (readJson(path.join(run, 'cliche', 'cliche-before.json')) || {}).tag === 'before', `--tag before: cliche-before.json и cliche-before-desktop.png, прогон без тега — cliche.json рядом, не затирает (${fs.existsSync(path.join(run, 'cliche')) ? fs.readdirSync(path.join(run, 'cliche')).join(', ') : 'папки нет'})`);
+    const bf = path.join(tmp, 'donor.json');
+    const c = node(['baseline', url('hidden.html'), '--pages', 'hidden.html,div-headings.html', '--viewport', 'desktop', '--out', bf]);
+    const bj = readJson(bf) || {};
+    const d = node([url('div-headings.html'), '--viewport', 'desktop', '--baseline', bf, '--run', run, '--json', '-']);
+    let dj = null; try { dj = JSON.parse(d.stdout); } catch { /* нет */ }
+    const ste = dj && dj.viewports.desktop.rules['section-template'];
+    say(c.status === 0 && bj.version === 4 && (bj.pages || []).length === 2 && (bj.perPage || []).length === 2 && bj.viewports.desktop.rules['section-template'].count === 4 && ste && ste.mark === 'есть у донора',
+      `baseline --pages: база с 2 страниц (версия ${bj.version}, perPage ${(bj.perPage || []).length}); section-template со второй страницы — «${ste ? ste.mark : '—'}» (${c.status === 0 ? 'код 0' : c.stderr.trim().slice(0, 100)})`);
+  } else console.log('--    стенды в браузере пропущены (--no-browser)');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.log(`${bad ? 'FAIL' : 'OK'}: проверок ${n}, провалов ${bad}`);
+  return bad ? 1 : 0;
+}
+
+/* ======================================================================
    Командная строка
    ====================================================================== */
-const isMain = (() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
+const isMain =(() => { try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
-  const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['shot', 'strict', 'help', 'h'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions'], optional: ['taste', 'json'], commands: ['baseline', 'rules'], strict: true });
+  const argv = process.argv.slice(2);
+  const { pos, opt } = parseArgs(argv, { flags: ['shot', 'strict', 'help', 'h', 'selftest', 'no-browser'], values: ['baseline', 'viewport', 'viewports', 'run', 'out', 'decisions', 'tag', 'pages'], optional: ['taste', 'json'], commands: ['baseline', 'rules', 'selftest'], strict: true });
   /* WARN из lib (свой стиль не вставился) — собирать, а не печатать посреди вывода: в вердикт экрана и json */
   collectWarnings();
   const isUrl = (s) => /^(https?|file):/i.test(String(s));
@@ -971,6 +1537,10 @@ if (isMain) {
   const cmd = pos[0];
 
   if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
+  if (cmd === 'selftest' || opt.selftest) process.exit(await selftest(opt));
+  /* --tag: имя прогона в именах файлов (cliche-<tag>.json, cliche-<tag>-<экран>.png) — «до» и «после» не затирают друг друга */
+  if (opt.tag !== undefined && (opt.tag === true || !/^[\p{L}\d_.-]{1,60}$/u.test(String(opt.tag)))) die('--tag: имя из букв, цифр, «-», «_», «.» (до 60 знаков), например before или after-r2');
+  const tagPart = opt.tag ? `-${opt.tag}` : '';
   if (cmd === 'rules') {
     if (opt.json) { console.log(JSON.stringify({ rules: RULES, modes: MODES }, null, 1)); process.exit(0); }
     console.log('id                    вес  режим   приём');
@@ -992,14 +1562,31 @@ if (isMain) {
   const url = baselineMode ? pos[1] : pos[0];
   if (!url || !isUrl(url)) die(`нужен адрес страницы (http://, https:// или file://), получено: ${url || 'ничего'}`);
 
-  /* база */
-  let baseJson = null; let baseFile = null;
-  if (!baselineMode && opt.baseline) {
-    if (opt.baseline === true) die('--baseline без файла');
-    baseFile = path.resolve(String(opt.baseline));
-    if (!fs.existsSync(baseFile)) die(`нет файла базы ${baseFile}`);
-    baseJson = readJson(baseFile);
-    if (!baseJson || !(baseJson.viewports || baseJson.rules)) die(`${baseFile}: это не результат cliche.mjs (нет viewports/rules)`);
+  /* страницы донора для базы: --pages "/,/menu" от адреса (в режиме baseline); страницы своего сайта — отдельными
+     запусками с --tag */
+  if (opt.pages !== undefined && (opt.pages === true || !String(opt.pages).trim() || String(opt.pages).startsWith('--'))) die('--pages: нужен список путей через запятую, например "/,/menu"');
+  if (opt.pages && !baselineMode) die('--pages — только для baseline (база с нескольких страниц донора); страницы своего сайта — отдельными запусками: cliche.mjs <адрес страницы> --tag <имя>');
+  const pageUrls = baselineMode ? (opt.pages ? [...new Set(pagesFrom(opt.pages, url))] : [url]) : [url];
+
+  /* база: один файл или несколько (--baseline a.json,b.json или флаг повтором) — приём «есть у донора», если он
+     есть хоть на одной странице донора (mergeBaselines) */
+  let baseJson = null; let baseFile = null; let baseFiles = [];
+  if (!baselineMode && opt.baseline !== undefined) {
+    const raw = []; for (let i = 0; i < argv.length; i++) { const a = String(argv[i]); if (a === '--') break; if (a === '--baseline') { if (i + 1 < argv.length) raw.push(String(argv[++i])); else raw.push(''); } else if (a.startsWith('--baseline=')) raw.push(a.slice(11)); }
+    for (const b of raw) {
+      if (!b.trim() || b.startsWith('--')) die('--baseline без файла');
+      baseFiles.push(...(fs.existsSync(b) ? [b] : b.split(',').map((x) => x.trim()).filter(Boolean)));
+    }
+    baseFiles = [...new Set(baseFiles.map((f) => path.resolve(f)))];
+    const docs = [];
+    for (const f of baseFiles) {
+      if (!fs.existsSync(f)) die(`нет файла базы ${f}`);
+      const j = readJson(f);
+      if (!j || !(j.viewports || j.rules)) die(`${f}: это не результат cliche.mjs (нет viewports/rules)`);
+      docs.push({ json: j, file: f });
+    }
+    baseFile = baseFiles[0];
+    baseJson = mergeBaselines(docs);
   }
   const vpList = vpSpec || (baselineMode ? 'desktop,mobile' : baseJson && baseJson.viewports ? Object.keys(baseJson.viewports).join(',') : 'desktop');
   const vpSeen = new Set();
@@ -1040,62 +1627,81 @@ if (isMain) {
   try { browser = await launch(); } catch (e) { die(`браузер не запустился: ${e.message}`, 3); }
   const results = {};
   let code = 0; let fatal = null;
+  const perPage = [];
   try {
     for (const [vpName, vp] of vps) {
-      log(`… ${vpName}: открываю ${url}`);
-      let r;
-      try { r = await measureViewport(browser, url, vpName, vp, { keepPage: !!opt.shot && !baselineMode }); }
-      catch (e) { fatal = `${vpName}: страница не открылась или упала — ${String(e && e.message || e).slice(0, 200)}. Для медленного донора подождать и повторить`; break; }
-      const page = r._page; delete r._page;
-      /* WARN из lib (свой стиль не вставился: строгий CSP) — в вердикт этого экрана и json, а не посреди вывода */
-      const lw = takeWarnings(); if (lw.length) r.warnings = lw;
+      const got = [];
+      for (const pu of pageUrls) {
+        log(`… ${vpName}: открываю ${pu}`);
+        let r;
+        try { r = await measureViewport(browser, pu, vpName, vp, { keepPage: !!opt.shot && !baselineMode, blockSels: decisions ? decisions.sels : [] }); }
+        catch (e) { fatal = `${vpName}: страница ${pu} не открылась или упала — ${String(e && e.message || e).slice(0, 200)}. Для медленного донора подождать и повторить`; break; }
+        /* WARN из lib (свой стиль не вставился: строгий CSP) — в вердикт этого экрана и json, а не посреди вывода */
+        const lw = takeWarnings(); if (lw.length) r.warnings = lw;
+        got.push(r);
+      }
+      if (fatal) break;
       if (!baselineMode) {
+        const r = got[0]; const page = r._page; delete r._page;
         const base = baseJson ? baselineResult(baseJson, vpName, vp) : null;
         const exact = !base || base.viewport === vpName;
         compareResult(r, base, { bans, decisions, baseExact: exact });
-        r.baseline = base ? { file: baseFile, url: base.url, viewport: base.viewport, exact, version: baseJson.version || 1 } : null;
+        r.baseline = base ? { file: baseFile, ...(baseFiles.length > 1 ? { files: baseFiles } : {}), url: base.url, ...(base.urls && base.urls.length > 1 ? { urls: base.urls } : {}), viewport: base.viewport, exact, version: baseJson.version || 1 } : null;
         r.taste = bans ? { dir: tdir, run: runId, bans: Object.keys(bans), scopes: Object.fromEntries(Object.entries(bans).map(([k, b]) => [k, b.scope])), elsewhere: away.map((x) => `${x.rule} (${x.run})`) } : null;
-        r.decisions = { file: decFile, exists: decisions.exists, rules: Object.keys(decisions.map).length };
+        r.decisions = { file: decFile, exists: decisions.exists, rules: Object.keys(decisions.map).length, ...(decisions.sels.length ? { blocks: decisions.sels.map((s, i) => ({ sel: s, found: (r.page.blocks || [])[i] ?? null })) } : {}) };
         if (opt.shot && page) {
-          const sf = path.join(run, 'cliche', `cliche-${vpName}.png`); ensureDir(path.dirname(sf));
+          const sf = path.join(run, 'cliche', `cliche${tagPart}-${vpName}.png`); ensureDir(path.dirname(sf));
           try { r.shot = await shotMarks(page, r, sf); } catch (e) { r.shot = { error: String(e.message || e).slice(0, 160) }; }
           await page.close().catch(() => {});
         }
         printResult(r, { log });
         if (r.shot) log(r.shot.file ? `снимок: ${r.shot.file} (обводок ${r.shot.marks}${r.shot.cut ? `, обрезан на ${r.shot.height} px` : ''})` : `WARN снимок не сделан: ${r.shot.error}`);
+        results[vpName] = r;
       } else {
-        const hit = Object.entries(r.rules).filter(([, e]) => e.count);
-        const pe = r.rules['pill-everywhere'].info; const ai = r.rules['accent-added'].info; const ac = ai.accents || [];
-        log(`${vpName} ${r.page.vw}×${r.page.vh}, страница ${r.page.docH} px: черт донора ${hit.length} — ${hit.map(([id, e]) => `${id}×${e.count}`).join(', ') || 'нет'}`);
-        log(`  кнопок ${pe.buttons}, пилюль ${pe.pills}; скругления ${JSON.stringify(r.rules['uniform-radius'].info.hist)}; разрядка у ${r.page.spacedAll}; мелкий текст <12px: ${r.page.fine}; акцент: ${ac.length ? ac.map(accentText).join(', ') : 'нет'}${hoverNote(ai.hover)}`);
-        log(`  гарнитуры — ${Object.entries(r.page.fonts).filter(([, m]) => Object.keys(m).length).map(([k, m]) => `${ROLE_RU[k]}: ${topFam(m)}`).join('; ')}`);
-        const im = r.open.images;
-        if (im) log(`  картинок ${im.images}, ленивых ${im.lazy}${im.tilda ? ` (Tilda data-original ${im.tilda.dataOriginal}, фонов .t-bgimg загружено ${im.tilda.bgLoaded} из ${im.tilda.bg})` : ''}${im.pending ? `, не догрузились к замеру ${im.pending} — сетки с ними считались по атрибутам width/height` : ', все догружены'}`);
-        if (r.warnings) for (const w of r.warnings) log(`  WARN свой стиль: ${w}`);
+        for (const r of got) {
+          const hit = Object.entries(r.rules).filter(([, e]) => e.count);
+          const pe = r.rules['pill-everywhere'].info; const ai = r.rules['accent-added'].info; const ac = ai.accents || [];
+          const st = r.rules['section-template'].info || {};
+          log(`${vpName} ${r.page.vw}×${r.page.vh}${pageUrls.length > 1 ? ` ${pathKey(r.url)}` : ''}, страница ${r.page.docH} px: черт донора ${hit.length} — ${hit.map(([id, e]) => `${id}×${e.count}`).join(', ') || 'нет'}`);
+          log(`  кнопок ${pe.buttons}, пилюль ${pe.pills}; скругления ${JSON.stringify(r.rules['uniform-radius'].info.hist)}; разрядка у ${r.page.spacedAll}; мелкий текст <12px: ${r.page.fine}; акцент: ${ac.length ? ac.map(accentText).join(', ') : 'нет'}${hoverNote(ai.hover)}`);
+          log(`  заголовков ${r.page.headings} (по кеглю, не h1–h3: ${(r.rules['heading-colon'].info || {}).byRole || 0}; основной текст ${r.page.bodyFs}px); разделов с заголовком ${st.sections || 0}${st.top ? `, одного стиля ${st.top.count} (${st.top.style})` : ''}; крупных заголовков ${st.heads ? st.heads.count : 0}${st.heads && st.heads.top ? `, одного стиля ${st.heads.top.count}` : ''}`);
+          log(`  гарнитуры — ${Object.entries(r.page.fonts).filter(([, m]) => Object.keys(m).length).map(([k, m]) => `${ROLE_RU[k]}: ${topFam(m)}`).join('; ')}`);
+          const im = r.open.images;
+          if (im) log(`  картинок ${im.images}, ленивых ${im.lazy}${im.tilda ? ` (Tilda data-original ${im.tilda.dataOriginal}, фонов .t-bgimg загружено ${im.tilda.bgLoaded} из ${im.tilda.bg})` : ''}${im.pending ? `, не догрузились к замеру ${im.pending} — сетки с ними считались по атрибутам width/height` : ', все догружены'}`);
+          const cons = r.open.consent;
+          if (cons && (cons.found || cons.dismiss)) log(`  окно: ${cons.found ? `${cons.closed ? 'закрыто' : 'НЕ закрылось'}${cons.pick ? ` («${cons.pick}»)` : ''}${cons.movedTo ? ` · увело на ${cons.movedTo} — адрес открыт заново${cons.again ? ` (окно снова: ${cons.again})` : ''}` : ''}` : 'не найдено'}${cons.dismiss ? ` · SITE_REWORK_DISMISS: ${cons.dismiss.join('; ')}` : ''}`);
+          if (r.warnings) for (const w of r.warnings) log(`  WARN ${libLabel(w)}`);
+          let pp = perPage.find((x) => x.url === r.url); if (!pp) { pp = { url: r.url, viewports: {} }; perPage.push(pp); }
+          pp.viewports[vpName] = { docH: r.page.docH, rules: Object.fromEntries(Object.entries(r.rules).filter(([, e]) => e.count).map(([id, e]) => [id, e.count])) };
+        }
+        const m = mergeResults(got);
+        if (got.length > 1) log(`${vpName}: база с ${got.length} страниц — ${Object.entries(m.rules).filter(([, e]) => e.count).map(([id, e]) => `${id}×${e.count}${e.from !== url ? ` (${pathKey(e.from)})` : ''}`).join(', ') || 'нет черт'}`);
+        results[vpName] = m;
       }
-      results[vpName] = r;
     }
   } finally { await browser.close().catch(() => {}); }
   if (fatal) die(fatal, 3);
 
   if (baselineMode) {
-    let out = opt.out && opt.out !== true ? path.resolve(String(opt.out)) : path.join(runDir({}, url), 'cliche', 'cliche-baseline.json');
-    if (!/\.json$/i.test(out)) out = path.join(out, 'cliche-baseline.json');
-    /* версия 3: кнопки с заливкой у вложенного блока, акцент по правилу «заливка → наведение», фото-сетка по большинству */
-    writeJson(out, { kind: 'cliche-baseline', version: 3, url, date: new Date().toISOString(), viewports: results });
-    log(`\nOK   база донора → ${out}\n     дальше: node cliche.mjs <сайт> --baseline "${out}" --taste`);
+    let out = opt.out && opt.out !== true ? path.resolve(String(opt.out)) : path.join(runDir({}, url), 'cliche', `cliche-baseline${tagPart}.json`);
+    if (!/\.json$/i.test(out)) out = path.join(out, `cliche-baseline${tagPart}.json`);
+    /* версия 3: кнопки с заливкой у вложенного блока, акцент по правилу «заливка → наведение», фото-сетка по большинству;
+       версия 4 (29.09): скрытое не в счёт, заголовки по роли (div и p по кеглю), мелкий капс от одной метки, окно выбора
+       города закрыто (SITE_REWORK_DISMISS), несколько страниц (--pages) — pages и perPage */
+    writeJson(out, { kind: 'cliche-baseline', version: 4, url, ...(pageUrls.length > 1 ? { pages: pageUrls, perPage } : {}), date: new Date().toISOString(), viewports: results });
+    log(`\nOK   база донора${pageUrls.length > 1 ? ` (страниц: ${pageUrls.length})` : ''} → ${out}\n     дальше: node cliche.mjs <сайт> --baseline "${out}" --taste`);
   } else {
     const verdicts = Object.values(results).map((r) => r.verdict);
     const total = verdicts.includes('FAIL') ? 'FAIL' : verdicts.includes('WARN') ? 'WARN' : 'OK';
-    const doc = { kind: 'cliche', version: 3, url, date: new Date().toISOString(), baseline: baseFile, verdict: total, viewports: results };
+    const doc = { kind: 'cliche', version: 4, url, ...(opt.tag ? { tag: opt.tag } : {}), date: new Date().toISOString(), baseline: baseFile, ...(baseFiles.length > 1 ? { baselines: baseFiles } : {}), verdict: total, viewports: results };
     if (toStdout) process.stdout.write(JSON.stringify(doc, null, 1) + '\n');
     else {
-      const jf = opt.json && opt.json !== true ? path.resolve(String(opt.json)) : path.join(run, 'cliche', 'cliche.json');
+      const jf = opt.json && opt.json !== true ? path.resolve(String(opt.json)) : path.join(run, 'cliche', `cliche${tagPart}.json`);
       writeJson(jf, doc);
       const label = /^file:/i.test(url) ? decodeURIComponent(path.basename(new URL(url).pathname)) : slugFromUrl(url);
       log(`\n${total.padEnd(4)} шаблонность ${label}: ${Object.entries(results).map(([k, r]) => `${k} ${r.verdict} (индекс ${r.index})`).join(', ')}`);
       log(`json: ${jf}`);
-      if (total === 'FAIL' && Object.values(results).some((r) => r.reasons.fail.some((x) => /без обоснования/.test(x)))) log(`обоснование: ${decFile} — { "правило": { "блок": "какое правило донора или задача блока" } }`);
+      if (total === 'FAIL' && Object.values(results).some((r) => r.reasons.fail.some((x) => /без обоснования/.test(x)))) log(`обоснование: ${decFile} — [{ "rule": "правило", "page": "/путь", "block": "#селектор блока", "why": "какое правило донора или задача блока" }] (без page и block — на всех страницах)`);
     }
     code = total === 'FAIL' ? 1 : 0;
   }

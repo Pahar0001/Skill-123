@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: скрытое не в счёт</title>
+<!-- Стенд cliche.mjs selftest: закрытые меню и панели с «кнопками первого экрана» не должны давать
+     hero-two-ctas (epicentr-mamuka 29.09: закрытое боковое меню #drawer уезжало вверх transform'ом,
+     его ссылки-кнопки засчитывались как две кнопки первого экрана). Видимое украшение под aria-hidden
+     (огромное слово в подвале) — в счёт: его видно. -->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; color: #222; background: #fff; overflow-x: hidden; }
+  .btn { display: inline-block; height: 44px; line-height: 44px; padding: 0 20px; background: #1f5f8b; color: #fff; text-decoration: none; border-radius: 4px; }
+  .hero { min-height: 480px; padding: 40px; }
+  .hero h1 { font-size: 48px; margin: 0 0 24px; }
+  /* меню, уехавшее вверх: fixed + translateY(-100%), видимость не тронута (как у «Эпицентра» до e0f9b01) */
+  .drawer { position: fixed; left: 0; top: 0; width: 100%; height: 100vh; background: #f4f4f4; transform: translateY(-100%); }
+  .drawer__list { display: flex; gap: 12px; padding: 24px; }
+  /* панель visibility:hidden поверх первого экрана */
+  .panel { position: absolute; left: 40px; top: 300px; visibility: hidden; display: flex; gap: 12px; }
+  /* боковое меню справа за экраном под aria-hidden */
+  .offcanvas { position: fixed; top: 0; right: 0; width: 320px; height: 100vh; transform: translateX(100%); background: #eee; }
+  .offcanvas .row { display: flex; gap: 8px; padding: 16px; }
+  /* кнопки под aria-hidden на экране (дубль слайда): не действия ни для кого */
+  .clone { display: flex; gap: 12px; margin-top: 16px; }
+  section { min-height: 600px; padding: 40px; }
+  footer { padding: 40px 0 0; overflow: hidden; }
+  .giant { font-size: 200px; line-height: 1; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="drawer" id="drawer">
+  <div class="drawer__list" id="drawerVenues"><a class="btn" href="#a">Мосты</a><a class="btn" href="#b">Октава</a><a class="btn" href="#c">Бильярд</a></div>
+</div>
+<aside class="offcanvas" aria-hidden="true"><div class="row"><a class="btn" href="#x">Бронь</a><a class="btn" href="#y">Меню</a></div></aside>
+<main>
+  <div class="hero" id="hero">
+    <h1>Четыре вечера под одной крышей</h1>
+    <div class="cta"><a class="btn" href="#booking">Забронировать стол</a></div>
+    <div class="panel"><a class="btn" href="#p1">Скрытая один</a><a class="btn" href="#p2">Скрытая два</a></div>
+    <div class="clone" aria-hidden="true"><a class="btn" href="#k1" tabindex="-1">Дубль один</a><a class="btn" href="#k2" tabindex="-1">Дубль два</a></div>
+  </div>
+  <section><p>Текст раздела. Здесь нет приёмов, только абзац, чтобы страница была длиннее экрана и подвал ушёл вниз.</p></section>
+  <section><p>Ещё один раздел с обычным абзацем.</p></section>
+</main>
+<footer><div class="giant" aria-hidden="true">ЭПИЦЕНТР</div></footer>
+</body>
+</html>
