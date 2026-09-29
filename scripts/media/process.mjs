@@ -229,11 +229,95 @@ export function parseRatio(s) {
   return { r: Number(m[1]) / Number(m[2]), spec: `${m[1]}:${m[2]}` };
 }
 
+/** --size 1000x700, --thumb 360x360 → { w, h, spec }; ошибка — исключение с понятным текстом. */
+export function parseSize(s, flag = '--size') {
+  if (!s || s === true) return null;
+  const m = String(s).trim().match(/^(\d{1,5})\s*[x×*]\s*(\d{1,5})$/i);
+  if (!m || !(Number(m[1]) >= 16 && Number(m[2]) >= 16 && Number(m[1]) <= 10000 && Number(m[2]) <= 10000)) throw new Error(`не понял ${flag} «${s}»: ширина x высота в px, например 1000x700 (от 16 до 10000)`);
+  return { w: Number(m[1]), h: Number(m[2]), spec: `${m[1]}x${m[2]}` };
+}
+
+/* --focus: куда тянуть обрезку. attention и entropy — стратегии sharp, остальное — сторона кадра */
+export const FOCUS = ['attention', 'entropy', 'centre', 'center', 'north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'top', 'bottom', 'left', 'right'];
+export function focusPosition(sharp, f) {
+  const v = String(f || 'attention').toLowerCase();
+  if (v === 'attention') return sharp.strategy.attention;
+  if (v === 'entropy') return sharp.strategy.entropy;
+  if (v === 'center') return 'centre';
+  return { top: 'north', bottom: 'south', left: 'west', right: 'east' }[v] || v;
+}
+
+/* Форматы точного режима (--size): расширение, качество по умолчанию, кодировщик sharp */
+export const EXACT_FORMATS = {
+  jpg: { ext: '.jpg', q: 80, enc: (p, q) => p.jpeg({ quality: q, mozjpeg: true, progressive: true }) },
+  webp: { ext: '.webp', q: 76, enc: (p, q) => p.webp({ quality: q, effort: 5, smartSubsample: true }) },
+  avif: { ext: '.avif', q: 52, enc: (p, q) => p.avif({ quality: q, effort: 3, chromaSubsampling: '4:2:0' }) },
+};
+export const exactFormat = (s) => ({ jpeg: 'jpg', jpg: 'jpg', webp: 'webp', avif: 'avif' })[String(s || '').toLowerCase().replace(/^\./, '')] || null;
+
+/**
+ * Точный режим (pick/import --size): один файл ровно под формат проекта и, по желанию, превью —
+ * под заданным именем, без лестницы ширин и без <picture>. Так кладут кадр на место прежнего,
+ * на который уже ссылаются база и разметка (Эпицентр: dish-*.jpg 1000×700 q80 и thumb/ 360×360 q76).
+ * opts: size {w,h}, thumb {w,h}|null, thumbDir ('thumb'), file (имя с расширением), format (jpg|webp|avif),
+ *       quality, focus, dest, srcPrefix, look, contrast, grain, caption, role, seedKey.
+ * Обрезка — cover по --focus; не растягивает: исходник меньше формата — наибольший кусок той же
+ * пропорции, меньше заданного, и об этом замечание. Превью режется из исходника, не из готового кадра.
+ * Превью — качество на 4 ниже основного (jpg 80 → 76).
+ */
+export async function processExact(sharp, input, opts) {
+  const look = parseLook(opts.look);
+  const contrast = Math.max(0, Math.min(1, Number(opts.contrast) || 0));
+  const grain = Number(opts.grain) || 0;
+  if (grain > MAX_GRAIN) throw new Error(`--grain ${grain}: в файл не больше ${MAX_GRAIN}; сильное зерно — одним общим слоем CSS поверх страницы`);
+  const F = EXACT_FORMATS[opts.format] || EXACT_FORMATS.jpg;
+  const q = Number(opts.quality) || F.q;
+  const warnings = []; const changes = []; const files = [];
+  const src = await orientedSize(sharp, input);
+  const position = focusPosition(sharp, opts.focus);
+  const seed = seedOf(opts.seedKey || opts.file);
+  fs.mkdirSync(opts.dest, { recursive: true });
+  /* кусок w×h (или наибольший той же пропорции, если исходник меньше), тон, зерно, запись */
+  const cut = async (want, file, quality, group) => {
+    const s = Math.min(1, src.width / want.w, src.height / want.h);
+    const w = Math.max(1, Math.floor(want.w * s + 1e-9)), h = Math.max(1, Math.floor(want.h * s + 1e-9));
+    if (s < 1) warnings.push(`${group === 'thumb' ? 'превью' : 'кадр'}: исходник ${src.width}x${src.height} меньше ${want.w}x${want.h} — не растягиваем, записано ${w}x${h} той же пропорции (браузер растянет сам: взять кадр крупнее или смириться)`);
+    const { data, info } = await sharp(input, { failOn: 'none' }).rotate()
+      .resize({ width: w, height: h, fit: 'cover', position, kernel: 'lanczos3' })
+      .removeAlpha().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
+    if (look.type !== 'none' || contrast > 0) toneRaw(data, info.channels, look, contrast);
+    grainRaw(data, info.width, info.height, info.channels, grain, seed + w * 7);
+    const f = path.join(opts.dest, file);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    let before = null; try { const st = fs.statSync(f); const m = await sharp(f).metadata(); before = { width: m.width, height: m.height, bytes: st.size }; } catch { /* файла не было */ }
+    const r = await F.enc(sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } }), quality).toFile(f);
+    files.push({ file: file.split(path.sep).join('/'), format: opts.format || 'jpg', width: r.width, height: r.height, bytes: r.size, group, quality, before });
+  };
+  const focusName = String(opts.focus || 'attention').toLowerCase();
+  await cut(opts.size, opts.file, q, 'exact');
+  changes.push(`кадрировано до ${opts.size.w}x${opts.size.h} (фокус ${focusName})`);
+  if (opts.thumb) {
+    const tq = Math.max(1, q - 4);
+    await cut(opts.thumb, path.join(opts.thumbDir || 'thumb', opts.file), tq, 'thumb');
+    changes.push(`превью ${opts.thumb.w}x${opts.thumb.h}`);
+  }
+  if (look.type === 'mono') changes.push('переведено в ч/б');
+  if (look.type === 'duotone') changes.push(`тонировано (${look.spec})`);
+  if (contrast > 0) changes.push(`контраст +${Math.round(contrast * 50)}%`);
+  if (grain > 0) changes.push(`добавлено зерно ${grain}`);
+  changes.push(`пережато в ${(opts.format || 'jpg').toUpperCase()} q${q}`);
+  const main = files[0]; const R = ROLES[opts.role] || ROLES.card;
+  const load = R.eager ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
+  const markup = `<img src="${opts.srcPrefix || ''}${main.file}" width="${main.width}" height="${main.height}" alt="${esc(opts.caption)}" ${load} decoding="async">`;
+  return { files, source: { width: src.width, height: src.height, format: src.format }, warnings, changes, markup, avif: opts.format === 'avif' };
+}
+
 /**
  * Готовит выбранный кадр для сайта.
  * opts: role, name, dest, srcPrefix, look (строка), contrast 0..1, grain 0..0.06,
  *       cropMobile ('4:5'), ratio ('16:9' — обрезать основной кадр), caption, avif ('auto'|'on'|'off'),
- *       seedKey (для зерна).
+ *       seedKey (для зерна), need (px ширины, нужные сайту: замечание о нехватке — от неё),
+ *       focus (куда тянуть обрезку --ratio и --crop-mobile; по умолчанию attention).
  * Возвращает { files, source, warnings, changes, markup, avif, jpegFallback }.
  */
 export async function processPhoto(sharp, input, opts) {
@@ -252,10 +336,20 @@ export async function processPhoto(sharp, input, opts) {
     changes.push(`кадрировано до ${main.spec}`);
   }
   const L = Math.max(W, H);
+  /* --need: ширина, которая нужна сайту (px). Замечание о нехватке — от неё, а не от верха
+     лестницы роли (hero 3840 при нужных 1800 давал WARN-шум); больше верха роли — лестница
+     начинается с неё. Допуск 2 px — округление копий у источника. */
+  const need = Number(opts.need) > 0 ? Number(opts.need) : 0;
+  const needLong = need ? Math.ceil(need * L / W) : 0;
+  const wantLong = Math.max(R.ladder[0], needLong);
   let steps = R.ladder.filter((s) => s <= L);
-  if (L < R.ladder[0]) {
-    warnings.push(`исходник даёт только ${L} px по длинной стороне; для роли ${opts.role} нужно ${R.ladder[0]} — не растягиваем`);
-    if (!steps.length || L > steps[0] * 1.1) steps.unshift(L);
+  if (need) {
+    if (W < need - 2) warnings.push(`исходник даёт только ${W} px в ширину; сайту нужно ${need} (--need) — не растягиваем`);
+  } else if (L < R.ladder[0] - 2) warnings.push(`исходник даёт только ${L} px по длинной стороне; для роли ${opts.role} нужно ${R.ladder[0]} — не растягиваем (сайту нужно меньше — --need <px ширины>)`);
+  if (L < wantLong || needLong > R.ladder[0]) {
+    const t = Math.min(L, wantLong);
+    if (!steps.length || t > steps[0] * 1.1) steps.unshift(t);
+    else if (t > steps[0]) steps[0] = t;
   }
   if (!steps.length) steps = [L];
   const top = steps[0];
@@ -263,7 +357,7 @@ export async function processPhoto(sharp, input, opts) {
 
   /* основа: повёрнута по EXIF, обрезана (если просили), уменьшена до верхней ступени, тон и контраст */
   let base = sharp(input, { failOn: 'none' }).rotate();
-  if (main) base = base.resize({ width: bw, height: bh, fit: 'cover', position: sharp.strategy.attention, kernel: 'lanczos3' });
+  if (main) base = base.resize({ width: bw, height: bh, fit: 'cover', position: focusPosition(sharp, opts.focus), kernel: 'lanczos3' });
   else if (top < L) base = base.resize({ width: bw, height: bh, fit: 'fill', kernel: 'lanczos3' });
   const { data, info } = await base.removeAlpha().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
   if (look.type !== 'none' || contrast > 0) toneRaw(data, info.channels, look, contrast);
@@ -282,7 +376,7 @@ export async function processPhoto(sharp, input, opts) {
   /* пиксели ступени: из основы, с зерном после уменьшения (иначе уменьшение его съест) */
   const stepRaw = async (w, h, crop = null) => {
     let p = sharp(data, rawIn);
-    if (crop) p = p.resize({ width: w, height: h, fit: 'cover', position: sharp.strategy.attention, kernel: 'lanczos3' });
+    if (crop) p = p.resize({ width: w, height: h, fit: 'cover', position: focusPosition(sharp, opts.focus), kernel: 'lanczos3' });
     else if (w !== info.width || h !== info.height) p = p.resize({ width: w, height: h, fit: 'fill', kernel: 'lanczos3' });
     const out = await p.raw().toBuffer({ resolveWithObject: true });
     grainRaw(out.data, out.info.width, out.info.height, out.info.channels, grain, seed + w * 7 + (crop ? 13 : 0));
@@ -393,12 +487,14 @@ export function cssLook(lookSpec, contrast, grain, id = 'media-duotone') {
  * Unsplash: разметка по ссылкам images.unsplash.com (правило API: «must use the
  * hotlinked image URLs»). w, q, fm, fit, crop — параметры из их документации.
  */
-export function unsplashMarkup(c, { role, cropMobile, caption }) {
+export function unsplashMarkup(c, { role, cropMobile, caption, need = 0 }) {
   const R = ROLES[role] || ROLES.section;
   const W = c.orig?.width || 3840, H = c.orig?.height || 2560; const L = Math.max(W, H);
   let steps = R.ladder.filter((s) => s <= L);
   const warnings = [];
-  if (L < R.ladder[0]) { warnings.push(`у оригинала только ${L} px по длинной стороне — не растягиваем`); if (!steps.length || L > steps[0] * 1.1) steps.unshift(L); }
+  /* --need: замечание — от ширины, нужной сайту, как у processPhoto */
+  if (need > 0 ? W < need - 2 : L < R.ladder[0] - 2) warnings.push(need > 0 ? `у оригинала только ${W} px в ширину; сайту нужно ${need} (--need) — не растягиваем` : `у оригинала только ${L} px по длинной стороне — не растягиваем`);
+  if (L < R.ladder[0]) { if (!steps.length || L > steps[0] * 1.1) steps.unshift(L); }
   const u = (params) => { const x = new URL(c.raw_url); for (const [k, v] of Object.entries(params)) x.searchParams.set(k, String(v)); return x.href; };
   const desk = steps.map((s) => ({ w: Math.round(W * s / L), h: Math.round(H * s / L) })).sort((a, b) => a.w - b.w);
   const set = (fm) => desk.map((d) => `${esc(u({ w: d.w, q: 75, fm, fit: 'max' }))} ${d.w}w`).join(', ');

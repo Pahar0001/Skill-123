@@ -95,17 +95,62 @@ export function resolveLicense(id) {
 
 /* ---------- учёт авторов ---------- */
 
-export function readCredits(dest) {
-  try { return JSON.parse(fs.readFileSync(path.join(dest, CREDITS), 'utf8')); } catch { return []; }
+/* Если в папке уже лежит credits.json проекта в своём виде (не массив записей media.mjs — у Эпицентра
+   объект «путь → {text, page}», его читает сайт), он не трогается: наш учёт идёт рядом, в credits-media.json. */
+export const CREDITS_SIDE = 'credits-media.json';
+const readJsonSafe = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return undefined; } };
+/** Чей credits.json в папке: { file — куда пишет media.mjs, foreign — credits.json проекта (не наш) или null }. */
+export function creditsTarget(dest) {
+  const own = path.join(dest, CREDITS);
+  const j = fs.existsSync(own) ? readJsonSafe(own) : undefined;
+  if (j === undefined || Array.isArray(j)) return { file: own, foreign: null };
+  return { file: path.join(dest, CREDITS_SIDE), foreign: own };
 }
-/** Запись заменяет прежнюю с тем же именем файла. */
+/** Чужой credits.json проекта как есть (объект) или null. */
+export function readForeignCredits(dest) {
+  const t = creditsTarget(dest);
+  return t.foreign ? readJsonSafe(t.foreign) : null;
+}
+export function readCredits(dest) {
+  const j = readJsonSafe(creditsTarget(dest).file);
+  return Array.isArray(j) ? j : [];
+}
+/** Запись заменяет прежнюю с тем же именем файла. → список; куда записано — creditsTarget(dest).file. */
 export function saveCredit(dest, rec) {
   const list = readCredits(dest).filter((x) => x.name !== rec.name);
   list.push(rec);
   fs.mkdirSync(dest, { recursive: true });
-  fs.writeFileSync(path.join(dest, CREDITS), JSON.stringify(list, null, 1));
+  fs.writeFileSync(creditsTarget(dest).file, JSON.stringify(list, null, 1));
   return list;
 }
+
+/**
+ * Где этот кадр уже стоит под другим именем: credits.json (наш — по источнику и id или по странице;
+ * проекта — по странице) и отметки pick в манифесте поиска. → [{ name, where }].
+ * Один кадр Pexels ушёл на «Русскую пирамиду, вечер» и на турнир — Эпицентр, 29.09.
+ */
+export function usedElsewhere(dest, { source, id, page, name }, manifest = null) {
+  const out = []; const seen = new Set();
+  const add = (n, where) => { const k = `${n}|${where}`; if (n && n !== name && !seen.has(k)) { seen.add(k); out.push({ name: n, where }); } };
+  const samePage = (p) => !!(p && page && normPage(p) === normPage(page));
+  for (const r of readCredits(dest)) {
+    if ((r.source === source && String(r.source_id) === String(id)) || samePage(r.page_url)) add(r.name, path.basename(creditsTarget(dest).file));
+  }
+  const foreign = readForeignCredits(dest);
+  if (foreign && typeof foreign === 'object') {
+    for (const [k, v] of Object.entries(foreign)) if (v && typeof v === 'object' && samePage(v.page || v.page_url)) add(path.basename(k), CREDITS);
+  }
+  for (const p of (manifest && manifest.picked) || []) {
+    if (p.source === source && String(p.id) === String(id)) add(p.name, `pick в ${p.dest || '.'}`);
+  }
+  return out;
+}
+/** Адрес страницы кадра без протокола, www, хвостового / и параметров — для сравнения. */
+export const normPage = (u) => {
+  let s = String(u || '').trim().replace(/^https?:\/\/(www\.)?/i, '').replace(/[?#].*$/, '').replace(/\/+$/, '');
+  try { s = decodeURIComponent(s); } catch { /* как есть */ }
+  return s.replace(/ /g, '_').toLowerCase();
+};
 
 /** Подпись обязательна: CC BY/BY-SA и кадры Unsplash из API (правило API; старые записи без attribution_required — тоже). */
 export const mustCredit = (r) => !!r.attribution_required || !!(r.hotlink && /unsplash/.test(r.source || ''));

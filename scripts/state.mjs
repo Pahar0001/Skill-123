@@ -5,8 +5,8 @@
  * потому что «написал код», «открыл в браузере и работает», «посмотрел и
  * красиво», «на телефоне тоже» и «быстро» — разные вещи.
  *
- *   node state.mjs <папка прогона> init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new [--force]
- *   node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor|new] [--url <адрес>] [--site-ignore "data,*.json"]
+ *   node state.mjs <папка прогона> init <url|-> "<запрос>" --site <папка сайта> --mode rework|mirror|donor|new [--donor <адрес донора>] [--force]
+ *   node state.mjs <папка> meta [--site <папка сайта>] [--mode rework|mirror|donor|new] [--url <адрес>] [--donor <адрес>|none] [--site-ignore "data,*.json"]
  *   node state.mjs <папка> add "<задача>" [--priority P2] [--area hero|mobile|3d|content|motion|...]
  *   node state.mjs <папка> set <id> impl=DONE runtime=VERIFIED --evidence runtime/desktop.json#5
  *   node state.mjs <папка> set <id> visual=VERIFIED --evidence after/home-mobile-first.png mobile=NA --note "почему"
@@ -15,6 +15,9 @@
  *   node state.mjs <папка> show [--strict] [--json]
  *   node state.mjs <папка> probe <файл[#шаг]>… --check runtime|visual|mobile|perf [--task <id>] [--json]
  *   node state.mjs --help
+ *   node state.mjs --selftest   журнал во временной папке: режим rework --donor (этапы, блок «Сверки», WARN
+ *                               без сверок при начатом отчёте), отказы --donor в donor/new, подсказка
+ *                               donor со своей папкой, причина NA к полю, strict. Код 1 — не прошло.
  *
  * Поля задачи (одна задача — пять статусов: реализация и четыре проверки):
  *   impl                        TODO → DOING → DONE; ещё BLOCKED и DROPPED (снята).
@@ -25,14 +28,27 @@
  *   priority                    P0 сломано · P1 крупная проблема UX · P2 крупная визуальная ·
  *                               P3 тексты · P4 движение · P5 полировка (по умолчанию P2)
  * ANALYZED — не поле задачи, а этап (stage discovered/design/tech …).
- * Этапы: requirements discovered browser design direction tech tools tokens plan ui content
- *   assets three motion runtime visual mobile perf a11y polish report; отметки done ✓ · active → ·
+ * Этапы: requirements discovered donor browser design direction tech tools tokens plan ui content
+ *   assets three motion runtime visual mobile perf a11y polish compare report; отметки done ✓ · active → ·
  *   todo · · skipped –. requirements (реестр требований) и direction (направление выбрано) —
  *   этапы режима new: в rework, mirror и donor init ставит им skipped, и show их не печатает;
  *   реестр понадобился и там (источников требований больше одного) — stage requirements active,
  *   тогда этап виден. В старом журнале этих этапов нет: show печатает чек-лист как раньше,
  *   stage их принимает.
+ *   donor (донор снят — эталон языка) и compare (сверки перед отчётом) — этапы режима «свой сайт в
+ *   языке донора» (--donor); compare виден и в режиме donor (сверка с донором обязательна). В
+ *   остальных режимах init ставит им skipped, и show их не печатает, пока их не начали.
  * Режим прогона (--mode) пишется в журнал и печатается в show — для отчёта.
+ *
+ * Свой сайт с исходниками в языке донора (переделка «Эпицентра» в языке mamuka.rest):
+ *   init <адрес своего сайта> "<запрос>" --site <исходники> --mode rework --donor <адрес донора>
+ *   (или mirror — своё зеркало). Журнал хранит оба адреса: «до» — свой сайт (снимки shots.mjs в <прогон>/before),
+ *   эталон — донор (reference/donor-mode.md §1). show печатает блок «Сверки»: «до/после» своего
+ *   сайта (before/, after/, diff/diff.json) и донор (donor/, donor/design, donor/texture, cliche
+ *   baseline, motion/donor-*) со сверкой с ним (verify --json, texture-compare/compare.json,
+ *   cliche/cliche*.json, motion/compare*.json) — что есть в папке прогона и чего нет; когда этап
+ *   report начат, а сверки нет, — итог WARN. --mode donor с папкой сайта вне папки прогона — WARN:
+ *   «новый сайт по донору» собирается в <прогон>/site, а свои исходники — это rework --donor.
  *
  * Флаги:
  *   --site <папка>     папка с файлами сайта: исходники (rework), зеркало <прогон>/mirror
@@ -47,6 +63,9 @@
  *   адрес «-» в init   сайта ещё нет — только с --mode new; когда сайт поднят (serve.mjs):
  *                      meta --url http://localhost:<порт>/
  *   --url <адрес>      (meta) адрес сайта: http://, https:// или file://
+ *   --donor <адрес>    (init, meta) адрес донора, в языке которого переделывается свой сайт: только
+ *                      с --mode rework или mirror (в режиме donor донор — сам адрес журнала);
+ *                      meta --donor none — убрать донора.
  *   --site-ignore      что ещё не считать правкой сайта: имена папок и файлов или маски
  *                      через запятую («data,uploads,*.json»). Хранится в журнале.
  *   --force            init поверх существующего журнала; старый сохраняется рядом.
@@ -55,6 +74,9 @@
  *                      своё доказательство для одной проверки (главнее --evidence).
  *   --note "…"         заметка к задаче; для NA — обязательная причина. Без текста — ошибка.
  *                      Заметку, которая начинается с «--», писать так: --note="--scroll прошёл".
+ *                      В вызове с NA заметка — причина NA: пишется к этим полям (proof.<поле>.note),
+ *                      основная заметка задачи не меняется (одинаково для всех полей); show и set
+ *                      печатают её рядом: «… · perf NA: только кегли». Без NA — основная заметка.
  *   --strict           (show) код выхода 1, если итог не OK.
  *   --json             (show) журнал с состоянием каждой клетки одним JSON: url, режим, папка
  *                      сайта и её последняя правка, этапы, задачи (cells: статус, cat, label,
@@ -84,7 +106,8 @@
  *     задним числом не проставить. Протокол .json, который уже стоит у другой задачи для
  *     той же проверки, второй раз принимается только с #шагом; тот же файл#шаг или тот же
  *     снимок у другой задачи — WARN.
- *   NA — только с --note: причина, почему проверка к задаче не относится.
+ *   NA — только с --note: причина, почему проверка к задаче не относится (пишется к полю, не
+ *     вместо заметки задачи).
  *   FAILED и NEEDS_WORK — --evidence по желанию (файл должен существовать).
  *   У каждой проверки хранится своё время и доказательство (proof в state.json:
  *   status, at, evidence {file, step, kind, verdict, takenAt, siteEditAt, generator, …}, note).
@@ -123,6 +146,8 @@
  * в режиме new нет реестра требований; OK — всё сделанное проверено.
  */
 import fs from 'node:fs';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, readJson, writeJson, parseViewport, codeVersion } from './lib.mjs';
@@ -135,14 +160,19 @@ const PRIO = ['P0', 'P1', 'P2', 'P3', 'P4', 'P5'];
 const MODES = { rework: 'переработка по исходникам', mirror: 'переработка через зеркало (исходников нет)', donor: 'новый сайт по донору', new: 'новый сайт с нуля по требованиям (без донора; с референсами или без)' };
 /* этапы только режима new: в остальных режимах init ставит им skipped, в старых журналах их нет */
 const NEW_ONLY = ['requirements', 'direction'];
+/* этапы режима «свой сайт в языке донора» (--donor); compare — и режима donor */
+const DONOR_ONLY = ['donor', 'compare'];
+const stageShown = (s, k) => (k === 'donor' ? !!s.donor : k === 'compare' ? !!s.donor || s.mode === 'donor' : true);
 const STAGES = [
   ['requirements', 'Требования собраны и разобраны'],
-  ['discovered', 'Сайт разведан'], ['browser', 'Открыт в браузере, консоль и сеть сняты'], ['design', 'Дизайн разобран глазами'],
+  ['discovered', 'Сайт разведан'], ['donor', 'Донор снят — эталон языка (discover, extract, texture, cliche baseline, motion)'],
+  ['browser', 'Открыт в браузере, консоль и сеть сняты'], ['design', 'Дизайн разобран глазами'],
   ['direction', 'Направление выбрано (эскизы показаны)'],
   ['tech', 'Техническая архитектура понята'], ['tools', 'Инструменты выбраны'], ['tokens', 'Дизайн-система снята'],
   ['plan', 'План с приоритетами составлен'], ['ui', 'Вёрстка и UI'], ['content', 'Тексты'], ['assets', 'Картинки и графика'],
   ['three', '3D'], ['motion', 'Движение'], ['runtime', 'Проверка в браузере'], ['visual', 'Визуальная проверка'],
-  ['mobile', 'Мобильная проверка'], ['perf', 'Скорость'], ['a11y', 'Доступность'], ['polish', 'Полировка'], ['report', 'Итоговый отчёт'],
+  ['mobile', 'Мобильная проверка'], ['perf', 'Скорость'], ['a11y', 'Доступность'], ['polish', 'Полировка'],
+  ['compare', 'Сверки перед отчётом: с донором и «до/после» своего сайта'], ['report', 'Итоговый отчёт'],
 ];
 const MARK = { done: '✓', active: '→', todo: '·', skipped: '–' };
 const IMG_EXT = /\.(png|jpe?g|webp|avif|gif)$/i;
@@ -151,9 +181,10 @@ const IGNORE_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', '.cache', '.
 const IGNORE_FILE = /(\.(log|db|sqlite3?|tmp|temp|swp|swo|pid|lock)$|-(wal|shm|journal)$|~$|^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$)/i;
 
 const argv = process.argv.slice(2);
-const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area', 'url', 'check', 'task'];
-const FLAG_KEYS = ['force', 'strict', 'help', 'h', 'json'];
-const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS, commands: ['init', 'meta', 'add', 'set', 'stage', 'show', 'probe'] });
+const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area', 'url', 'check', 'task', 'donor'];
+const FLAG_KEYS = ['force', 'strict', 'help', 'h', 'json', 'selftest'];
+/* strict: неизвестный флаг — отказ с подсказкой (раньше WARN, и init --donor молча терял донора) */
+const { pos, opt } = parseArgs(argv, { values: VALUE_KEYS, flags: FLAG_KEYS, commands: ['init', 'meta', 'add', 'set', 'stage', 'show', 'probe'], strict: true });
 if (opt.help || opt.h || pos.includes('-h')) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
@@ -168,6 +199,7 @@ for (let i = 0; i < argv.length - 1; i++) {
   const f = /^--([A-Za-z][\w-]*)(=.*)?$/.exec(String(argv[i + 1]));
   if (f && KNOWN.has(f[1])) die(`--${k[1]} без значения: следом стоит флаг --${f[1]}. ${k[1] === 'note' ? 'Напишите текст заметки; если она начинается с «--» — так: --note="--scroll прошёл"' : `Нужно: --${k[1]} <значение>`}`);
 }
+if (opt.selftest) process.exit(selftest());
 const [dir, cmd, ...rest] = pos;
 if (!dir || !cmd) die('Нужно: node state.mjs <папка> init|meta|add|set|stage|show|probe ... (--help — справка)');
 const runRoot = path.resolve(dir);
@@ -411,6 +443,16 @@ const sameEvidence = (a, b) => !!(a && b) && a.file.toLowerCase() === b.file.toL
 
 /* ---------- состояние клетки таблицы ---------- */
 
+/* причины NA по полям для show и set: «perf NA: только кегли»; одна причина у нескольких полей —
+   одной строкой «mobile, perf NA: …»; совпадающая с заметкой задачи (старые журналы) не повторяется */
+function naNotesOf(t) {
+  const by = new Map();
+  for (const c of CHECKS) {
+    const n = t[c] === 'NA' && t.proof && t.proof[c] && t.proof[c].note;
+    if (n && n !== t.note) by.set(n, [...(by.get(n) || []), c]);
+  }
+  return [...by].map(([n, cs]) => `${cs.join(', ')} NA: ${n}`);
+}
 const PROBLEM_LABEL = { missing: 'файла нет', fail: 'протокол FAIL', stale: 'устарело', nosite: 'нет папки сайта', type: 'не годится', noverdict: 'без вердикта', step: 'нет шага', vp: 'не телефон', inside: 'в папке сайта', reqchange: 'требование изменено' };
 function cellState(t, c) {
   const s = t[c]; const p = t.proof && t.proof[c];
@@ -453,11 +495,87 @@ function applyMeta(target, { createSite = false } = {}) {
     if (opt['site-ignore'] === true) die('--site-ignore без списка: --site-ignore "data,*.json"');
     target.siteIgnore = String(opt['site-ignore']).split(',').map((x) => x.trim()).filter(Boolean);
   }
+  if (opt.donor !== undefined) {
+    const d = opt.donor === true ? '' : String(opt.donor).trim();
+    if (/^(none|-|нет)$/i.test(d)) delete target.donor;
+    else if (!/^(https?|file):\/\/\S/i.test(d)) die('--donor <адрес донора: http://…, https://… или file:///…> (убрать — --donor none)');
+    else target.donor = d;
+  }
+  /* донор — эталон языка для СВОЕГО сайта: в режиме donor донор и есть адрес журнала, в new — режим donor */
+  if (target.donor && target.mode && !['rework', 'mirror'].includes(target.mode)) {
+    if (opt.donor === undefined) die(`в журнале задан донор ${target.donor} (свой сайт в языке донора) — режим ${target.mode} с ним не сочетается: meta --mode ${target.mode} --donor none`);
+    die(target.mode === 'donor'
+      ? '--donor не нужен в режиме donor: там донор — адрес журнала (init <адрес донора>), а сайт собирается с нуля в <прогон>/site. Свой сайт с исходниками в языке донора — --mode rework --donor <адрес донора>, адрес журнала — свой сайт'
+      : '--donor — только с --mode rework или mirror (свой сайт в языке донора); новый сайт по донору — --mode donor');
+  }
+}
+/* режим donor с папкой сайта вне прогона — похоже на свой сайт с исходниками (Эпицентр, 29.09: «до» было, а init писал «новый сайт по донору») */
+function donorModeHint(s) {
+  if (s.mode !== 'donor' || !s.site || inside(s.site, runRoot)) return null;
+  return `режим donor — «новый сайт по донору» (сайт собирается в <прогон>/site, снимков «до» нет), а папка сайта вне прогона: ${s.site}. Если это исходники своего сайта — meta --mode rework --donor ${s.url || '<адрес донора>'} --url <адрес своего сайта>: «до» — свой сайт, донор — эталон, в отчёте обе сверки`;
 }
 const metaLines = (s) => [
-  `Режим: ${s.mode ? `${s.mode} — ${MODES[s.mode]}` : 'не указан (meta --mode rework|mirror|donor|new)'}`,
+  `Режим: ${s.mode ? `${s.mode} — ${MODES[s.mode]}${s.donor ? ' в языке донора' : ''}` : 'не указан (meta --mode rework|mirror|donor|new)'}`,
+  ...(s.donor ? [`Донор: ${s.donor} — эталон языка (reference/donor-mode.md §1, сверка — §5); «до» — свой сайт${s.url ? ` ${s.url}` : ''} (shots --tag before)`] : []),
   `Сайт: ${s.site || 'папка не указана (meta --site <папка>) — VERIFIED не ставится, свежесть доказательств не проверить'}${s.siteIgnore && s.siteIgnore.length ? ` · не считать правкой: ${s.siteIgnore.join(', ')}` : ''}`,
 ];
+/* этапы donor и compare по режиму: нужны — todo (если были skipped или их нет), не нужны — skipped (если не начаты) */
+function syncDonorStages(s) {
+  for (const k of DONOR_ONLY) {
+    const want = stageShown(s, k);
+    if (want && (!s.stages[k] || s.stages[k] === 'skipped')) s.stages[k] = 'todo';
+    else if (!want && s.mode && (!s.stages[k] || s.stages[k] === 'todo')) s.stages[k] = 'skipped';
+  }
+}
+
+/* ---------- сверки режима с донором: что лежит в папке прогона ---------- */
+
+/** Файлы папки прогона (относительные пути через «/»), до глубины 4, без журналов и node_modules. */
+function runFiles() {
+  const out = []; const stack = [[runRoot, 0]];
+  while (stack.length) {
+    const [d, depth] = stack.pop();
+    let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of ents) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) { if (depth < 4 && !IGNORE_DIRS.has(e.name)) stack.push([full, depth + 1]); continue; }
+      if (e.isFile()) out.push(path.relative(runRoot, full).split(path.sep).join('/'));
+      if (out.length > 20000) return out;
+    }
+  }
+  return out;
+}
+/**
+ * Что есть для обеих сверок: «до/после» своего сайта и донор (эталон и сверка с ним). Пути — те, что
+ * пишут скрипты по SKILL.md и donor-mode.md; имена можно менять — ищется по образцу.
+ */
+function compareArtifacts(s) {
+  const files = runFiles();
+  const has = (re) => files.filter((f) => re.test(f));
+  const img = /\.(png|jpe?g|webp)$/i;
+  const parts = [];
+  if (s.donor) {
+    parts.push({ group: 'до/после', items: [
+      ['снимки «до»', has(/^before\/.+/).filter((f) => img.test(f)), 'shots.mjs <свой адрес> --out <папка> --tag before'],
+      ['снимки «после»', has(/^after\/.+/).filter((f) => img.test(f)), 'shots.mjs <свой адрес> --out <папка> --tag after'],
+      ['diff', has(/(^|\/)diff\/diff\.json$/), 'diff.mjs <папка>/before <папка>/after'],
+    ] });
+  }
+  parts.push({ group: 'эталон донора', items: [
+    ['discover', has(/^donor\/[^/]+\.(json|md|png)$/), 'discover.mjs <донор> --out <папка>/donor --no-design --pages-shots 8'],
+    ['extract', has(/^donor\/design\/[^/]+\.json$/), 'extract.mjs <донор> --out <папка>/donor/design --name donor'],
+    ['texture', has(/^donor\/texture\/[^/]+\.json$/), 'texture.mjs <донор> --out <папка>/donor/texture'],
+    ['cliche baseline', has(/(^|\/)cliche[^/]*\/[^/]*(donor|baseline)[^/]*\.json$|^cliche-baseline[^/]*\.json$/), 'cliche.mjs baseline <донор> --out <папка>/cliche/donor.json'],
+    ['motion', has(/^motion\/donor-[^/]+\.json$/), 'motion.mjs <донор> --tag donor --out <папка>'],
+  ] });
+  parts.push({ group: 'сверка с донором', items: [
+    ['verify', has(/(^|\/)[^/]*verify[^/]*\.json$/), 'verify.mjs <папка>/donor/design/donor.json <адрес> --json <папка>/verify.json'],
+    ['texture compare', has(/(^|\/)texture-compare\/[^/]+\.json$/), 'texture.mjs compare … --out <папка>/texture-compare'],
+    ['cliche', has(/(^|\/)cliche\/cliche[^/]*\.json$/).filter((f) => !/baseline|donor/.test(f)), 'cliche.mjs <адрес> --baseline <папка>/cliche/donor.json'],
+    ['motion compare', has(/^motion\/compare[^/]*\.json$/), 'motion.mjs compare <папка>/motion/donor-home.json <адрес> --out <папка>'],
+  ] });
+  return parts;
+}
 
 /* ---------- команды ---------- */
 
@@ -471,22 +589,28 @@ if (cmd === 'init') {
   /* с нуля начинается с требований; в остальных режимах — с разведки, этапы режима new не нужны */
   if (st.mode === 'new') st.stages.requirements = 'active';
   else { st.stages.discovered = 'active'; if (st.mode) for (const k of NEW_ONLY) st.stages[k] = 'skipped'; }
+  syncDonorStages(st);
   writeJson(file, st, JOURNAL); console.log(`Журнал создан: ${file}`);
-  const [modeLine, siteLine] = metaLines(st);
-  console.log(`${st.mode ? 'OK  ' : 'WARN'} ${modeLine}`); console.log(`${st.site ? 'OK  ' : 'WARN'} ${siteLine}`);
+  const lines = metaLines(st);
+  console.log(`${st.mode ? 'OK  ' : 'WARN'} ${lines[0]}`);
+  for (const l of lines.slice(1)) console.log(`${/^Сайт: папка не указана/.test(l) ? 'WARN' : 'OK  '} ${l}`);
   if (!st.url) console.log('WARN Адреса ещё нет — когда сайт поднимется: meta --url http://localhost:<порт>/');
+  const hint = donorModeHint(st); if (hint) console.log(`WARN ${hint}`);
   if (st.mode === 'new') console.log('Дальше: требования в реестр — requirements.mjs <папка> ingest --text "<первое сообщение>" --kind brief (файлы ТЗ — --file)');
+  if (st.donor) console.log('Дальше: снимки «до» своего сайта (shots.mjs <свой адрес> --tag before, copy.mjs snapshot --tag before) и эталон донора (reference/donor-mode.md §1: discover, extract, texture, cliche baseline, motion) — оба; перед отчётом — обе сверки: diff «до/после» и сверка с донором (§5), этап compare');
   process.exit(0);
 }
 if (!st) die(`Нет журнала ${file} — сначала init.`);
 for (const t of st.tasks || []) if (IMPL_ALIAS[t.impl]) t.impl = IMPL_ALIAS[t.impl];
 
 if (cmd === 'meta') {
-  const before = JSON.stringify([st.site, st.mode, st.siteIgnore, st.url]);
+  const before = JSON.stringify([st.site, st.mode, st.siteIgnore, st.url, st.donor, st.stages]);
   applyMeta(st);
-  if (JSON.stringify([st.site, st.mode, st.siteIgnore, st.url]) !== before) { writeJson(file, st, JOURNAL); console.log('Записано.'); }
+  if (opt.mode !== undefined || opt.donor !== undefined) syncDonorStages(st);
+  if (JSON.stringify([st.site, st.mode, st.siteIgnore, st.url, st.donor, st.stages]) !== before) { writeJson(file, st, JOURNAL); console.log('Записано.'); }
   console.log(`Адрес: ${st.url || 'ещё нет (meta --url http://localhost:<порт>/)'}`);
   for (const l of metaLines(st)) console.log(l);
+  const hint = donorModeHint(st); if (hint) console.log(`WARN ${hint}`);
   if (st.mode === 'new') { const sk = NEW_ONLY.filter((k) => st.stages[k] === 'skipped'); if (sk.length) console.log(`WARN в режиме new этапы ${sk.join(', ')} нужны, а отмечены «пропущено»: stage ${sk[0]} active`); }
   const L = siteLatest();
   if (L) console.log(`Последняя правка сайта: ${L.file ? `${L.file} ${fmt(L.mtimeMs)}` : 'файлов нет'} (файлов ${L.files}${L.capped ? ', обход остановлен на 50 000' : ''})`);
@@ -552,6 +676,10 @@ if (cmd === 'meta') {
   }
 
   const now = new Date().toISOString();
+  /* NA: заметка вызова — причина NA, пишется к полям NA и не затирает заметку задачи (раньше
+     `set 5 perf=NA --note "только кегли"` заменял длинную заметку задачи — Opara, 29.09). Без NA —
+     основная заметка задачи, как раньше, и она же у проверок этого вызова. */
+  const naReason = na.length ? note : null;
   for (const t of tasks) {
     t.proof = t.proof || {};
     if (changes.impl) { t.impl = changes.impl; t.implAt = now; }
@@ -560,16 +688,17 @@ if (cmd === 'meta') {
       if (!changes[c]) continue;
       t[c] = changes[c];
       if (changes[c] === 'NOT_CHECKED') { delete t.proof[c]; continue; }
-      t.proof[c] = { status: changes[c], at: now, ...(recs[c] ? { evidence: recs[c] } : {}), ...(note ? { note } : {}) };
+      const n = naReason ? (changes[c] === 'NA' ? naReason : null) : note;
+      t.proof[c] = { status: changes[c], at: now, ...(recs[c] ? { evidence: recs[c] } : {}), ...(n ? { note: n } : {}) };
     }
-    if (note) t.note = note;
+    if (note && !naReason) t.note = note;
     t.updatedAt = now;
   }
   writeJson(file, st, JOURNAL);
   for (const w of warns) console.log(`WARN ${w}`);
   for (const t of tasks) {
     const parts = CHECKS.map((c) => `${c} ${t[c]}${changes[c] && recs[c] && changes[c] !== 'NOT_CHECKED' ? ` ← ${evSpec(recs[c])}${recs[c].verdict ? ` (${recs[c].stepStatus || recs[c].verdict})` : ''}` : ''}`);
-    console.log(`OK   #${t.id} ${t.task}: impl ${t.impl} · ${parts.join(' · ')}${t.note ? ` · ${t.note}` : ''}`);
+    console.log(`OK   #${t.id} ${t.task}: impl ${t.impl} · ${parts.join(' · ')}${[t.note, ...naNotesOf(t)].filter(Boolean).map((x) => ` · ${x}`).join('')}`);
   }
 } else if (cmd === 'stage') {
   /* по списку STAGES, а не по ключам журнала: в старом журнале новых этапов (requirements, direction) нет */
@@ -593,33 +722,55 @@ if (cmd === 'meta') {
   if (opt.json) {
     const cellJ = (t, c) => { const s = cellState(t, c); const p = t.proof && t.proof[c]; return { status: t[c], cat: s.cat, label: s.label, evidence: (p && p.evidence) || null, problems: s.r ? s.r.problems : [], warns: s.r ? s.r.warns : [] }; };
     console.log(JSON.stringify({
-      url: st.url || null, request: st.request, mode: st.mode || null, site: st.site || null,
+      url: st.url || null, request: st.request, mode: st.mode || null, donor: st.donor || null, site: st.site || null,
       siteEdit: L && L.file ? { file: L.file, at: new Date(L.mtimeMs).toISOString() } : null,
       stages: Object.fromEntries(STAGES.map(([k]) => [k, st.stages[k] || null])),
-      tasks: st.tasks.map((t) => ({ id: t.id, task: t.task, priority: t.priority, area: t.area || null, impl: t.impl, note: t.note || '', reqs: reqIds(t), cells: Object.fromEntries(CHECKS.map((c) => [c, cellJ(t, c)])) })),
+      ...(st.donor || st.mode === 'donor' ? { compare: compareArtifacts(st).map((p) => ({ group: p.group, items: p.items.map(([what, found]) => ({ what, files: found.length, sample: found.slice(0, 3) })) })) } : {}),
+      tasks: st.tasks.map((t) => ({ id: t.id, task: t.task, priority: t.priority, area: t.area || null, impl: t.impl, note: t.note || '', naNotes: naNotesOf(t), reqs: reqIds(t), cells: Object.fromEntries(CHECKS.map((c) => [c, cellJ(t, c)])) })),
     }, null, 1));
     process.exit(0);
   }
   console.log(`# ${st.url || '(адреса ещё нет — meta --url)'}\n\nЗапрос: ${st.request}`);
   for (const l of metaLines(st)) console.log(l);
   if (st.site) console.log(`Последняя правка сайта: ${L && L.file ? `${L.file} ${fmt(L.mtimeMs)}` : fs.existsSync(st.site) ? 'файлов нет' : 'папки нет'}`);
+  { const hint = donorModeHint(st); if (hint) console.log(`WARN ${hint}`); }
   console.log('');
   /* этапы режима new в других режимах — только если их начали (реестр понадобился и там): у старых журналов
      и у переработки без реестра чек-лист прежний; этапа нет в журнале (журнал старше этапа) — «не начато» */
   for (const [k, title] of STAGES) {
     const v = st.stages[k];
     if (NEW_ONLY.includes(k) && st.mode !== 'new' && (!v || v === 'skipped') && !(k === 'requirements' && reqRegistry())) continue;
-    console.log(`${MARK[v] || '·'} ${title}`);
+    /* donor и compare — только в режимах с донором или если их начали */
+    if (DONOR_ONLY.includes(k) && !stageShown(st, k) && (!v || v === 'skipped' || v === 'todo')) continue;
+    console.log(`${MARK[v] || '·'} ${k === 'compare' && !st.donor ? 'Сверка с донором перед отчётом (reference/donor-mode.md §5)' : title}`);
   }
+  /* сверки режима с донором: что уже лежит в папке прогона и чего нет */
+  let compareMissing = [];
+  if (st.donor || st.mode === 'donor') {
+    const parts = compareArtifacts(st);
+    console.log(`\nСверки (${st.donor ? `свой сайт в языке донора ${st.donor}` : 'режим donor'}; по файлам в папке прогона):`);
+    /* команды недостающего — когда до них дошло: эталон — с этапа donor (в режиме donor — discovered), сверки — с compare или report */
+    const started = (k) => ['active', 'done'].includes(st.stages[k]);
+    const hintsFor = (g) => (g === 'эталон донора' ? started(st.donor ? 'donor' : 'discovered') : started('compare') || started('report'));
+    let hidden = 0;
+    for (const p of parts) {
+      const miss = p.items.filter(([, f]) => !f.length);
+      console.log(`  ${p.group}: ${p.items.map(([what, f]) => `${what} ${f.length ? `✓${f.length > 1 ? ` ${f.length}` : ''}` : '—'}`).join(' · ')}`);
+      if (hintsFor(p.group)) for (const [what, , how] of miss) console.log(`    нет «${what}»: ${how}`);
+      else hidden += miss.length;
+      if (p.group !== 'эталон донора') compareMissing.push(...miss.map(([what]) => `${p.group}: ${what}`));
+    }
+    if (hidden) console.log('  (команды недостающего — reference/donor-mode.md §1 и §5; show напомнит, когда начнутся этапы donor, compare или report)');
+  }
+  const reportStarted = ['active', 'done'].includes(st.stages.report) || st.stages.compare === 'done';
 
   const sorted = [...st.tasks].sort((a, b) => a.priority.localeCompare(b.priority) || a.id - b.id);
   const cells = new Map(sorted.map((t) => [t.id, Object.fromEntries(CHECKS.map((c) => [c, cellState(t, c)]))]));
   console.log('\n| # | P | задача | реализация | runtime | визуал | телефон | скорость | заметка |\n|---|---|---|---|---|---|---|---|---|');
   for (const t of sorted) {
     const cs = cells.get(t.id);
-    const naNotes = CHECKS.filter((c) => t[c] === 'NA' && t.proof && t.proof[c] && t.proof[c].note && t.proof[c].note !== t.note).map((c) => `${c} NA: ${t.proof[c].note}`);
     const rq = reqIds(t);
-    console.log(`| ${t.id} | ${t.priority} | ${t.task}${rq.length ? ` [${rq.join(', ')}]` : ''} | ${t.impl} | ${CHECKS.map((c) => cs[c].label).join(' | ')} | ${[t.note, ...naNotes].filter(Boolean).join(' · ').replace(/\|/g, '/')} |`);
+    console.log(`| ${t.id} | ${t.priority} | ${t.task}${rq.length ? ` [${rq.join(', ')}]` : ''} | ${t.impl} | ${CHECKS.map((c) => cs[c].label).join(' | ')} | ${[t.note, ...naNotesOf(t)].filter(Boolean).join(' · ').replace(/\|/g, '/')} |`);
   }
 
   const evLines = []; const bare = [];
@@ -680,11 +831,81 @@ if (cmd === 'meta') {
   } else if (st.mode === 'new') console.log('Требования: реестра нет (requirements.json) — в режиме new он обязателен: requirements.mjs <папка> ingest --text "<первое сообщение>" --kind brief');
   const noRegistry = !R && st.mode === 'new';
   const openHigh = st.tasks.filter((t) => ['P0', 'P1', 'P2'].includes(t.priority) && t.impl !== 'DROPPED' && !ready(t));
+  /* отчёт начат, а сверки с донором или «до/после» в папке прогона нет — в отчёт она не попадёт */
+  const noCompare = reportStarted ? compareMissing : [];
   const bad = cnt.noproof + cnt.nosite + cnt.stale;
-  const verdict = bad ? 'FAIL' : openHigh.length || reqOpen.length || noRegistry ? 'WARN' : 'OK';
+  const verdict = bad ? 'FAIL' : openHigh.length || reqOpen.length || noRegistry || noCompare.length ? 'WARN' : 'OK';
   const msg = bad
     ? `${cnt.noproof + cnt.nosite ? `без доказательства: ${cnt.noproof + cnt.nosite}` : ''}${cnt.noproof + cnt.nosite && cnt.stale ? ', ' : ''}${cnt.stale ? `устарело: ${cnt.stale} (${R ? 'сайт правили или требование изменили' : 'сайт правили'} после проверки)` : ''} — прогнать проверки заново и поставить VERIFIED с --evidence`
-    : openHigh.length || reqOpen.length || noRegistry ? [openHigh.length ? `P0–P2 не проверены до конца: ${openHigh.map((t) => `#${t.id}`).join(', ')}` : '', reqOpen.length ? `must-требования без задачи или не пересмотрены после изменения: ${reqOpen.map((q) => q.id).join(', ')}` : '', noRegistry ? 'режим new без реестра требований' : ''].filter(Boolean).join('; ') : 'всё сделанное проверено';
+    : openHigh.length || reqOpen.length || noRegistry || noCompare.length ? [openHigh.length ? `P0–P2 не проверены до конца: ${openHigh.map((t) => `#${t.id}`).join(', ')}` : '', reqOpen.length ? `must-требования без задачи или не пересмотрены после изменения: ${reqOpen.map((q) => q.id).join(', ')}` : '', noRegistry ? 'режим new без реестра требований' : '', noCompare.length ? `отчёт начат, а сверок нет (${noCompare.join(', ')})` : ''].filter(Boolean).join('; ') : 'всё сделанное проверено';
   console.log(`\n${verdict}: ${msg}`);
   if (opt.strict && verdict !== 'OK') process.exit(1);
 } else die(`Неизвестная команда ${cmd}`);
+
+/* ---------- --selftest: журнал во временной папке ---------- */
+
+function selftest() {
+  const SELF = fileURLToPath(import.meta.url);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'state-selftest-'));
+  const results = [];
+  const check = (group, name, ok, extra = '') => { results.push(!!ok); console.log(`${ok ? 'OK  ' : 'FAIL'} ${group.padEnd(7)} ${name}${!ok && extra ? ` — ${String(extra).replace(/\s+/g, ' ').slice(0, 300)}` : ''}`); };
+  const S = (run, ...a) => { const p = spawnSync(process.execPath, [SELF, run, ...a], { encoding: 'utf8', windowsHide: true }); return { code: p.status, out: `${p.stdout}${p.stderr}` }; };
+  const J = (run) => JSON.parse(fs.readFileSync(path.join(run, 'state.json'), 'utf8'));
+  const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, '{}'); };
+  try {
+    const site = path.join(tmp, 'epicentr'); fs.mkdirSync(site, { recursive: true }); fs.writeFileSync(path.join(site, 'index.html'), '<h1>Эпицентр</h1>');
+    /* свой сайт в языке донора */
+    const run = path.join(tmp, 'run');
+    let r = S(run, 'init', 'http://localhost:3000/', 'Эпицентр в языке mamuka.rest', '--site', site, '--mode', 'rework', '--donor', 'https://mamuka.rest/');
+    let j = J(run);
+    check('donor', 'init --mode rework --donor: донор в журнале, этапы donor и compare — todo', r.code === 0 && j.donor === 'https://mamuka.rest/' && j.url === 'http://localhost:3000/' && j.stages.donor === 'todo' && j.stages.compare === 'todo', r.out);
+    check('donor', 'init печатает режим «в языке донора», донора и «Дальше» про обе сверки', /в языке донора/.test(r.out) && /Донор: https:\/\/mamuka\.rest\//.test(r.out) && /обе сверки/.test(r.out), r.out);
+    r = S(run, 'show');
+    check('donor', 'show: этап «Донор снят», блок «Сверки» с «до/после» и донором', /Донор снят/.test(r.out) && /Сверки \(свой сайт в языке донора/.test(r.out) && /до\/после: снимки «до» —/.test(r.out) && /сверка с донором: verify —/.test(r.out), r.out);
+    for (const f of ['before/home-desktop-first.png', 'after/home-desktop-first.png', 'donor/discovery.json', 'donor/design/donor.json', 'cliche/donor.json', 'motion/donor-home.json', 'motion/compare-home.json']) touch(path.join(run, f));
+    S(run, 'stage', 'report', 'active');
+    r = S(run, 'show');
+    check('donor', 'по файлам прогона: «до» и «после» есть, diff, verify, texture compare — нет', /снимки «до» ✓ · снимки «после» ✓ · diff —/.test(r.out) && /motion compare ✓/.test(r.out) && /нет «verify»/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 600));
+    check('donor', 'отчёт начат, а сверок нет — итог WARN с их списком', /^WARN: .*отчёт начат, а сверок нет \(до\/после: diff, сверка с донором: verify, сверка с донором: texture compare, сверка с донором: cliche\)/m.test(r.out), r.out.split('\n').slice(-2).join(' '));
+    r = S(run, 'show', '--json');
+    let sj = null; try { sj = JSON.parse(r.out); } catch { /* не JSON */ }
+    check('donor', 'show --json: donor и compare', !!(sj && sj.donor === 'https://mamuka.rest/' && Array.isArray(sj.compare) && sj.compare.length === 3), r.out.slice(0, 200));
+    r = S(run, 'meta', '--mode', 'donor');
+    check('donor', 'meta --mode donor при доноре в журнале — отказ с подсказкой --donor none', r.code === 1 && /--donor none/.test(r.out), r.out);
+    r = S(run, 'meta', '--donor', 'none');
+    j = J(run);
+    check('donor', 'meta --donor none: донора нет, этап donor — skipped', r.code === 0 && !j.donor && j.stages.donor === 'skipped', r.out);
+    /* режим donor */
+    const run2 = path.join(tmp, 'run2');
+    r = S(run2, 'init', 'https://mamuka.rest/', 'Эпицентр', '--site', site, '--mode', 'donor', '--donor', 'https://x.ru/');
+    check('donor', 'init --mode donor --donor — отказ: донор — адрес журнала', r.code === 1 && !fs.existsSync(path.join(run2, 'state.json')) && /--mode rework --donor/.test(r.out), r.out);
+    r = S(run2, 'init', 'https://mamuka.rest/', 'Эпицентр', '--site', site, '--mode', 'donor');
+    check('donor', 'donor со своей папкой вне прогона — WARN «это rework --donor»', r.code === 0 && /^WARN режим donor — «новый сайт по донору»/m.test(r.out) && /meta --mode rework --donor https:\/\/mamuka\.rest\//.test(r.out), r.out);
+    r = S(run2, 'show');
+    check('donor', 'режим donor: этапа donor нет, compare — «Сверка с донором», блок без «до/после»', !/Донор снят/.test(r.out) && /Сверка с донором перед отчётом/.test(r.out) && /Сверки \(режим donor/.test(r.out) && !/до\/после:/.test(r.out), r.out);
+    r = S(path.join(tmp, 'run3'), 'init', '-', 'С нуля', '--mode', 'new', '--site', path.join(tmp, 'run3', 'site'), '--donor', 'https://x.ru/');
+    check('donor', 'init --mode new --donor — отказ', r.code === 1, r.out);
+    /* причина NA — к полю, заметка задачи не затирается */
+    S(run, 'add', 'Кегли h1');
+    S(run, 'set', '1', 'impl=DONE', 'runtime=NEEDS_WORK', '--note', 'длинная заметка задачи');
+    r = S(run, 'set', '1', 'perf=NA', '--note', 'только кегли');
+    j = J(run); let t = j.tasks[0];
+    check('NA', 'set perf=NA --note: заметка задачи не затёрта, причина — у perf', t.note === 'длинная заметка задачи' && t.proof.perf.note === 'только кегли' && t.proof.runtime.note === 'длинная заметка задачи', JSON.stringify({ note: t.note, perf: t.proof.perf }));
+    check('NA', 'set печатает причину рядом: «perf NA: только кегли»', /длинная заметка задачи · perf NA: только кегли/.test(r.out), r.out);
+    S(run, 'set', '1', 'mobile=NA', '--note', 'только кегли');
+    r = S(run, 'show');
+    check('NA', 'show: одна причина у двух полей — «mobile, perf NA: …»', /\| длинная заметка задачи · mobile, perf NA: только кегли \|/.test(r.out), r.out.split('\n').find((l) => /^\| 1 /.test(l)));
+    S(run, 'add', 'Меню');
+    S(run, 'set', '2', 'impl=DONE', 'runtime=FAILED', 'visual=NA', '--note', 'меню без картинок');
+    j = J(run); t = j.tasks[1];
+    check('NA', 'смешанный вызов: причина только у NA, заметка задачи пуста', t.note === '' && t.proof.visual.note === 'меню без картинок' && !t.proof.runtime.note, JSON.stringify({ note: t.note, runtime: t.proof.runtime, visual: t.proof.visual }));
+    r = S(run, 'set', '2', 'perf=NA');
+    check('NA', 'NA без --note — отказ', r.code === 1 && /NA — только с причиной/.test(r.out), r.out);
+    /* strict */
+    r = S(run, 'show', '--dnor', 'x');
+    check('флаги', 'неизвестный флаг — отказ с подсказкой (strict)', r.code === 1 && /--dnor — может быть, --donor\?/.test(r.out), r.out);
+  } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* останется во временной папке */ } }
+  const failed = results.filter((x) => !x).length;
+  console.log(`\n${failed ? 'FAIL' : 'OK'}: проверок ${results.length}, не прошло ${failed}`);
+  return failed ? 1 : 0;
+}
