@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: светлый слой поверх своей подложки</title>
+<!-- Стенд a11y.mjs --selftest (plate-overlay, mobile-s). Шапка header.hdr (fixed, фон #111, белые ссылки) и нижняя
+     лента разделов nav.rib (fixed, пилюли #222 с белым текстом, лента сама уезжает к активному разделу). После
+     прокрутки больше 100 px поверх подложек появляется светлый слой: у шапки ::before rgba(255,255,255,.92), у
+     пилюль ::after rgba(255,255,255,.9) — белый текст на нём не читается (1.2:1). Наверху слоя нет — там всё
+     проходит. Одно время видимый закреплённый текст мерился по цвету своей подложки, а не по снимку: шапка давала
+     «OK … по своей подложке — 18.88:1 на #111111» вместо FAIL 1.18:1 (стенд скептика fx-overlay-scroll 29.09).
+     Пилюли за краем ленты снимка не имеют — по подложке они мерились бы как #FFFFFF на #222222 (OK), хотя их
+     накрыл ::after. Ждём: FAIL со ссылками шапки #FFFFFF по снимку; пилюли за краем — «обрезан» в «не мерились»,
+     без «по своей подложке». Полоска подчёркивания активной пилюли (::before 2px) подложку не отменяет. -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+.hdr { position: fixed; top: 0; left: 0; right: 0; z-index: 10; background: #111; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 16px; }
+.hdr::before { content: ""; position: absolute; inset: 0; background: rgba(255, 255, 255, .92); opacity: 0; }
+.hdr.is-scrolled::before { opacity: 1; }
+.hdr a { position: relative; z-index: 1; color: #fff; text-decoration: none; font-size: 16px; }
+.rib { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: #fff; }
+.rib__track { display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; }
+.chip { position: relative; flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 20px; background: #222; color: #fff; text-decoration: none; white-space: nowrap; font-size: 15px; }
+.chip::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: rgba(255, 255, 255, .9); opacity: 0; }
+.rib.is-scrolled .chip::after { opacity: 1; }
+.chip.is-active::before { content: ""; position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; background: #fff; }
+section { min-height: 700px; padding: 80px 16px; }
+.dark { background: #1c1c1c; color: #fff; }
+.light { background: #fff; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header class="hdr"><a href="#s0">Раздел один</a><a href="#s1">Раздел два</a></header>
+<main id="secs"></main>
+<nav class="rib" aria-label="Разделы"><div class="rib__track" id="track"></div></nav>
+<script>
+const names = ['Закуски', 'Салаты', 'Супы', 'Горячее', 'Гриль', 'Паста', 'Десерты', 'Напитки'];
+const track = document.getElementById('track'), secs = document.getElementById('secs');
+names.forEach((n, i) => {
+  const a = document.createElement('a'); a.className = 'chip'; a.href = '#s' + i; a.textContent = n; track.appendChild(a);
+  const s = document.createElement('section'); s.id = 's' + i; s.className = i % 2 ? 'light' : 'dark'; s.innerHTML = `<h2>${n}</h2><p>Блюда раздела «${n}».</p>`; secs.appendChild(s);
+});
+const hdr = document.querySelector('.hdr'), rib = document.querySelector('.rib'), chips = [...track.children], list = [...secs.children];
+function sync() {
+  hdr.classList.toggle('is-scrolled', scrollY > 100); rib.classList.toggle('is-scrolled', scrollY > 100);
+  let cur = 0; for (const [i, s] of list.entries()) if (s.getBoundingClientRect().top < 120) cur = i;
+  chips.forEach((c, i) => c.classList.toggle('is-active', i === cur));
+  track.scrollLeft = Math.max(0, chips[cur].offsetLeft - 16);
+}
+addEventListener('scroll', sync, { passive: true }); sync();
+</script>
+</body>
+</html>

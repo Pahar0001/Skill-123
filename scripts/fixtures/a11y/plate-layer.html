@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: плашка пилюли — отдельный слой</title>
+<!-- Стенд a11y.mjs --selftest (plate-layer, mobile-s). Нижняя закреплённая лента разделов nav.rib (fixed, фон #FFFFFF),
+     пилюли без своего фона, текст #333333, у каждой подчёркивание ::after 2px. Тёмная плашка активной пилюли —
+     отдельный span.rib__ind под ней («бегущая плашка»), текст активной — белый. После 1000 px прокрутки ленту
+     накрывает непрозрачная плашка div.cookie: текст ленты «перекрыт», снимка под ним нет, мерится он только по
+     своей подложке. Два случая:
+       1) видимый текст — по снимку, не по цвету ленты: на 754 px активная «Супы» над тёмной плашкой. В 0c7839f
+          видимый текст на своей подложке мерился по её цвету — «#FFFFFF на #FFFFFF 1:1», ложный FAIL;
+       2) на 1614 px активная «Горячее» под плашкой cookie: между лентой и её текстом лежит другой слой (span с
+          фоном), цвет ленты — не фон текста, она «перекрыт» в «не мерились», а не «белое на белом». Неактивные
+          «Завтраки» и «Супы» там же мерятся по ленте: подчёркивание ::after 2px подложку не отменяет.
+     Ждём: OK, «по своей подложке» и «перекрыт», без «#FFFFFF на #FFFFFF». -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+.rib { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: #fff; }
+.rib__track { position: relative; display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; }
+.rib__ind { position: absolute; top: 10px; left: 16px; width: 0; height: 40px; border-radius: 20px; background: #222; z-index: 0; }
+.chip { position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; color: #333; text-decoration: none; white-space: nowrap; font-size: 15px; }
+.chip::after { content: ""; position: absolute; left: 16px; right: 16px; bottom: 7px; height: 2px; background: #d8d8d8; }
+.chip.is-active { color: #fff; }
+.cookie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none; box-sizing: border-box; height: 96px; padding: 16px; background: #f2f2f2; color: #222; font-size: 15px; }
+.cookie.is-on { display: block; }
+section { min-height: 700px; padding: 80px 16px; }
+.dark { background: #1c1c1c; color: #fff; }
+.light { background: #fff; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<main id="secs"></main>
+<nav class="rib" aria-label="Разделы"><div class="rib__track" id="track"><span class="rib__ind" id="ind"></span></div></nav>
+<div class="cookie" id="cookie">Сайт запоминает выбранный раздел.</div>
+<script>
+const names = ['Завтраки', 'Супы', 'Горячее', 'Гриль', 'Паста', 'Десерты', 'Напитки', 'Бар'];
+const track = document.getElementById('track'), secs = document.getElementById('secs'), ind = document.getElementById('ind'), cookie = document.getElementById('cookie');
+names.forEach((n, i) => {
+  const a = document.createElement('a'); a.className = 'chip'; a.href = '#s' + i; a.textContent = n; track.appendChild(a);
+  const s = document.createElement('section'); s.id = 's' + i; s.className = i % 2 ? 'light' : 'dark'; s.innerHTML = `<h2>${n}</h2><p>Блюда раздела «${n}».</p>`; secs.appendChild(s);
+});
+const chips = [...track.querySelectorAll('.chip')], list = [...secs.children];
+/* плашка встаёт под активную пилюлю без перехода; ленту к ней не прокручиваем */
+function sync() {
+  let cur = 0; for (const [i, s] of list.entries()) if (s.getBoundingClientRect().top < 120) cur = i;
+  chips.forEach((c, i) => c.classList.toggle('is-active', i === cur));
+  const a = chips[cur]; ind.style.left = a.offsetLeft + 'px'; ind.style.width = a.offsetWidth + 'px';
+  cookie.classList.toggle('is-on', scrollY > 1000);
+}
+addEventListener('scroll', sync, { passive: true }); sync();
+</script>
+</body>
+</html>
