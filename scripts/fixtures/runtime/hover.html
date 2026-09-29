@@ -13,6 +13,9 @@
                  «мёртвый селектор: элемента нет в DOM», не «перебито другим правилом»
     .btn         .btn:hover { color } перебит .btn { color … !important } — «перебито», как раньше
     .ok          .ok:hover { color } — меняет объявленное
+    .box         правило .box:hover .box__tip, подсказка только у четвёртой .box, а наведение пробуется на
+                 первых трёх видимых — не «элемента нет в DOM» (он есть), а отдельно «цели правила нет у
+                 наведённых элементов»
 -->
 <style>
   body { margin: 0; padding: 32px; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
@@ -28,12 +31,17 @@
   .btn:hover { color: #d30052; }
   .ok { display: inline-block; padding: 10px 16px; margin-left: 16px; color: #1b1b1b; }
   .ok:hover { color: #d30052; }
+  .boxes { display: flex; gap: 12px; margin-top: 24px; }
+  .box { position: relative; padding: 12px; background: #fff; border: 1px solid #ddd; }
+  .box__tip { position: absolute; left: 0; top: 100%; padding: 4px 8px; background: #1b1b1b; color: #fff; opacity: 0; }
+  .box:hover .box__tip { opacity: 1; }
 </style>
 </head>
 <body>
 <nav><a class="nav__link" href="#a">Меню</a><a class="nav__link" href="#b">Афиша</a><a class="nav__link" href="#c">Контакты</a></nav>
 <p><span class="clip">Скруглится</span></p>
 <div class="card">Карточка без подсказки</div>
+<div class="boxes"><span class="box">Раз</span><span class="box">Два</span><span class="box">Три</span><span class="box">Четыре<span class="box__tip">Подсказка</span></span></div>
 <p><span class="btn">Кнопка</span><span class="ok">Ссылка</span></p>
 </body>
 </html>

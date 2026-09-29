@@ -13,9 +13,17 @@
                       раньше (порядок полей даты — по локали браузера): в поле 2026-10-10, OK
     #dnone            type=date и «завтра» — не дата ни в каком виде: FAIL с подсказкой формата ГГГГ-ММ-ДД,
                       а не «маска переписывает»
+    #dts              datetime-local без обработчиков и значение с секундами «2026-10-10T20:30:00»: браузер сам
+                      записывает «2026-10-10T20:30» — OK с пометкой «браузер записал как», а не FAIL «обработчик
+                      страницы переписал значение» (сверка с тем, что поле приняло до событий)
+    #drw              type=date, обработчик change переписывает значение на 2026-01-01 — FAIL «обработчик
+                      страницы переписал значение», как и должно
     #venue            select внутри формы: выбор ничего на странице не меняет — OK со значением, не WARN
     #loose            select вне формы без эффекта — WARN «после выбора ничего не изменилось», как раньше
     #filter           select вне формы, выбор меняет текст #out — OK с изменениями DOM
+    #hall             вариант «Банкетный зал» disabled: человек его не выберет — FAIL «вариант недоступен
+                      (disabled)» до выбора (раньше h.select() ставил его программно, и было OK); доступный
+                      вариант того же списка — OK
     #name             обычное текстовое поле — набор клавишами, как раньше
 -->
 <style>
@@ -33,12 +41,21 @@
   <label>Дата (не дата) <input id="dnone" name="date3" type="date"></label>
   <label>Время <input id="t" name="time" type="time" value="19:00"></label>
   <label>Дата и время <input id="dt" name="dt" type="datetime-local"></label>
+  <label>Дата и время (с секундами) <input id="dts" name="dts" type="datetime-local"></label>
+  <label>Дата (переписывает) <input id="drw" name="drw" type="date"></label>
   <label>Месяц <input id="m" name="month" type="month"></label>
   <label>Куда
     <select id="venue" name="venue">
       <option value="">Не важно</option>
       <option value="mosty">Мосты — ресторан</option>
       <option value="oktava">Октава — караоке-клуб</option>
+    </select>
+  </label>
+  <label>Зал
+    <select id="hall" name="hall">
+      <option value="main">Основной зал</option>
+      <option value="banquet" disabled>Банкетный зал</option>
+      <option value="terrace">Веранда</option>
     </select>
   </label>
 </form>
@@ -52,6 +69,8 @@
 <script>
   /* событие change у поля даты — как у настоящей формы брони: запоминает выбранное */
   document.getElementById('d').addEventListener('change', (e) => { document.body.dataset.date = e.target.value; });
+  /* обработчик, который переписывает выбор: --type должен дать FAIL */
+  document.getElementById('drw').addEventListener('change', (e) => { e.target.value = '2026-01-01'; });
 </script>
 </body>
 </html>

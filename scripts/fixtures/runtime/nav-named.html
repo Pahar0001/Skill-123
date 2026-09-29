@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — якоря меню на a name</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --nav (node runtime.mjs --selftest): якоря меню ведут на <a name="…"> перед блоками — так
+  их ставит Tilda, и браузер по ним переходит. Это не битые ссылки: не WARN «якоря меню ведут в никуда», а
+  INFO «якоря на <a name> — не проверялось» (подсветку по таким якорям runtime не сверяет). Сломанные якоря —
+  стенд nav-broken.html.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; }
+  nav { position: sticky; top: 0; background: #fff; padding: 12px; display: flex; gap: 16px; }
+  section { min-height: 900px; padding: 32px; border-top: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<nav class="t-menu">
+  <a href="#about">О нас</a>
+  <a href="#menu">Меню</a>
+  <a href="#events">Афиша</a>
+  <a href="#contacts">Контакты</a>
+</nav>
+<a name="about"></a><section><h2>О нас</h2></section>
+<a name="menu"></a><section><h2>Меню</h2></section>
+<a name="events"></a><section><h2>Афиша</h2></section>
+<a name="contacts"></a><section><h2>Контакты</h2></section>
+</body>
+</html>
