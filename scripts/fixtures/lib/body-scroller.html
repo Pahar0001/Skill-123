@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: страницу прокручивает сам body</title>
+<!--
+  Стенд checkOpenModal (fixtures/lib/selftest.mjs, случай modal; стенд проверяющего 30.09): закреплённый первый экран
+  (position:fixed на весь экран, содержимое наезжает при прокрутке), но страницу прокручивает сам body:
+  html { overflow:hidden; height:100% }, body { height:100%; overflow-y:auto } — приём против «резинки» и для scroll-snap.
+  Прокрутка НЕ заперта — окна нет (был ложный WARN «прокрутка страницы заперта» и совет нажать «Забронировать стол»).
+    ?lock=1   body ещё и overflow:hidden (прокрутки нет нигде) — слой на весь экран со ссылками при запертой прокрутке:
+              окно (контроль: проверка жива).
+-->
+<style>
+  html { overflow: hidden; height: 100%; }
+  body { margin: 0; height: 100%; overflow-y: auto; font: 17px/1.6 Georgia, serif; color: #222; }
+  body.lock { overflow: hidden; }
+  .hero { position: fixed; inset: 0; z-index: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+          background: linear-gradient(135deg, #1d2b3a, #3a2b1d); color: #fff; text-align: center; }
+  .hero h1 { font-size: 56px; margin: 0; }
+  .hero a { color: #fff; }
+  .hero .btn { display: inline-block; padding: 14px 28px; border: 2px solid #fff; border-radius: 999px; text-decoration: none; }
+  .content { position: relative; z-index: 1; margin-top: 100vh; background: #fff; }
+  .content section { padding: 48px 32px; min-height: 60vh; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>Ресторан у реки</h1>
+  <p>Кухня на открытом огне · ежедневно с 12 до 24</p>
+  <a class="btn" href="#book">Забронировать стол</a>
+  <a href="#menu">Смотреть меню</a>
+</div>
+<div class="content">
+  <section id="menu"><h2>Меню</h2><p>Уха по-рыбински, щука на углях, пироги с капустой, морс из клюквы.</p></section>
+  <section id="about"><h2>О ресторане</h2><p>Старый купеческий дом на набережной, сорок мест и летняя веранда.</p></section>
+  <section id="book"><h2>Бронь</h2><p>Позвоните нам или оставьте заявку — перезвоним в течение получаса.</p></section>
+</div>
+<script>
+  if (/lock=1/.test(location.search)) document.body.classList.add('lock');
+</script>
+</body>
+</html>

@@ -145,7 +145,7 @@ import {
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
   waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE, closeConsent, consentNote,
   EFFECTIVE_ZOOM_FN, CLIP_SHARE_FN, IS_TILDA_SERVICE_FN, TILDA_PH, tildaInfo, collectWarnings, takeWarnings, trackModule,
-  checkOpenModal, modalNote, dismissNote, collectNotes, takeNotes,
+  checkOpenModal, modalNote, dismissNote, dismissLine, collectNotes, takeNotes,
 } from './lib.mjs';
 import { findClickTargets, probeAccordions, probeToggles, accordionItems, accordionOk, accordionNote as accGroupNote, SCREEN_POINT_FN } from './clicks.mjs';
 import { tildaSnapshot, tildaSummary, pageTypes as tildaPageTypes } from './tilda.mjs';
@@ -1298,7 +1298,7 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     const timing = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0]; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)])); return n ? { ttfb: Math.round(n.responseStart), domContentLoaded: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd), fcp: p['first-contentful-paint'] || null, transferKb: Math.round((n.transferSize || 0) / 1024) } : null; });
     const afterScroll = { stillHidden: hidden.reduce((a, g) => a + g.count, 0), pageHeight: scroll.pageHeight, animationsNow: data.motion.total, horizontalOverflow: overflow.verdict !== 'OK' };
     const fullShot = { file: `${name}-full.png`, mode: fullMode };
-    const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : [], modal, ...(modalLate ? { modalLate } : {}) };
+    const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : [], modal, ...(modalLate ? { modalLate } : {}), ...(page.rwWrongPage ? { wrongPage: page.rwWrongPage } : {}) };
     return {
       ...data, early, reveal, hidden, overflow, found, texture, tiles, fullShot, notes, consent, windows,
       nav: page.gotoInfo || { attempt: 1, waitUntil: 'networkidle2' }, overlay: page.overlay, afterScroll, timing,
@@ -1626,8 +1626,9 @@ function consentLine(per, order) {
 function windowsLine(per, order, extra320) {
   const all = [...order.map((v) => [v, per[v]]), ...Object.entries(extra320 || {}).filter(([, p]) => p && !p.error)];
   const env = String(process.env.SITE_REWORK_DISMISS || '').trim();
-  /* одна запись в переменной — без её повтора у каждого экрана */
-  const one = (d, many) => `${many ? `«${d.spec}» ` : ''}${d.found ? `нажато ${d.sig}${d.label ? ` «${d.label}»` : ''}${d.nav ? `, перешли на ${d.nav}` : d.gone ? ', исчезло' : ', **осталось на экране**'}` : d.why}`;
+  /* одна запись в переменной — без её повтора у каждого экрана; строка — общая с lib (dismissLine): увело на другой
+     адрес — «нужная страница открыта заново» или «**замер не той страницы**» */
+  const one = (d, many) => { const t = dismissLine(d); const head = `«${d.spec}» — `; return !many && t.startsWith(head) ? t.slice(head.length) : t; };
   const ds = env ? all.map(([v, p]) => { const l = (p.windows && p.windows.dismiss) || []; return `${v} — ${l.length ? l.map((d) => one(d, l.length > 1)).join('; ') : dismissNote(l)}`; }).join('; ') : 'не задана';
   const ms = all.map(([v, p]) => { const w = p.windows || {}; return w.modal ? `${v} — ${modalNote(w.modal)}` : w.modalLate ? `${v} — после прокрутки: ${modalNote(w.modalLate)}` : null; }).filter(Boolean);
   return `- окна при загрузке: SITE_REWORK_DISMISS ${env ? `«${env}» — ${ds}` : ds} · открытое окно: ${ms.length ? `**${ms.join('; ')}**` : 'нет'}`;

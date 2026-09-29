@@ -70,6 +70,9 @@
  * открытого cNN.png, закрыть) → вырезки элементов. Отличие: прокрутка скриптом ≠ колесо — сглаживание
  * Lenis/пружины Framer догоняют; скрипт ждёт до 0.9 с на шаг. Окно из SITE_REWORK_DISMISS, которое увело на
  * другую страницу (выбор города → главная), — снимаемая страница открывается заново, заметка «увело на …».
+ * Окна при загрузке — в протоколе (windows: dismiss, modal, wrongPage, notes, warnings): открытое окно, неудачное
+ * нажатие (не найдено, скрыто, не та страница) и свой стиль, который не вставился, — WARN в вердикте инвентаря и
+ * сверки (снимок снят под окном).
  *
  * Выход: <out>/motion/<tag>.json (протокол: items[], libs, clicks, phases — что снималось, verdict) и <tag>.md (таблица для
  * analysis.md), вырезки <out>/motion/<tag>/mNN.png и cNN.png (открытое кликом). По умолчанию <out> —
@@ -97,7 +100,8 @@
  * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден или найден вид
  * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля). Плюс сверка без браузера
  * (fixtures/motion/compare-*.json: лента scrollLeft ↔ transform, наведение на элементе другого вида, --no-clicks).
- * Плюс окно выбора, которое уводит со страницы (fixtures/motion/dismiss.html): страница открыта заново.
+ * Плюс окно выбора, которое уводит со страницы (fixtures/motion/dismiss.html): страница открыта заново, итог нажатия —
+ * в windows, вердикт OK; окно при загрузке без переменной (fixtures/lib/modal-city.html) — WARN в вердикте и windows.
  * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает. Плюс Tilda-донор
  * (fixtures/motion/tilda.html): петля SBS — loop, задержки 0/300/600, лента 0.68, на телефоне — только data-animate-mobile=y.
  *
@@ -117,7 +121,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
   scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
-  tildaInfo, IS_TILDA_SERVICE_FN,
+  tildaInfo, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings, collectNotes, takeNotes,
 } from './lib.mjs';
 import { findClickTargets, SCREEN_POINT_FN } from './clicks.mjs';
 import { tildaSnapshot } from './tilda.mjs';
@@ -131,6 +135,9 @@ const { pos, opt } = parseArgs(process.argv.slice(2), {
 });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (m) => { console.error(m); process.exit(1); };
+/* WARN и INFO из lib (окно при загрузке, SITE_REWORK_DISMISS, свой стиль не вставился) — в протокол (windows) и вердикт
+   инвентаря, а не строкой мимо протокола */
+collectWarnings(); collectNotes();
 
 /* =====================================================================
    Код внутри страницы
@@ -1486,6 +1493,14 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
       result.notes.push(`окно SITE_REWORK_DISMISS увело на ${at} — ${pathOf(page.url()) === pathOf(url) ? 'страница открыта заново' : `открыта заново, но снова ушла на ${page.url()} — снимается не та страница`}`);
       say(`окно SITE_REWORK_DISMISS увело на ${at} — ${url} открыта заново`);
     }
+    /* окна при загрузке (lib): увело на другой адрес — lib уже открыл нужную страницу заново (заметка — как раньше);
+       итог нажатия и открытое окно — в протокол (windows) и вердикт: WARN — окно открыто (замеры под ним), не найдено,
+       скрыто, окно вернулось, снимается не та страница */
+    const dl = (page.rwDismiss && page.rwDismiss.list) || [];
+    if (!result.notes.some((x) => /^окно SITE_REWORK_DISMISS увело на/.test(x))) for (const d of dl) if (d.nav) result.notes.push(`окно SITE_REWORK_DISMISS ${d.reload ? 'перезагрузило страницу' : `увело на ${d.nav}`} — ${d.wrongPage ? `открыта заново, но снова ушла на ${d.back} — снимается не та страница` : d.again ? 'страница открыта заново, но окно снова на экране — сайт не запомнил выбор' : 'страница открыта заново'}`);
+    result.windows = { dismiss: dl.length ? dl : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null, notes: takeNotes(), warnings: takeWarnings() };
+    for (const x of result.windows.notes) say(`INFO ${x}`);
+    for (const x of result.windows.warnings) say(`WARN ${x}`);
     const deps = { sig: SIG_FN, screenPt: SCREEN_POINT_FN, svc: IS_TILDA_SERVICE_FN };
     result.libs = await evaluateWith(page, libsInPage, null, deps);
     let n = await evaluateWith(page, collectInPage, 5000, deps);
@@ -1878,7 +1893,11 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     if (ev.capped) result.notes.push('событий больше 8000 — часть не записана');
     await page.close();
   } finally { if (!shared) await browser.close(); }
-  result.verdict = 'OK';
+  /* WARN lib по ходу снятия (свой стиль не вставился) — туда же; вердикт инвентаря — WARN, если есть WARN lib */
+  if (!result.windows) result.windows = { dismiss: null, modal: null, wrongPage: null, notes: [], warnings: [] };
+  const late = takeWarnings(); takeNotes();
+  for (const x of late) { result.windows.warnings.push(x); say(`WARN ${x}`); }
+  result.verdict = result.windows.warnings.length ? 'WARN' : 'OK';
   return result;
 }
 
@@ -2124,6 +2143,21 @@ if (cmd === 'selftest') {
     const dn = dres ? dres.notes.find((x) => /SITE_REWORK_DISMISS увело на/.test(x)) || '' : '';
     const okD = /увело на .*tilda\.html — страница открыта заново/.test(dn); if (!okD) wrong++;
     console.log(`${okD ? 'OK  ' : 'FAIL'} окно SITE_REWORK_DISMISS увело со страницы — снимаемая открыта заново: ${dn || derr || 'заметки нет'}`);
+    /* итог нажатия — в протоколе (windows), а не только заметкой; удачное нажатие вердикт не портит */
+    const dw = dres && dres.windows; const d0 = dw && dw.dismiss && dw.dismiss[0];
+    const okW = !!(d0 && d0.nav && d0.reopened && dres.verdict === 'OK' && !(dw.warnings || []).length); if (!okW) wrong++;
+    console.log(`${okW ? 'OK  ' : 'FAIL'} итог нажатия в протоколе (windows.dismiss: увело, открыта заново), вердикт OK: ${JSON.stringify(d0 || null).slice(0, 200)} · ${dres ? dres.verdict : '—'}`);
+  }
+  /* окно при загрузке без SITE_REWORK_DISMISS (стенд lib modal-city.html): WARN — в вердикте и протоколе (windows), а не
+     строкой мимо протокола (29.09) */
+  {
+    const was = process.env.SITE_REWORK_DISMISS; delete process.env.SITE_REWORK_DISMISS;
+    let mres = null, merr = '';
+    try { mres = await inventory(pathToFileURL(path.join(HERE, 'fixtures', 'lib', 'modal-city.html')).href, 'desktop', { out, tag: 'selftest-modal', timeMs: 1000, capMs: 1000, doHover: false, doMouse: false, doClicks: false, doScroll: false, crops: false, quiet: true }); }
+    catch (e) { merr = String(e.message || e).slice(0, 120); }
+    finally { if (was !== undefined) process.env.SITE_REWORK_DISMISS = was; }
+    const okM = !!(mres && mres.verdict === 'WARN' && mres.windows && mres.windows.modal && mres.windows.warnings.some((x) => /на странице открыто окно/.test(x))); if (!okM) wrong++;
+    console.log(`${okM ? 'OK  ' : 'FAIL'} окно при загрузке — WARN в вердикте и протоколе (windows): ${mres ? `${mres.verdict}, ${(mres.windows && mres.windows.modal && mres.windows.modal.sig) || 'окна нет'}` : merr}`);
   }
   const st = res.stats.steps;
   console.log(`\n${mdTable(res)}`);
@@ -2236,7 +2270,10 @@ if (cmd === 'compare') {
       const c = compare(donor, ours, decisions);
       const dname = path.basename(donorFile, '.json').replace(/^donor-/, '');
       const tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
-      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
+      /* наш снимок снят под окном или с неудачным SITE_REWORK_DISMISS (windows.warnings) — сверка не лучше WARN */
+      const winW = (ours.windows && ours.windows.warnings) || [];
+      if (c.verdict === 'OK' && winW.length) c.verdict = 'WARN';
+      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, ...(ours.windows ? { windows: ours.windows } : {}), decisionsFile: fs.existsSync(decFile) ? decFile : null,
         steps: c.rows.map((r) => ({ status: rowLevel(r), what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
         extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
       writeJson(path.join(out, 'motion', `${tag}.json`), proto);
@@ -2244,6 +2281,7 @@ if (cmd === 'compare') {
       if (many) console.log(`\n== ${donorFile} → ${ourArg}`);
       for (const r of c.rows) console.log(`${rowLevel(r).padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? r.o.id : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'не проверялось' : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
       console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
+      if (winW.length) console.log(`WARN наш снимок — с предупреждениями окон и lib (${winW.length}): ${winW[0].slice(0, 160)}${winW.length > 1 ? ' …' : ''} — windows в json`);
       console.log(`${c.verdict}: сверка движения${c.unchecked ? ` (не проверялось у нас: ${c.unchecked})` : ''} · ${path.join(out, 'motion', `${tag}.md`)}`);
       if (rank[c.verdict] > rank[worst]) worst = c.verdict;
     }
@@ -2268,12 +2306,13 @@ try {
     console.log(`Найдено движений: ${res.items.length} (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`);
     for (const it of res.items) console.log(`  ${it.id} ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''} — ${it.target}${it.count > 1 ? ` ×${it.count}` : ''}: ${it.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 110)} · ${describeTiming(it).slice(0, 80)}`);
     if (res.notes.length) for (const n of res.notes) console.log(`WARN ${n}`);
-    console.log(`OK: инвентарь движения · ${path.join(out, 'motion', `${r.tag}.md`)}`);
-    summary.push({ ...r, items: res.items.length, byKind });
+    /* вердикт инвентаря: WARN — окно при загрузке, итог SITE_REWORK_DISMISS или свой стиль (строки выше и windows в json) */
+    console.log(`${res.verdict}: инвентарь движения${res.verdict !== 'OK' ? ` (окна и lib: ${res.windows.warnings.length} предупреждений — windows в json)` : ''} · ${path.join(out, 'motion', `${r.tag}.md`)}`);
+    summary.push({ ...r, items: res.items.length, byKind, verdict: res.verdict });
   }
 } finally { await browser.close().catch(() => {}); }
 if (runs.length > 1) {
   console.log(`\nСтраниц ${new Set(runs.map((r) => r.url)).size}, экранов ${new Set(runs.map((r) => r.vp)).size}, протоколов ${summary.filter((s) => !s.error).length} из ${runs.length}:`);
-  for (const s of summary) console.log(`  ${s.error ? 'FAIL' : 'OK  '} ${s.tag.padEnd(28)} ${s.error ? s.error : `${s.items} движений (${Object.entries(s.byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`}`);
+  for (const s of summary) console.log(`  ${s.error ? 'FAIL' : (s.verdict || 'OK').padEnd(4)} ${s.tag.padEnd(28)} ${s.error ? s.error : `${s.items} движений (${Object.entries(s.byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`}`);
 }
 process.exit(summary.some((s) => s.error) ? 1 : 0);

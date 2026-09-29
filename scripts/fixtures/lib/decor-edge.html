@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: декор за краем экрана</title>
+<!-- Стенд findOverflow (fixtures/lib/selftest.mjs, случай overflow), экран 320: огромное бледное слово-фон с aria-hidden
+     вылезает за правый край без обрезающего контейнера (body overflow-x:clip) — декор, не «за краем экрана»; такой же
+     блок без aria-hidden — FAIL «за краем экрана» (контроль: проверка жива). -->
+<style>
+  body { margin: 0; overflow-x: clip; font: 16px/1.4 Arial, sans-serif; }
+  main { position: relative; min-height: 400px; padding: 16px; }
+  .deco { position: absolute; top: 20px; right: -80px; font: 900 96px/1 Arial, sans-serif; white-space: nowrap; color: rgba(0, 0, 0, .06); }
+  .real { position: absolute; top: 200px; right: -60px; width: 200px; padding: 8px; background: #222; color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <div class="deco" aria-hidden="true">Эпицентр</div>
+  <p>Раздел со словом-фоном.</p>
+  <div class="real">Настоящая плашка</div>
+</main>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: окно выбора уводит на главную</title>
+<!--
+  Стенд SITE_REWORK_DISMISS (fixtures/lib/selftest.mjs, случай dismiss; runtime, a11y, perf --selftest) — как у mamuka.rest
+  29.09: окно выбора города на /menu/, нажатие «Ярославль» запоминает выбор и уводит на главную (dismiss-home.html), и
+  shots, runtime, a11y мерили главную с OK. SITE_REWORK_DISMISS=".city li.city__item". Ждём: нужная страница открыта
+  заново (выбор запомнен в sessionStorage вкладки), INFO «увело на … — нужная страница открыта заново», замер — этой
+  страницы, и журнал — только её.
+  ?noisy=1  главная шумит (ошибка в консоли, исключение, упавшая картинка): в журнале нужной страницы этого нет;
+  ?late=1   окно закрывается сразу, а на главную уводит через 0,4 с (сайт сначала запоминает выбор запросом);
+  ?reload=1 нажатие запоминает выбор и перезагружает эту же страницу: «перезагрузило страницу — открыта заново»;
+  ?forget=1 выбор не запоминается, окно снова на экране: WARN «сайт не запомнил выбор, замеры под окном»;
+  ?bounce=1 при запомненном выборе страница сама уводит на главную: WARN «замер не той страницы», page.rwWrongPage.
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1d1d24; }
+  main { padding: 40px; min-height: 150vh; }
+  .city { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .6); }
+  .city ul { margin: 0; padding: 24px 40px; list-style: none; background: #fff; }
+  .city li { padding: 6px 0; cursor: pointer; }
+</style>
+</head>
+<body>
+<main><h1>Меню</h1><p id="mark">Страница, которую снимаем.</p></main>
+<script>
+  const q = location.search; let chosen = null;
+  const home = `dismiss-home.html${/noisy=1/.test(q) ? '?noisy=1' : ''}`;
+  try { chosen = sessionStorage.getItem('rw-city-nav'); } catch (e) { /* без хранилища — окно */ }
+  if (chosen && /bounce=1/.test(q)) location.replace(home);
+  else if (!chosen) {
+    const d = document.createElement('div'); d.className = 'city';
+    d.innerHTML = '<ul><li class="city__item">Ярославль</li><li class="city__item">Рыбинск</li></ul>';
+    document.body.append(d);
+    for (const li of d.querySelectorAll('li')) li.addEventListener('click', () => {
+      if (!/forget=1/.test(q)) { try { sessionStorage.setItem('rw-city-nav', li.textContent); } catch (e) { /* не запомнится */ } }
+      if (/reload=1/.test(q)) { location.reload(); return; }
+      if (/late=1/.test(q)) { d.remove(); setTimeout(() => { location.href = home; }, 400); return; }
+      location.href = home;
+    });
+  }
+</script>
+</body>
+</html>

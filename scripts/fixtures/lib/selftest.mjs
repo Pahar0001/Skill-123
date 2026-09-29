@@ -9,21 +9,40 @@
  * Случаи:
  *   segments   segmentPositions: 6 снимков на 6942 px — без cover дыры, с cover — без дыр
  *   overflow   findOverflow на overflow-cut.html (320): fieldCut select#selCut и input#inpCut, clipCut у метки
- *              в <dialog>, у пилюли во флекс-строке окна (метка вылезла из строки) и у кнопки; контроль —
- *              многоточие, sr-only, лента, карусель, лента пилюль, дорожка transform, бегущая строка молчат
- *   modal      checkOpenModal: окно выбора города через 1,5 с (крестик скрыт — предложен пункт списка), видимый
- *              крестик (?close=1) — предложен он, <dialog> с «Закрыть», страница без окон — тихо
+ *              в <dialog>, у пилюли во флекс-строке окна (метка вылезла из строки), у кнопки и у гигантского слова
+ *              без aria-hidden; контроль — многоточие, sr-only, лента, карусель, лента пилюль, дорожка transform,
+ *              бегущая строка молчат; декор (слово навылет и слово-фон с aria-hidden, role=presentation) и поля-ловушки
+ *              для ботов — не находка (демо coffee .shout, 29.09); decor-edge.html — декор за краем экрана не FAIL,
+ *              такой же блок без aria-hidden — FAIL; decor-real.html (и ?plain=1) — настоящий текст в разметке декора:
+ *              заголовок, разбитый на слова (aria-label у заголовка, aria-hidden у слов — GSAP SplitText), за краем
+ *              экрана (FAIL) и обрезан в карточке, надпись со слогами под aria-hidden и sr-only копией обрезана, меню
+ *              WAI-ARIA (li role=none > a) обрезано; слова-фон рядом с заголовком того же смысла — молчат (скептик 30.09)
+ *   modal      checkOpenModal: окно выбора города через 1,5 с (крестик скрыт — предложен пункт списка; ждали из-за
+ *              признаков окна), видимый крестик (?close=1) — предложен он, <dialog> с «Закрыть», страница без окон —
+ *              тихо и без ожидания 2 с; не окно — закреплённый первый экран, половина экрана «пополам», страница в
+ *              закреплённом контейнере прокрутки, непрозрачный слой без запертой прокрутки, закреплённый первый экран
+ *              на странице, которую прокручивает сам body (body-scroller.html); окно — полупрозрачная подложка поверх
+ *              страницы, слой при запертой прокрутке (и body-scroller.html?lock=1), блок с классом popup; WARN с видом «окно»
  *   dismiss    SITE_REWORK_DISMISS: пункт списка — нажато, окна нет; скрытый крестик — «найдено, но скрыто»;
- *              нет такого — «не найдено за 5 с от начала загрузки»; второй вызов в том же документе ничего не жмёт
+ *              нет такого — «не найдено за 5 с от начала загрузки»; второй вызов в том же документе ничего не жмёт;
+ *              нажатие увело на главную — нужная страница открыта заново (INFO), окно вернулось — WARN «сайт не
+ *              запомнил выбор», страница снова уводит — WARN «замер не той страницы» и page.rwWrongPage; шумная главная
+ *              (?noisy=1) — в журнале нужной страницы нет её консоли, исключения и упавшей картинки (dropped); окно
+ *              ушло, а увело через 0,4 с (?late=1) — замечено; перезагрузка той же страницы (?reload=1) — открыта заново
+ *   dismiss-ff то же в Firefox на file:// (?noisy=1): переход замечен по метке документа, мерится нужная страница, журнал
+ *              без шума главной; нет Firefox — пропуск
  *   seams      fullPageShot segments: шапка, липкая лента, нижняя панель и вкладка — по одному разу (pins),
- *              без pins — шапка на каждом шве; scale 1 на экране ×2 — файл 390 px; scrollThrough по умолчанию
- *              снимает окна без дыр (maxShots 2 — столько, сколько нужно), с cover:false — дыры в gaps
+ *              без pins — шапка на каждом шве; рельс fixed и колонка sticky на всю высоту окна — на всей высоте
+ *              склейки, вкладка и «наверх» — один раз, значок, появившийся после прокрутки, — один раз;
+ *              scale 1 на экране ×2 — файл 390 px; scrollThrough по умолчанию снимает окна без дыр (maxShots 2 —
+ *              столько, сколько нужно), с cover:false — дыры в gaps
  *   shots      shots.mjs --light (первый экран и вся страница, без снимков окна и возвратов) и обычный
  *              (экраны по умолчанию desktop,mobile, снимки окна без дыр, *-full.png ×1 у обоих экранов);
- *              stale-noise.html: шум пересэмплирования в фото — OK с пометкой, сдвиг кадра (?shift=1) — WARN
+ *              stale-noise.html: шум пересэмплирования в фото — OK с пометкой, сдвиг кадра (?shift=1) — WARN;
+ *              SITE_REWORK_DISMISS увёл на шумную главную (dismiss-nav.html?noisy=1) — ошибок консоли 0, dropped
  *   discover   discover.mjs --pages-shots 2: /dinners и /dinners/* — два файла (dinners.png, dinners-item.png);
  *              гарнитура заголовков на div и навигации в div-шапке — по замеру (не «null»); строка «окна при
- *              загрузке» есть и без SITE_REWORK_DISMISS
+ *              загрузке» есть и без SITE_REWORK_DISMISS; увело на шумную главную — в сводке консоли 0 ошибок
  * Код выхода: 0 — все случаи сошлись, 1 — нет.
  */
 import fs from 'node:fs';
@@ -33,7 +52,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   launch, openPage, preparePage, gotoRetry, resolveViewport, findOverflow, fullPageShot, segmentPositions, scrollThrough, checkOpenModal,
-  applyDismiss, collectWarnings, takeWarnings, collectNotes, takeNotes, loadSharp, sleep, parseArgs, readJson,
+  applyDismiss, collectWarnings, takeWarnings, collectNotes, takeNotes, loadSharp, sleep, parseArgs, readJson, warningKind, warningLabel,
+  findBrowser,
 } from '../../lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -81,14 +101,49 @@ if (needBrowser) {
       check('overflow: пилюля nowrap во флекс-строке <dialog> вылезла из строки — текст обрезан (метка)', !!pill && pill.how === 'метка', JSON.stringify(r.clipCut));
       const pillCol = r.clipCut.find((x) => x.sig === 'span.pill' && /dlg/.test(x.clip) && /Октава/.test(x.text));
       check('overflow: строка пилюль шире флекс-колонки (align-items:flex-start) — текст обрезан (метка)', !!pillCol && pillCol.how === 'метка', JSON.stringify(r.clipCut));
-      const extra = r.clipCut.filter((x) => !(x.sig === 'div.tag' || x.sig.startsWith('a.btn') || (x.sig === 'span.pill' && /dlg/.test(x.clip))));
-      check('overflow: многоточие, sr-only, лента, карусель (и пилюля в карточке), лента пилюль overflow:hidden, дорожка transform, бегущая строка — молчат', !extra.length, JSON.stringify(extra));
+      check('overflow: гигантское слово навылет без aria-hidden — текст обрезан (контроль: проверка жива)', r.clipCut.some((x) => x.sig === 'b.loud' && /shout/.test(x.clip)), JSON.stringify(r.clipCut));
+      const extra = r.clipCut.filter((x) => !(x.sig === 'div.tag' || x.sig.startsWith('a.btn') || (x.sig === 'span.pill' && /dlg/.test(x.clip)) || x.sig === 'b.loud'));
+      check('overflow: многоточие, sr-only, лента, карусель (и пилюля в карточке), лента пилюль overflow:hidden, дорожка transform, бегущая строка, декор — молчат', !extra.length, JSON.stringify(extra));
+      /* декор и ловушки: демо coffee .shout (aria-hidden, overflow:hidden, nowrap) давал ложный WARN «текст обрезан» */
+      const decoTw = r.textWider.filter((x) => /deco-p|narrow/.test(x.sig) || /Неразрывнаядекоративная/.test(x.text));
+      check('overflow: декор — слово навылет и слово-фон с aria-hidden, role=presentation шире коробки — не находка', !decoTw.length && !r.clipCut.some((x) => /Эпицентр/i.test(x.text) || (x.sig === 'b' && /Пекарня/i.test(x.text))), JSON.stringify({ textWider: decoTw, clipCut: r.clipCut.map((x) => `${x.sig} ${x.text}`) }));
+      check('overflow: поля-ловушки для ботов (за краем экрана; tabindex=-1 в aria-hidden) — не «не влез в поле»', !fc.includes('input#hp1') && !fc.includes('input#hp2'), JSON.stringify(r.fieldCut));
       check('overflow: вердикт WARN (не FAIL), в сводке «текст обрезан» и «не влез в поле»', r.verdict === 'WARN' && /текст обрезан/.test(r.summary) && /не влез в поле/.test(r.summary), `${r.verdict} ${r.summary}`);
       await page.close();
       const p2 = await open(fx('overflow-cut.html'), 'mobile-s', { settle: 500, modalCheck: false });
       const r2 = await findOverflow(p2);
       check('overflow: окно закрыто — метки диалога в счёте нет', !r2.clipCut.some((x) => x.sig === 'div.tag' || /dlg/.test(x.clip)), JSON.stringify(r2.clipCut));
       await p2.close();
+      /* декор за краем экрана без обрезающего контейнера — не FAIL; тот же блок без aria-hidden — FAIL */
+      const p3 = await open(fx('decor-edge.html'), 'mobile-s', { settle: 500, modalCheck: false });
+      const r3 = await findOverflow(p3);
+      check('overflow: слово-фон с aria-hidden за краем экрана — не «за краем»; блок без aria-hidden — за краем (FAIL)', JSON.stringify(r3.outer.map((o) => o.sig)) === '["div.real"]' && r3.verdict === 'FAIL', `${r3.verdict} ${JSON.stringify(r3.outer)}`);
+      await p3.close();
+      /* настоящий текст в разметке декора (скептик 30.09): заголовок, разбитый на слова (aria-label у заголовка, aria-hidden
+         у слов — GSAP SplitText 3.13+), надпись со слогами под aria-hidden и sr-only копией, меню WAI-ARIA (li role=none) —
+         находки; слова-фон рядом с заголовком того же смысла и в разделе с подписью — молчат */
+      for (const q of ['', '?plain=1']) {
+        const p4 = await open(fx('decor-real.html', q), 'mobile-s', { settle: 500, modalCheck: false });
+        const r4 = await findOverflow(p4); await p4.close();
+        const tag = q ? 'без разбиения (контроль)' : 'разбит для анимации';
+        const outerTxt = r4.outer.map((o) => `${o.sig} ${o.text}`); const cutTxt = r4.clipCut.map((x) => `${x.sig} ${x.text}`);
+        check(`overflow: заголовок ${tag} шире экрана — «за краем экрана» (FAIL)`, r4.verdict === 'FAIL' && outerTxt.some((s) => /Достопримечательности/.test(s)), `${r4.verdict} ${JSON.stringify(outerTxt)}`);
+        check(`overflow: заголовок ${tag} в карточке overflow:hidden — текст обрезан`, cutTxt.some((s) => /Бронирование|столов/.test(s)), JSON.stringify(cutTxt));
+        check('overflow: надпись со слогами под aria-hidden и sr-only копией — текст обрезан', cutTxt.some((s) => /^span (Эпи|цен|тр)$/.test(s)), JSON.stringify(cutTxt));
+        check('overflow: меню WAI-ARIA (li role=none > a role=menuitem) — «Корпоративные праздники» обрезан', cutTxt.some((s) => /^a Корпоративные праздники/.test(s)), JSON.stringify(cutTxt));
+        check('overflow: слово-фон «меню» за «Основное меню» и «БАР» в разделе «Бар» — молчат', !cutTxt.some((s) => /(^| )(меню|БАР)$/.test(s)) && !r4.textWider.some((x) => /^(меню|БАР)$/.test(x.text)), JSON.stringify({ clipCut: cutTxt, textWider: r4.textWider }));
+      }
+      /* контроли: без sr-only копии слоги под aria-hidden — декор, молчат; слова-фон без aria-hidden — находка (проверка
+         на них жива, их молчание выше — от правила о декоре) */
+      {
+        const p5 = await open(fx('decor-real.html', '?srlabel=0'), 'mobile-s', { settle: 500, modalCheck: false });
+        const r5 = await findOverflow(p5); await p5.close();
+        check('overflow: надпись со слогами под aria-hidden без копии для читалки — декор, молчит (контроль)', !r5.clipCut.some((x) => /^(Эпи|цен|тр)$/.test(x.text)), JSON.stringify(r5.clipCut.map((x) => `${x.sig} ${x.text}`)));
+        const p6 = await open(fx('decor-real.html', '?nohide=1'), 'mobile-s', { settle: 500, modalCheck: false });
+        const r6 = await findOverflow(p6); await p6.close();
+        const t6 = [...r6.clipCut, ...r6.textWider].map((x) => x.text);
+        check('overflow: слова-фон «меню» и «БАР» без aria-hidden — находка (контроль)', t6.includes('меню') && t6.includes('БАР'), JSON.stringify(t6));
+      }
       takeWarnings(); takeNotes();
     }
     /* ---------- modal ---------- */
@@ -99,6 +154,8 @@ if (needBrowser) {
       check('modal: окно выбора города найдено', !!m && m.how === 'fancybox', JSON.stringify(m));
       check('modal: крестик скрыт — предложен пункт списка', !!m && m.suggest === '.fancybox-container li.style-listing-items__item' && m.close && !m.close.visible && /display:none/.test(m.close.why), JSON.stringify(m));
       check('modal: WARN «на странице открыто окно … SITE_REWORK_DISMISS=…»', w.some((x) => /на странице открыто окно/.test(x) && x.includes('SITE_REWORK_DISMISS=".fancybox-container li.style-listing-items__item"')), w.join(' | '));
+      check('modal: у WARN вид «окно» (подпись строки в a11y — «окно», а не «свой стиль на странице»)', w.some((x) => /открыто окно/.test(x) && warningKind(x) === 'окно' && warningLabel(x) === 'окно'), w.map((x) => `${warningKind(x)}: ${x.slice(0, 60)}`).join(' | '));
+      check('modal: окно по таймеру 1,5 с — ждали, потому что при загрузке есть признаки окна', !!(page.overlay.modalWait && page.overlay.modalWait.signs.length), JSON.stringify(page.overlay.modalWait || null));
       await page.close();
       page = await open(fx('modal-city.html', '?close=1'), 'desktop'); m = page.overlay.modal; takeWarnings();
       check('modal: видимый крестик — предложен он', !!m && m.suggest === '.fancybox-container button.fancybox-close-small', JSON.stringify(m));
@@ -106,9 +163,27 @@ if (needBrowser) {
       page = await open(fx('overflow-cut.html', '?dialog=1'), 'mobile-s'); m = page.overlay.modal; takeWarnings();
       check('modal: <dialog> с «Закрыть» — предложена кнопка', !!m && m.how === 'dialog' && m.suggest === '#dlg button', JSON.stringify(m));
       await page.close();
+      let t0 = Date.now();
       page = await open(fx('no-modal.html'), 'desktop'); m = page.overlay.modal; w = takeWarnings();
+      const openMs = Date.now() - t0;
       check('modal: шапка, зерно, фон, чат, закрытый dialog — окна нет', !m && !w.some((x) => /открыто окно/.test(x)), JSON.stringify(m) + ' ' + w.join(' | '));
+      /* +1,1 с к открытию любой страницы (d5c4879): ждали 2 с от начала документа и без признаков окна */
+      check(`modal: без признаков окна — не ждём (открытие ${openMs} мс, было ≥ 2500)`, !page.overlay.modalWait && openMs < 1900, JSON.stringify({ openMs, modalWait: page.overlay.modalWait || null }));
       await page.close();
+      /* не окно: закреплённый первый экран, половина экрана, страница в закреплённом контейнере прокрутки, непрозрачный слой
+         поверх страницы без запертой прокрутки (ложный WARN 29.09) */
+      for (const [f, vp, why] of [['fixed-hero.html', 'desktop', 'закреплённый первый экран'], ['split.html', 'desktop', 'левая половина «пополам»'], ['../typeset/fixedwrap.html', 'desktop', 'страница в закреплённом контейнере прокрутки'], ['modal-layer.html?opaque=1', 'desktop', 'непрозрачный слой со ссылкой, прокрутка не заперта'], ['body-scroller.html', 'desktop', 'закреплённый первый экран, страницу прокручивает сам body (html overflow:hidden)']]) {
+        const [file, q] = f.split('?');
+        page = await open(fx(file, q ? `?${q}` : ''), vp, { settle: 1500 }); m = page.overlay.modal; w = takeWarnings();
+        check(`modal: ${why} (${f}) — не окно`, !m && !w.some((x) => /открыто окно/.test(x)), JSON.stringify(m) + ' ' + w.join(' | '));
+        await page.close();
+      }
+      /* окно без семантики: полупрозрачная подложка поверх страницы, слой при запертой прокрутке, блок с классом popup */
+      for (const [q, re, why, file = 'modal-layer.html'] of [['?dim=1', /полупрозрачная подложка поверх страницы/, 'полупрозрачная подложка поверх страницы'], ['?lock=1', /прокрутка страницы заперта/, 'слой на весь экран при запертой прокрутке'], ['?cls=1', /окно по классу/, 'закреплённый блок .popup.is-open'], ['?lock=1', /прокрутка страницы заперта/, 'body-scroller: body тоже overflow:hidden — прокрутки нет нигде', 'body-scroller.html']]) {
+        page = await open(fx(file, q), 'desktop', { settle: 1500 }); m = page.overlay.modal; w = takeWarnings();
+        check(`modal: ${why} (${q}) — окно`, !!m && re.test(m.how) && w.some((x) => /открыто окно/.test(x)), JSON.stringify(m) + ' ' + w.join(' | '));
+        await page.close();
+      }
       takeNotes();
     }
     /* ---------- dismiss ---------- */
@@ -139,6 +214,39 @@ if (needBrowser) {
       t0 = Date.now(); page = await open(fx('no-modal.html'), 'desktop'); d = page.overlay.dismiss || []; w = takeWarnings();
       check('dismiss: нет такого — «не найдено за 5 с от начала загрузки» и WARN', d[0] && d[0].status === 'не найдено' && w.some((x) => /не найдено за 5,\d с от начала загрузки/.test(x)), JSON.stringify(d) + ' ' + w.join(' | '));
       await page.close();
+      /* нажатие увело на главную (mamuka.rest 29.09: «Ярославль» на /menu/ — и shots, runtime, a11y мерили главную с OK):
+         нужная страница открыта заново, выбор запомнен */
+      process.env.SITE_REWORK_DISMISS = '.city li.city__item'; takeWarnings(); takeNotes();
+      page = await open(fx('dismiss-nav.html'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; w = takeWarnings(); n = takeNotes();
+      const onPage = await page.evaluate(() => !!document.getElementById('mark') && !document.getElementById('home')).catch(() => false);
+      check('dismiss: увело на главную — нужная страница открыта заново и мерится она', d[0] && /dismiss-home\.html$/.test(d[0].nav || '') && d[0].reopened && /dismiss-nav\.html$/.test(page.url()) && onPage && !page.rwWrongPage, JSON.stringify(d) + ` url ${page.url()} onPage ${onPage}`);
+      check('dismiss: увело — INFO «увело на … — нужная страница открыта заново», без WARN', n.some((x) => /увело на .*dismiss-home\.html — нужная страница открыта заново/.test(x)) && !w.length, `${n.join(' | ')} / ${w.join(' | ')}`);
+      check('dismiss: окно с целью SITE_REWORK_DISMISS внутри — не заставка (не ждали, не «заставка не ушла»)', !page.overlay.hadOverlay && page.overlay.waitedMs < 1000, JSON.stringify({ hadOverlay: page.overlay.hadOverlay, gone: page.overlay.gone, waitedMs: page.overlay.waitedMs }));
+      await page.close();
+      page = await open(fx('dismiss-nav.html', '?forget=1'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; w = takeWarnings(); takeNotes();
+      check('dismiss: сайт не запомнил выбор — окно снова на экране: WARN', d[0] && d[0].again && w.some((x) => /сайт не запомнил выбор/.test(x) && warningKind(x) === 'SITE_REWORK_DISMISS'), JSON.stringify(d) + ' ' + w.join(' | '));
+      await page.close();
+      page = await open(fx('dismiss-nav.html', '?bounce=1'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; w = takeWarnings(); takeNotes();
+      check('dismiss: страница снова уводит — WARN «замер не той страницы» и page.rwWrongPage', d[0] && d[0].wrongPage && page.rwWrongPage && /dismiss-home\.html$/.test(page.rwWrongPage.got) && w.some((x) => /замер не той страницы/.test(x)), JSON.stringify(d) + ' ' + JSON.stringify(page.rwWrongPage) + ' ' + w.join(' | '));
+      await page.close();
+      /* журнал — только нужной страницы: runtime засчитал /menu/ mamuka.rest запросы и консоль промежуточной главной
+         (464 запроса вместо 184, «упавшее» видео главной — 30.09). Главная шумит: ошибка в консоли, исключение, упавшая
+         картинка — после повторного открытия их в page.log нет, выброшенное — в dropped */
+      page = await open(fx('dismiss-nav.html', '?noisy=1'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; takeWarnings(); n = takeNotes();
+      await sleep(300);
+      const lg = page.log; const noise = [...lg.console.map((c) => c.text), ...lg.errors, ...lg.failed.map((f) => `${f.reason} ${f.url}`)].filter((t) => /главная|missing-home/.test(t));
+      check('dismiss: шумная главная — в журнале нужной страницы нет её консоли, исключения и упавшей картинки', d[0] && d[0].reopened && !noise.length && !lg.requests.some((r) => /dismiss-home|missing-home/.test(r.url)), JSON.stringify({ noise, requests: lg.requests.map((r) => r.url.split('/').pop()), d: d[0] }));
+      check('dismiss: выброшенное из журнала — в dropped (шум главной там был)', !!(d[0] && d[0].dropped && (d[0].dropped.console + d[0].dropped.errors + d[0].dropped.failed) > 0) && n.some((x) => /запросы и консоль в счёте — только её/.test(x)), JSON.stringify(d[0] && d[0].dropped) + ' ' + n.join(' | '));
+      await page.close();
+      /* окно закрылось сразу, а на главную увело через 0,4 с (сайт сначала запоминает выбор) — переход замечен */
+      page = await open(fx('dismiss-nav.html', '?late=1'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; takeWarnings(); takeNotes();
+      const onLate = await page.evaluate(() => !!document.getElementById('mark') && !document.getElementById('home')).catch(() => false);
+      check('dismiss: отложенный переход (окно ушло, увело через 0,4 с) — замечен, нужная страница открыта заново', d[0] && /dismiss-home\.html$/.test(d[0].nav || '') && d[0].reopened && onLate, JSON.stringify(d) + ` onPage ${onLate}`);
+      await page.close();
+      /* нажатие перезагрузило эту же страницу — открыта заново, журнал только её */
+      page = await open(fx('dismiss-nav.html', '?reload=1'), 'desktop', { settle: 1500 }); d = page.overlay.dismiss || []; w = takeWarnings(); n = takeNotes();
+      check('dismiss: перезагрузка той же страницы — reload, открыта заново, INFO «перезагрузило страницу»', d[0] && d[0].reload && d[0].reopened && !w.length && n.some((x) => /перезагрузило страницу — нужная страница открыта заново/.test(x)), JSON.stringify(d) + ' ' + w.join(' | ') + ' / ' + n.join(' | '));
+      await page.close();
       delete process.env.SITE_REWORK_DISMISS; takeNotes();
     }
     /* ---------- seams ---------- */
@@ -148,9 +256,9 @@ if (needBrowser) {
       else {
         const rows = async (file, x, rgb) => {
           const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-          const xs = Math.round(x < 0 ? info.width + x : x); let n = 0;
-          for (let y = 0; y < info.height; y++) { const i = (y * info.width + xs) * 3; if (Math.abs(data[i] - rgb[0]) <= 28 && Math.abs(data[i + 1] - rgb[1]) <= 28 && Math.abs(data[i + 2] - rgb[2]) <= 28) n++; }
-          return { n, h: info.height, w: info.width };
+          const xs = Math.round(x < 0 ? info.width + x : x); let n = 0, first = -1;
+          for (let y = 0; y < info.height; y++) { const i = (y * info.width + xs) * 3; if (Math.abs(data[i] - rgb[0]) <= 28 && Math.abs(data[i + 1] - rgb[1]) <= 28 && Math.abs(data[i + 2] - rgb[2]) <= 28) { n++; if (first < 0) first = y; } }
+          return { n, h: info.height, w: info.width, first };
         };
         const HDR = [255, 0, 170], RIB = [0, 200, 255], BAR = [51, 170, 51], TAB = [255, 170, 0];
         let page = await open(fx('sticky-seams.html'), 'desktop', { settle: 500 });
@@ -162,12 +270,26 @@ if (needBrowser) {
         check(`seams: липкая лента один раз (${r1.n})`, r1.n >= 36 && r1.n <= 44, r1.n);
         check(`seams: нижняя панель один раз (${b1.n})`, b1.n >= 45 && b1.n <= 55, b1.n);
         check(`seams: вкладка один раз (${t1.n})`, t1.n >= 110 && t1.n <= 130, t1.n);
+        /* вкладка посередине края (mamuka «Карта калорий») — в первом окне, где её видно при открытии, а не внизу склейки */
+        check(`seams: вкладка посередине края — в первом окне (с y ${t1.first})`, t1.first >= 0 && t1.first < 900, t1.first);
         check(`seams: без pins шапка на каждом шве (${h0.n}) — стенд различает`, h0.n >= 180, h0.n);
         /* scrollThrough по умолчанию без дыр (runtime --scroll зовёт с maxShots 6): maxShots 2 — снимков столько, сколько нужно */
         const cov = await scrollThrough(page, { shotsDir: path.join(out, 'cover'), tag: 'cov', maxShots: 2, shotPause: 200, waitMedia: false, pause: 100 });
         check(`scrollThrough: по умолчанию без дыр — maxShots 2, снято ${cov.shots.length} на ${cov.pageHeight} px`, cov.shots.length > 2 && Array.isArray(cov.gaps) && !cov.gaps.length, JSON.stringify({ n: cov.shots.length, gaps: cov.gaps, ys: cov.shots.map((s) => s.scrollY) }));
         const cov0 = await scrollThrough(page, { shotsDir: path.join(out, 'cover'), tag: 'cov0', maxShots: 2, shotPause: 200, waitMedia: false, pause: 100, cover: false });
         check(`scrollThrough: cover false — не больше maxShots, дыры в gaps (${cov0.gaps.length})`, cov0.shots.length === 2 && cov0.gaps.length > 0, JSON.stringify({ n: cov0.shots.length, gaps: cov0.gaps }));
+        await page.close();
+        /* колонки на всю высоту окна — на всей высоте склейки (d5c4879 их прятал везде, кроме последнего окна: рельс
+           «Эпицентра» на /menu и /afisha, колонка mamuka), мелкое — один раз */
+        page = await open(fx('rail-seams.html'), 'desktop', { settle: 500 });
+        const f4 = path.join(out, 'rail-pins.png'); await fullPageShot(page, f4, { mode: 'segments' });
+        const RAIL = [122, 0, 255], SIDE = [51, 102, 255], TAB2 = [255, 170, 0], UP = [0, 170, 136], LATE = [255, 51, 0];
+        const rl = await rows(f4, 10, RAIL), sd = await rows(f4, 1300, SIDE), tb = await rows(f4, 60, TAB2), up = await rows(f4, 1400, UP), lt = await rows(f4, 150, LATE);
+        check(`seams: рельс fixed на всю высоту окна — на всей высоте склейки (${rl.n} строк из ${rl.h})`, rl.h >= 3790 && rl.n >= rl.h - 10, `${rl.n} из ${rl.h}`);
+        check(`seams: колонка sticky на всю высоту окна — на всей высоте сетки (${sd.n} из 3600)`, sd.n >= 3500 && sd.n <= 3610, sd.n);
+        check(`seams: вкладка — один раз (${tb.n})`, tb.n >= 110 && tb.n <= 130, tb.n);
+        check(`seams: «наверх» — один раз, внизу склейки (${up.n}, с y ${up.first})`, up.n >= 44 && up.n <= 52 && up.first > 3600, `${up.n} с y ${up.first}`);
+        check(`seams: значок, появившийся после прокрутки, — один раз, а не нигде (${lt.n})`, lt.n >= 36 && lt.n <= 44, lt.n);
         await page.close();
         page = await open(fx('sticky-seams.html'), 'mobile', { settle: 500 });
         const f2 = path.join(out, 'seams-mobile-x1.png'); const how = await fullPageShot(page, f2, { mode: 'segments', scale: 1 });
@@ -180,6 +302,26 @@ if (needBrowser) {
       }
     }
   } finally { await browser.close().catch(() => {}); }
+}
+
+/* ---------- dismiss-ff: переход в Firefox на file:// (адрес вкладки отставал — переход не замечался, мерилась главная,
+   30.09); отдельным браузером после Chrome ---------- */
+if (want('dismiss-ff')) {
+  if (!findBrowser('firefox')) console.log('     dismiss-ff пропущен: Firefox не найден (FIREFOX_PATH)');
+  else {
+    const ff = await launch({ browser: 'firefox' });
+    try {
+      process.env.SITE_REWORK_DISMISS = '.city li.city__item'; takeWarnings(); takeNotes();
+      const [, vp] = resolveViewport('desktop');
+      const page = await openPage(ff, fx('dismiss-nav.html', '?noisy=1'), vp, { settle: 1500 });
+      const d = page.overlay.dismiss || []; const w = takeWarnings(); const n = takeNotes();
+      const onPage = await page.evaluate(() => !!document.getElementById('mark') && !document.getElementById('home')).catch(() => false);
+      check('dismiss-ff: Firefox, file:// — переход замечен, нужная страница открыта заново и мерится она', d[0] && /dismiss-home\.html/.test(d[0].nav || '') && d[0].reopened && onPage && !page.rwWrongPage && !w.length && n.some((x) => /увело на .*dismiss-home\.html.* — нужная страница открыта заново/.test(x)), JSON.stringify(d) + ` onPage ${onPage} ` + w.join(' | ') + ' / ' + n.join(' | '));
+      const lg = page.log; const noise = [...lg.console.map((c) => c.text), ...lg.errors, ...lg.failed.map((f) => `${f.reason} ${f.url}`)].filter((t) => /главная|missing-home/.test(t));
+      check('dismiss-ff: в журнале нужной страницы нет шума главной', !noise.length, JSON.stringify(noise));
+      await page.close();
+    } finally { delete process.env.SITE_REWORK_DISMISS; await ff.close().catch(() => {}); }
+  }
 }
 
 /* ---------- shots.mjs: --light и обычный запуск ---------- */
@@ -207,6 +349,11 @@ if (want('shots') && !opt['no-shots']) {
   check('shots: шум пересэмплирования в фото — OK с пометкой, без WARN', r.status === 0 && /OK\s+первый экран после прокрутки до низа и прыжка наверх тот же \(шум пересэмплирования в фото img\.ph/.test(r.stdout || '') && /^OK: 0 провалов, 0 предупреждений/m.test(r.stdout || ''), (r.stdout || '').slice(-600));
   r = runN('?shift=1', 'noise-shift');
   check('shots: сдвиг кадра в фото (плотное отличие) — WARN «отличается», не шум', /WARN первый экран после прокрутки до низа и прыжка наверх отличается/.test(r.stdout || '') && !/шум пересэмплирования/.test(r.stdout || ''), (r.stdout || '').slice(-600));
+  /* SITE_REWORK_DISMISS увёл на шумную главную: снимается нужная страница, ошибки консоли — только её (главная шумит
+     ошибкой, исключением и упавшей картинкой) */
+  r = spawnSync(process.execPath, [shots, fx('dismiss-nav.html', '?noisy=1'), '--out', out, '--tag', 'dismiss-noisy', '--viewports', 'desktop', '--segments', '0', '--return', 'none'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '.city li.city__item' } });
+  const jD = readJson(path.join(out, 'dismiss-noisy', 'shots.json'), {}); const sD = (jD.shots || [])[0] || {}; const dD = ((sD.windows || {}).dismiss || [])[0] || {};
+  check('shots: нажатие увело на шумную главную — открыта заново, ошибок консоли 0 (шум главной не в счёте)', r.status === 0 && dD.reopened && sD.consoleErrors === 0 && dD.dropped && dD.dropped.errors > 0, JSON.stringify({ code: r.status, consoleErrors: sD.consoleErrors, dismiss: dD }).slice(0, 400));
 }
 
 /* ---------- discover.mjs: снимки типов страниц и гарнитуры по замеру ---------- */
@@ -223,6 +370,11 @@ if (want('discover') && !opt['no-shots']) {
   check('discover: гарнитура заголовков — по замеру «Georgia», не «null»', /заголовки «Georgia»/.test(fonts) && !/«null»/.test(fonts), fonts.slice(0, 300));
   check('discover: гарнитура навигации (div-шапка) — «Courier New»', /навигация «Courier New»/.test(fonts), fonts.slice(0, 300));
   check('discover: строка «окна при загрузке» — и без SITE_REWORK_DISMISS', /^- окна при загрузке: SITE_REWORK_DISMISS не задана · открытое окно: нет$/m.test(md), (md.match(/^- окна при загрузке.*$/m) || ['нет строки'])[0]);
+  /* SITE_REWORK_DISMISS увёл на шумную главную: в сводке консоли — только нужная страница */
+  const nOut = path.join(out, 'discover-noisy');
+  const rn = spawnSync(process.execPath, [disc, fx('dismiss-nav.html', '?noisy=1'), '--out', nOut, '--viewports', 'desktop', '--pages-shots', '0', '--no-320', '--no-design', '--light', '--no-texture'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '.city li.city__item' } });
+  const mdN = fs.existsSync(path.join(nOut, 'discovery.md')) ? fs.readFileSync(path.join(nOut, 'discovery.md'), 'utf8') : '';
+  check('discover: нажатие увело на шумную главную — открыта заново, консоль 0 ошибок, исключений 0, упавших 0', rn.status === 0 && /нужная страница открыта заново/.test(mdN) && /^- desktop: консоль 0 ошибок, исключений 0, предупреждений \d+, упавших запросов 0$/m.test(mdN), `${rn.status} ${(mdN.match(/^- (desktop: консоль|окна при загрузке).*$/gm) || ['нет строк']).join(' | ').slice(0, 400)}`);
 }
 
 console.log(`\n${bad ? 'FAIL' : 'OK'}: сошлось ${good}, не сошлось ${bad} · файлы ${out}`);

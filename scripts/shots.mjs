@@ -1055,7 +1055,7 @@ try {
         for (const st of [stale, staleUp]) if (st && st.crop) files[st.crop] = { kind: 'вырезка', scale: dpr, cssWidth: vp.width, dpr, viewport: name };
         if (sc.sheet) files[sc.sheet] = { kind: 'лист', scale: null, cssWidth: vp.width, dpr, viewport: name };
         const notes = takeNotes(page);
-        const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: page.rwModal || null };
+        const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null };
         index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, ...(light ? { light: true } : {}), first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, fullScale, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, viewH: sc.viewH, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck, gaps }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, firstState: { elements: firstInfo ? firstInfo.count : 0, loadMotion }, windows, consoleErrors: errors, ...(notes.length ? { warnings: notes } : {}) });
         console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}${segments ? '' : ' (не снимались)'}, вся страница — ${how} ×${fullScale}${checks ? '' : ', возврат наверх не проверялся'}${errors ? `, ошибок в консоли ${errors}` : ''}`);
         if (scrollNote) console.log(`  WARN прокрутка — ${scrollNote}`);
@@ -1076,11 +1076,14 @@ const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
    появилось — выбор запомнен) и где было открыто окно без слов про cookie */
 const envDismiss = String(process.env.SITE_REWORK_DISMISS || '').trim();
 const dismissCount = {};
-for (const s of index) for (const d of (s.windows && s.windows.dismiss) || []) { const k = d.remembered ? 'не появилось (выбор запомнен)' : d.status; dismissCount[k] = (dismissCount[k] || 0) + 1; }
+/* нажатие, которое увело на другой адрес (mamuka.rest /menu/ → главная): страница открыта заново — «увело, открыта
+   заново»; не вышло — «ЗАМЕР НЕ ТОЙ СТРАНИЦЫ» (29.09 такие снимки молча были главной под адресом /menu/ с OK) */
+for (const s of index) for (const d of (s.windows && s.windows.dismiss) || []) { const k = d.wrongPage ? 'увело — ЗАМЕР НЕ ТОЙ СТРАНИЦЫ' : d.again ? 'увело — окно вернулось' : d.nav ? (d.reload ? 'перезагрузило — открыта заново' : 'увело — открыта заново') : d.remembered ? 'не появилось (выбор запомнен)' : d.status; dismissCount[k] = (dismissCount[k] || 0) + 1; }
 const modalAt = index.filter((s) => s.windows && s.windows.modal).map((s) => `${s.page} ${s.viewport}`);
-const windowsSummary = { dismiss: envDismiss || null, results: dismissCount, modal: modalAt };
+const wrongAt = index.filter((s) => s.windows && s.windows.wrongPage).map((s) => `${s.page} ${s.viewport} (открылась ${s.windows.wrongPage.got})`);
+const windowsSummary = { dismiss: envDismiss || null, results: dismissCount, modal: modalAt, wrongPage: wrongAt };
 writeJson(path.join(outDir, 'shots.json'), { tag, takenAt: new Date().toISOString(), browser: { ...bInfo, default: defBrowser, hint: bHint || null }, verdict, fails, warns, note: FULLPAGE_NOTE, fullModeRequested: fullMode, fullScaleRequested: fullScaleOpt, segmentsRequested: segAuto ? 'auto' : segments, returnRequested: returnOpt, light, windows: windowsSummary, files, shots: index });
-console.log(`\nОкна при загрузке: SITE_REWORK_DISMISS ${envDismiss ? `«${envDismiss}» — ${Object.entries(dismissCount).map(([k, n]) => `${k} ×${n}`).join(', ') || 'не применялась'}` : 'не задана'} · открытое окно: ${modalAt.length ? `${modalAt.join(', ')} — снимки под ним (селектор — в WARN выше)` : 'нет'}`);
+console.log(`\nОкна при загрузке: SITE_REWORK_DISMISS ${envDismiss ? `«${envDismiss}» — ${Object.entries(dismissCount).map(([k, n]) => `${k} ×${n}`).join(', ') || 'не применялась'}` : 'не задана'} · открытое окно: ${modalAt.length ? `${modalAt.join(', ')} — снимки под ним (селектор — в WARN выше)` : 'нет'}${wrongAt.length ? ` · не та страница: ${wrongAt.join(', ')}` : ''}`);
 console.log(`${verdict}: ${fails} провалов, ${warns} предупреждений`);
 console.log(`Снимки: ${outDir}`);
 if (partialFull) console.log(`Оговорка: ${FULLPAGE_NOTE}`);

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: окно без семантики</title>
+<!--
+  Стенд checkOpenModal (fixtures/lib/selftest.mjs, случай modal): окно — это семантика окна или подложка, а не просто
+  крупный закреплённый блок со ссылками. Вариант задаёт адрес:
+    ?dim=1    полупрозрачная подложка на весь экран поверх страницы, без семантики, прокрутка не заперта — окно;
+    ?lock=1   непрозрачный слой на весь экран, прокрутка страницы заперта (body overflow:hidden) — окно;
+    ?cls=1    закреплённый блок .popup.is-open без подложки (треть экрана) — окно по классу;
+    ?opaque=1 непрозрачный слой на весь экран поверх страницы со ссылкой, прокрутка не заперта, семантики нет — НЕ окно
+              (так устроен закреплённый первый экран; ложный WARN 29.09 — fixed-hero.html, split.html);
+    без параметров — окон нет.
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; }
+  body.locked { overflow: hidden; }
+  main { padding: 32px; }
+  main section { height: 800px; border-bottom: 1px solid #ddd; }
+  .layer { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+  .layer.dim { background: rgba(0, 0, 0, .55); }
+  .layer.solid { background: #1d2b3a; color: #fff; }
+  .layer .box { background: #fff; color: #222; padding: 24px 32px; min-width: 260px; }
+  .layer a { color: inherit; }
+  .popup { position: fixed; left: 20%; top: 20%; width: 60%; height: 55%; z-index: 50; background: #fff; box-shadow: 0 10px 40px rgba(0, 0, 0, .3); padding: 24px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<main><h1>Ресторан у реки</h1><section>Первый раздел</section><section>Второй раздел</section></main>
+<script>
+  const q = location.search;
+  const add = (html) => { const d = document.createElement('div'); d.innerHTML = html; document.body.appendChild(d.firstElementChild); };
+  if (/dim=1/.test(q)) add('<div class="layer dim"><div class="box"><p>Выберите город</p><ul><li><a href="#yar">Ярославль</a></li><li><a href="#ryb">Рыбинск</a></li></ul></div></div>');
+  if (/lock=1/.test(q)) { document.body.classList.add('locked'); add('<div class="layer solid"><div class="box"><p>Вам уже исполнилось 21?</p><button type="button">Подтверждаю</button></div></div>'); }
+  if (/cls=1/.test(q)) add('<div class="popup is-open"><p>Скидка 10% на первый заказ</p><button type="button">Получить</button></div>');
+  if (/opaque=1/.test(q)) add('<div class="layer solid"><div><h2>Ресторан у реки</h2><a href="#menu">Смотреть меню</a></div></div>');
+</script>
+</body>
+</html>

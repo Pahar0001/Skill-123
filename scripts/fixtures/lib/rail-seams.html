@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: колонки на склейке</title>
+<!--
+  Стенд fullPageShot mode segments (fixtures/lib/selftest.mjs, случай seams), экран desktop 1440×900, высота 3800 px.
+  Закреплённое на всю высоту окна — на всей высоте склейки, мелкое — один раз. Цвета-метки, по ним считаются строки
+  снимка в своём столбце:
+    #7A00FF рельс fixed слева на всю высоту окна, 24 px (как рельс «Эпицентра» на /menu и /afisha) — все 3800 строк;
+    #3366FF колонка sticky справа на всю высоту окна в сетке страницы (как колонка «пополам») — на всей высоте сетки;
+    #FFAA00 вкладка fixed слева вверху (x 40…80) — один раз, 120 строк;
+    #00AA88 кнопка «наверх» fixed справа внизу — один раз, 48 строк;
+    #FF3300 значок fixed вверху, появляется после прокрутки ниже 1200 px — один раз, 40 строк (там, где появился).
+  До 30.09 колонки считались нижними полосами: рельс был только в последнем окне, sticky-колонка — только наверху
+  (рельс «Эпицентра» и колонка mamuka пропадали со склейки).
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; background: #fff; }
+  .rail { position: fixed; top: 0; bottom: 0; left: 0; width: 24px; background: #7a00ff; z-index: 30; }
+  .grid { display: grid; grid-template-columns: 1fr 200px; margin-left: 24px; }
+  .main { height: 3600px; background: #fafafa; }
+  .side { position: sticky; top: 0; height: 100vh; background: #3366ff; }
+  .foot { height: 200px; background: #eee; margin-left: 24px; }
+  .tab { position: fixed; left: 40px; top: 30%; width: 40px; height: 120px; background: #ffaa00; z-index: 31; }
+  .up { position: fixed; right: 16px; bottom: 16px; width: 48px; height: 48px; background: #00aa88; z-index: 31; }
+  .late { position: fixed; left: 120px; top: 80px; width: 60px; height: 40px; background: #ff3300; z-index: 31; opacity: 0; }
+  .late.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="rail"></div>
+<div class="grid"><div class="main">Содержимое</div><aside class="side"></aside></div>
+<div class="foot">Подвал</div>
+<div class="tab"></div>
+<a class="up" href="#top" aria-label="Наверх"></a>
+<div class="late"></div>
+<script>
+  const late = document.querySelector('.late');
+  addEventListener('scroll', () => late.classList.toggle('on', scrollY > 1200), { passive: true });
+</script>
+</body>
+</html>

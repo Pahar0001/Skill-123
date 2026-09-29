@@ -16,6 +16,9 @@
  *   --cpu N     во сколько раз замедлить процессор (по умолчанию 4 на телефоне и планшете, 1 на десктопе).
  *   --net       сеть: fast3g, slow4g или none (по умолчанию fast3g на телефоне, none на десктопе).
  *   --runs N    прогонов (1…9), каждый в свежем браузере с холодным кэшем; в таблицу — медиана и разброс.
+ *               SITE_REWORK_DISMISS нажимается в каждом прогоне (после загрузки и тишины сети, до замера кадров),
+ *               итог и открытое окно — под строкой прогона и в json (windows.perRun); нажатие увело на другой
+ *               адрес — страница открыта заново, и это WARN: загрузка и вес — вместе со второй загрузкой.
  *   --out       папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>), итог — <out>/perf/<tag>.json.
  *   --tag       имя файла итога (по умолчанию <экран>-<сеть>-cpu<N>).
  *   --overlay   ещё и цена полноэкранного слоя фактуры (зерно, вуаль): растровые задачи (RasterTask) и
@@ -37,7 +40,9 @@
  *               сдвиг вёрстки после load (источник, на сколько и когда), сдвиг у края окна (обрезка краем — не
  *               «смена высоты»; настоящая смена высоты остаётся), автослайдер со сменой LCP (пометка
  *               и медиана по первому элементу), «сервер не сжимает» на локальном адресе (INFO, вердикт веса
- *               по gzip); без браузера — подписи источника сдвига у всех краёв окна (низ, верх, блок от x 0,
+ *               по gzip); окна в замерном прогоне (стенды fixtures/lib): SITE_REWORK_DISMISS увёл на главную —
+ *               нажатие и итог в прогоне, страница открыта заново, WARN в итоге; окно без переменной — WARN
+ *               «окно» один раз; без браузера — подписи источника сдвига у всех краёв окна (низ, верх, блок от x 0,
  *               коробка во всю высоту окна) и у старого протокола без размера окна. Протоколы — во временной
  *               папке или в --out; код 1, если ожидание не сошлось.
  *   --help, --h, -h  эта справка.
@@ -188,7 +193,7 @@ import zlib from 'node:zlib';
 import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, PH_URL,
-  collectWarnings, takeWarnings,
+  collectWarnings, takeWarnings, collectNotes, takeNotes, warningKind, warningLabel, applyDismiss, checkOpenModal,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
@@ -197,8 +202,9 @@ const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'ov
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
-/* WARN lib (свой стиль не вставился) — в итог и json (warnings), а не посреди вывода прогона */
-collectWarnings();
+/* WARN lib (свой стиль не вставился, окно, SITE_REWORK_DISMISS) и INFO (нажато) — под строкой прогона, в итог и json
+   (warnings, windows), а не посреди вывода прогона */
+collectWarnings(); collectNotes();
 for (const k of ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 if (opt.selftest) process.exit(await selftest());
 /* «--overlay http://…» без селектора: адрес ушёл в значение флага */
@@ -245,19 +251,22 @@ const videoBudget = vp.isMobile ? 1 * MB : 2.5 * MB;
    прогона (функция поднимается), поэтому всё нужное — внутри */
 async function selftest() {
   const here = path.dirname(fileURLToPath(import.meta.url)); const dir = path.join(here, 'fixtures', 'perf');
+  const libDir = path.join(here, 'fixtures', 'lib'); /* /lib/… — стенды окон lib (SITE_REWORK_DISMISS в замерном прогоне) */
   const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '');
-    const f = path.resolve(dir, rel);
-    if (!f.startsWith(dir + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('нет такого файла'); return; }
+    const root = /^lib\//.test(rel) ? libDir : dir;
+    const f = path.resolve(root, rel.replace(/^lib\//, ''));
+    if (!f.startsWith(root + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('нет такого файла'); return; }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     fs.createReadStream(f).pipe(res);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'perf-selftest-'));
-  const runSelf = (args) => new Promise((resolve) => {
-    const ch = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  /* SITE_REWORK_DISMISS из окружения не должна менять ожидания: у стенда — своя (env) или пустая */
+  const runSelf = (args, env = {}) => new Promise((resolve) => {
+    const ch = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SITE_REWORK_DISMISS: '', ...env } });
     const so = [], se = []; ch.stdout.on('data', (d) => so.push(d)); ch.stderr.on('data', (d) => se.push(d));
     const t = setTimeout(() => ch.kill(), 300000);
     ch.on('close', (code) => { clearTimeout(t); resolve({ code, out: Buffer.concat(so).toString('utf8'), err: Buffer.concat(se).toString('utf8') }); });
@@ -293,6 +302,23 @@ async function selftest() {
         /div\.grow[^;\n]*высота 100 → 140/.test(top) ? '' : 'нет контроля «div.grow … высота 100 → 140» (настоящая смена высоты)',
       ];
     } },
+    /* окна в замерном прогоне (стенды fixtures/lib): у прогона свой браузер без куки — окно выбора открывается каждый раз;
+       нажатие SITE_REWORK_DISMISS и итог — в прогоне, увело — страница открыта заново и это WARN в итоге; открытое окно
+       без переменной — WARN «окно» (замер под ним) */
+    { page: 'lib/dismiss-nav.html', tag: 'dismiss-nav', runs: 1, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, why: 'нажатие в замерном прогоне увело на главную — страница открыта заново', check: (j, so) => {
+      const d = j.windows && j.windows.perRun && j.windows.perRun[0] && j.windows.perRun[0].dismiss && j.windows.perRun[0].dismiss[0];
+      return [
+        d && d.found && /dismiss-home\.html$/.test(d.nav || '') && d.reopened ? '' : `в windows.perRun[0].dismiss нет «нажато, увело, открыта заново»: ${JSON.stringify(d || null).slice(0, 200)}`,
+        /^\s+INFO SITE_REWORK_DISMISS «\.city li\.city__item» — нажато li\.city__item «Ярославль», увело на .*dismiss-home\.html — нужная страница открыта заново/m.test(so) ? '' : 'под строкой прогона нет «INFO SITE_REWORK_DISMISS … увело … открыта заново»',
+        /^\s+WARN прогон 1: нажатие SITE_REWORK_DISMISS увело на другой адрес/m.test(so) && j.verdict !== 'OK' ? '' : 'нет WARN «прогон 1: нажатие … увело» и вердикта не OK',
+      ];
+    } },
+    { page: 'lib/modal-city.html', tag: 'modal-city', runs: 1, why: 'окно выбора города без переменной — WARN «окно», замер под ним', check: (j, so) => [
+      (j.warnings || []).some((w) => /на странице открыто окно/.test(w)) ? '' : 'в warnings нет «на странице открыто окно»',
+      /^\s*WARN на странице открыто окно/m.test(so) && /окно WARN/.test(so) ? '' : 'под строкой прогона нет «WARN на странице открыто окно» или в итоге нет «окно WARN»',
+      (so.match(/WARN на странице открыто окно/g) || []).length === 1 ? '' : `окно напечатано ${(so.match(/WARN на странице открыто окно/g) || []).length} раз, ждали один`,
+      /свой стиль не вставился WARN/.test(so) ? 'окно подписано как «свой стиль не вставился»' : '',
+    ] },
   ];
   let bad = 0, n = 0;
   /* без браузера: подписи источников сдвига у краёв окна (shiftText). Коробки источника — видимая часть в
@@ -317,10 +343,10 @@ async function selftest() {
   }
   try {
     for (const c of CASES) {
-      const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'perf', `${tag}.json`);
+      const tag = c.tag || c.page.replace(/\.html$/, ''); const jf = path.join(out, 'perf', `${tag}.json`);
       try { fs.rmSync(jf, { force: true }); } catch { /* нет */ }
       const t0 = Date.now();
-      const r = await runSelf([`${base}/${c.page}`, '--viewport', 'desktop', '--net', 'none', '--cpu', '1', '--runs', String(c.runs), '--out', out, '--tag', tag]);
+      const r = await runSelf([`${base}/${c.page}`, '--viewport', 'desktop', '--net', 'none', '--cpu', '1', '--runs', String(c.runs), '--out', out, '--tag', tag], c.env);
       let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch { /* нет итога */ }
       n++;
       if (!j) { bad++; console.log(`FAIL ${c.page}: нет итога (код ${r.code}) — ${(r.err || r.out).trim().slice(-300)}`); continue; }
@@ -694,6 +720,13 @@ async function measure() {
     const loadMs = Date.now() - t0;
     /* окно замера: дождаться всего, что страница начала качать до тишины (модули после load тоже) */
     const quiet = await waitQuiet(reqs);
+    /* SITE_REWORK_DISMISS и окно — в каждом замерном прогоне: у прогона свой браузер без куки, и окно выбора (город
+       mamuka.rest) открывается каждый раз. Нажатие — после загрузки и тишины сети, до замера кадров и прокрутки; итог —
+       в прогоне (windows). Увело на другой адрес — lib открыл нужную страницу заново: показатели загрузки, вес и
+       запросы — уже вместе со второй загрузкой (reloaded, WARN в итоге). Открытое окно — WARN «окно»: замер под ним */
+    const dismiss = await applyDismiss(page).catch((e) => [{ spec: process.env.SITE_REWORK_DISMISS, found: false, status: 'ошибка', why: String((e && e.message) || e).slice(0, 100) }]);
+    const modal = await checkOpenModal(page).catch(() => null);
+    const windows = { dismiss, modal, wrongPage: page.rwWrongPage || null, reloaded: dismiss.some((d) => d.nav) };
     await forceInstantScroll(page);
     await sleep(1500);
     const idleFps = await page.evaluate(() => new Promise((r) => { let n = 0; const s = performance.now(); const f = () => { n++; if (performance.now() - s < 1000) requestAnimationFrame(f); else r(n); }; requestAnimationFrame(f); }));
@@ -726,7 +759,7 @@ async function measure() {
     media.lazyPass = { ms: lazyMs, steps: lazyPass.screens ?? null, error: lazyPass.error || null };
     const list = [...reqs.values()];
     /* вес — запрошенное до прокрутки замера (phase load); прокрутка замера и проход за ленивым — отдельно */
-    return { loadMs, quiet, m, reqs: list, cache: cacheOf(list), idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount };
+    return { loadMs, quiet, m, reqs: list, cache: cacheOf(list), idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount, windows };
   } finally { await browser.close(); }
 }
 
@@ -801,6 +834,7 @@ const sec = (ms) => `${Math.round(ms / 100) / 10} с`;
 const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
 const answers = (n) => `${n} ${plural(n, 'ответ', 'ответа', 'ответов')}`;
 const samples = [];
+const runWarn = []; /* WARN lib и SITE_REWORK_DISMISS замерных прогонов — в итог */
 if (!opt['overlay-only']) {
   for (let i = 0; i < runs; i++) {
     process.stdout.write(`· прогон ${i + 1}/${runs} … `);
@@ -808,7 +842,14 @@ if (!opt['overlay-only']) {
       const s = await measure(); samples.push(s); s.w = weightOf(s);
       const L = s.m.lcpEl, P = s.m.longPhases, c = s.cache;
       console.log(`LCP ${s.m.lcp ?? '—'} мс${L ? ` (${L.el}${s.m.lcpFrom === 'scroll' ? ', при прокрутке' : ''}${s.m.lcpSwitch ? `; сменился — до этого ${s.m.lcpSwitch.from.el} на ${s.m.lcpSwitch.from.t} мс` : ''})` : ''}${s.m.lcpAfterScroll.length ? `, при прокрутке замера ещё ${s.m.lcpAfterScroll.length}` : ''} · FCP ${s.m.fcp} мс · CLS ${s.m.cls} · долгие ${s.m.longVerdict} мс${P.scroll.ms ? ` (+ прокрутка замера ${P.scroll.ms})` : ''} · JS ${s.w.by.js ? s.w.by.js.kb : 0} КБ, всего ${s.w.totalKb} КБ · из кэша: ${c.hits}${c.reused ? ` (повторно с этой страницы ${c.reused})` : ''} · тишина сети ${s.quiet.at == null ? `не наступила за ${QUIET_MAX / 1000} с` : `+${sec(s.quiet.at)}`} · прокрутка до ${s.scroll.share == null ? '—' : Math.round(s.scroll.share * 100) + '%'}`);
-    } catch (e) { console.log(`сбой: ${e.message}`); }
+      /* окна этого прогона (lib): INFO — нажато, WARN — не найдено, скрыто, окно, замер не той страницы — под строкой
+         прогона; WARN — ещё и в итог */
+      s.windows.notes = takeNotes(); s.windows.warnings = takeWarnings();
+      if (s.windows.reloaded) s.windows.warnings.push(`прогон ${i + 1}: нажатие SITE_REWORK_DISMISS ${s.windows.dismiss.some((d) => d.nav && !d.reload) ? 'увело на другой адрес' : 'перезагрузило страницу'}, страница открыта заново — показатели загрузки, вес и запросы сняты вместе с повторной загрузкой (кэш и куки уже есть)`);
+      for (const n of s.windows.notes) console.log(`  INFO ${n}`);
+      for (const w of s.windows.warnings) console.log(`  WARN ${w}`);
+      runWarn.push(...s.windows.warnings);
+    } catch (e) { console.log(`сбой: ${e.message}`); for (const w of takeWarnings()) runWarn.push(w); takeNotes(); }
   }
   if (!samples.length) { console.error('FAIL: ни один прогон не удался'); process.exit(1); }
 }
@@ -1140,8 +1181,15 @@ if (opt.overlay) {
   report.overlay = overlay;
 }
 
-const libW = takeWarnings();
-if (libW.length) { console.log(''); for (const w of libW) console.log(`WARN ${w}`); bump('WARN'); lines.push('свой стиль не вставился WARN'); report.warnings = libW; }
+/* WARN lib — с подписью по виду («окно», «SITE_REWORK_DISMISS», «свой стиль не вставился»), одинаковые из разных прогонов —
+   одной строкой; окна и нажатия по прогонам — в json (windows.perRun) */
+const lateW = takeWarnings(); takeNotes();
+const libW = [...new Set([...runWarn, ...lateW])];
+const labelOfW = (w) => (warningKind(w) ? (warningKind(w) === 'стиль' ? 'свой стиль не вставился' : warningLabel(w)) : 'SITE_REWORK_DISMISS');
+/* напечатанное под строкой прогона — второй раз не печатается, только в счёт и в итоговую строку */
+const lateOnly = lateW.filter((w) => !runWarn.includes(w));
+if (libW.length) { if (lateOnly.length) { console.log(''); for (const w of lateOnly) console.log(`WARN ${w}`); } bump('WARN'); lines.push(...new Set(libW.map((w) => `${labelOfW(w)} WARN`))); report.warnings = libW; }
+if (samples.some((s) => s.windows && (s.windows.dismiss.length || s.windows.modal))) report.windows = { dismiss: process.env.SITE_REWORK_DISMISS || null, perRun: samples.map((s) => s.windows) };
 console.log(`\n${worst}: ${lines.join(', ') || 'все бюджеты соблюдены'}`);
 report.verdict = worst;
 const file = path.join(outDir, `${tag}${opt['overlay-only'] ? '-overlay' : ''}.json`);

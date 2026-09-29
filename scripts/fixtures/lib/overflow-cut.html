@@ -13,11 +13,16 @@
               dialog .tags .pill — пилюля (inline-flex, nowrap) во флекс-строке уже себя: текст целиком в пилюле,
               пилюля вылезла из строки, край окна режет «ПИРАМИДА · БИЛЬЯРДНЫЙ КЛУБ»; dialog .col .tags .pill — то же,
               но строка во флекс-колонке с align-items:flex-start шире колонки (как .m-pill «Эпицентра» в .ma-dialog__body);
-              .btn — кнопка overflow:hidden режет свою подпись
+              .btn — кнопка overflow:hidden режет свою подпись;
+              b.loud — гигантское слово навылет БЕЗ aria-hidden (контроль к декору ниже: проверка жива)
   Не ждём (контроль): select#selOk, многоточие .ell, sr-only .sr, лента с прокруткой вбок .ribbon,
   карусель «с подглядыванием» .car (и пилюля в её карточке), лента пилюль .chips с overflow:hidden у самой строки,
   дорожка со сдвигом transform .sw (слайд в одну строку вылезает из дорожки), бегущая строка .marq — ни clipCut,
   ни fieldCut, ни FAIL.
+  Декор и ловушки — не находка (ложный WARN 29.09, демо coffee .shout): .shout[aria-hidden] — гигантское слово навылет
+  (overflow:hidden, nowrap, margin-inline -6vw), .bgword[aria-hidden] — огромное бледное слово-фон в разделе
+  overflow:hidden, span[role=presentation] шире своей коробки, поля-ловушки для ботов input#hp1 (за краем экрана) и
+  input#hp2 (tabindex=-1 внутри aria-hidden) с подсказкой шире поля — ни clipCut, ни textWider, ни fieldCut.
 -->
 <style>
   body { margin: 0; font: 16px/1.4 Arial, sans-serif; color: #222; }
@@ -48,6 +53,14 @@
   .marq { overflow: hidden; white-space: nowrap; }
   .marq span { display: inline-block; animation: m 8s linear infinite; }
   @keyframes m { to { transform: translateX(-50%); } }
+  .shout { overflow: hidden; }
+  .shout b { display: block; font: 900 64px/0.9 Arial, sans-serif; white-space: nowrap; text-align: center; margin-inline: -6vw; text-transform: uppercase; }
+  .bgsec { position: relative; overflow: hidden; padding: 24px 0; }
+  .bgword { position: absolute; left: -20px; top: 0; font: 900 120px/1 Arial, sans-serif; white-space: nowrap; color: rgba(0, 0, 0, .05); }
+  .narrow { width: 120px; }
+  .deco-p { white-space: nowrap; }
+  .hp { position: absolute; left: -9999px; width: 120px; }
+  .hp-wrap input { width: 120px; font: 16px Arial, sans-serif; }
 </style>
 </head>
 <body>
@@ -63,6 +76,12 @@
   <div class="chips"><span class="pill">Все события</span><span class="pill">Ближайшие</span><span class="pill">Прошедшие</span><span class="pill">Концерты</span></div>
   <div class="sw"><div class="sw-wrap"><div class="sw-slide">Первый слайд в одну строку</div><div class="sw-slide">Второй слайд в одну строку</div></div></div>
   <div class="marq"><span>Бегущая строка · бегущая строка · бегущая строка · бегущая строка ·</span></div>
+  <div class="shout" aria-hidden="true"><b>Пекарня · кофе · торты</b></div>
+  <div class="shout"><b class="loud">Пекарня · кофе · торты</b></div>
+  <section class="bgsec"><span class="bgword" aria-hidden="true">Эпицентр</span><p>Раздел со словом-фоном</p></section>
+  <div class="narrow"><span class="deco-p" role="presentation">Неразрывнаядекоративнаястрока</span></div>
+  <input id="hp1" class="hp" type="text" name="website" placeholder="Оставьте это поле пустым, если вы человек" autocomplete="off">
+  <div class="hp-wrap" aria-hidden="true"><input id="hp2" type="text" tabindex="-1" placeholder="Оставьте это поле пустым, если вы человек"></div>
 </div>
 <dialog id="dlg"><div class="dlg-in"><div class="dlg-body">
   <div class="tag">Пирамида · бильярдный клуб</div>

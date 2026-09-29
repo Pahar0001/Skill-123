@@ -166,8 +166,12 @@
  *                              со сломанными якорями и с якорями <a name>, первый экран на position:
  *                              fixed) и свои серверы (страница 404 с --expect-status и без, сторонний
  *                              iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
- *                              же и другого сайта) и сверить строки протокола с ожидаемыми; код 1 —
- *                              что-то разошлось. Адрес не нужен, браузер — один за раз, около трёх минут
+ *                              же и другого сайта), окна при загрузке (стенды fixtures/lib: окно — WARN;
+ *                              SITE_REWORK_DISMISS увёл на шумную главную — нужная страница открыта
+ *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
+ *                              если он есть; страница снова уводит — «замер не той страницы») и сверить
+ *                              строки протокола с ожидаемыми; код 1 — что-то разошлось. Адрес не нужен,
+ *                              браузер — один за раз, около трёх минут
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
  *                              тоже справка. Ищется только до «--»: после него — адрес
  *
@@ -213,6 +217,7 @@ import {
   flagsDump, launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
+  collectWarnings, takeWarnings, collectNotes, takeNotes, warningLabel, onPageLogReset, findBrowser,
 } from './lib.mjs';
 
 /* ---------- аргументы: шаги в порядке записи ---------- */
@@ -422,6 +427,13 @@ const line = (status, what, details, data, o = {}) => {
   console.log(`${status.padEnd(4)} ${o.con != null ? o.con : `${what}${details ? ' — ' + details : ''}`}`);
   report.steps.push({ status, kind: curKind, what, details, ...(data ? { data } : {}) });
 };
+/* WARN и INFO из lib (окно при загрузке, SITE_REWORK_DISMISS, свой стиль не вставился) — строками вердикта и в JSON,
+   с подписью по виду (warningLabel), а не отдельной строкой «WARN …» мимо счёта */
+collectWarnings(); collectNotes();
+const drainLib = () => {
+  for (const n of takeNotes()) line('INFO', 'SITE_REWORK_DISMISS', n.replace(/^SITE_REWORK_DISMISS /, ''));
+  for (const w of takeWarnings()) line('WARN', warningLabel(w), w.replace(/^SITE_REWORK_DISMISS /, ''));
+};
 /* начало длинного результата — в консоль одной строкой; целиком он в протоколе */
 const headOf = (s, n = 300) => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}… (ещё ${t.length - n} знаков — целиком в JSON: steps[].details)` : t; };
 let shotN = 0;
@@ -473,6 +485,9 @@ try {
   };
   page.on('requestfailed', noteFrame);
   page.on('response', (res) => { try { if (res.status() >= 400) noteFrame(res.request()); } catch { /* нет запроса */ } });
+  /* нажатие SITE_REWORK_DISMISS увело, и lib открыл нужную страницу заново (resetPageLog): свои журналы — тоже только её.
+     Иначе /menu/ mamuka.rest получала строки консоли и кадры запросов промежуточной главной (30.09) */
+  onPageLogReset(page, () => { reqLog.length = 0; conLoc.length = 0; reqFrame.clear(); });
   /* замедление процессора — Chrome DevTools Protocol, у Firefox его нет: WARN ниже, прогон без замедления */
   if (Number(opt.cpu) > 1) { if (gecko) cpuSkipped = true; else { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(opt.cpu) }); } }
   if (opt.init) await page.evaluateOnNewDocument(String(opt.init));
@@ -533,7 +548,12 @@ if (frameFailed.length) {
   const fl = foreignErrLines();
   line('INFO', `запросы сторонних iframe: не загрузилось ${frameFailed.length}`, `${[...byFrame.entries()].slice(0, 3).map(([h, l]) => `в iframe ${h}: ${l.length} (${uniqCount(l.map((f) => `${f.reason} ${hostOf(f.url)}`), 3)})`).join(' | ')} — реклама и счётчики внутри чужого виджета (карта, видео); сайт их не чинит, в «упавшие запросы» не входят${fl ? `; их строки в консоли (${fl}) — не ошибки страницы` : ''}`, { failed: frameFailed.map((f) => ({ ...f, frame: foreignFrame(f).frame })) });
 }
-if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? `ушла через ${page.overlay.waitedMs} мс` : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? (page.overlay.closedByDismiss ? `сама не ушла за ${page.overlay.waitedMs} мс — закрыта нажатием SITE_REWORK_DISMISS` : `ушла через ${page.overlay.waitedMs} мс`) : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+/* окна при загрузке (lib, waitForOverlay): итог SITE_REWORK_DISMISS — INFO (нажато; увело — нужная страница открыта
+   заново) или WARN (не найдено, скрыто, осталось, окно вернулось, замер не той страницы), открытое окно — WARN «окно».
+   Раньше WARN lib печатался мимо вердикта и JSON, а уводящее нажатие мерило чужую страницу с OK (mamuka.rest, 29.09) */
+drainLib();
+report.windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null };
 /* чего нет в этом браузере (Firefox): честный WARN, а не падение */
 for (const l of page.rwLimits || []) line('WARN', NOT_IN, l);
 if (cpuSkipped) line('WARN', NOT_IN, `замедление процессора (--cpu ${opt.cpu}) — это протокол Chrome (DevTools); прогон идёт без замедления, замер под нагрузкой — в Chrome или Edge`);
@@ -1615,6 +1635,7 @@ for (const { k, v, expect } of steps) {
 
 /* failedRequests — все, как раньше; failedThirdParty — из них запросы сторонних iframe (INFO, не WARN) */
 report.console = { errors: realConsole().map((c) => c.text), pageErrors: page.log.errors, warnings: page.log.console.filter((c) => c.type === 'warning').length, failedRequests: page.log.failed, failedThirdParty: page.log.failed.filter((f) => foreignFrame(f)).map((f) => ({ ...f, frame: foreignFrame(f).frame })), document: { status: docStatus, expected: expectStatus } };
+drainLib(); /* WARN lib, пришедшие по ходу шагов (свой стиль не вставился) */
 report.verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 await browser.close();
 writeJson(path.join(outDir, `${tag}.json`), report);
@@ -1630,6 +1651,7 @@ async function selftest() {
   const dir = path.join(path.dirname(self), 'fixtures', 'runtime');
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rw-runtime-selftest-'));
   const U = (f) => pathToFileURL(path.join(dir, f)).href;
+  const LIBU = (f) => pathToFileURL(path.join(path.dirname(self), 'fixtures', 'lib', f)).href;
   /* два источника: A — страница (и её 404), B — «чужой» iframe с упавшей картинкой (другой порт — другой источник) */
   const serve = (handler) => new Promise((res) => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => res(s)); });
   const B = await serve((req, res) => {
@@ -1655,8 +1677,10 @@ async function selftest() {
     res.statusCode = 404; res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Нет страницы</title><h1>Такой страницы нет</h1>');
   });
   const aUrl = `http://127.0.0.1:${A.address().port}`;
-  const run = (tag, args, target) => new Promise((res) => {
-    const p = spawn(process.execPath, [self, '--out', out, '--tag', tag, ...args, '--', target], { stdio: ['ignore', 'pipe', 'pipe'] });
+  /* SITE_REWORK_DISMISS — пустая у всех случаев, кроме тех, где задана своя (env): переменная из окружения не должна
+     менять ожидания */
+  const run = (tag, args, target, env = {}) => new Promise((res) => {
+    const p = spawn(process.execPath, [self, '--out', out, '--tag', tag, ...args, '--', target], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SITE_REWORK_DISMISS: '', ...env } });
     let text = ''; p.stdout.on('data', (d) => { text += d; }); p.stderr.on('data', (d) => { text += d; });
     const timer = setTimeout(() => p.kill(), 240000);
     p.on('close', (code) => { clearTimeout(timer); let j = null; try { j = JSON.parse(fs.readFileSync(path.join(out, 'runtime', `${tag}.json`), 'utf8')); } catch { /* нет протокола */ } res({ code, text, j }); });
@@ -1722,13 +1746,27 @@ async function selftest() {
        виджета того же сайта — INFO. Строка консоли iframe другого сайта во вкладку не приходит — загрузка OK */
     ...(C ? [{ name: 'iframe-doc-xsite', url: `${aUrl}/gone-xsite`, code: 0, args: [],
       want: [['WARN', /^упавшие запросы$/, /^HTTP 404 map-widget$/], ['INFO', /^запросы сторонних iframe: не загрузилось 1$/, /в iframe localhost:\d+: 1 \(HTTP 404 localhost/]], not: [['WARN', /упавшие запросы/, /pixel-missing/]] }] : []),
+    /* окна при загрузке (lib, стенды fixtures/lib): открытое окно — WARN «окно» в вердикте и JSON (раньше печаталось мимо
+       счёта); SITE_REWORK_DISMISS увёл на главную — нужная страница открыта заново (INFO) и мерится она (mamuka.rest /menu/,
+       29.09: мерилась главная с OK); страница снова уводит — WARN «замер не той страницы» */
+    { name: 'window', url: LIBU('modal-city.html'), code: 0, verdict: 'WARN', args: [],
+      want: [['WARN', /^окно$/, /на странице открыто окно .*SITE_REWORK_DISMISS="\.fancybox-container li\.style-listing-items__item"/]], not: [[null, /^свой стиль/]] },
+    /* главная шумит (ошибка в консоли, исключение, упавшая картинка): после повторного открытия они не в счёте — mamuka.rest
+       /menu/ получала запросы и консоль промежуточной главной (464 запроса вместо 184, «упавшее» видео главной, 30.09) */
+    { name: 'dismiss-nav', url: `${LIBU('dismiss-nav.html')}?noisy=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'OK', args: ['--eval', "document.getElementById('mark') ? 'нужная' : 'чужая'", '--expect', 'нужная'],
+      want: [['INFO', /^SITE_REWORK_DISMISS$/, /увело на .*dismiss-home\.html\?noisy=1 — нужная страница открыта заново.*запросы и консоль в счёте — только её/], ['OK', /^eval /, /совпало/], ['OK', /^загрузка /, /ошибок в консоли нет/]], not: [['WARN', /^окно$/], ['WARN', /^упавшие запросы$/]] },
+    /* то же в Firefox на file://: адрес вкладки после перехода скриптом отставал — переход не замечался, мерилась главная (30.09) */
+    ...(findBrowser('firefox') ? [{ name: 'dismiss-nav-ff', url: `${LIBU('dismiss-nav.html')}?noisy=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'OK', args: ['--browser', 'firefox', '--eval', "document.getElementById('mark') ? 'нужная' : 'чужая'", '--expect', 'нужная'],
+      want: [['INFO', /^SITE_REWORK_DISMISS$/, /увело на .*dismiss-home\.html\?noisy=1 — нужная страница открыта заново/], ['OK', /^eval /, /совпало/], ['OK', /^загрузка /, /ошибок в консоли нет/]], not: [['WARN', /^упавшие запросы$/]] }] : []),
+    { name: 'dismiss-wrong', url: `${LIBU('dismiss-nav.html')}?bounce=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'WARN', args: [],
+      want: [['WARN', /^SITE_REWORK_DISMISS$/, /замер не той страницы/]] },
   ];
   if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
   let bad = 0;
   console.log(`runtime.mjs --selftest: ${CASES.length} прогонов, по одному браузеру · протоколы ${out}`);
   try {
     for (const c of CASES) {
-      const r = await run(c.name, c.args, c.url || U(c.file));
+      const r = await run(c.name, c.args, c.url || U(c.file), c.env);
       const miss = [];
       if (!r.j) miss.push(`нет протокола: ${short(r.text.split('\n').filter(Boolean).slice(-2).join(' | '), 200)}`);
       if (r.code !== c.code) miss.push(`код выхода ${r.code}, ждали ${c.code}`);

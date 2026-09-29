@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: главная</title>
+<!-- Сюда уводит нажатие в окне выбора dismiss-nav.html (как главная mamuka.rest после «Ярославль» на /menu/).
+     ?noisy=1 — главная шумит: ошибка в консоли, исключение и упавшая картинка (как видео главной mamuka.rest, которое
+     runtime засчитал странице /menu/, 30.09). После повторного открытия нужной страницы в её журнале этого быть не должно. -->
+<style>body { margin: 0; font: 16px/1.5 system-ui, sans-serif; } main { padding: 40px; min-height: 120vh; }</style>
+</head>
+<body>
+<main><h1>Главная</h1><p id="home">Чужая страница — её мерить нельзя.</p></main>
+<script>
+  if (/noisy=1/.test(location.search)) {
+    console.error('главная: ошибка в консоли');
+    const img = document.createElement('img'); img.src = 'missing-home-video-poster.png'; img.alt = ''; document.body.append(img);
+    setTimeout(() => { throw new Error('главная: исключение'); }, 0);
+  }
+</script>
+</body>
+</html>
