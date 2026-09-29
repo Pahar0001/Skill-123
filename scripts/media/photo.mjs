@@ -51,6 +51,14 @@ export const ORIENT = {
   square: (w, h) => w / h < 1.15 && h / w < 1.15,
 };
 
+/** Ориентация выдачи: --orient или по умолчанию landscape для видео, hero и card; any — без отбора. → { orient, byDefault, bad } */
+export function orientFor(kind, role, given) {
+  const g = typeof given === 'string' ? given.trim() : '';
+  if (g) return g === 'any' ? { orient: null, byDefault: false } : ORIENT[g] ? { orient: g, byDefault: false } : { orient: null, byDefault: false, bad: g };
+  const byDefault = kind === 'video' || role === 'hero' || role === 'card';
+  return { orient: byDefault ? 'landscape' : null, byDefault };
+}
+
 /** Длинная сторона, которую роль хочет получить (верх лестницы). */
 export const roleTarget = (role) => (ROLES[role] || ROLES.section).ladder[0];
 
@@ -59,13 +67,16 @@ export const roleTarget = (role) => (ROLES[role] || ROLES.section).ladder[0];
  * сторона не меньше цели; если такого нет — самый большой (не «тяжёлый», если
  * лёгкий вариант даёт хотя бы 85% цели). Шаблонные источники (w-параметр) —
  * ширина не больше оригинала: никогда не просим копию крупнее исходника.
+ * target — своя цель по длинной стороне вместо верха лестницы роли (pick --size и --need:
+ * сколько нужно сайту). Ширина шаблона округляется вверх: 4936x7403 под 1280 — 854, а не 853
+ * (853 давало 1279 и ложное «исходник даёт только 1279»).
  */
-export function chooseFile(c, role, skip = null) {
-  const T = roleTarget(role);
+export function chooseFile(c, role, skip = null, target = null) {
+  const T = target > 0 ? Math.round(target) : roleTarget(role);
   if (c.template) {
     const o = c.orig;
     let w;
-    if (o && o.width && o.height) { const s = Math.min(1, T / long(o.width, o.height)); w = Math.max(1, Math.round(o.width * s)); }
+    if (o && o.width && o.height) { const s = Math.min(1, T / long(o.width, o.height)); w = Math.max(1, Math.min(o.width, Math.ceil(o.width * s - 1e-9))); }
     else w = T;
     if (c.template.max_w) w = Math.min(w, c.template.max_w);
     const h = o && o.width ? Math.round(o.height * w / o.width) : null;
@@ -98,10 +109,27 @@ const FLAG_RULES = [
   ['ai?', /\b(ai[- ]?generated|generated|midjourney|stable ?diffusion|dall[- ]?e|render|rendering|rendered|cgi|3d|illustration|vector|clipart)\b/i],
 ];
 
+/*
+ * Марки напитков, еды и сетей: этикетка или вывеска на кадре — чужой товарный знак. В отличие от
+ * слов выше, пометка brand? ставится и тогда, когда марка есть в запросе: выдача «aperol spritz»
+ * — это бокалы с логотипом Aperol (Эпицентр, 29.09: кадры 1, 4, 9, 14), выдача шампанского — этикетки
+ * Moët. Слова, которые бывают и не маркой (apple, corona, martini, subway), здесь только в
+ * однозначном виде. Границы — не \b: «Nestlé», «Moët» кончаются не латиницей.
+ */
+const BRAND_NAMES = /(?<![a-z])(guinness|aperol|campari|mo[eë]t|chandon|veuve clicquot|dom p[eé]rignon|jameson|jack daniel['’]?s|johnnie walker|jim beam|chivas( regal)?|hennessy|absolut vodka|smirnoff|grey goose|bacardi|havana club|captain morgan|bombay sapphire|tanqueray|beefeater|baileys|j[aä]germeister|red bull|schweppes|san pellegrino|perrier|carlsberg|budweiser|stella artois|corona (extra|beer)|peroni|hoegaarden|leffe|paulaner|baltika|martini (bianco|rosso|extra dry)|pizza ?hut|domino['’]?s( pizza)?|nando['’]?s|wendy['’]?s|taco bell|dunkin['’]?( donuts)?|krispy kreme|tim hortons|costa coffee|hooters|tgi fridays|hard rock (cafe|café)|nestl[eé]|lavazza|nutella|oreos?|lipton|heinz ketchup)(?![a-z])/gi;
+
+/** Марки из BRAND_NAMES в тексте — как написаны там (для audit и предупреждения search). */
+export function brandsIn(text) {
+  const seen = new Map();
+  for (const m of String(text || '').match(BRAND_NAMES) || []) { const k = m.trim().toLowerCase(); if (!seen.has(k)) seen.set(k, m.trim()); }
+  return [...seen.values()];
+}
+
 /**
  * Пометки по тексту кадра. То, что прямо попросили в запросе, не помечается
  * (запрос «street art» не метит весь лист как art?). В профиле art пометка art?
  * не ставится: там произведение и есть предмет, а риск — срок охраны (term?).
+ * Марка из BRAND_NAMES — brand? всегда, даже если она в запросе.
  */
 export function flagsFor(text, query = '', profile = 'photo', extra = []) {
   const out = [];
@@ -109,6 +137,7 @@ export function flagsFor(text, query = '', profile = 'photo', extra = []) {
     if (profile === 'art' && (flag === 'art?' || flag === 'people?')) continue;
     if (re.test(text || '') && !re.test(query || '')) out.push(flag);
   }
+  if (brandsIn(text).length) out.push('brand?');
   return [...new Set([...out, ...extra])];
 }
 

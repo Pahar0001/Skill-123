@@ -1,0 +1,91 @@
+{
+  "dishes": {
+    "Бокал вина": {
+      "file": "/assets/img/photos/dish-bokal-vina.jpg",
+      "title": "A glass of red wine elegantly set against a backdrop of soft bokeh lights",
+      "author": "Jyoti Rana",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/red-wine-in-glass-14965205/",
+      "source": "Pexels"
+    },
+    "Турнир, вечер": {
+      "file": "/assets/img/photos/dish-turnir.jpg",
+      "title": "A glass of red wine elegantly set against a backdrop of soft bokeh lights",
+      "author": "Jyoti Rana",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/red-wine-in-glass-14965205",
+      "source": "Pexels"
+    },
+    "Курица пири-пири": {
+      "file": "/assets/img/photos/dish-kurica-piri.jpg",
+      "title": "Peri-peri chicken at Nando's, Leicester Square.jpg",
+      "author": "Someone from London",
+      "license": "CC BY-SA 2.0",
+      "page": "https://commons.wikimedia.org/wiki/File:Peri-peri_chicken_at_Nando%27s,_Leicester_Square.jpg"
+    },
+    "Апероль Шприц": {
+      "file": "/assets/img/photos/dish-aperol.jpg",
+      "title": "Bright Aperol spritz with lemon slice on a glass",
+      "author": "Markus Spiske",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/aperol-spritz-123456/",
+      "source": "Pexels"
+    },
+    "Севиче из дорадо": {
+      "file": "/assets/img/photos/dish-seviche.jpg",
+      "title": "Ceviche del Perú.jpg",
+      "author": "No machine-readable author provided. Manuel González Olaechea assumed (based on copyright claims).",
+      "license": "CC BY 3.0",
+      "page": "https://commons.wikimedia.org/wiki/File:Ceviche_del_Per%C3%BA.jpg"
+    },
+    "Чай в чайнике": {
+      "file": "/assets/img/photos/dish-chay.jpg",
+      "title": "Tea pot on a wooden table",
+      "author": "alquibar",
+      "license": "CC0",
+      "page": "https://commons.wikimedia.org/wiki/File:Tea_pot.jpg"
+    },
+    "Молочный улун": {
+      "file": "/assets/img/photos/dish-ulun.jpg",
+      "title": "Oolong tea in a glass cup",
+      "author": "Other Author",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/oolong-tea-777777/",
+      "source": "Pexels"
+    },
+    "Хлеб на закваске": {
+      "file": "/assets/img/photos/dish-hleb.jpg",
+      "title": "Sourdough bread",
+      "author": "Flickr User",
+      "license": "CC BY-NC 2.0",
+      "page": "https://www.flickr.com/photos/someone/1234567"
+    },
+    "Суп дня": {
+      "file": "/assets/img/photos/dish-sup.jpg",
+      "title": "Soup in a white bowl",
+      "author": "Soup Author",
+      "page": "https://www.pexels.com/photo/soup-888888/",
+      "source": "Pexels"
+    },
+    "Салат без файла": {
+      "file": "/assets/img/photos/dish-net-fayla.jpg",
+      "title": "Green salad",
+      "author": "Salad Author",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/salad-999999/",
+      "source": "Pexels"
+    }
+  },
+  "gallery": [
+    {
+      "key": "gal-1",
+      "file": "/assets/img/photos/gal-1.jpg",
+      "title": "Warm hall with lamps",
+      "author": "Hall Author",
+      "license": "Pexels License",
+      "page": "https://www.pexels.com/photo/hall-1001001/",
+      "source": "Pexels",
+      "caption": "Зал"
+    }
+  ]
+}
