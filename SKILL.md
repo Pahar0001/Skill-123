@@ -298,6 +298,28 @@ node ~/.claude/skills/site-rework/scripts/state.mjs <папка> set <id> impl=D
 
 ### 4. Проверка — по `reference/qa.md`
 
+**Два профиля.** Полная проверка идёт 40–60 минут и съедает лимит сессии (боевая «Эпицентр» 29.09:
+четыре полных круга — сутки и два упора в лимит), поэтому:
+
+- **быстрая — по умолчанию, после каждого круга правок** (10–15 минут): только изменённые страницы;
+  проверяет ведущий сам или ОДИН проверяющий «глаза и клики», не три линзы;
+- **полная — один раз перед сдачей или выкладкой**, либо когда пользователь просит «полную проверку»:
+  быстрая плюс список ниже.
+
+Кругов «исправить → проверить» — не больше двух; в круг идут только P0–P2, P3–P5 — списком в отчёт.
+
+Быстрая:
+```
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-320 --viewport mobile-s --scroll      # переполнение, перекрытый текст, консоль; то же для каждой изменённой страницы
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-desktop --scroll
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag q-mobile --viewport mobile-s                # главная и самая изменённая страница
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag q --viewports desktop,mobile             # только если менялись тексты или шрифты
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag q --viewport mobile --runs 1              # только если менялись первый экран, шрифты или картинки
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag q --pages <изменённые> --viewports desktop,mobile-s --segments 0 --return jump   # первые экраны — открыть глазами
+```
+Плюс руками: кликнуть то, что правили (меню, формы, фильтры), и сверить фото с подписями на изменённых страницах.
+
+Полная — к быстрой добавить:
 ```
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
 node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
@@ -335,8 +357,9 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 тяжёлая страница — `SITE_REWORK_PROTOCOL_TIMEOUT=<мс>` (по умолчанию 90000). Не больше 2–3 браузерных
 проверок одновременно — на этой машине кончались память и диск C.
 
-Условие выхода из цикла: все P0–P2 VERIFIED по runtime, visual и mobile с
-доказательствами новее последней правки; автопроверки состояния без FAIL;
+Условие выхода из круга быстрой проверки: P0–P2 исправлены, быстрые проверки без FAIL, изменённое
+открыто глазами и прокликано. Условие сдачи (полная проверка, один раз в конце): все P0–P2 VERIFIED
+по runtime, visual и mobile с доказательствами новее последней правки; автопроверки состояния без FAIL;
 320 без переполнения; `perf` не хуже базы; `a11y` без FAIL; `copy.mjs lint` без FAIL (факты с
 источником, заполнителей и заглушек нет); `typeset.mjs` без FAIL в Chrome и Firefox, висячие предлоги
 и одинокие слова первого экрана (пометка «ПЕРВЫЙ ЭКРАН» в `hang` и `orphan`) исправлены неразрывным
