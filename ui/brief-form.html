@@ -129,6 +129,95 @@
       <input id="src" name="src" type="text" placeholder="D:\projects\site или нет" aria-describedby="src-h">
     </div>
 
+    <fieldset>
+      <legend>Насколько близко к образцу</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="close-copy" name="closeness" value="close" aria-describedby="close-copy-h">
+          <label for="close-copy">Очень близко</label>
+          <p class="hint" id="close-copy-h">язык образца целиком: шрифты, цвета, раскладка, движение; своё — содержание и детали про ваше дело</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="close-spirit" name="closeness" value="spirit" checked aria-describedby="close-spirit-h">
+          <label for="close-spirit">В духе образца</label>
+          <p class="hint" id="close-spirit-h">язык образца плюс свои детали для красоты и идеи из банка</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="close-inspire" name="closeness" value="inspire" aria-describedby="close-inspire-h">
+          <label for="close-inspire">Только вдохновение</label>
+          <p class="hint" id="close-inspire-h">принципы образца, свой стиль и своя раскладка</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Сколько разнообразия и своих идей</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="var-calm" name="variety" value="calm" aria-describedby="var-calm-h">
+          <label for="var-calm">Сдержанно</label>
+          <p class="hint" id="var-calm-h">детали и движение как у образца, одна своя идея</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="var-mid" name="variety" value="noticeable" checked aria-describedby="var-mid-h">
+          <label for="var-mid">Заметно</label>
+          <p class="hint" id="var-mid-h">детали для красоты в каждом разделе, свой мотив у каждого раздела, 2–3 идеи из банка</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="var-bold" name="variety" value="bold" aria-describedby="var-bold-h">
+          <label for="var-bold">Смело</label>
+          <p class="hint" id="var-bold-h">много движения и своих находок, у каждого раздела свой характер</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Что главное</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="checkbox" id="focus-leads" name="focus" value="заявки и продажи — путь к заявке, формы, кнопки">
+          <label for="focus-leads">Заявки и продажи</label>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="focus-look" name="focus" value="красота и впечатление — детали, шрифты, движение">
+          <label for="focus-look">Красота и впечатление</label>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="focus-mobile" name="focus" value="телефон и скорость">
+          <label for="focus-mobile">Телефон и скорость</label>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="focus-copy" name="focus" value="тексты и наполнение">
+          <label for="focus-copy">Тексты и наполнение</label>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Тексты, фото, видео, логотипы</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="cont-own" name="content" value="own" aria-describedby="cont-own-h">
+          <label for="cont-own">Пришлю свои</label>
+          <p class="hint" id="cont-own-h">ваше — главнее; скажите, где лежит</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="cont-part" name="content" value="partial" aria-describedby="cont-part-h">
+          <label for="cont-part">Частично есть</label>
+          <p class="hint" id="cont-part-h">что есть — пришлёте, недостающее сделаю сам</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="cont-none" name="content" value="none" checked aria-describedby="cont-none-h">
+          <label for="cont-none">Нет — сделай сам</label>
+          <p class="hint" id="cont-none-h">тексты — по данным о вашем деле, фото и видео — из свободных источников; цены, сроки, отзывы — только подтверждённые</p>
+        </div>
+      </div>
+      <div class="field sub" data-only="content" hidden>
+        <label for="contentPath">Где лежат ваши материалы</label>
+        <input id="contentPath" name="contentPath" type="text" placeholder="D:\projects\site\materials или ссылка" disabled>
+      </div>
+    </fieldset>
+
     <fieldset aria-describedby="media-h">
       <legend>Кадры и видео</legend>
       <p class="hint" id="media-h">Ключи Pexels и Unsplash лежат в ~/.claude/site-rework/.env — в бриф их не писать; какие заданы, покажет media.mjs doctor.</p>
@@ -220,10 +309,11 @@
   const sync = () => {
     const kind = kindOf();
     const own = f.querySelector('input[name="media"][value="own"]').checked;
+    const cont = (f.querySelector('input[name="content"]:checked') || {}).value;
     for (const el of document.querySelectorAll('[data-rework]')) el.textContent = el.dataset[kind];
     for (const el of f.querySelectorAll('[data-rework-ph]')) el.placeholder = el.dataset[kind + 'Ph'];
     for (const el of f.querySelectorAll('[data-only]')) {
-      const on = el.dataset.only === 'own' ? own : el.dataset.only === kind;
+      const on = el.dataset.only === 'own' ? own : el.dataset.only === 'content' ? (cont === 'own' || cont === 'partial') : el.dataset.only === kind;
       el.hidden = !on;
       for (const c of el.querySelectorAll('input, textarea')) c.disabled = !on;
     }
@@ -262,6 +352,10 @@
       ['ТРЕБОВАНИЯ', or(d.reqs, fresh ? 'файлов пока нет — придут по ходу (сообщения, файлы, голосовые)' : 'нет')],
       donor && ['ЧТО ВЗЯТЬ У ДОНОРА', or(d.take, 'язык целиком') + '\nтексты, фото и файлы донора не берутся'],
       ['ЗАДАЧА', or(d.task, fresh ? 'собрать сайт о деле выше по требованиям' : donor ? 'собрать сайт о деле выше в языке донора' : 'найди, что мешает сайту приводить клиентов, и исправь')],
+      ['БЛИЗОСТЬ К ОБРАЗЦУ', { close: 'очень близко — язык образца целиком (шрифты, цвета, раскладка, движение); своё — содержание и детали про наше дело', spirit: 'в духе образца — язык образца плюс свои детали для красоты и 2–3 идеи из банка', inspire: 'только вдохновение — принципы образца, свой стиль и раскладка' }[d.closeness] || 'не выбрано — спросить при запуске'],
+      ['РАЗНООБРАЗИЕ И СВОИ ИДЕИ', { calm: 'сдержанно — детали и движение как у образца, одна своя идея', noticeable: 'заметно — детали для красоты в каждом разделе, свой мотив у каждого раздела, 2–3 идеи из банка', bold: 'смело — много движения и своих находок, у каждого раздела свой характер' }[d.variety] || 'не выбрано — спросить при запуске'],
+      ['ГЛАВНОЕ', (d.focus || []).length ? d.focus.join('\n') : 'не выбрано — спросить при запуске'],
+      ['КОНТЕНТ', d.content === 'own' ? 'пришлю свой: ' + (d.contentPath || 'где лежит — не указано, спросить') : d.content === 'partial' ? 'частично есть: ' + (d.contentPath || 'где лежит — не указано, спросить') + '\nчего нет — тексты по данным о деле, фото и видео — из свободных источников' : 'нет — тексты по данным о деле (сайт, открытые источники), фото и видео — из свободных источников с лицензиями; цены, сроки, отзывы, награды — только подтверждённые или пометка «заглушка»'],
       ['СТРАНИЦЫ В РАБОТЕ', or(d.pages, fresh ? 'состав — из требований' : 'главная')],
       ['РЕФЕРЕНСЫ', or(d.refs, 'нет')],
       ['ПОЖЕЛАНИЯ ПО СТИЛЮ', or(d.style, fresh ? (d.refs ? 'не заданы — 2 направления с эскизами из референсов, до сборки' : 'не заданы — 3 направления с эскизами на выбор, до сборки') : donor ? 'язык донора' : 'сохранить текущий язык, поднять качество деталей')],
