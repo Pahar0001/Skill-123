@@ -5,6 +5,7 @@
  *   node perf.mjs <url> [--viewport mobile] [--out папка] [--tag имя]
  *                 [--cpu 4] [--net fast3g|slow4g|none] [--runs 3]
  *                 [--overlay [селектор]] [--rounds 5] [--overlay-only] [--strict]
+ *   node perf.mjs --selftest [--out папка]
  *   node perf.mjs --help   (или --h, -h)
  *
  * Флаги:
@@ -32,9 +33,13 @@
  *   --overlay-only  только цена слоя, без замера загрузки (быстро: сеть не замедляется); итог —
  *               <out>/perf/<tag>-overlay.json (не затирает полный замер <tag>.json).
  *   --strict    код выхода 1 при итоговом вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
+ *   --selftest  стенды fixtures/perf на своём сервере 127.0.0.1 без сжатия (desktop, сеть none, процессор ×1):
+ *               сдвиг вёрстки после load (источник, на сколько и когда), автослайдер со сменой LCP (пометка
+ *               и медиана по первому элементу), «сервер не сжимает» на локальном адресе (INFO, вердикт веса
+ *               по gzip). Протоколы — во временной папке или в --out; код 1, если ожидание не сошлось.
  *   --help, --h, -h  эта справка.
  *
- * Что измеряется: TTFB, FCP, LCP (с элементом), CLS, долгие задачи (каждая — начало, длительность,
+ * Что измеряется: TTFB, FCP, LCP (с элементом), CLS (с источниками сдвигов), долгие задачи (каждая — начало, длительность,
  * фаза), вес по типам ресурсов (как передано по сети) и сжат ли текст, самые тяжёлые файлы,
  * память JS, узлы DOM, кадры в секунду при прокрутке и в покое (важно для анимаций и WebGL),
  * картинки крупнее и мельче показанного, видео (вес и постер).
@@ -65,7 +70,26 @@
  * --no-compress, чужой сервер) — «сервер не сжимает», а у строк «JS по сети» и «Всего по сети» —
  * «со сжатием было бы ≈ N КБ gzip / M КБ br» и вердикт по gzip: FAIL веса на локальном сервере
  * без сжатия не означает FAIL на бою. Судятся ответы от 1 КБ; тела меньше 512 байт хостинги не
- * сжимают — в оценке они как есть.
+ * сжимают — в оценке они как есть. Локальный адрес (localhost, *.localhost, 127.x.x.x, [::1], 0.0.0.0,
+ * file:) без сжатия — голый сервер разработки без прокси: строка «INFO Сжатие текста: … — локальный
+ * сервер без прокси; на бою сжатие может делать Caddy/nginx», вердикт строк «JS по сети» и «Всего по
+ * сети» — по оценке gzip (по передаче — в JSON, checks.*.byTransfer), само сжатие проверять на боевом
+ * адресе. Раньше голый node на localhost давал «сервер не сжимает» как находку про бой.
+ *
+ * CLS. У каждого сдвига вёрстки — источники (LayoutShiftAttribution): элемент, ближайший предок с id,
+ * начало текста, коробка до и после (в координатах окна) и время от начала загрузки; фаза — загрузка,
+ * после load или прокрутка замера (как у долгих задач). В выводе — суммы по фазам у каждого прогона и три
+ * крупнейших сдвига прогона с медианным CLS: «0.18 на 1850 мс (после load): section.promo в main#top —
+ * вниз на 120 px (y 64 → 184)»; в таблице у CLS — крупнейший. Все сдвиги — в JSON (cls.perRun, до 300 на
+ * прогон). Сдвиги сразу после ввода человека (hadRecentInput) в CLS не идут и здесь не считаются.
+ *
+ * LCP сменился. Если среди кандидатов до прокрутки замера позже чем через 1.5 с после прежнего крупнейшим
+ * стал другой элемент (или другой файл у того же) — картинка после картинки или текст после текста, на том
+ * же месте (верх ±60 px, площадь не больше чем втрое) или с классом слайда (slide, swiper, carousel …), —
+ * это кадр автослайдера или анимация, а не медленная загрузка: строка «LCP сменился: <элемент> на N-й
+ * секунде … — вероятно автослайдер/анимация» и отдельно «LCP по первому элементу: медиана N мс» (у
+ * прогона без смены — его LCP). Вердикт LCP — как раньше, по последнему кандидату до прокрутки; в JSON —
+ * lcp.switched и lcp.firstElement. Разные элементы LCP в прогонах без смены — пометкой.
  *
  * LCP. Chrome останавливает LCP на первом касании или прокрутке человека, а прокрутку скриптом не
  * замечает: при прокрутке замера кандидатом становилась картинка ниже первого экрана (карточка,
@@ -139,7 +163,11 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 import {
@@ -150,13 +178,14 @@ import {
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'overlay-only', 'strict'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'], optional: ['overlay'], strict: true });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'overlay-only', 'strict', 'selftest'], values: ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag'], optional: ['overlay'], strict: true });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
 /* WARN lib (свой стиль не вставился) — в итог и json (warnings), а не посреди вывода прогона */
 collectWarnings();
 for (const k of ['viewport', 'viewports', 'cpu', 'net', 'runs', 'rounds', 'out', 'tag']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
+if (opt.selftest) process.exit(await selftest());
 /* «--overlay http://…» без селектора: адрес ушёл в значение флага */
 if (typeof opt.overlay === 'string' && /^(https?|file):/i.test(opt.overlay) && !pos[0]) { pos.unshift(opt.overlay); opt.overlay = true; }
 if (opt['overlay-only'] && !opt.overlay) opt.overlay = true;
@@ -187,10 +216,75 @@ const runs = Math.max(1, Math.min(9, Number(opt.runs) || 1));
 const rounds = Math.max(5, Math.min(20, Number(opt.rounds) || 5));
 if (opt.rounds !== undefined && Number(opt.rounds) < 5) console.log(`--rounds ${opt.rounds}: меньше 5 раундов разброс не виден — беру 5`);
 if (Number(opt.rounds) > 20) console.log(`--rounds ${opt.rounds}: больше 20 раундов замер идёт минутами — беру 20`);
+/* локальный сервер: сервер разработки без прокси — «не сжимает» здесь не находка про бой (INFO, а не WARN) */
+const LOCAL = (() => { try { const u = new URL(url); if (u.protocol === 'file:') return true; const h = u.hostname.replace(/^\[|\]$/g, '').toLowerCase(); return h === 'localhost' || h.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(h) || h === '::1' || h === '0.0.0.0'; } catch { return false; } })();
+const LOCAL_NOTE = 'локальный сервер без прокси; на бою сжатие может делать Caddy/nginx';
 const run = runDir(opt, url); const outDir = ensureDir(path.join(run, 'perf'));
 const tag = opt.tag || `${vpName}-${netName}-cpu${cpu}`;
 const MB = 1024 * 1024;
 const videoBudget = vp.isMobile ? 1 * MB : 2.5 * MB;
+
+/* ---------- --selftest: стенды fixtures/perf на своём сервере без сжатия ---------- */
+/* Сервер — в этом процессе (127.0.0.1, свободный порт, без сжатия и кэша), замер — дочерним запуском этого же
+   скрипта (spawn, не spawnSync: иначе сервер не ответит). Ожидания — по JSON и выводу. Зовётся до констант
+   прогона (функция поднимается), поэтому всё нужное — внутри */
+async function selftest() {
+  const here = path.dirname(fileURLToPath(import.meta.url)); const dir = path.join(here, 'fixtures', 'perf');
+  const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
+  const server = http.createServer((req, res) => {
+    const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '');
+    const f = path.resolve(dir, rel);
+    if (!f.startsWith(dir + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('нет такого файла'); return; }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    fs.createReadStream(f).pipe(res);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'perf-selftest-'));
+  const runSelf = (args) => new Promise((resolve) => {
+    const ch = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const so = [], se = []; ch.stdout.on('data', (d) => so.push(d)); ch.stderr.on('data', (d) => se.push(d));
+    const t = setTimeout(() => ch.kill(), 300000);
+    ch.on('close', (code) => { clearTimeout(t); resolve({ code, out: Buffer.concat(so).toString('utf8'), err: Buffer.concat(se).toString('utf8') }); });
+  });
+  const CASES = [
+    { page: 'slider.html', runs: 2, why: 'кадр 2 автослайдера через 2.5 с после загрузки', check: (j, so) => [
+      j.lcp.switched.length === 2 ? '' : `LCP сменился в ${j.lcp.switched.length} из 2 прогонов, ждали в обоих`,
+      j.lcp.switched.every((x) => /frame-2\.svg/.test(x.to) && /frame-1\.svg/.test(x.from)) ? '' : 'смена не frame-1.svg → frame-2.svg',
+      j.lcp.firstElement && /frame-1\.svg/.test(j.lcp.firstElement.element) && j.lcp.firstElement.median < j.metrics.lcp ? '' : 'нет медианы по первому элементу (frame-1.svg) меньше итогового LCP',
+      /LCP сменился в прогонах 1, 2: .*вероятно автослайдер\/анимация/.test(so) ? '' : 'в выводе нет строки «LCP сменился … вероятно автослайдер/анимация»',
+      /LCP по первому элементу \(img\.hero__slide[^)]*frame-1\.svg\): медиана \d+ мс/.test(so) ? '' : 'в выводе нет «LCP по первому элементу … медиана»',
+    ] },
+    { page: 'cls.html', runs: 1, why: 'плашка 160 px над статьёй через 0.7 с после load; сервер без сжатия на 127.0.0.1', check: (j, so) => {
+      const top = (j.cls.perRun[0].top || [])[0];
+      return [
+        top ? '' : 'сдвигов нет',
+        top && top.phase === 'afterLoad' ? '' : `крупнейший сдвиг не «после load» (${top ? top.phase : '—'})`,
+        top && top.sources.some((s) => /article\.news/.test(s.el) && s.prev && s.cur && s.cur.y - s.prev.y >= 150) ? '' : 'среди источников нет article.news со сдвигом вниз от 150 px',
+        /крупнейшие — что сдвинулось.*\n\s+[\d.]+ на \d+ мс \(после load\): .*article\.news.* — вниз на 1[56]\d px/.test(so) ? '' : 'в выводе нет строки крупнейшего сдвига «… article.news … вниз на 160 px»',
+        j.compression.local === true && /локальный сервер без прокси/.test((j.checks['JS по сети'] || {}).note || '') ? '' : 'сжатие: нет пометки «локальный сервер без прокси» в JSON или у строки «JS по сети»',
+        /^INFO Сжатие текста: .*локальный сервер без прокси; на бою сжатие может делать Caddy\/nginx/m.test(so) ? '' : 'в выводе нет «INFO Сжатие текста … локальный сервер без прокси»',
+      ];
+    } },
+  ];
+  let bad = 0, n = 0;
+  try {
+    for (const c of CASES) {
+      const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'perf', `${tag}.json`);
+      try { fs.rmSync(jf, { force: true }); } catch { /* нет */ }
+      const t0 = Date.now();
+      const r = await runSelf([`${base}/${c.page}`, '--viewport', 'desktop', '--net', 'none', '--cpu', '1', '--runs', String(c.runs), '--out', out, '--tag', tag]);
+      let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch { /* нет итога */ }
+      n++;
+      if (!j) { bad++; console.log(`FAIL ${c.page}: нет итога (код ${r.code}) — ${(r.err || r.out).trim().slice(-300)}`); continue; }
+      let miss; try { miss = c.check(j, r.out).filter(Boolean); } catch (e) { miss = [`проверка упала: ${e.message}`]; }
+      if (miss.length) { bad++; console.log(`FAIL ${c.page} (${c.why}): ${miss.join('; ')}`); } else console.log(`OK   ${c.page} (${c.why})`);
+      console.log(`     ${c.page}: ${Math.round((Date.now() - t0) / 100) / 10} с, протокол ${jf}`);
+    }
+  } finally { server.close(); }
+  console.log(`\n${bad ? 'FAIL' : 'OK'}: стендов ${n}, не сошлось ${bad}`);
+  return bad ? 1 : 0;
+}
 
 /* ---------- функции страницы ---------- */
 
@@ -416,6 +510,34 @@ function longOf(m) {
   const phases = { load: sum('load'), afterLoad: sum('afterLoad'), scroll: sum('scroll') };
   return { longList: tasks, longPhases: phases, longVerdict: phases.load.ms + phases.afterLoad.ms, longTotal: tasks.reduce((x, t) => x + t.dur, 0), longTasks: tasks.length };
 }
+/* сдвиги вёрстки по фазам (как долгие задачи — по времени сдвига) и три крупнейших; сдвиги сразу после
+   ввода человека (hadRecentInput) в CLS не идут и здесь не считаются */
+function clsOf(m) {
+  const ss = m.scrollStart;
+  const list = (m.shifts || []).map((s) => ({ ...s, phase: ss != null && s.t >= ss ? 'scroll' : m.load && s.t >= m.load ? 'afterLoad' : 'load' }));
+  const real = list.filter((s) => !s.input);
+  const sum = (p) => Math.round(real.filter((s) => s.phase === p).reduce((a, s) => a + s.v, 0) * 1000) / 1000;
+  return { clsPhases: { load: sum('load'), afterLoad: sum('afterLoad'), scroll: sum('scroll') }, clsTop: [...real].sort((a, b) => b.v - a.v).slice(0, 3), clsShifts: list };
+}
+/* LCP сменился: среди кандидатов до прокрутки замера другой элемент (или другой файл у того же) стал
+   крупнейшим позже, чем через LCP_GAP после прежнего, — картинка после картинки или текст после текста, на
+   том же месте (верх ±60 px, площадь не больше чем втрое) или с классом слайда. Так бывает у автослайдера
+   (второй кадр крупнее первого) и анимации появления, а не у медленной загрузки: тогда LCP по первому
+   элементу — время прежнего кандидата */
+const LCP_GAP = 1500;
+const SLIDE_RE = /slide|swiper|carousel|slick|splide|glide|flick|owl|gallery|marquee|ticker/i;
+function lcpSwitchOf(m) {
+  const ss = m.scrollStart; const before = (m.lcpCandidates || []).filter((c) => ss == null || c.t < ss);
+  const key = (c) => `${c.el}|${c.url || c.text || ''}`;
+  for (let i = 1; i < before.length; i++) {
+    const a = before[i - 1], b = before[i];
+    if (key(a) === key(b) || b.t - a.t < LCP_GAP || !!a.url !== !!b.url) continue;
+    const place = a.top != null && b.top != null && Math.abs(a.top - b.top) <= 60 && (!a.size || b.size / a.size <= 3);
+    const slide = SLIDE_RE.test(`${b.el} ${b.where || ''}`);
+    if (place || slide) return { at: b.t, to: b, from: a, why: [place ? 'на том же месте' : '', slide ? 'класс слайда' : ''].filter(Boolean).join(', ') };
+  }
+  return null;
+}
 
 /* ---------- один прогон: свежий браузер, холодный кэш ---------- */
 async function measure() {
@@ -462,7 +584,24 @@ async function measure() {
         return { el: sig(el), where, text, w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top + (se.scrollTop || 0)), vh: innerHeight };
       };
       try { new PerformanceObserver((l) => { for (const e of l.getEntries()) rw.lcp.push({ t: Math.round(e.startTime), size: Math.round(e.size || 0), url: String(e.url || '').slice(0, 300), ...describe(e.element) }); }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch { /* нет */ }
-      try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) rw.cls += e.value; }).observe({ type: 'layout-shift', buffered: true }); } catch { /* нет */ }
+      /* сдвиги вёрстки с источниками (LayoutShiftAttribution): что сдвинулось, откуда и куда (коробки в
+         координатах окна), когда. Узел описывается сразу — потом его могут убрать; не больше 300 сдвигов */
+      rw.shifts = [];
+      const box = (q) => (q ? { x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.width), h: Math.round(q.height) } : null);
+      const lite = (el) => { let where = null; for (let p = el.parentElement, i = 0; p && p !== document.body && i < 10; p = p.parentElement, i++) if (p.id) { where = sig(p); break; } return { el: sig(el), where, text: String(el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) }; };
+      try {
+        new PerformanceObserver((l) => {
+          for (const e of l.getEntries()) {
+            if (!e.hadRecentInput) rw.cls += e.value;
+            if (rw.shifts.length >= 300) continue;
+            rw.shifts.push({ t: Math.round(e.startTime), v: Math.round(e.value * 10000) / 10000, input: !!e.hadRecentInput, sources: (e.sources || []).slice(0, 5).map((s) => {
+              const n = s.node; const el = n && n.nodeType === 1 ? n : n && n.parentElement ? n.parentElement : null;
+              const d = el ? lite(el) : { el: '(узел уже убран со страницы)', where: null, text: '' };
+              return { ...d, el: d.el + (n && n.nodeType === 3 ? ' (текст)' : ''), prev: box(s.previousRect), cur: box(s.currentRect) };
+            }) });
+          }
+        }).observe({ type: 'layout-shift', buffered: true });
+      } catch { /* нет */ }
       try { new PerformanceObserver((l) => { for (const e of l.getEntries()) rw.long.push({ start: Math.round(e.startTime), dur: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch { /* нет */ }
     });
 
@@ -484,9 +623,9 @@ async function measure() {
     const m = await page.evaluate(() => {
       const n = performance.getEntriesByType('navigation')[0] || {}; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)]));
       const rw = window.__rw || {}; const r0 = (v) => (v == null ? null : Math.round(v));
-      return { ttfb: Math.round(n.responseStart || 0), domContentLoaded: Math.round(n.domContentLoadedEventEnd || 0), load: Math.round(n.loadEventEnd || 0), fcp: p['first-contentful-paint'] || null, lcpCandidates: rw.lcp || [], cls: Math.round((rw.cls || 0) * 1000) / 1000, longList: rw.long || [], scrollStart: r0(rw.scrollStart), scrollEnd: r0(rw.scrollEnd), nodes: document.getElementsByTagName('*').length, images: [...document.images].filter((i) => i.naturalWidth > 0).length, fonts: [...document.fonts].filter((f) => f.status === 'loaded').length, canvases: document.querySelectorAll('canvas').length, animations: document.getAnimations().length };
+      return { ttfb: Math.round(n.responseStart || 0), domContentLoaded: Math.round(n.domContentLoadedEventEnd || 0), load: Math.round(n.loadEventEnd || 0), fcp: p['first-contentful-paint'] || null, lcpCandidates: rw.lcp || [], cls: Math.round((rw.cls || 0) * 1000) / 1000, shifts: rw.shifts || [], longList: rw.long || [], scrollStart: r0(rw.scrollStart), scrollEnd: r0(rw.scrollEnd), nodes: document.getElementsByTagName('*').length, images: [...document.images].filter((i) => i.naturalWidth > 0).length, fonts: [...document.fonts].filter((f) => f.status === 'loaded').length, canvases: document.querySelectorAll('canvas').length, animations: document.getAnimations().length };
     });
-    Object.assign(m, lcpOf(m), longOf(m));
+    Object.assign(m, lcpOf(m), longOf(m), clsOf(m)); m.lcpSwitch = lcpSwitchOf(m);
     const metrics = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value]));
     /* тела текстовых ответов — до прохода за ленивым: его картинки вытесняли бы их из буфера DevTools */
     await textBodies(cdp, reqs);
@@ -582,7 +721,7 @@ if (!opt['overlay-only']) {
     try {
       const s = await measure(); samples.push(s); s.w = weightOf(s);
       const L = s.m.lcpEl, P = s.m.longPhases, c = s.cache;
-      console.log(`LCP ${s.m.lcp ?? '—'} мс${L ? ` (${L.el}${s.m.lcpFrom === 'scroll' ? ', при прокрутке' : ''})` : ''}${s.m.lcpAfterScroll.length ? `, при прокрутке замера ещё ${s.m.lcpAfterScroll.length}` : ''} · FCP ${s.m.fcp} мс · CLS ${s.m.cls} · долгие ${s.m.longVerdict} мс${P.scroll.ms ? ` (+ прокрутка замера ${P.scroll.ms})` : ''} · JS ${s.w.by.js ? s.w.by.js.kb : 0} КБ, всего ${s.w.totalKb} КБ · из кэша: ${c.hits}${c.reused ? ` (повторно с этой страницы ${c.reused})` : ''} · тишина сети ${s.quiet.at == null ? `не наступила за ${QUIET_MAX / 1000} с` : `+${sec(s.quiet.at)}`} · прокрутка до ${s.scroll.share == null ? '—' : Math.round(s.scroll.share * 100) + '%'}`);
+      console.log(`LCP ${s.m.lcp ?? '—'} мс${L ? ` (${L.el}${s.m.lcpFrom === 'scroll' ? ', при прокрутке' : ''}${s.m.lcpSwitch ? `; сменился — до этого ${s.m.lcpSwitch.from.el} на ${s.m.lcpSwitch.from.t} мс` : ''})` : ''}${s.m.lcpAfterScroll.length ? `, при прокрутке замера ещё ${s.m.lcpAfterScroll.length}` : ''} · FCP ${s.m.fcp} мс · CLS ${s.m.cls} · долгие ${s.m.longVerdict} мс${P.scroll.ms ? ` (+ прокрутка замера ${P.scroll.ms})` : ''} · JS ${s.w.by.js ? s.w.by.js.kb : 0} КБ, всего ${s.w.totalKb} КБ · из кэша: ${c.hits}${c.reused ? ` (повторно с этой страницы ${c.reused})` : ''} · тишина сети ${s.quiet.at == null ? `не наступила за ${QUIET_MAX / 1000} с` : `+${sec(s.quiet.at)}`} · прокрутка до ${s.scroll.share == null ? '—' : Math.round(s.scroll.share * 100) + '%'}`);
     } catch (e) { console.log(`сбой: ${e.message}`); }
   }
   if (!samples.length) { console.error('FAIL: ни один прогон не удался'); process.exit(1); }
@@ -650,6 +789,23 @@ async function compressionOf(list) {
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;
 const mbs = (b) => (b == null ? '?' : `${r2(b / MB)} МБ`);
+/* источник сдвига словами: элемент, где он, куда и на сколько (коробки — в координатах окна) */
+const shiftText = (s) => {
+  if (!s) return '';
+  const p = s.prev, c = s.cur; const empty = (q) => !q || (!q.w && !q.h);
+  const who = `${s.el}${s.where ? ` в ${s.where}` : ''}${s.text ? ` «${s.text.length > 24 ? s.text.slice(0, 24) + '…' : s.text}»` : ''}`;
+  if (empty(p) && !empty(c)) return `${who} — появился (y ${c.y}, ${c.w}×${c.h})`;
+  if (!empty(p) && empty(c)) return `${who} — исчез (был y ${p.y}, ${p.w}×${p.h})`;
+  if (empty(p) || empty(c)) return `${who} — коробки нет`;
+  const dy = c.y - p.y, dx = c.x - p.x; const parts = [];
+  if (dy) parts.push(`${dy > 0 ? 'вниз' : 'вверх'} на ${Math.abs(dy)} px (y ${p.y} → ${c.y})`);
+  if (dx) parts.push(`${dx > 0 ? 'вправо' : 'влево'} на ${Math.abs(dx)} px (x ${p.x} → ${c.x})`);
+  /* коробки — видимая часть в окне: блок, уехавший вниз за край окна, «укорачивается» (низ тот же) — это не
+     смена размера, а обрезка краем окна; размер — только если край не совпал */
+  if (c.h !== p.h && Math.abs((c.y + c.h) - (p.y + p.h)) > 1) parts.push(`высота ${p.h} → ${c.h}`);
+  if (c.w !== p.w && Math.abs((c.x + c.w) - (p.x + p.w)) > 1) parts.push(`ширина ${p.w} → ${c.w}`);
+  return `${who} — ${parts.join(', ') || 'сдвиг меньше 1 px'}`;
+};
 const lines = [];
 const table = {};
 let worst = 'OK';
@@ -665,7 +821,7 @@ if (samples.length) {
   const ref = samples.find((s) => s.m.lcp === medLcp) || samples[0];
   const refNo = samples.indexOf(ref) + 1;
   /* кандидаты LCP и список задач — в разделах lcp и longTasks JSON, в metrics не дублируются */
-  const { lcpCandidates, longList, ...refM } = ref.m;
+  const { lcpCandidates, longList, shifts, clsShifts, clsTop, lcpSwitch, ...refM } = ref.m;
   const m = { ...refM, ttfb: pick((s) => s.m.ttfb), fcp: pick((s) => s.m.fcp), lcp: medLcp, cls: pick((s) => s.m.cls), longVerdict: pick((s) => s.m.longVerdict), longTotal: pick((s) => s.m.longTotal), longTasks: pick((s) => s.m.longTasks), nodes: pick((s) => s.m.nodes) };
   const idleFps = pick((s) => s.idleFps), fpsScroll = pick((s) => s.fpsScroll), heapMb = pick((s) => s.heapMb), loadMs = pick((s) => s.loadMs);
   const quietAt = pick((s) => s.quiet.at);
@@ -707,19 +863,39 @@ if (samples.length) {
   const B = (v, good, ok, unit, lowerBetter = true, sp = '') => { const s = v == null ? 'n/a' : lowerBetter ? (v <= good ? 'OK' : v <= ok ? 'WARN' : 'FAIL') : (v >= good ? 'OK' : v >= ok ? 'WARN' : 'FAIL'); return { value: v, unit, status: s, budget: `${good}${unit} / ${ok}${unit}`, spread: sp }; };
   const scrollRow = B(fpsScroll, 55, 40, '', false, spread((s) => s.fpsScroll));
   if (!scrollValid) { scrollRow.status = 'FAIL'; scrollRow.note = `замер недействителен: страница дошла до ${Math.round(minShare * 100)}% высоты`; }
-  /* вес: вердикт по передаче. Сервер не сжимает — рядом оценка со сжатием и её вердикт по gzip; сжимает — без сжатия */
+  /* вес: вердикт по передаче. Сервер не сжимает — рядом оценка со сжатием и её вердикт по gzip; сжимает — без сжатия.
+     Локальный сервер (localhost, 127.x, [::1], file:) без сжатия — голый сервер разработки без прокси: на бою
+     сжимать может Caddy или nginx перед ним, и вердикт строки — по оценке gzip (FAIL веса здесь не значит FAIL
+     на бою); вердикт по передаче — в byTransfer */
   const zipRow = (row, k, good, ok) => {
     const z = k ? zip.byKind[k] : zip.total; const j = k ? zip.statusByKind[k] : { status: zip.status, n: zip.judged, zipped: zip.compressed };
     if (!z || !j || j.status === 'n/a') return row;
     if (j.status === 'all') { row.note = `сжато ${zip.encodings.join('/')}: без сжатия было бы ${z.identity} КБ`; return row; }
     const st = z.gzip <= good ? 'OK' : z.gzip <= ok ? 'WARN' : 'FAIL';
-    row.note = `сервер не сжимает${j.status === 'partial' ? ` ${j.n - j.zipped} из ${j.n} ответов` : ''}: со сжатием было бы ≈ ${z.gzip} КБ gzip / ${z.br} КБ br — ${st}`;
     row.ifCompressed = { gzipKb: z.gzip, brKb: z.br, status: st };
+    if (LOCAL) {
+      row.byTransfer = { kb: row.value, status: row.status }; row.status = st;
+      row.note = `${LOCAL_NOTE}: по сети ${z.actual} КБ без сжатия${j.status === 'partial' ? ` (не сжаты ${j.n - j.zipped} из ${j.n} ответов)` : ''}, со сжатием было бы ≈ ${z.gzip} КБ gzip / ${z.br} КБ br — вердикт по gzip`;
+      return row;
+    }
+    row.note = `сервер не сжимает${j.status === 'partial' ? ` ${j.n - j.zipped} из ${j.n} ответов` : ''}: со сжатием было бы ≈ ${z.gzip} КБ gzip / ${z.br} КБ br — ${st}`;
     return row;
   };
   const lcpShort = (c) => (c ? `${c.el}${c.url ? ` ${fileOf(c.url)}` : c.text ? ` «${c.text.length > 30 ? c.text.slice(0, 30) + '…' : c.text}»` : ''}` : '');
   const lcpRow = B(m.lcp, 2500, 4000, ' мс', true, spread((s) => s.m.lcp, ' мс'));
   if (ref.m.lcpEl) lcpRow.note = `${lcpShort(ref.m.lcpEl)}${ref.m.lcpFrom === 'scroll' ? '; до прокрутки кандидатов не было — взят первый при прокрутке' : ''}`;
+  /* LCP сменился (кадр автослайдера, анимация — lcpSwitchOf): отдельно медиана по первому элементу; вердикт — как
+     раньше, по последнему кандидату до прокрутки. Разные элементы LCP в прогонах без смены — тоже пометкой */
+  const switched = samples.map((s, i) => ({ i: i + 1, sw: s.m.lcpSwitch })).filter((x) => x.sw);
+  const firstT = (s) => (s.m.lcpSwitch ? s.m.lcpSwitch.from.t : s.m.lcp);
+  const lcpFirst = switched.length ? { median: pick(firstT), perRun: samples.map(firstT), element: lcpShort(switched[0].sw.from) } : null;
+  const lcpKeys = [...new Set(samples.map((s) => (s.m.lcpEl ? lcpShort(s.m.lcpEl) : '—')))];
+  if (lcpFirst) lcpRow.note = `${lcpRow.note ? `${lcpRow.note}; ` : ''}LCP сменился в ${switched.length} из ${samples.length} ${plural(samples.length, 'прогона', 'прогонов', 'прогонов')} — вероятно автослайдер/анимация; по первому элементу медиана ${lcpFirst.median} мс`;
+  else if (lcpKeys.length > 1) lcpRow.note = `${lcpRow.note ? `${lcpRow.note}; ` : ''}в прогонах разные элементы LCP`;
+  /* CLS: прогон с медианным CLS — его три крупнейших сдвига (что сдвинулось, на сколько, когда) */
+  const clsRef = samples.find((s) => s.m.cls === m.cls) || ref; const clsNo = samples.indexOf(clsRef) + 1;
+  const clsRow = B(m.cls, 0.1, 0.25, '', true, spread((s) => s.m.cls));
+  { const t0 = clsRef.m.clsTop[0]; if (m.cls > 0 && t0) clsRow.note = `крупнейший сдвиг ${t0.v} на ${t0.t} мс (${PHASE[t0.phase]}): ${t0.sources.length ? shiftText(t0.sources[0]) : 'источник браузер не указал'}`; }
   const longRow = B(m.longVerdict, 300, 800, ' мс', true, spread((s) => s.m.longVerdict, ' мс'));
   const longScroll = pick((s) => s.m.longPhases.scroll.ms);
   if (longScroll) longRow.note = `прокрутка замера ещё ${longScroll} мс — справочно`;
@@ -729,7 +905,7 @@ if (samples.length) {
     'LCP (самый крупный элемент)': lcpRow,
     'FCP (первая отрисовка)': B(m.fcp, 1800, 3000, ' мс', true, spread((s) => s.m.fcp, ' мс')),
     'TTFB (ответ сервера)': B(m.ttfb, 800, 1800, ' мс', true, spread((s) => s.m.ttfb, ' мс')),
-    'CLS (сдвиги вёрстки)': B(m.cls, 0.1, 0.25, '', true, spread((s) => s.m.cls)),
+    'CLS (сдвиги вёрстки)': clsRow,
     'Долгие задачи (загрузка и после load)': longRow,
     'JS по сети': zipRow(B(by.js ? by.js.kb : 0, 300, 600, ' КБ', true, spread((s) => (s.w.by.js ? s.w.by.js.kb : 0), ' КБ')), 'js', 300, 600),
     'Картинки по сети': B(by.images ? by.images.kb : 0, 1000, 2500, ' КБ', true, spread((s) => (s.w.by.images ? s.w.by.images.kb : 0), ' КБ')),
@@ -761,7 +937,9 @@ if (samples.length) {
   console.log(`По сети (${answers(res.length)} — всё, что запрошено до прокрутки замера${runs > 1 ? `, прогон ${refNo}` : ''}): ${Object.entries(by).map(([k, v]) => `${k} ${v.count}/${v.kb} КБ`).join(' · ')} · сторонние домены ${thirdParty} КБ`);
   /* сжатие текста: как передано и как было бы */
   const zt = zip.total, zj = zip.byKind.js;
-  if (zip.status === 'none' || zip.status === 'partial') console.log(`Сжатие текста: ${zip.status === 'none' ? `сервер не сжимает (0 из ${zip.judged} текстовых ответов от 1 КБ)` : `частично — не сжаты ${zip.judged - zip.compressed} из ${zip.judged} текстовых ответов от 1 КБ: ${zip.uncompressed.slice(0, 5).map((u) => `${u.file} ${u.kb} КБ`).join(', ')}`}. Со сжатием было бы (gzip 6 / brotli 11): ${zj ? `JS ≈ ${zj.gzip} / ${zj.br} КБ (по сети ${zj.actual}), ` : ''}всего ≈ ${zt.gzip} / ${zt.br} КБ (по сети ${zt.actual}). Вердикт веса — по передаче`);
+  /* локальный сервер без прокси: «не сжимает» — INFO с пометкой, вердикт веса по оценке gzip; иначе как было */
+  if ((zip.status === 'none' || zip.status === 'partial') && LOCAL) { zip.local = true; zip.note = LOCAL_NOTE; }
+  if (zip.status === 'none' || zip.status === 'partial') console.log(`${LOCAL ? 'INFO ' : ''}Сжатие текста: ${zip.status === 'none' ? `сервер не сжимает (0 из ${zip.judged} текстовых ответов от 1 КБ)` : `частично — не сжаты ${zip.judged - zip.compressed} из ${zip.judged} текстовых ответов от 1 КБ: ${zip.uncompressed.slice(0, 5).map((u) => `${u.file} ${u.kb} КБ`).join(', ')}`}${LOCAL ? ` — ${LOCAL_NOTE}` : ''}. Со сжатием было бы (gzip 6 / brotli 11): ${zj ? `JS ≈ ${zj.gzip} / ${zj.br} КБ (по сети ${zj.actual}), ` : ''}всего ≈ ${zt.gzip} / ${zt.br} КБ (по сети ${zt.actual}). ${LOCAL ? 'Вердикт веса — по оценке gzip; само сжатие проверить на боевом адресе' : 'Вердикт веса — по передаче'}`);
   else if (zip.status === 'all') console.log(`Сжатие текста: сервер сжимает (${zip.encodings.join(', ')} у ${zip.compressed} из ${zip.judged} текстовых ответов от 1 КБ). Без сжатия было бы: ${zj ? `JS ${zj.identity} КБ (по сети ${zj.actual}), ` : ''}всего ${zt.identity} КБ (по сети ${zt.actual})`);
   if (zip.noBody) console.log(`  тела не получены у ${zip.noBody} текстовых ответов — в оценке они как переданы`);
   /* холодный кэш и окно замера */
@@ -792,6 +970,20 @@ if (samples.length) {
     for (const x of late.slice(0, 6)) console.log(`    ${x}`);
     if (late.length > 6) console.log(`    … ещё ${late.length - 6} (в JSON, lcp.perRun)`);
   }
+  /* LCP сменился: какой элемент, когда, что было до него; медиана по первому элементу — отдельно */
+  const nth = (t) => `${Math.max(1, Math.floor(t / 1000))}-й секунде`;
+  if (switched.length) {
+    const s0 = switched[0].sw;
+    console.log(`  LCP сменился в ${switched.length === 1 ? `прогоне ${switched[0].i}` : `прогонах ${switched.map((x) => x.i).join(', ')}`}: ${lcpShort(s0.to)} на ${nth(s0.at)} (${switched.map((x) => x.sw.at).join(', ')} мс; до этого ${lcpShort(s0.from)} на ${switched.map((x) => x.sw.from.t).join(', ')} мс, ${s0.why}) — вероятно автослайдер/анимация, а не медленная загрузка`);
+    console.log(`  LCP по первому элементу (${lcpFirst.element}): медиана ${lcpFirst.median} мс (по прогонам ${lcpFirst.perRun.join(', ')}); в таблице — последний кандидат до прокрутки, ${m.lcp} мс`);
+  } else if (lcpKeys.length > 1) console.log(`  в прогонах разные элементы LCP: ${lcpKeys.join(' / ')} — кандидаты по прогонам в JSON (lcp.perRun)`);
+  /* CLS: суммы по фазам в каждом прогоне и три крупнейших сдвига прогона с медианным CLS */
+  console.log('CLS — сдвиги вёрстки по фазам (сдвиг сразу после ввода человека не в счёт; фаза — по времени сдвига):');
+  for (const [i, s] of samples.entries()) { const P = s.m.clsPhases; console.log(`  прогон ${i + 1}: загрузка ${P.load} · после load ${P.afterLoad} · прокрутка замера ${P.scroll} → CLS ${s.m.cls} (сдвигов ${s.m.clsShifts.filter((x) => !x.input).length})`); }
+  if (clsRef.m.clsTop.length) {
+    console.log(`  крупнейшие${samples.length > 1 ? ` (прогон ${clsNo}, медианный CLS)` : ''} — что сдвинулось, на сколько и когда:`);
+    for (const x of clsRef.m.clsTop) console.log(`    ${x.v} на ${x.t} мс (${PHASE[x.phase]}): ${x.sources.length ? x.sources.slice(0, 3).map(shiftText).join('; ') : 'источник браузер не указал'}`);
+  }
   /* долгие задачи: суммы по фазам в каждом прогоне и список задач прогона с медианным LCP */
   console.log('Долгие задачи (от 50 мс, фаза — по началу): в вердикте загрузка и после load, прокрутка замера — справочно');
   for (const [i, s] of samples.entries()) { const P = s.m.longPhases; console.log(`  прогон ${i + 1}: загрузка ${P.load.n} шт. ${P.load.ms} мс · после load ${P.afterLoad.n} шт. ${P.afterLoad.ms} мс · прокрутка замера ${P.scroll.n} шт. ${P.scroll.ms} мс → в вердикт ${s.m.longVerdict} мс`); }
@@ -816,12 +1008,13 @@ if (samples.length) {
     compression: zip,
     cache: { cold: 'свой браузер, отдельный контекст, кэш очищен перед заходом', perRun: samples.map((s) => s.cache) },
     quiet: { quietMs: QUIET_MS, maxMs: QUIET_MAX, perRun: samples.map((s) => s.quiet) },
-    lcp: { rule: 'последний кандидат до начала прокрутки замера', perRun: samples.map((s) => ({ lcp: s.m.lcp, from: s.m.lcpFrom, element: s.m.lcpEl, afterScroll: s.m.lcpAfterScroll, lastAny: s.m.lcpAll, scrollStart: s.m.scrollStart, candidates: s.m.lcpCandidates })) },
+    lcp: { rule: 'последний кандидат до начала прокрутки замера', switched: switched.map((x) => ({ run: x.i, at: x.sw.at, to: lcpShort(x.sw.to), from: lcpShort(x.sw.from), fromT: x.sw.from.t, why: x.sw.why })), firstElement: lcpFirst, differentElements: lcpKeys.length > 1 ? lcpKeys : null, perRun: samples.map((s) => ({ lcp: s.m.lcp, from: s.m.lcpFrom, element: s.m.lcpEl, switched: s.m.lcpSwitch, afterScroll: s.m.lcpAfterScroll, lastAny: s.m.lcpAll, scrollStart: s.m.scrollStart, candidates: s.m.lcpCandidates })) },
+    cls: { rule: 'сумма сдвигов без недавнего ввода; фаза — по времени сдвига', refRun: clsNo, perRun: samples.map((s) => ({ cls: s.m.cls, phases: s.m.clsPhases, top: s.m.clsTop, shifts: s.m.clsShifts })) },
     longTasks: { verdict: 'загрузка + после load', perRun: samples.map((s) => ({ load: s.m.load, scrollStart: s.m.scrollStart, scrollEnd: s.m.scrollEnd, phases: s.m.longPhases, verdictMs: s.m.longVerdict, allMs: s.m.longTotal, tasks: s.m.longList })) },
     scrollLoaded: { count: resScroll.length, kb: kbSum(resScroll) },
     scroll: { ...ref.scroll, fps: fpsScroll, valid: scrollValid, minShare }, idleFps, images: { dpr: media.dpr, need: media.need, checked: media.checked, notLoaded: media.notLoaded, lazyPass: media.lazyPass || null, small, big, lazy, all: media.items }, lazyLoadedKb: kbSum(resLazy), videos: { budgetBytes: videoBudget, firstBytes, list: media.videos }, cdp: { heapMb, scriptMs: ref.scriptMs, layoutCount: ref.layoutCount, styleRecalcs: ref.styleRecalcs },
     requests: ref.reqs.slice(0, 400).map((r) => ({ url: r.url.slice(0, 200), type: r.type, phase: r.phase, status: r.status, kb: r1(sent(r) / 1024), enc: r.enc, cache: r.cache, done: r.done, failed: r.failed })),
-    samples: samples.map((s) => ({ lcp: s.m.lcp, lcpElement: s.m.lcpEl ? lcpShort(s.m.lcpEl) : null, lcpFrom: s.m.lcpFrom, lcpAfterScroll: s.m.lcpAfterScroll.length, fcp: s.m.fcp, ttfb: s.m.ttfb, cls: s.m.cls, longVerdict: s.m.longVerdict, longScroll: s.m.longPhases.scroll.ms, longTotal: s.m.longTotal, jsKb: s.w.by.js ? s.w.by.js.kb : 0, totalKb: s.w.totalKb, fromCache: s.cache.hits, quietMs: s.quiet.at, fpsScroll: s.fpsScroll, idleFps: s.idleFps, heapMb: s.heapMb, loadMs: s.loadMs, scrollShare: s.scroll.share, scrollReached: s.scroll.reached, scrollPlanned: s.scroll.planned })),
+    samples: samples.map((s) => ({ lcp: s.m.lcp, lcpElement: s.m.lcpEl ? lcpShort(s.m.lcpEl) : null, lcpFrom: s.m.lcpFrom, lcpAfterScroll: s.m.lcpAfterScroll.length, lcpSwitchAt: s.m.lcpSwitch ? s.m.lcpSwitch.at : null, lcpFirst: firstT(s), fcp: s.m.fcp, ttfb: s.m.ttfb, cls: s.m.cls, clsPhases: s.m.clsPhases, longVerdict: s.m.longVerdict, longScroll: s.m.longPhases.scroll.ms, longTotal: s.m.longTotal, jsKb: s.w.by.js ? s.w.by.js.kb : 0, totalKb: s.w.totalKb, fromCache: s.cache.hits, quietMs: s.quiet.at, fpsScroll: s.fpsScroll, idleFps: s.idleFps, heapMb: s.heapMb, loadMs: s.loadMs, scrollShare: s.scroll.share, scrollReached: s.scroll.reached, scrollPlanned: s.scroll.planned })),
   };
   lines.push(...Object.entries(checks).filter(([, c]) => c.status !== 'OK' && c.status !== 'n/a').map(([k, c]) => `${k} ${c.status}${c.ifCompressed ? ` (со сжатием ≈ ${c.ifCompressed.gzipKb} КБ gzip — ${c.ifCompressed.status})` : ''}`));
 }

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд perf: автослайдер</title>
+<!-- Стенд perf.mjs --selftest (slider). Первый экран — автослайдер: кадр 1 (frame-1.svg, 800×400) сразу, через
+     2.5 с после загрузки его сменяет кадр 2 (frame-2.svg, 800×460 — крупнее, на том же месте, класс
+     hero__slide). LCP по последнему кандидату до прокрутки — второй кадр на ~3-й секунде, хотя страница
+     показалась сразу. Ждём: «LCP сменился … — вероятно автослайдер/анимация» и медиана по первому элементу
+     (frame-1.svg) отдельно. Сдвигов вёрстки нет: у слайдера своя высота. Кадры — SVG со 160 кругами (~11 КБ):
+     однотонный кадр в сотни байт Chrome считает малоинформативным (меньше 0.05 бита на пиксель) и в LCP не
+     берёт — тогда LCP был бы заголовком. -->
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top"><p class="brand">Школа катания</p></header>
+<section class="hero" id="hero">
+  <img class="hero__slide is-active" src="frame-1.svg" width="800" height="400" alt="Каток утром">
+</section>
+<main>
+  <h1>Занятия для детей и взрослых</h1>
+  <p>Группы по уровню катания, прокат коньков на месте, запись по телефону.</p>
+  <div class="filler"></div>
+</main>
+<script>
+/* автослайдер: через 2.5 с после загрузки — второй кадр, крупнее первого */
+addEventListener('load', () => setTimeout(() => {
+  const a = document.querySelector('.hero__slide'); const b = new Image();
+  b.className = 'hero__slide is-active'; b.width = 800; b.height = 460; b.alt = 'Каток вечером'; b.src = 'frame-2.svg';
+  a.replaceWith(b);
+}, 2500));
+</script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: скрытый, декоративный текст и логотип</title>
+<!-- Стенд a11y.mjs --selftest (hidden-text, запуск с --ignore ".brand-mark").
+     a.phone — номер кеглем 0 рядом со значком: скрытый текст, WARN с советом (не FAIL «мелкий текст 0px»).
+     div.shout[aria-hidden] — декоративная лента 1.72:1: вне 1.4.3, INFO (не FAIL контраста).
+     a.logo[data-a11y-logo] — подпись логотипа 8.5px #BBBBBB: логотип, вне проверки.
+     p.brand-mark — знак в подвале 9px #CCCCCC: исключается --ignore (без флага — FAIL контраста и кегля).
+     p.control — обычный бледный текст: FAIL контраста остаётся (контроль). -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+header, main, footer { max-width: 720px; margin: 0 auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: center; }
+.logo { display: inline-flex; flex-direction: column; color: #111; text-decoration: none; }
+.logo__name { font-size: 22px; font-weight: 700; }
+.logo__sub { font-size: 8.5px; color: #BBBBBB; letter-spacing: .1em; }
+.phone { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; font-size: 0; color: #222; }
+.phone svg { width: 24px; height: 24px; }
+.shout { overflow: hidden; white-space: nowrap; }
+.shout b { font-size: 64px; color: #C1CE56; }
+.control { color: #AAAAAA; }
+.brand-mark { font-size: 9px; color: #CCCCCC; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="#" data-a11y-logo><span class="logo__name">Ромашка</span><span class="logo__sub">ПЕКАРНЯ С 1998</span></a>
+  <a class="phone" href="tel:+79000000000"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h4l2 5-3 2a11 11 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A18 18 0 0 1 4 4a2 2 0 0 1 2-2z" fill="#222"/></svg>+7 900 000-00-00</a>
+</header>
+<main>
+  <h1>Хлеб каждое утро</h1>
+  <div class="shout" aria-hidden="true"><b>ПЕКАРНЯ · КОФЕ · ТОРТЫ</b></div>
+  <p>Печём с шести утра: багеты, чиабатту и ржаной на закваске. Заказ на завтра — до восьми вечера.</p>
+  <p class="control">Бледная строка без исключений — контроль: её контраст должен провалиться.</p>
+</main>
+<footer>
+  <p>Ярославль, улица Свободы, 1</p>
+  <p class="brand-mark">РОМАШКА · 2026</p>
+</footer>
+</body>
+</html>
