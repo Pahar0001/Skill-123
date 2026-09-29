@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Без main: шапка и подвал в .container, статьи со своими header/footer</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09, из стендов проверяющего): разметка бутстрапа без main — шапка,
+     содержимое и подвал в трёх div.container; в среднем карточки div.post со своими header/footer. Шапка и подвал
+     сайта — каркас, header и footer карточек — основное содержимое. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+.container { max-width: 1140px; margin: 0 auto; padding: 0 16px; }
+.site-head { display: flex; justify-content: space-between; padding: 16px 0; font-size: 15px; border-bottom: 1px solid #ddd; }
+.site-foot { margin-top: 48px; padding: 24px 0; border-top: 1px solid #ddd; font-size: 13px; }
+.site-foot p { width: 300px; }
+h1 { font-size: 44px; line-height: 1.1; margin: 24px 0 16px; }
+.posts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px; }
+.post header { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.post footer { font-size: 13px; color: #555; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="site-head" id="shead"><span id="brand">Кофейня у Волги в самом центре Ярославля</span><nav><a href="#a">Меню</a> <a href="#b">Блог</a></nav></header>
+</div>
+<div class="container">
+  <h1>Блог кофейни</h1>
+  <p>Пишем о зерне, обжарке и о том, что происходит у нас на кухне каждую неделю.</p>
+  <div class="posts">
+    <div class="post"><header>Как мы выбираем зерно</header><p>Пробуем по двадцать образцов в месяц и оставляем два-три лучших для наших гостей.</p><footer>12 сентября</footer></div>
+    <div class="post"><header>Новая обжарка из Эфиопии</header><p>Ягодная кислотность и долгое сладкое послевкусие — попробуйте в фильтре или в эспрессо.</p><footer>5 сентября</footer></div>
+  </div>
+</div>
+<div class="container">
+  <footer class="site-foot" id="sfoot"><p id="fnote">Кофейня открыта по будням с восьми и до десяти, а в выходные дни с десяти</p></footer>
+</div>
+</body>
+</html>

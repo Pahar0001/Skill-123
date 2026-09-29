@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Внутренняя страница: h1 и сразу следующая секция</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09, из стендов проверяющего): h1 один в div.page-head, сосед обёртки —
+     section со своим h2, текстом и кнопкой. h2 соседней секции — не подзаголовок: не лид, кнопка секции — не кнопка
+     первого экрана, близость h2 мерится. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+.site { display: flex; gap: 24px; padding: 12px 16px; background: #f4f4f4; }
+main { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+.page-head { padding: 24px 0 0; }
+h1 { font-size: 48px; line-height: 1.1; margin: 0 0 16px; }
+h2 { font-size: 28px; line-height: 1.2; margin: 16px 0 12px; }
+.btn { display: inline-block; padding: 12px 20px; background: #c43; color: #fff; text-decoration: none; border-radius: 6px; }
+</style>
+</head>
+<body>
+<header class="site" id="site-head"><a href="/">Кофейня у Волги</a><nav><a href="#menu">Меню</a> <a href="#contacts">Контакты</a></nav></header>
+<main>
+  <div class="page-head" id="phead"><h1 id="h1">Контакты</h1></div>
+  <section id="addr">
+    <h2 id="h2addr">Адрес и часы работы</h2>
+    <p id="paddr">Ярославль, улица Свободы, дом 10. Работаем ежедневно с полудня до одиннадцати вечера.</p>
+    <a class="btn" id="route" href="#route">Построить маршрут</a>
+  </section>
+  <section id="halls">
+    <h2>Залы и столики</h2>
+    <p>Большой зал на сорок гостей и веранда у воды для тех, кто любит свежий воздух.</p>
+  </section>
+</main>
+</body>
+</html>

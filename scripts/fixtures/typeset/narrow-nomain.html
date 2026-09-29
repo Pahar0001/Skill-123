@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Узкая колонка без main: шапка и подвал внутри неё</title>
+<!-- Стенд typeset.mjs --selftest (третий круг 29.09, из стендов проверяющего): без main, всё в колонке 660 px (уже
+     половины окна на desktop); header и footer в ней — шапка и подвал сайта, каркас. Ожидания — в typeset.mjs. -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+.col { max-width: 660px; margin: 0 auto; padding: 0 16px; }
+.site-head { display: flex; justify-content: space-between; padding: 16px 0; font-size: 15px; }
+.site-foot { margin-top: 48px; padding: 24px 0; border-top: 1px solid #ddd; font-size: 13px; }
+.site-foot p { width: 300px; }
+h1 { font-size: 44px; line-height: 1.1; margin: 24px 0 16px; }
+</style>
+</head>
+<body>
+<div class="col">
+  <header class="site-head" id="shead"><span id="brand">Мастерская керамики в Ярославле</span><nav><a href="#a">Курсы</a> <a href="#b">Магазин</a></nav></header>
+  <h1>Гончарные курсы для взрослых</h1>
+  <p>Занятия в небольших группах по шесть человек, глина и глазурь входят в стоимость каждого урока.</p>
+  <p>После курса вы сможете самостоятельно работать на гончарном круге и обжигать свои изделия у нас.</p>
+  <footer class="site-foot" id="sfoot"><p id="fnote">Мастерская открыта по будням с десяти и до восьми, а в выходные дни — по записи</p></footer>
+</div>
+</body>
+</html>
