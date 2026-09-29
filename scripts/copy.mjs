@@ -27,12 +27,24 @@
  *   faq-q, faq-a, caption, nav, footer, title); атрибуты alt, placeholder, aria-label, meta description,
  *   og:title, og:description и value кнопок — отдельными прогонами attr:<имя> (типограф их не трогает).
  *   Адрес (http, https, file) — браузер: страница такой, какой её видит человек, со всем, что дорисовал
- *   JS (демо-сайты Vanta берут тексты из базы); блочность и скрытость — из вычисленных стилей.
+ *   JS (демо-сайты Vanta берут тексты из базы); блочность и скрытость — из вычисленных стилей. Окно, которое
+ *   SITE_REWORK_DISMISS закрыл выбором, увело на другую страницу (mamuka.rest/menu → главная) — адрес открывается
+ *   заново (строка INFO), иначе в снимок шли бы тексты чужой страницы.
  *   Факты: цена, процент, срок, счётчик, гарантия, ранг ищутся в facts.json (записи с source) и в
  *   текстах сайта «до» (--baseline). Не нашлось — FAIL: ничего не выдумывать. Сверять не с чем (ни
  *   facts.json, ни снимка «до») — тоже FAIL. Только для разведки чужого сайта (донор, этап 1 без
  *   снимка) — --no-facts: заявления подсказками и WARN copy-unchecked на страницу.
  *   «X, а не Y» — одно на странице допустимо (подсказка), со второго — WARN.
+ *   Страницы нет в снимке «до» (он снят с других страниц; и когда с каждой стороны по одной странице с разными
+ *   именами) — WARN copy-unchecked «нет снимка «до» для <путь> — FAIL по её заявлениям может быть ложным» с командой
+ *   снять снимок и с неё; FAIL остаётся (ничего не выдумывать), в итоге — «без снимка «до»: <страницы>».
+ *   Подпись автора фото — по строению, а не по одному слову: «Фото:», «Photo by», «©» в начале или элемент подписи
+ *   (small, figcaption, *credit*) с лицензией или фотобанком, остальное — только имя автора («Фото: … · CC BY-SA 4.0 ·
+ *   Wikimedia Commons», «Фото: …, бесплатная лицензия Pexels»). Не повтор, лицензия в ней не заявление; фотобанк в
+ *   обычном абзаце («…, фото с Unsplash.») подписью его не делает — заявления сверяются. Одна подпись у нескольких
+ *   фото — подсказка «проверить, не один ли кадр». Обязательные строки под карточками («алкоголь вредит здоровью», «может отличаться от фото») —
+ *   не повтор. Заголовок судится целиком: скрытый span внутри h1 (в браузере блочный) — часть фразы.
+ *   «лучший» в условии конкурса («приз за лучший номер») — не пустая оценка.
  * snapshot — все тексты сайта «до» или донора с ролями → <прогон>/copy/<tag>.json: база фактов для
  *   --baseline, основа для --donor, левая сторона для pairs.
  * pairs — «было → стало» по странице, роли и порядку; изменённое — по сходству слов (от 0.4). Новые
@@ -98,16 +110,17 @@
  *   индекса); ориентиры: одобренные тексты 0–1.5, до вычитки 2–6, до ревью 5–12, стенд с ошибками 16.
  *
  * Код выхода: 0 — OK или WARN; 1 — FAIL, неверные аргументы, страница не открылась, провал selftest.
+ * Без команды («copy.mjs <url|файл> …») — код 1 и «нужна команда: lint|snapshot|…» с готовой строкой lint.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseArgs, writeJson, launch, openPage, pagesFrom, resolveViewport, unmangle } from './lib.mjs';
+import { parseArgs, writeJson, launch, openPage, gotoRetry, waitForOverlay, pagesFrom, resolveViewport, unmangle } from './lib.mjs';
 import {
   RULES, TYPO_RULES, lintRuns, indexOf, claimsOf, factIndex, confirmed, donorShingles, typographRun, lockedOf,
-  collapse, clip, words, buzzSource,
+  collapse, clip, words, buzzSource, isCredit,
 } from './copy-rules.mjs';
 import { tasteDir, readJournal, activeBans, isUserWord, appliesTo, runName } from './taste.mjs';
 
@@ -277,7 +290,10 @@ export function runsOf(html, toks = tokenize(html)) {
     return c;
   };
   const keyOf = (c, role) => [role, c.hidden, c.visible, c.legal, c.stub ? c.stub.id : '', [...c.allow].sort().join(','), c.expect ?? '', c.expectNote ?? ''].join('|');
-  const newRun = (c, role, key, pos) => ({ chars: [], real: [], spans: [], lockIdx: [], lint: '', inCode: false, lastWord: '', wsAfterWord: true, key, role, path: pathOf(stack), line: lineAt(pos), hidden: c.hidden, visible: c.visible, legal: c.legal, allow: c.allow, stub: c.stub, expect: c.expect, expectNote: c.expectNote, nextTags: [] });
+  /* заголовок, в котором лежит прогон (h1–h6 по стеку): в режиме адреса визуально скрытый span внутри h1 блочный
+     (position:absolute) и идёт отдельным прогоном — copy-heading судит заголовок целиком (lintRuns, run.head) */
+  const headOf = () => { const k = findLast(stack, (x) => /^h[1-6]$/.test(x.name)); return k >= 0 ? `h${stack[k].s}` : null; };
+  const newRun = (c, role, key, pos) => ({ chars: [], real: [], spans: [], lockIdx: [], lint: '', inCode: false, lastWord: '', wsAfterWord: true, key, role, path: pathOf(stack), line: lineAt(pos), head: headOf(), hidden: c.hidden, visible: c.visible, legal: c.legal, allow: c.allow, stub: c.stub, expect: c.expect, expectNote: c.expectNote, nextTags: [] });
 
   for (const t of toks) {
     if (t.type === 'tag') {
@@ -462,6 +478,13 @@ async function urlPages(target, opt, B) {
   for (const url of list) {
     const page = await openPage(B.browser, url, vp, { settle: 3000 });
     try {
+      /* SITE_REWORK_DISMISS увёл на другую страницу (mamuka.rest: «Ярославль» в окне выбора города на /menu открывает
+         главную) — выбор запомнен, открыть нужный адрес ещё раз, иначе в снимок /menu идут тексты главной */
+      if (((page.overlay && page.overlay.dismiss) || []).some((d) => d && d.nav)) {
+        await gotoRetry(page, url, { timeout: 60000 });
+        await waitForOverlay(page, 3000).catch(() => null);
+        console.error(`INFO  ${url}: окно увело на другую страницу — адрес открыт заново (${page.url()})`);
+      }
       const html = await page.evaluate(pageHtmlInBrowser);
       const u = new URL(url);
       const runs = runsOf(html); for (const x of runs) x.line = null;   /* строки разметки из браузера с исходником не совпадают */
@@ -531,8 +554,23 @@ const ruleList = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v
 export function lintPages(pages, ctx = {}) {
   const steps = []; const findings = []; const pagesOut = []; let W = 0, S = 0;
   for (const pg of pages) {
-    const found = applyTaste(lintRuns(pg.lint, { allow: ctx.allow, facts: ctx.facts, noFacts: ctx.noFacts, donor: ctx.donor, release: ctx.release }), ctx.taste)
-      .sort((a, b) => SEVS[a.sev] - SEVS[b.sev] || (a.line ?? 0) - (b.line ?? 0));
+    const found = applyTaste(lintRuns(pg.lint, { allow: ctx.allow, facts: ctx.facts, noFacts: ctx.noFacts, donor: ctx.donor, release: ctx.release }), ctx.taste);
+    /* страницы нет в снимке «до» (before.json снят с других страниц): её тексты «до» в базу фактов не попали —
+       WARN «нет снимка “до” для <путь>», у FAIL copy-unverified — чем это закрыть (epicentr 29.09: 7 FAIL на
+       /booking, /contacts, /venue/mosty — тексты были на сайте «до», снимок снят только с /, /menu, /afisha) */
+    const nb = ctx.noBase && ctx.noBase.pages.includes(pg.what) ? ctx.noBase : null;
+    if (nb) {
+      /* заявления сверены — с facts.json и текстами других страниц «до»; не хватает текстов «до» этой страницы, поэтому
+         FAIL по ним может быть ложным (факт был на старой странице), а не «факты не сверить». Снимок с одной страницы
+         под другим именем (lint одной страницы) — может быть та же страница: так и сказано */
+      const unv = found.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL');
+      const all = [...new Set([...nb.had, ...nb.pages])];
+      const redo = `снять снимок «до» и с неё: node copy.mjs snapshot <адрес или папка сайта «до»> --pages "${all.join(',')}" --out <прогон> — или факт в facts.json с source`;
+      const from = nb.renamed ? `снимок «до» ${nb.file} снят с одной страницы — ${nb.had[0]}: если это она же под другим именем, FAIL настоящий; иначе ${redo}` : `снимок «до» ${nb.file} снят со страниц ${nb.had.join(', ')}; ${redo}`;
+      for (const f of unv) f.suggest = `${f.suggest}; страницы ${pg.what} нет в снимке «до» (${nb.file}) — FAIL может быть ложным`;
+      found.push({ rule: 'copy-unchecked', sev: unv.length ? 'WARN' : 'NOTE', w: RULES['copy-unchecked'].w, line: null, role: 'page', path: '', quote: unv.length ? `нет снимка «до» для ${pg.what} — FAIL по её заявлениям может быть ложным` : `нет снимка «до» для ${pg.what}`, match: unv.length ? `без подтверждения ${unv.length}` : 'заявлений без подтверждения нет', suggest: from, kind: 'baseline', run: null });
+    }
+    found.sort((a, b) => SEVS[a.sev] - SEVS[b.sev] || (a.line ?? 0) - (b.line ?? 0));
     const n = wordsOf(pg.lint); W += n; S += found.filter((f) => f.sev !== 'NOTE').reduce((a, f) => a + (f.w || 0), 0);
     const cnt = (s) => found.filter((f) => f.sev === s).length;
     const step = { what: pg.what, status: cnt('FAIL') ? 'FAIL' : cnt('WARN') ? 'WARN' : 'OK', words: n, fail: cnt('FAIL'), warn: cnt('WARN'), note: cnt('NOTE'), index: indexOf(found, n), byRule: byRuleOf(found) };
@@ -579,7 +617,17 @@ async function cmdLint(target, opt, B) {
   let allow = null; if (allowFile) { try { allow = JSON.parse(fs.readFileSync(allowFile, 'utf8')); } catch (e) { throw new Error(`copy.allow.json: не прочитать ${allowFile} — ${e.message}`); } }
   let taste = null; const tDir = tasteDir(opt['taste-dir']);
   if (opt.taste) taste = tasteOf(tDir, run ? runName(run) : null);
-  const res = lintPages(col.pages, { allow, facts: idx, noFacts: !!opt['no-facts'], donor, release: !!opt.release, taste });
+  /* страницы, которых нет в снимке «до»: сверка по имени (pageKey: «/», index.html, /menu — menu.html). По одной
+     странице с каждой стороны и разные имена — тоже «нет снимка» (второй круг 29.09: снимок с главной и lint одной
+     booking.html давали FAIL без объяснения — ровно жалоба); что это может быть та же страница под другим именем,
+     сказано в находке (renamed) */
+  let noBase = null;
+  if (base && idx && base.pages && base.pages.length) {
+    const keys = new Set(base.pages.map((p) => pageKey(p.what)));
+    const miss = col.pages.map((p) => p.what).filter((w) => !keys.has(pageKey(w)));
+    if (miss.length) noBase = { pages: miss, had: base.pages.map((p) => p.what), file: path.basename(String(base.file)), renamed: base.pages.length === 1 && col.pages.length === 1 };
+  }
+  const res = lintPages(col.pages, { allow, facts: idx, noFacts: !!opt['no-facts'], donor, release: !!opt.release, taste, noBase });
   const extra = idx ? factsFindings(idx.noSource, factsFile) : [];
   if (extra.length) res.steps.push({ what: path.basename(factsFile), status: 'FAIL', words: 0, fail: extra.length, warn: 0, note: 0, index: null, byRule: { 'copy-unverified': extra.length } });
   const findings = [...extra, ...res.findings];
@@ -588,16 +636,16 @@ async function cmdLint(target, opt, B) {
   const data = {
     tool: 'copy', mode: 'lint', source: col.source, ...(col.source === 'url' ? { url: target, viewport: col.viewport } : { path: col.base }), startedAt, tag, verdict,
     options: { facts: factsFile, baseline: base ? base.file : null, noFacts: !!opt['no-facts'], donor: donorSrc || null, allow: allowFile, taste: !!opt.taste, tasteDir: opt.taste ? tDir : null, run: run ? runName(run) : null, release: !!opt.release },
-    totals: { ...res.totals, fail: res.totals.fail + extra.length, indexBase: base ? base.index : null, facts: idx ? idx.facts : null, baselineTexts: base ? base.texts.length : null, factsNoSource: extra.length, stubs },
+    totals: { ...res.totals, fail: res.totals.fail + extra.length, indexBase: base ? base.index : null, facts: idx ? idx.facts : null, baselineTexts: base ? base.texts.length : null, ...(noBase ? { pagesNoBase: noBase.pages, failNoBase: res.findings.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL' && noBase.pages.includes(f.page)).length } : {}), factsNoSource: extra.length, stubs },
     steps: res.steps, findings, pages: res.pagesOut.map(({ found, ...p }) => p),
   };
-  return { data, res, extra, idx, base, taste, tDir };
+  return { data, res, extra, idx, base, taste, tDir, noBase };
 }
 
-function printLint({ data, res, extra, idx, base, taste }, opt, say) {
+function printLint({ data, res, extra, idx, base, taste, noBase }, opt, say) {
   const url = data.source === 'url';
   if (!opt['no-facts']) {
-    const parts = []; if (data.options.facts) parts.push(`facts.json (${idx.facts} с источником${extra.length ? `, без источника ${extra.length}` : ''})`); if (base) parts.push(`сайт «до» (${path.basename(String(base.file))}, текстов ${base.texts.length})`);
+    const parts = []; if (data.options.facts) parts.push(`facts.json (${idx.facts} с источником${extra.length ? `, без источника ${extra.length}` : ''})`); if (base) parts.push(`сайт «до» (${path.basename(String(base.file))}, текстов ${base.texts.length}${noBase ? `; снимок со страниц ${noBase.had.join(', ')} — нет снимка «до» для ${noBase.pages.join(', ')}: FAIL copy-unverified там может быть ложным` : ''})`);
     say(parts.length ? `факты: ${parts.join(' + ')}` : 'факты: сверять не с чем (нет facts.json и снимка «до») — всякая цена, срок, гарантия — FAIL; разведка чужого сайта — --no-facts');
   } else say('факты: не сверялись (--no-facts) — протокол не доказывает, что факты не выдуманы');
   if (taste) say(`журнал вкуса: запретов по copy-* ${Object.keys(taste.bans).length}${Object.keys(taste.bans).length ? ` (${Object.keys(taste.bans).join(', ')})` : ''}, принято пользователем ${Object.keys(taste.ok).length}, свой отсев ${Object.keys(taste.self).length}`);
@@ -615,7 +663,9 @@ function printLint({ data, res, extra, idx, base, taste }, opt, say) {
     }
   });
   const T = data.totals; const fails = byRuleOf(data.findings, 'FAIL'); const warns = byRuleOf(data.findings, 'WARN');
-  say(`Итог: ${data.verdict} — страниц ${res.steps.length}, FAIL ${T.fail}${T.fail ? ` (${ruleList(fails)})` : ''}, WARN ${T.warn}${T.warn ? ` (${ruleList(warns)})` : ''}, подсказок ${T.note}, индекс ${T.index ?? '—'}${T.indexBase != null ? ` (сайт «до» ${T.indexBase})` : ''}${T.stubs ? ` · заглушек ${T.stubs}` : ''}${data.file ? ` · протокол ${data.file}` : ''}`);
+  /* из FAIL copy-unverified — сколько на страницах без снимка «до» (может быть ложным): итог объясняет себя сам */
+  const nbFail = noBase ? data.findings.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL' && noBase.pages.includes(f.page)).length : 0;
+  say(`Итог: ${data.verdict} — страниц ${res.steps.length}, FAIL ${T.fail}${T.fail ? ` (${ruleList(fails)})` : ''}, WARN ${T.warn}${T.warn ? ` (${ruleList(warns)})` : ''}, подсказок ${T.note}, индекс ${T.index ?? '—'}${T.indexBase != null ? ` (сайт «до» ${T.indexBase})` : ''}${T.stubs ? ` · заглушек ${T.stubs}` : ''}${noBase ? ` · без снимка «до»: ${noBase.pages.join(', ')}${nbFail ? ` (FAIL copy-unverified там ${nbFail} — может быть ложным)` : ''}` : ''}${data.file ? ` · протокол ${data.file}` : ''}`);
 }
 
 /* =====================================================================
@@ -855,6 +905,9 @@ async function main(argv) {
       return verdict === 'FAIL' ? 1 : 0;
     }
     if (cmd === 'selftest') return await selftest(opt);
+    /* «copy.mjs <url>» без команды (так писали в задачах исполнителям): адрес, файл или папка на месте команды */
+    const target = cmd && (isUrl(cmd) || /\.html?$/i.test(cmd) || fs.existsSync(path.resolve(unmangle(cmd))));
+    if (target) { const q = (a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a); console.error(`FAIL  нужна команда: ${COMMANDS.join('|')} — «${cmd}» похоже на адрес или файл; проверка текстов: node copy.mjs lint ${argv.map((a) => q(unmangle(a))).join(' ')} (подробно: --help)`); return 1; }
     console.error(cmd ? `FAIL  неизвестная команда «${cmd}» — есть ${COMMANDS.join(', ')} (подробно: --help)` : `Нужна команда: ${COMMANDS.join(', ')} (подробно: node copy.mjs --help)`);
     return 1;
   } catch (e) {
@@ -878,13 +931,14 @@ async function selftest(opt) {
   const node = (args, input) => spawnSync(process.execPath, [SELF, ...args], { encoding: 'utf8', input, timeout: 120000, windowsHide: true });
 
   /* 1. стенды с data-expect: ожидаемые правила найдены, лишних WARN/FAIL нет; data-expect-note — ожидаемые подсказки */
-  const groupsCheck = (name, o = {}) => {
-    const html = read(name); const runs = runsOf(html);
+  /* runs — уже готовые прогоны (режим адреса: строк нет, группа — по пути элемента) */
+  const groupsCheck = (name, o = {}, given = null) => {
+    const runs = given || runsOf(read(name));
     const found = lintRuns(lintView(runs), { facts: idx, ...o });
     const groups = new Map();
     for (const r of runs.filter((x) => x.expect !== undefined || x.expectNote !== undefined)) {
-      const k = `${r.line}|${r.expect ?? ''}|${r.expectNote ?? ''}`;
-      if (!groups.has(k)) groups.set(k, { line: r.line, expect: r.expect ? r.expect.split(/\s+/).filter(Boolean) : [], note: r.expectNote ? r.expectNote.split(/\s+/).filter(Boolean) : [], runs: [] });
+      const k = `${r.line ?? r.path}|${r.expect ?? ''}|${r.expectNote ?? ''}`;
+      if (!groups.has(k)) groups.set(k, { line: r.line ?? r.path, expect: r.expect ? r.expect.split(/\s+/).filter(Boolean) : [], note: r.expectNote ? r.expectNote.split(/\s+/).filter(Boolean) : [], runs: [] });
       groups.get(k).runs.push(r);
     }
     for (const g of groups.values()) {
@@ -900,6 +954,23 @@ async function selftest(opt) {
   const good = groupsCheck('good.html');
   say(good.found.filter((f) => f.sev !== 'NOTE').length === 0, `good.html: одобренные и тёплые тексты («ты», «я», кофейня) — ни одного WARN/FAIL на странице (${good.found.filter((f) => f.sev !== 'NOTE').map((f) => `${f.rule} «${f.match}»`).join('; ') || 'ноль'})`);
   groupsCheck('contrast.html');
+  /* «Эпицентр» 29.09: подписи авторов фото и обязательные строки — не повтор (одна подпись у двух фото — подсказка),
+     «приз за лучший номер» — не пустая оценка; обычный повтор и «лучший кофе» — как раньше */
+  {
+    const ep = groupsCheck('epicentr.html');
+    const lic = ep.found.filter((f) => f.rule === 'copy-unverified' && /лиценз/iu.test(f.quote));
+    say(!lic.length, `epicentr.html: «бесплатная лицензия Pexels» в подписи фото — не заявление (copy-unverified ${lic.length})`);
+    const cr = (t) => isCredit({ path: 'div>small.credit', role: 'text' }, t);
+    const inP = (t) => isCredit({ path: 'main>p', role: 'text' }, t);
+    say(cr('Фото: KQuhen · CC BY-SA 4.0 · Wikimedia Commons') && cr('Pexels') && inP('Фото: KQuhen · CC BY-SA 4.0 · Wikimedia Commons') && inP('Photo by John Doe on Unsplash') && isCredit({ path: 'figure>figcaption', role: 'caption' }, 'Фото: iram shehzad, бесплатная лицензия Pexels')
+      && !inP('Фото: сделаем на память в конце вечера') && !cr('Фото: сделаем на память в конце вечера') && !cr('Фотозона у входа, свет и зеркало в полный рост для гостей вечера, живой саксофон и приз залу за лучший номер вечера, свободная сцена'),
+      'isCredit: «Фото: … · CC BY-SA», «Photo by … on Unsplash», «бесплатная лицензия Pexels» в figcaption, «Pexels» в small — подпись; «Фото: сделаем…» и длинный текст — нет');
+    /* второй круг 29.09 (регрессия первого): название фотобанка или лицензии в коротком блоке снимало сверку фактов */
+    say(!inP('Бесплатная доставка за 30 минут, фото с Unsplash.') && !inP('Pexels') && !inP('Все фото — Pexels, бесплатно, скидка 20% на первый заказ') && !cr('Все фото — Pexels, бесплатно, скидка 20% на первый заказ') && !isCredit({ path: 'section.photo>p', role: 'text' }, 'Фото: сделаем бесплатно в конце вечера') && !isCredit({ path: 'figure>figcaption', role: 'caption' }, 'Фото: Иван Петров · Pexels. Скидка 20% на первый заказ.'),
+      'isCredit не по одному слову: фотобанк в абзаце, «Все фото — Pexels, бесплатно, скидка 20%» (и в small), «Фото: сделаем бесплатно…», подпись со скидкой — не подпись');
+    const reg = lintRuns(lintView(runsOf('<p>Бесплатная доставка за 30 минут, фото с Unsplash.</p><figure><figcaption>Фото: iram shehzad, бесплатная лицензия Pexels</figcaption></figure>')), { facts: idx }).filter((f) => f.rule === 'copy-unverified').map((f) => f.match);
+    say(reg.join(' | ') === 'Бесплатная | за 30 минут', `фотобанк в конце абзаца — заявления сверяются (FAIL «Бесплатная», «за 30 минут», как у master); «бесплатная лицензия» в подписи — не заявление (${reg.join(' | ') || 'ничего'})`);
+  }
   {
     const c1 = lintRuns(runsOf('<p>Меню словами, а не картинкой.</p><p>Цены в панели.</p>'), { facts: idx });
     say(c1.filter((f) => f.rule === 'copy-contrast').length === 1 && c1.every((f) => f.sev === 'NOTE'), '«X, а не Y» одно на странице — только подсказка');
@@ -1014,6 +1085,30 @@ async function selftest(opt) {
     say(r11.status === 0 && r11.stdout === 'Приходи в\u00a010:00–19:00, скидка 20\u00a0%', `fix --typograph - (stdin) → «${showNb(r11.stdout)}»`);
   }
 
+  /* 5б. страницы нет в снимке «до» (epicentr 29.09: before.json с /, /menu, /afisha, lint по /booking — 7 FAIL без
+     объяснения); команда пропущена («copy.mjs <url>») */
+  {
+    const nbRun = path.join(tmp, 'nobase');
+    const r12 = node(['snapshot', path.join(FIXTURES, 'nobase', 'before'), '--out', nbRun]);
+    const r13 = node(['lint', path.join(FIXTURES, 'nobase', 'after'), '--run', nbRun, '--json', path.join(tmp, 'nobase.json')]);
+    let nj = null; try { nj = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase.json'), 'utf8')); } catch { /* нет */ }
+    const nbw = nj ? nj.findings.filter((x) => x.rule === 'copy-unchecked') : [];
+    say(r12.status === 0 && r13.status === 1 && nbw.length === 1 && nbw[0].page === 'booking.html' && nbw[0].sev === 'WARN' && /нет снимка «до» для booking\.html — FAIL по её заявлениям может быть ложным/.test(r13.stdout) && /--pages "index\.html,menu\.html,booking\.html"/.test(r13.stdout) && /Итог: FAIL .*без снимка «до»: booking\.html \(FAIL copy-unverified там 1 — может быть ложным\)/.test(r13.stdout) && JSON.stringify(nj.totals.pagesNoBase) === '["booking.html"]' && nj.totals.failNoBase === 1,
+      `lint: страницы нет в снимке «до» — WARN copy-unchecked «нет снимка «до» для booking.html — FAIL по её заявлениям может быть ложным», команда снять снимок и строка итога (${nbw.map((x) => `${x.page} ${x.sev}`).join(', ') || 'нет'}); index.html и menu.html — без него`);
+    /* второй круг 29.09: по одной странице с каждой стороны (снимок с главной, lint одной booking.html) — было FAIL без
+       объяснения; та же страница под тем же именем (index.html ↔ index.html) — без WARN */
+    const one = path.join(tmp, 'nobase1');
+    const r15 = node(['snapshot', path.join(FIXTURES, 'nobase', 'before', 'index.html'), '--out', one]);
+    const r16 = node(['lint', path.join(FIXTURES, 'nobase', 'after', 'booking.html'), '--run', one, '--json', path.join(tmp, 'nobase1.json')]);
+    const r17 = node(['lint', path.join(FIXTURES, 'nobase', 'after', 'index.html'), '--run', one, '--json', path.join(tmp, 'nobase1-same.json')]);
+    let j16 = null, j17 = null; try { j16 = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase1.json'), 'utf8')); j17 = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase1-same.json'), 'utf8')); } catch { /* нет */ }
+    const w16 = j16 ? j16.findings.filter((x) => x.rule === 'copy-unchecked') : [];
+    say(r15.status === 0 && r16.status === 1 && w16.length === 1 && w16[0].sev === 'WARN' && /снят с одной страницы — index\.html: если это она же под другим именем, FAIL настоящий/.test(w16[0].suggest) && r17.status === 0 && j17 && !j17.findings.some((x) => x.rule === 'copy-unchecked'),
+      `lint одной страницы при снимке «до» с другой (index.html → booking.html): WARN copy-unchecked и «если это она же под другим именем…» (${w16.map((x) => x.sev).join(', ') || 'нет'}, код ${r16.status}); index.html ↔ index.html — без WARN (код ${r17.status})`);
+    const r14 = node(['http://localhost:9/', '--pages', '/,/menu']);
+    say(r14.status === 1 && /нужна команда: lint\|/.test(r14.stderr) && /node copy\.mjs lint http:\/\/localhost:9\/ --pages \/,\/menu/.test(r14.stderr), `без команды: ${clip(r14.stderr.trim(), 110)}`);
+  }
+
   /* 6. связи: taste.mjs знает правила copy-*, cliche.mjs загружается с общим словарём */
   {
     const tdir = path.join(tmp, 'taste');
@@ -1033,6 +1128,14 @@ async function selftest(opt) {
       const txt = runs.map((r) => r.lintText).join(' | ');
       say(found.some((f) => f.rule === 'copy-cliche') && /команда профессионалов/.test(txt), 'адрес: текст, который вставил JS, проверен (copy-cliche)');
       say(runs.some((r) => r.lintText === 'Часы работы') && runs.some((r) => r.visible === false && /Скрытое/.test(r.lintText)), 'адрес: блок по вычисленному display — отдельный прогон; display:none — visible:false');
+      /* h1 со скрытым span: в браузере span блочный (position:absolute) — три прогона одного заголовка; двоеточие
+         в середине заголовка — не «в конце» (epicentr 29.09: WARN copy-heading на span.mh-sr) */
+      const ep = await urlPages(pathToFileURL(path.join(FIXTURES, 'epicentr.html')).href, { viewport: 'mobile' }, B);
+      const h1runs = ep.pages[0].runs.filter((r) => r.role === 'h1');
+      const eg = groupsCheck('epicentr.html (адрес)', {}, ep.pages[0].runs);
+      say(h1runs.length === 3 && !eg.found.some((f) => f.rule === 'copy-heading'), `адрес: h1 из ${h1runs.length} прогонов (${h1runs.map((r) => `«${collapse(r.lintText)}»`).join(' + ')}) судится целиком — copy-heading нет`);
+      const hc = lintRuns(lintView(runsOf('<h2><span style="display:block" data-copy-b>Что входит</span> <span data-copy-b>в стоимость:</span></h2><p>Замер и доставка.</p>')), { facts: idx }).filter((f) => f.rule === 'copy-heading');
+      say(hc.length === 1 && hc[0].quote === 'Что входит в стоимость:', `заголовок из двух прогонов с двоеточием в конце всего заголовка — WARN, цитата целиком («${hc[0] ? hc[0].quote : '—'}»)`);
     } catch (e) { say(false, `адрес: ${e.message}`); } finally { if (B.browser) await B.browser.close().catch(() => {}); }
   } else console.log('--    режим адреса пропущен (--no-browser)');
 

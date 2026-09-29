@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: заголовки на div</title>
+<!-- Стенд cliche.mjs selftest: язык mamuka.rest — ни одного h1–h6, заголовки разделов на div и p
+     (44 px на компьютере, 28 px на телефоне, основной текст крупный: 24 и 20 px), надзаголовок
+     «МАМУКА» 12/10 px с разрядкой над заголовком, одна метка капсом «ПРОШЕДШИЕ» на пилюле.
+     Ждём: заголовки найдены (eyebrow и на телефоне, section-template по 4 разделам одного стиля),
+     caps-microlabel записан от одной метки. -->
+<style>
+  body { margin: 0; font: 24px/1.5 Georgia, serif; color: #222; background: #fff; }
+  section { min-height: 420px; padding: 48px 40px; }
+  section:nth-child(odd) { background: #fff; }
+  section:nth-child(even) { background: #f6f6f6; }
+  .title { font-size: 44px; font-weight: 500; line-height: 1.2; margin: 0 0 24px; }
+  .pre { display: block; font-size: 12px; letter-spacing: 1.6em; text-transform: uppercase; margin-bottom: 12px; }
+  .pill { display: inline-block; padding: 4px 10px; background: #333; color: #fff; border-radius: 12px; font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; }
+  p { max-width: 900px; }
+  @media (max-width: 600px) {
+    body { font-size: 20px; }
+    section { padding: 32px 16px; }
+    .title { font-size: 28px; }
+    .pre { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <span class="pre">Мамука</span>
+    <div class="title">Грузинский ресторан в центре Ярославля</div>
+    <p>Хачапури из печи, хинкали ручной лепки и вина небольших хозяйств. Мы работаем каждый день с полудня и до последнего гостя.</p>
+  </section>
+  <section>
+    <p class="title">Гастрольные ужины</p>
+    <p>Повара из других городов готовят у нас один вечер: сет из пяти подач, вино к каждой и разговор с шефом в конце ужина.</p>
+    <span class="pill">Прошедшие</span>
+  </section>
+  <section>
+    <div class="title">Основное меню</div>
+    <p>Супы, горячее и выпечка из тандыра. Меню меняется два раза в год, сезонные блюда появляются раньше, чем в карте.</p>
+  </section>
+  <section>
+    <div class="title">Банкеты и праздники</div>
+    <p>Зал на сорок гостей с отдельным входом, своё меню и музыка по вашему выбору. Расскажите о празднике, и мы предложим сет.</p>
+  </section>
+</main>
+</body>
+</html>

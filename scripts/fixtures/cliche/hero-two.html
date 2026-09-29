@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cliche: две кнопки первого экрана</title>
+<!-- Стенд cliche.mjs selftest: видимая пара «залитая + контурная» на первом экране — hero-two-ctas
+     засчитывается (проверка, что отсев скрытого не выключил правило). -->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; color: #222; background: #fff; }
+  .hero { min-height: 520px; padding: 40px; }
+  .hero h1 { font-size: 48px; margin: 0 0 24px; }
+  .btn { display: inline-block; height: 44px; line-height: 44px; padding: 0 20px; text-decoration: none; border-radius: 4px; }
+  .btn--fill { background: #1f5f8b; color: #fff; }
+  .btn--line { border: 1px solid #1f5f8b; color: #1f5f8b; }
+  .cta { display: flex; gap: 12px; }
+  section { min-height: 700px; padding: 40px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <h1>Кофейня у вокзала</h1>
+    <div class="cta"><a class="btn btn--fill" href="#menu">Меню</a><a class="btn btn--line" href="#map">Как пройти</a></div>
+  </div>
+  <section><p>Обычный абзац, чтобы страница была длиннее экрана.</p></section>
+</main>
+</body>
+</html>
