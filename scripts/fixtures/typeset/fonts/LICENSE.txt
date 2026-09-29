@@ -1,2 +1,3 @@
 Commissioner — SIL Open Font License 1.1 (https://openfontlicense.org/open-font-license-official-text/).
 Источник: https://fonts.google.com/specimen/Commissioner — подмножества cyrillic и latin, вес 500–700.
+commissioner-rub.woff2 — Commissioner Medium 500, только пробел, цифры и ₽ (U+20BD): Google Fonts css2 с параметром text.

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд типографики: каркас и первый экран</title>
+<!-- Третья страница стенда typeset.mjs --selftest (по жалобам «Эпицентра» 29.09): каркас сайта (полоса-анонс
+     с кнопкой, шапка с меню, подвал, закреплённая вкладка) и <main>; составной h1 — надпись 96 px в контейнере
+     16 px и текст для читалки с clip 1px; лид под h1 и строка часов из inline-block; «Забронировать<br>стол»;
+     два слова, которые вместе не влезают; ₽ в шрифте, где его нет в файле, и в шрифте, где он есть; запасная грань
+     только из local(); текст, вставленный скриптом из данных; вертикальная подпись. Ожидания — в typeset.mjs (SELFTEST). -->
+<style>
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F, U+0490-0491, U+2116; }
+@font-face { font-family: 'Full'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+/* NoRub — как Roboto Slab у Google: грань latin с диапазоном latin-ext (U+20AD–20C0) грузится, а ₽ в файле нет */
+@font-face { font-family: 'NoRub'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-cyrillic.woff2') format('woff2'); unicode-range: U+0400-045F; }
+@font-face { font-family: 'NoRub'; font-weight: 500 700; font-display: swap; src: url('fonts/commissioner-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+20AD-20C0; }
+/* Rub — как IBM Plex Serif: ₽ в файле есть */
+@font-face { font-family: 'Rub'; font-weight: 500; font-display: swap; src: url('fonts/commissioner-rub.woff2') format('woff2'); unicode-range: U+0020, U+0030-0039, U+20BD; }
+/* LocalFb — запасная грань только из local(): font-display не задан (auto), но файла нет — показ текста она не держит */
+@font-face { font-family: 'LocalFb'; src: local('Arial'), local('Helvetica'), local('Liberation Sans'), local('DejaVu Sans'); size-adjust: 100%; }
+
+body { margin: 0; background: #fff; color: #111; font: 500 16px/1.55 'Full', system-ui, sans-serif; }
+.announce { display: flex; gap: 16px; align-items: center; padding: 6px 16px; background: #222; color: #fff; font-size: 14px; }
+.btn { display: inline-block; padding: 10px 18px; background: #c43; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; }
+.site-head { display: flex; gap: 24px; align-items: center; padding: 12px 16px; font-size: 15px; }
+.site-head a { color: #111; }
+main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+.hero { padding: 40px 0; }
+/* h1: контейнер 16 px, видимое — надпись 96 px и подпись 28 px; текст для читалки — clip 1px без overflow */
+.h1c { display: grid; gap: 8px; justify-items: start; margin: 0 0 20px; font-size: 16px; line-height: 1.3; }
+.logo-big { display: block; font: 700 96px/0.95 'Full', system-ui, sans-serif; text-transform: uppercase; }
+.sr { position: absolute; clip: rect(1px, 1px, 1px, 1px); white-space: nowrap; }
+.sub { display: block; font-size: 28px; line-height: 1.3; }
+.lead { max-width: 30em; margin: 0 0 12px; font-size: 24px; line-height: 1.35; }
+.hours { margin: 0; font-size: 15px; }
+.nw { display: inline-block; white-space: nowrap; }
+.card { display: block; width: 300px; padding: 24px; background: #f3e3c7; color: #111; border-radius: 12px; text-decoration: none; }
+.card-title { display: block; font-size: 30px; line-height: 1.2; }
+.h2 { margin: 56px 0 16px; font: 700 44px/1.15 'Full', system-ui, sans-serif; }
+.norub { font-family: 'NoRub', Georgia, serif; }
+.rub { font-family: 'Rub', 'Full', sans-serif; }
+.local { font-family: 'LocalFb', sans-serif; }
+.vert { height: 120px; margin: 0; font-size: 12px; line-height: 1.3; writing-mode: vertical-rl; }
+.site-foot { margin-top: 48px; padding: 24px 16px; background: #f4f4f4; font-size: 13px; line-height: 1.5; }
+.site-foot p { margin: 0 0 8px; }
+.tab { position: fixed; right: 0; top: 40%; padding: 12px 10px; background: #c43; color: #fff; text-decoration: none; }
+@media (max-width: 600px) { .logo-big { font-size: 48px; } .sub { font-size: 20px; } .lead { font-size: 20px; } .h2 { font-size: 30px; } }
+</style>
+</head>
+<body>
+<div class="announce" id="announce"><span>Афиша квартала: события недели</span> <a class="btn" id="ann-btn" href="#afisha">Вся афиша</a></div>
+<header class="site-head" id="head">
+  <a href="#">Эпицентр</a>
+  <nav><a href="#menu">Меню</a> <a href="#afisha">Афиша</a> <a href="#contacts">Контакты</a></nav>
+</header>
+<main>
+  <section class="hero" id="hero">
+    <h1 id="h1c" class="h1c">
+      <span class="logo-big">Эпицентр</span>
+      <span class="sr">— квартал развлечений в Рыбинске:</span>
+      <span class="sub">ресторан, караоке, бильярд</span>
+    </h1>
+    <p id="lede" class="lead">Четыре зала, один вход, общий счёт</p>
+    <p class="hours"><span class="nw">ежедневно 12:00–01:00</span> <span class="nw">вход с улицы Луначарского</span></p>
+  </section>
+
+  <section id="promo">
+    <a class="card" href="#booking"><span class="card-title" id="promo-br">Забронировать<br>стол</span></a>
+  </section>
+
+  <section id="events">
+    <h2 id="h2-events" class="h2 fit" data-fit="Ближайшие" data-pad="8">Ближайшие события</h2>
+    <p id="p-src" class="fit" data-fit="Бронь стола на вечер по">Бронь стола на вечер по телефону квартала</p>
+    <p id="p-data" class="fit" data-fit="Кальяны, чай и разговоры до"></p>
+    <p id="p-rub" class="norub">Средний чек от 1 100 ₽</p>
+    <p id="p-rubfam" class="rub">1 100 ₽</p>
+    <p id="p-local" class="local">Запасной шрифт с подогнанными метриками</p>
+    <p id="p-vert" class="vert">Фото: Vidal Balielo Jr.</p>
+  </section>
+</main>
+<footer class="site-foot" id="foot">
+  <p id="foot-hang" class="fit" data-fit="Открыты каждый день и">Открыты каждый день и в праздники</p>
+  <p>© 2026, квартал развлечений, Рыбинск, улица Луначарского</p>
+</footer>
+<a class="tab" id="tab" href="#booking">Забронировать</a>
+
+<!-- данные: текст #p-data ставит скрипт после загрузки, в разметке его нет (как подпись из API) -->
+<script type="application/json" id="data">{ "note": "Кальяны, чай и разговоры до часу ночи" }</script>
+<script>
+document.getElementById('p-data').textContent = JSON.parse(document.getElementById('data').textContent).note;
+/* .fit: ширина блока — ширина начала строки (data-fit) + data-pad (4 px): остальное уходит на вторую строку в любом
+   браузере; текст не трогается */
+document.fonts.ready.then(() => {
+  for (const el of document.querySelectorAll('.fit')) {
+    el.style.width = 'max-content';
+    const t = el.firstChild; const i = t.nodeValue.indexOf(el.dataset.fit);
+    const r = document.createRange(); r.setStart(t, i); r.setEnd(t, i + el.dataset.fit.length);
+    el.style.width = Math.ceil(r.getBoundingClientRect().width + Number(el.dataset.pad || 4)) + 'px';
+  }
+});
+</script>
+</body>
+</html>

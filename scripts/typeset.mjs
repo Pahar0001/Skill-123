@@ -32,7 +32,8 @@
  *   --crops N     вырезок с подсветкой на экран, по умолчанию 12; 0 — без вырезок.
  *   --strict      код выхода 1, если хоть один экран FAIL.
  *   --json <файл>|-  все протоколы запуска одним файлом; «-» — JSON в stdout, текст — в stderr.
- *   --selftest    стенд fixtures/typeset на своём сервере (порт 4211–4219): каждый случай сверяется с ожидаемым.
+ *   --selftest    стенд fixtures/typeset на своём сервере (порт 4211–4219): index.html, hero-low.html, frame.html
+ *                 (каркас, составной h1, <br>, ₽, local(), текст из данных); каждый случай сверяется с ожидаемым.
  *   --help, -h    эта справка.
  * Неизвестный флаг — ошибка с кодом 1 и подсказкой. Адрес, экраны и значения флагов проверяются до
  * создания папок и запуска браузера.
@@ -47,25 +48,42 @@
  * меньше трёх таких соседей. Текстовые узлы блока склеиваются по порядку, <br> — разделитель, пробелы
  * между span не выбрасываются. Слово — Range через границы узлов («по<b>полам</b>» — одно слово);
  * коробки на одной строке сливаются, коробки на разных — слово разорвано (перенос, дефис, overflow-wrap).
- * Строка — новая, если центр части слова дальше max(4px, 0.5·line-height) от центра текущей. Не берутся:
- * svg, math, script, style, noscript, template, textarea, code, pre, поля ввода; невидимое (итоговая
- * прозрачность < 0.05, коробка до 2 px, clip — sr-only), блок целиком за краем экрана или за краем
- * обрезающего предка. Видимый текст с aria-hidden берётся. white-space: nowrap и pre — только для шрифтов.
+ * Строка — новая, если центр части слова дальше max(4px, 0.5·line-height) от центра текущей (в блоке с разными
+ * кеглями — по line-height каждого слова). Не берутся: svg, math, script, style, noscript, template, textarea,
+ * code, pre, поля ввода; невидимое (итоговая прозрачность < 0.05, коробка до 2 px, clip до 1 px —
+ * rect(0 0 0 0) и rect(1px 1px 1px 1px), clip-path: inset(50%) — sr-only), блок целиком за краем экрана или за
+ * краем обрезающего предка. Видимый текст с aria-hidden берётся. white-space: nowrap и pre — только для шрифтов.
  * Заголовок, чей текст разложен по вложенным блокам, меряется целиком. Теневой DOM и iframe не обходятся.
+ * Кегль и интерлиньяж заголовка — по самому крупному видимому тексту внутри (h1 16 px с надписью 109 px и подписью
+ * 32 px — 109 px); строки для h-lines и первого экрана — строки этого текста, подпись не в счёт. Вертикальный текст
+ * (writing-mode: vertical-*) строчными правилами не проверяется — строкой INFO.
  *
  * Роли: semantic — h1–h6 и role=heading; display — кегль ≥ max(24, 1.5 × основного), текст ≤ 160 знаков;
  * prose — не display, не внутри nav, button, label, figcaption, td, th, текст от 60 знаков; other —
- * остальное. Основной кегль — самый частый по длине текста у блоков от 40 знаков. Экран: телефон — уже 600,
- * планшет — 600–1023, desktop — от 1024.
+ * остальное. Основной кегль — самый частый по длине текста у блоков от 40 знаков основного содержимого (каркас —
+ * только если в основном таких нет). Экран: телефон — уже 600, планшет — 600–1023, desktop — от 1024.
+ *
+ * Каркас (blocks[].frame) — общее для всех страниц: меню (nav), закреплённое (position: fixed), шапка (header
+ * вне article/aside/main/nav/section или role=banner, без h1 и ниже половины окна), подвал (footer там же или
+ * role=contentinfo), «вне <main>» — когда в <main> лежит h1 и не меньше 30% текста. Шкала, основной кегль, hang,
+ * orphan, lead, num-unit, hyphen-break — по основному содержимому; пункты каркаса — одной строкой INFO (frame).
+ *
+ * Текст из данных (blocks[].fromData): страница запрашивается ещё раз (тот же адрес, без кэша) и её исходный HTML
+ * сверяется с текстом на экране по текстовым узлам; чего в исходнике нет — вставлено скриптом после загрузки (API,
+ * база, JSON). Совет для такого текста — «правится в данных или типографом при выводе», а не «в исходном тексте».
+ * У file:// исходник читается с диска. Исходник не получен (ошибка, не HTML) — INFO, советы прежние.
  *
  * Правила (id — ключ в протоколе и в --decisions):
  *   measure      медиана знаков в полных строках prose: desktop 45–80 OK, 30–44 INFO, < 30 и 81–95 WARN,
  *                > 95 FAIL; планшет 40–80 OK; телефон 28–50 OK, 22–27 и 51–55 INFO, < 22 и > 55 WARN
  *   hang         короткий предлог или союз в конце строки (в, к, с, у, о, и, а, я, во, от, до, по, на, не,
  *                для, при, без, над, под, или…) — WARN одной строкой со счётом; на первом экране (h1, лид,
- *                кнопка) — отдельная строка. Все блоки от 2 строк, кроме nav
+ *                кнопка) — отдельная строка. Все блоки от 2 строк, кроме nav и каркаса; пометка [из данных]
  *   orphan       одно слово в последней строке: заголовок — WARN; абзац — если слово ≤ 12 знаков или
- *                строка < 20% ширины
+ *                строка < 20% ширины. Последняя строка после <br> или границы вложенного блока — не в счёт;
+ *                два последних слова вместе шире колонки («Ближайшие события» на 320) — INFO «неустранимо»
+ *                (неразрывный пробел дал бы вылет)
+ *   frame        каркас: его hang, orphan, lead, num-unit, hyphen-break и кегли, которых нет в основном, — INFO
  *   lead, num-unit, hyphen-break   строка начинается с же/ли/бы/тире; «1 000 | ₽»; разрыв «3D-|принтере»
  *   h-lines      h1: desktop ≤ 3 OK, 4–5 WARN, ≥ 6 FAIL; телефон и планшет ≤ 4, 5–6, ≥ 7; h2 > 3 (телефон > 4) WARN
  *   balance      последняя строка заголовка < 40% самой длинной без text-wrap: balance — INFO с рецептом
@@ -77,22 +95,35 @@
  *   leading      интерлиньяж ниже таблицы typography.md п. 2 (допуск 0.03) — WARN, выше — INFO (длинная строка,
  *                тонкий текст на тёмном); h1 и дисплей от 80 px — 0.8–1.05, вне — INFO; < 1.0 у текста до 24 px — FAIL
  *   caps-track   разрядка капса и строчного дисплея (INFO/WARN); разрядка основного текста > 0.03em — WARN
- *   scale        кеглей с текстом от 20 знаков > 8; соседние уровни заголовков ближе 1.1 при одном весе или
- *                перевёрнуты (h2 крупнее h1) — WARN
+ *   scale        кеглей с текстом от 20 знаков > 8 (основное содержимое; заголовок из надписи и подписи —
+ *                кеглями частей); соседние уровни заголовков ближе 1.1 при одном весе или перевёрнуты
+ *                (h2 крупнее h1) — WARN
  *   families     своих гарнитур с ≥ 2% знаков: 3 — WARN, 4 и больше — FAIL (моноширинные и иконки не в счёт)
  *   weights      начертаний одной гарнитуры с ≥ 1% текста больше 4 — WARN
  *   synthetic    синтетический жирный или курсив (проба пикселями, расхождение > 10%) — FAIL
  *   weight-miss  запрошенного веса нет среди граней — рисуется ближайший — INFO
- *   fallback     часть знаков набрана системным шрифтом — WARN, кириллица — FAIL; знаки названы по пробе
+ *   fallback     часть знаков набрана системным шрифтом — WARN, кириллица — FAIL; знаки названы по пробе.
+ *                Причина — по unicode-range первой гарнитуры («в unicode-range граней нет») и по таблице знаков
+ *                файлов (Chrome: «в файле нет, грань с диапазоном загружена» — Roboto Slab и ₽); совет — веб-шрифт
+ *                страницы, где знак есть («₽ есть в «IBM Plex Serif» — поставить в стек сразу за…»), а если
+ *                такого нет — шрифт со знаком или «руб.»; latin-ext у Google — только когда знака нет в диапазоне
  *   fallback-all весь текст блока системным при заданном веб-шрифте — FAIL
- *   font-error   шрифт не загрузился — FAIL
- *   font-display auto или block у шрифта текста — WARN; preload без crossorigin или неиспользованный — WARN;
+ *   font-error   шрифт не загрузился — FAIL; грань только из local(), а такого шрифта в системе нет — INFO
+ *   font-display auto или block у шрифта текста — WARN (грани только из local() — запасные с подогнанными
+ *                метриками — не в счёт: файла нет, показ текста они не держат); preload без crossorigin или
+ *                неиспользованный — WARN;
  *   format       файл шрифта не woff2 — WARN
  *   lang-mismatch кириллицы > 50%, а lang не ru/uk/be/bg/sr/kk — WARN (переносы и кавычки чужие)
- *   nbsp, tnum   «привязано неразрывным пробелом N из M»; колонка цифр без tabular-nums — INFO
- *   hero         первый экран: главная кнопка (первая залитая ниже h1 и до следующего заголовка, без него —
- *                3 экрана) ниже окна — WARN (mobile-s с закреплённой панелью действия — INFO); ось h1, лида и
- *                кнопки (у первого экрана по центру — центры), h1 к основному тексту вне 3–6× (телефон 2–3×) — INFO
+ *   nbsp, tnum   «привязано неразрывным пробелом N из M» (сколько непривязанных — в тексте из данных);
+ *                колонка цифр без tabular-nums — INFO
+ *   hero         первый экран: блок первого экрана — самый широкий предок h1 до main/body без следующего заголовка
+ *                и без шапки или подвала сайта (hero.block). Главная кнопка — первая залитая в этом блоке ниже h1
+ *                и до следующего заголовка (без него — 3 экрана); кнопки полосы-анонса, шапки, меню, закреплённые
+ *                вкладки и всё вне блока не в счёт — иначе «кнопка не найдена» (INFO). Лид — ближайший блочный
+ *                абзац под h1 в том же блоке (строчный кусок вроде часов работы — только если блочного нет; крупный
+ *                лид-display — если мельче 0.8 h1). Кнопка ниже окна — WARN (mobile-s с закреплённой панелью
+ *                действия — INFO); ось h1, лида и кнопки (у первого экрана по центру — центры), h1 к основному
+ *                тексту вне 3–6× (телефон 2–3×) — INFO
  *   word-overflow, near-align   слово шире блока (предок не обрезает); левые края блоков секции расходятся на
  *                2–8 px — INFO (near-align не откалиброван)
  * Кегль — с CSS zoom (currentCSSZoom): у Tilda Zero Block на 1440 zoom 1.2, вычисленный кегль мельче экранного.
@@ -118,9 +149,12 @@
  * FAIL с --strict; 3 — страница не открылась или упал браузер.
  *
  * Модуль: export LINES_FN — исходник замера строк для evaluateWith (как SIG_FN):
- *   const lines = eval(LINES_FN);  lines(el) → { lines[], lastLine, hang[], lead[], numSplit[], broken[],
- *   shortTotal, shortNb, maxGap, space, fs, lh, ls, … }; lines(el, null, { deep: true }) — весь текст под el;
- *   lines.collect(root) → Map(блок → текстовые узлы). export measureLines(page, selector) — то же из Node.
+ *   const lines = eval(LINES_FN);  lines(el) → { lines[], lastLine { …, forced, tail, tailBox, fits }, hang[],
+ *   lead[], numSplit[], broken[], shortTotal, shortNb, maxGap, space, fs, lh, ls, fsBy?, fsOwn?, mixed?, fsMin?,
+ *   fsLines?, … }; lines(el, null, { deep: true }) — весь текст под el; lines.collect(root) → Map(блок → текстовые
+ *   узлы). export measureLines(page, selector) — то же из Node.
+ * Протокол: blocks[] — frame, fromData, disp, vertical; env.source { ok, chars | why }, env.main; hero.block;
+ *   fonts.faces[].localOnly; fonts.glyphs { гарнитура: { знак: есть ли в файле } } (Chrome); rules.frame.
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -192,14 +226,18 @@ function linesFactory() {
     for (const [o, l] of map) if (!l.some((n) => n && n.nodeType === 3 && /\S/.test(n.nodeValue))) map.delete(o);
     return map;
   }
-  /* не видно на экране: прозрачное, visibility: hidden, текст только для читалки (clip, clip-path, коробка тоньше 3 px с обрезкой) */
+  /* не видно на экране: прозрачное, visibility: hidden, текст только для читалки (clip до 1 px — rect(0 0 0 0) и
+     rect(1px 1px 1px 1px), clip-path, коробка тоньше 3 px с обрезкой) */
+  const clipTiny = (c) => { const m = /^rect\((.*)\)$/.exec(c || ''); return !!m && m[1].split(/[\s,]+/).filter(Boolean).every((x) => Math.abs(parseFloat(x) || 0) <= 1); };
   const unseen = (e) => {
     const s = cs(e);
     if (s.visibility === 'hidden' || s.visibility === 'collapse' || parseFloat(s.opacity) === 0) return true;
-    if (/rect\(\s*0(px)?[\s,]+0(px)?[\s,]+0(px)?[\s,]+0(px)?\s*\)/.test(s.clip) || /inset\(\s*(50|100)%/.test(s.clipPath || '')) return true;
+    if (clipTiny(s.clip) || /inset\(\s*(50|100)%/.test(s.clipPath || '')) return true;
     if (/hidden|clip/.test(s.overflow)) { const q = e.getBoundingClientRect(); if (q.width < 3 || q.height < 3) return true; }
     return false;
   };
+  /* граница вложенного блока в deepNodes: разрыв строки задан разметкой, как <br> (null у collect — разделитель слов разбивки) */
+  const EDGE = { edge: true };
   /* весь видимый текст под el, включая вложенные блоки (заголовок, разложенный по строкам-span) */
   function deepNodes(el) {
     const out = [];
@@ -209,23 +247,38 @@ function linesFactory() {
         if (c.nodeType !== 1) continue;
         if (c.tagName === 'BR') { out.push(c); continue; }
         const k = kind(c); if (k === 'skip' || unseen(c)) continue;
-        if (k === 'own') { out.push(null); walk(c); out.push(null); } else walk(c);
+        if (k === 'own') { out.push(EDGE); walk(c); out.push(EDGE); } else walk(c);
       }
     };
     walk(el); return out;
   }
+  const HEAD_SEL = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+  const LETTER = /[\p{L}\p{N}]/u;
   const r1 = (x) => Math.round(x * 10) / 10, r2 = (x) => Math.round(x * 100) / 100, r3 = (x) => Math.round(x * 1000) / 1000;
   let ctx = null;
   function measure(el, nodes, o = {}) {
     const maxWords = o.maxWords || 3000;
     if (!nodes) nodes = o.deep ? deepNodes(el) : (collect(el).get(el) || []);
     const s = cs(el);
-    const fs = parseFloat(s.fontSize) || 16;
-    const lhPx = s.lineHeight === 'normal' ? fs * 1.2 : (parseFloat(s.lineHeight) || fs * 1.2);
+    const lhOfStyle = (st, f) => (st.lineHeight === 'normal' ? f * 1.2 : (parseFloat(st.lineHeight) || f * 1.2));
+    /* кегли видимого текста: у заголовка кегль и интерлиньяж — по самому крупному тексту внутри (надпись-логотип
+       109 px в h1 с кеглем 32 px), а не по кеглю контейнера; текст для читалки сюда не попадает (deepNodes, srOnly) */
+    let fsMax = 0, fsMin = Infinity, maxEl = null;
+    for (const n of nodes) if (n && n.nodeType === 3 && n.parentElement && LETTER.test(n.nodeValue)) { const f = parseFloat(cs(n.parentElement).fontSize) || 0; if (f > fsMax) { fsMax = f; maxEl = n.parentElement; } if (f) fsMin = Math.min(fsMin, f); }
+    const ownFs = parseFloat(s.fontSize) || 16;
+    const byText = !!maxEl && Math.abs(fsMax - ownFs) > 0.5 && !!(el.matches(HEAD_SEL) || el.closest(HEAD_SEL));
+    const ts = byText ? cs(maxEl) : s;
+    const fs = byText ? fsMax : ownFs;
+    const lhPx = lhOfStyle(ts, fs);
+    /* разные кегли в одном блоке (надпись и подпись): допуск строки — по кеглю каждого слова, иначе мелкие строки
+       под крупной сливаются в одну */
+    const mixed = !!maxEl && fsMin < fsMax * 0.85;
     const tol = Math.max(4, lhPx * 0.5);
-    /* склейка текста; parts — где в склейке начинается каждый узел */
-    let text = ''; const parts = [];
-    for (const n of nodes) { parts.push({ node: n, start: text.length }); text += n && n.nodeType === 3 ? n.nodeValue : '\n'; }
+    const tolMemo = new Map();
+    const tolOf = (pe) => { if (!mixed || !pe) return tol; let v = tolMemo.get(pe); if (v === undefined) { const st = cs(pe); v = Math.max(4, lhOfStyle(st, parseFloat(st.fontSize) || fs) * 0.5); tolMemo.set(pe, v); } return v; };
+    /* склейка текста; parts — где в склейке начинается каждый узел; forced — разрывы, заданные разметкой (<br>, граница блока) */
+    let text = ''; const parts = []; const forced = [];
+    for (const n of nodes) { if (n === EDGE || (n && n.nodeType === 1 && n.tagName === 'BR')) forced.push(text.length); parts.push({ node: n, start: text.length }); text += n && n.nodeType === 3 ? n.nodeValue : '\n'; }
     const at = (i) => { let lo = 0, hi = parts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (parts[mid].start <= i) lo = mid; else hi = mid - 1; } const p = parts[lo]; return p && p.node && p.node.nodeType === 3 && i - p.start < p.node.nodeValue.length ? [p.node, i - p.start] : null; };
     const range = document.createRange();
     const rectsOf = (i, j) => { const a = at(i), b = at(j - 1); if (!a || !b) return []; try { range.setStart(a[0], a[1]); range.setEnd(b[0], b[1] + 1); } catch (e) { return []; } return [...range.getClientRects()].filter((q) => q.width > 0.5 && q.height > 0.5); };
@@ -235,8 +288,9 @@ function linesFactory() {
     while ((m = re.exec(text)) && words.length < maxWords) {
       const w = m[0], i0 = m.index, i1 = i0 + w.length;
       const rects = rectsOf(i0, i1); if (!rects.length) continue;
+      const a0 = at(i0); const pe = a0 ? a0[0].parentElement : null; const wtol = tolOf(pe);
       const segs = [];
-      for (const q of rects) { const g = segs.find((x) => Math.abs(cy(q) - x.cy) < tol); if (g) { g.left = Math.min(g.left, q.left); g.right = Math.max(g.right, q.right); g.top = Math.min(g.top, q.top); g.bottom = Math.max(g.bottom, q.bottom); } else segs.push({ left: q.left, right: q.right, top: q.top, bottom: q.bottom, cy: cy(q) }); }
+      for (const q of rects) { const g = segs.find((x) => Math.abs(cy(q) - x.cy) < wtol); if (g) { g.left = Math.min(g.left, q.left); g.right = Math.max(g.right, q.right); g.top = Math.min(g.top, q.top); g.bottom = Math.max(g.bottom, q.bottom); } else segs.push({ left: q.left, right: q.right, top: q.top, bottom: q.bottom, cy: cy(q) }); }
       segs.sort((a, b) => a.cy - b.cy);
       let pieces = [{ t: w, left: segs[0].left, right: segs[0].right, top: segs[0].top, bottom: segs[0].bottom }]; const brk = [];
       if (segs.length > 1) {
@@ -255,7 +309,7 @@ function linesFactory() {
           brk.push({ type: /[-‐]/.test(ch) ? 'hyphen' : ch === '\u00ad' ? 'shy' : /auto/.test(s.hyphens || s.webkitHyphens || '') ? 'auto' : 'wrap', before: pieces[k].t, after: pieces[k + 1].t });
         }
       }
-      words.push({ w, pieces, brk, nb: /[\u00a0\u202f\u2007]/.test(text[i1] || '') });
+      words.push({ w, pieces, brk, nb: /[\u00a0\u202f\u2007]/.test(text[i1] || ''), i0, i1, pe, tol: wtol });
     }
     const r = el.getBoundingClientRect();
     const padL = parseFloat(s.paddingLeft) || 0, padR = parseFloat(s.paddingRight) || 0, bL = parseFloat(s.borderLeftWidth) || 0, bR = parseFloat(s.borderRightWidth) || 0;
@@ -263,7 +317,7 @@ function linesFactory() {
     const dr = (p) => ({ x: Math.round(p.left + scrollX), y: Math.round(p.top + scrollY), w: Math.round(p.right - p.left), h: Math.round(p.bottom - p.top) });
     /* строки: часть слова открывает новую строку, если её центр дальше tol от центра текущей */
     const rows = []; let cur = null;
-    for (const wd of words) wd.pieces.forEach((p, pi) => { const c = cy(p); if (!cur || Math.abs(c - cur.cy) > tol) { cur = { cy: c, it: [] }; rows.push(cur); } cur.it.push({ wd, pi, p }); });
+    for (const wd of words) wd.pieces.forEach((p, pi) => { const c = cy(p); if (!cur || Math.abs(c - cur.cy) > Math.max(cur.tol, wd.tol)) { cur = { cy: c, it: [], tol: wd.tol }; rows.push(cur); } cur.it.push({ wd, pi, p }); });
     const L = rows.map((row) => {
       const it = row.it; const f = it[0], l = it[it.length - 1];
       const chars = it.reduce((a, x) => a + [...x.p.t].length, 0) + it.length - 1;
@@ -286,20 +340,39 @@ function linesFactory() {
     words.forEach((wd, k) => { if (k === words.length - 1) return; if (!SHORT.has(wd.w.replace(LEAD_PUNCT, '').toLowerCase())) return; shortTotal++; if (wd.nb) shortNb++; });
     let maxGap = 0; L.forEach((ln, i) => { if (i === L.length - 1) return; for (let k = 1; k < ln.it.length; k++) maxGap = Math.max(maxGap, ln.it[k].p.left - ln.it[k - 1].p.right); });
     if (!ctx) ctx = document.createElement('canvas').getContext('2d');
-    ctx.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
-    const lsPx = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0;
-    const space = ctx.measureText(' ').width + (parseFloat(s.wordSpacing) || 0) + lsPx;
+    const spaceOf = (st) => { ctx.font = `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily}`; return ctx.measureText(' ').width + (parseFloat(st.wordSpacing) || 0) + (st.letterSpacing === 'normal' ? 0 : parseFloat(st.letterSpacing) || 0); };
+    const space = spaceOf(s);
+    const lsPx = ts.letterSpacing === 'normal' ? 0 : parseFloat(ts.letterSpacing) || 0;
     /* переносов подряд (лесенка): строки, которые кончаются перенесённым словом */
     let hyRun = 0, run = 0; for (const ln of L) { if (ln.lastBreak === 'auto' || ln.lastBreak === 'shy') { run++; hyRun = Math.max(hyRun, run); } else run = 0; }
     /* слово шире блока: правее содержимого, а блок не обрезает */
     const overflow = [];
     if (!/hidden|clip|auto|scroll/.test(s.overflowX)) { const tolX = Math.max(2, fs * 0.05); for (const ln of L) for (const x of ln.it) if (x.p.right > boxRight + tolX && overflow.length < 3) overflow.push({ word: x.wd.w, over: Math.round(x.p.right - boxRight), at: dr(x.p) }); }
     const last = L[L.length - 1];
-    const lastLine = last ? { n: last.n, chars: last.chars, share: r2(last.width / box), word: last.last, at: dr(last.it[last.it.length - 1].p) } : null;
+    let lastLine = null;
+    if (last) {
+      /* \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044f\u044f \u0441\u0442\u0440\u043e\u043a\u0430 \u043f\u043e\u0441\u043b\u0435 <br> \u0438\u043b\u0438 \u0433\u0440\u0430\u043d\u0438\u0446\u044b \u0431\u043b\u043e\u043a\u0430 \u2014 \u0440\u0430\u0437\u0440\u044b\u0432 \u0437\u0430\u0434\u0430\u043d \u0440\u0430\u0437\u043c\u0435\u0442\u043a\u043e\u0439, \u0430 \u043d\u0435 \u043f\u0435\u0440\u0435\u043d\u043e\u0441\u043e\u043c */
+      let forcedBr = false;
+      if (L.length > 1 && !last.firstCont) { const prev = L[L.length - 2]; const pe0 = prev.it[prev.it.length - 1].wd.i1, st0 = last.it[0].wd.i0; forcedBr = forced.some((f) => f >= pe0 && f < st0); }
+      /* \u0445\u0432\u043e\u0441\u0442: \u0434\u0432\u0430 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0438\u0445 \u0441\u043b\u043e\u0432\u0430 \u0432\u043c\u0435\u0441\u0442\u0435 \u0441 \u043f\u0440\u043e\u0431\u0435\u043b\u043e\u043c \u2014 \u0448\u0438\u0440\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0438, \u0442\u043e \u043d\u0435\u0440\u0430\u0437\u0440\u044b\u0432\u043d\u044b\u0439 \u043f\u0440\u043e\u0431\u0435\u043b \u0434\u0430\u0441\u0442 \u0432\u044b\u043b\u0435\u0442, \u0430 \u043d\u0435 \u0438\u0441\u043f\u0440\u0430\u0432\u0438\u0442 */
+      let tail = null, tailBox = null;
+      if (last.n === 1 && words.length >= 2 && !last.firstCont) {
+        const a = words[words.length - 2], b = words[words.length - 1];
+        const wW = (wd) => wd.pieces.reduce((x, p) => x + (p.right - p.left), 0);
+        tail = Math.round(wW(a) + (b.pe ? spaceOf(cs(b.pe)) : space) + wW(b));
+        let own = b.pe || el; while (own && own !== el && kind(own) === 'flow') own = own.parentElement;
+        if (!own || own === el) tailBox = box; else { const so = cs(own); const q = own.getBoundingClientRect(); tailBox = Math.max(1, q.width - (parseFloat(so.paddingLeft) || 0) - (parseFloat(so.paddingRight) || 0) - (parseFloat(so.borderLeftWidth) || 0) - (parseFloat(so.borderRightWidth) || 0)); }
+        tailBox = Math.round(tailBox);
+      }
+      lastLine = { n: last.n, chars: last.chars, share: r2(last.width / box), word: last.last, at: dr(last.it[last.it.length - 1].p), forced: forcedBr, tail, tailBox, fits: tail == null ? null : tail <= tailBox + 1 };
+    }
+    /* \u0441\u0442\u0440\u043e\u043a\u0438 \u043a\u0440\u0443\u043f\u043d\u043e\u0433\u043e \u0442\u0435\u043a\u0441\u0442\u0430 \u2014 \u0443 \u0431\u043b\u043e\u043a\u0430 \u0441 \u0440\u0430\u0437\u043d\u044b\u043c\u0438 \u043a\u0435\u0433\u043b\u044f\u043c\u0438 (\u043d\u0430\u0434\u043f\u0438\u0441\u044c \u0438 \u043f\u043e\u0434\u043f\u0438\u0441\u044c \u0432 \u043e\u0434\u043d\u043e\u043c h1) */
+    const fsLines = mixed ? L.filter((ln) => ln.it.some((x) => x.wd.pe && Math.abs((parseFloat(cs(x.wd.pe).fontSize) || 0) - fsMax) <= 0.5)).length : null;
     return {
       text: text.replace(/[ \t\n\r\f\v\u2028\u2029]+/g, ' ').trim(), words: words.length, fs, lhPx: r1(lhPx), lh: r2(lhPx / fs), ls: r3(lsPx / fs), box: Math.round(box),
       lines: L.map(({ it, ...x }) => x), lastLine, hang, lead, numSplit, broken, shortTotal, shortNb,
       maxGap: r1(maxGap), space: r1(space), hyRun, overflow, x0: L.length ? L[0].x0 : null, capped: words.length >= maxWords,
+      ...(byText ? { fsOwn: ownFs, fsBy: 'text' } : {}), ...(mixed ? { mixed: true, fsMin: r1(fsMin), fsLines } : {}),
     };
   }
   measure.collect = collect; measure.deepNodes = deepNodes; measure.kind = kind; measure.SHORT = SHORT;
@@ -353,12 +426,55 @@ async function measureInPage(o) {
   const firstFam = (stack) => { const m = /^\s*(?:"([^"]+)"|'([^']+)'|([^,]+))/.exec(stack || ''); return m ? (m[1] || m[2] || m[3]).trim() : ''; };
   const dr = (q) => ({ x: Math.round(q.left + scrollX), y: Math.round(q.top + scrollY), w: Math.round(q.width), h: Math.round(q.height) });
 
-  /* шрифты страницы: грани document.fonts и покрытие unicode-range по гарнитурам */
-  const faces = [...document.fonts].map((f) => ({ family: f.family.replace(/^["']|["']$/g, ''), weight: String(f.weight), style: f.style, status: f.status, display: f.display === undefined ? null : f.display, unicodeRange: f.unicodeRange || 'U+0-10FFFF' }));
-  const parseRanges = (u) => String(u || 'U+0-10FFFF').split(',').map((x) => x.trim().replace(/^u\+/i, '')).filter(Boolean).map((x) => { if (x.includes('?')) return [parseInt(x.replace(/\?/g, '0'), 16), parseInt(x.replace(/\?/g, 'F'), 16)]; const [a, b] = x.split('-'); return [parseInt(a, 16), parseInt(b || a, 16)]; });
+  /* исходный HTML страницы (тот же адрес заново): текст, которого в нём нет, вставлен скриптом после загрузки —
+     из API, базы, JSON. Такой текст правится в данных или типографом при выводе, а не в разметке */
+  const keyOf = (t) => String(t || '').normalize('NFC').replace(/[\s\u00ad\u200b-\u200d\u2060\ufeff]+/g, '');
+  let srcKey = null, srcWhy = null;
+  try {
+    let html = typeof o.srcHtml === 'string' ? o.srcHtml : null;
+    if (html == null) {
+      const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 5000);
+      const r = await fetch(location.href, { cache: 'no-store', credentials: 'include', signal: ac.signal }); clearTimeout(tm);
+      const ct = r.headers.get('content-type') || '';
+      if (!r.ok) srcWhy = `HTTP ${r.status}`; else if (ct && !/html/i.test(ct)) srcWhy = ct; else html = await r.text();
+    }
+    if (html != null) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const root = doc.body || doc.documentElement; let t = '';
+      const tw = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('script, style, template, noscript, textarea') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) t += n.nodeValue;
+      srcKey = keyOf(t);
+    }
+  } catch (e) { srcWhy = String((e && e.message) || e).slice(0, 80); }
+  /* по текстовым узлам блока, а не по склейке: между видимыми частями в исходнике может стоять текст для читалки */
+  const fromData = (nodes) => {
+    if (srcKey == null || !nodes) return null;
+    const ks = nodes.filter((n) => n && n.nodeType === 3).map((n) => keyOf(n.nodeValue)).filter((k) => k.length >= 2);
+    return ks.length ? ks.some((k) => !srcKey.includes(k)) : null;
+  };
+
+  /* @font-face, у которых src только local(): запасной системный шрифт с подогнанными метриками — не веб-шрифт,
+     не блокирует показ текста (font-display не важен) и не «не загрузился», если такого шрифта в системе нет */
+  const normW = (w) => String(w || 'normal').trim().toLowerCase().replace(/\bnormal\b/g, '400').replace(/\bbold\b/g, '700').replace(/\s+/g, ' ');
+  const normS = (x) => String(x || 'normal').trim().toLowerCase().split(/\s+/)[0];
   const famKey = (f) => String(f || '').toLowerCase();
+  const ruleSrc = new Map(); let sheetsHidden = 0;
+  const walkRules = (rules, depth) => { for (const r of rules) { try {
+    if (r.type === 5 || (typeof CSSFontFaceRule !== 'undefined' && r instanceof CSSFontFaceRule)) {
+      const fam = r.style.getPropertyValue('font-family').trim().replace(/^["']|["']$/g, ''); const src = r.style.getPropertyValue('src') || '';
+      const k = `${famKey(fam)}|${normW(r.style.getPropertyValue('font-weight'))}|${normS(r.style.getPropertyValue('font-style'))}`;
+      const e = ruleSrc.get(k) || { local: 0, url: 0 }; if (/url\(/i.test(src)) e.url++; else if (/local\(/i.test(src)) e.local++; ruleSrc.set(k, e);
+    } else if (r.styleSheet && depth < 4) { try { walkRules(r.styleSheet.cssRules, depth + 1); } catch (e) { sheetsHidden++; } }
+    else if (r.cssRules && depth < 6) walkRules(r.cssRules, depth + 1);
+  } catch (e) { /* правило без стиля */ } } };
+  for (const sh of document.styleSheets) { try { walkRules(sh.cssRules, 0); } catch (e) { sheetsHidden++; } }
+  /* шрифты страницы: грани document.fonts и покрытие unicode-range по гарнитурам */
+  const faces = [...document.fonts].map((f) => { const family = f.family.replace(/^["']|["']$/g, ''); const rs = ruleSrc.get(`${famKey(family)}|${normW(f.weight)}|${normS(f.style)}`); return { family, weight: String(f.weight), style: f.style, status: f.status, display: f.display === undefined ? null : f.display, unicodeRange: f.unicodeRange || 'U+0-10FFFF', localOnly: !!rs && rs.local > 0 && !rs.url }; });
+  const parseRanges = (u) => String(u || 'U+0-10FFFF').split(',').map((x) => x.trim().replace(/^u\+/i, '')).filter(Boolean).map((x) => { if (x.includes('?')) return [parseInt(x.replace(/\?/g, '0'), 16), parseInt(x.replace(/\?/g, 'F'), 16)]; const [a, b] = x.split('-'); return [parseInt(a, 16), parseInt(b || a, 16)]; });
   const famFaces = new Map();
-  for (const f of faces) { const k = famKey(f.family); if (!famFaces.has(k)) famFaces.set(k, { all: 0, ok: [] }); const e = famFaces.get(k); e.all++; if (f.status !== 'error') e.ok.push(parseRanges(f.unicodeRange)); }
+  /* гарнитура только из local() — системный шрифт под другим именем: в веб-шрифты не записывается */
+  const localFam = new Set(); { const byF = new Map(); for (const f of faces) { const k = famKey(f.family); byF.set(k, (byF.has(k) ? byF.get(k) : true) && f.localOnly); } for (const [k, v] of byF) if (v) localFam.add(k); }
+  for (const f of faces) { const k = famKey(f.family); if (localFam.has(k)) continue; if (!famFaces.has(k)) famFaces.set(k, { all: 0, ok: [] }); const e = famFaces.get(k); e.all++; if (f.status !== 'error') e.ok.push(parseRanges(f.unicodeRange)); }
   const covered = (fam, cp) => { const e = famFaces.get(famKey(fam)); if (!e) return null; return e.ok.some((rs) => rs.some(([a, b]) => cp >= a && cp <= b)); };
   /* знаки, которые не проверяем на подмену: пробелы, эмодзи и значки, невидимые */
   const skipChar = (cp) => cp <= 0x20 || (cp >= 0x2600 && cp <= 0x27bf) || cp >= 0x1f000 || (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0x200b && cp <= 0x200f) || cp === 0x2060 || cp === 0xad || cp === 0xfeff;
@@ -380,10 +496,11 @@ async function measureInPage(o) {
     const out = new Set();
     if (fe) for (const c of m.text) { const cp = c.codePointAt(0); if (!skipChar(cp) && !covered(fam, cp)) out.add(c); if (out.size >= 24) break; }
     const b = {
-      id: bid, el, sig: sig(el), tag, headTag, ...m, text: m.text.slice(0, 200), textLen: m.text.length,
+      id: bid, el, sig: sig(el), tag, headTag, ...m, text: m.text.slice(0, 200), textLen: m.text.length, fromData: null, disp: s.display,
       weight: s.fontWeight, style: s.fontStyle, family: s.fontFamily, fam, webFont: !!fe, famAllError: !!fe && !fe.ok.length, outChars: [...out],
       align: s.textAlign, hyphens: s.hyphens || s.webkitHyphens || null, textWrap: s.textWrap || null, textWrapStyle: s.textWrapStyle || null,
       whiteSpace: s.whiteSpace, nowrap: /^(nowrap|pre)$/.test(s.whiteSpace) || s.textWrapMode === 'nowrap', position: s.position,
+      vertical: /^(vertical|sideways)/.test(s.writingMode || ''),
       lang: ((el.closest('[lang]') || document.documentElement).getAttribute('lang') || '').trim(), tnum: /tabular-nums/.test(s.fontVariantNumeric || ''),
       upper: s.textTransform === 'uppercase' || (/[A-ZА-ЯЁ]{3}/.test(m.text) && m.text === m.text.toUpperCase()),
       nav: !!el.closest('nav, [role="navigation"]'), inButton: !!el.closest('button, [role="button"]'), inLink: !!el.closest('a[href]'), notProse: !!el.closest(NOT_PROSE),
@@ -398,7 +515,7 @@ async function measureInPage(o) {
     if (eff(el) < 0.05 || srOnly(el) || clippedAway(el, r)) continue;
     let m; try { m = lines(el, nodes); } catch (e) { continue; }
     if (!m || !m.lines.length) continue;
-    const b = add(el, m);
+    const b = add(el, m, { fromData: fromData(nodes) });
     for (const n of nodes) if (n && n.nodeType === 3 && /\S/.test(n.nodeValue) && n.parentElement) n.parentElement.setAttribute('data-ts-t', b.id);
   }
   /* заголовок, чей текст разложен по вложенным блокам (span-строки): меряется целиком, вложенные — его части.
@@ -410,12 +527,36 @@ async function measureInPage(o) {
     const inner = own && !own.partOf ? [own, ...nested] : nested;
     let m; try { m = lines(h, null, { deep: true }); } catch (e) { continue; }
     if (!m || !m.lines.length) continue;
-    const b = add(h, m, { composite: true, inner: inner.map((x) => x.id) });
+    const b = add(h, m, { composite: true, inner: inner.map((x) => x.id), fromData: fromData(lines.deepNodes(h)) });
     for (const x of inner) { x.partOf = b.id; if (x.changing) b.changing = true; }
   }
-  /* основной кегль: самый частый по длине текста у блоков от 40 знаков вне заголовков */
+  /* каркас сайта — общий для всех страниц: шапка и подвал (header/footer вне article, aside, main, nav, section;
+     role=banner/contentinfo), меню (nav), закреплённые слои (position: fixed) и всё вне <main>, когда в <main>
+     лежит h1 и не меньше 30% текста. Шкала, висячие и одинокие слова — по основному содержимому, каркас — отдельно */
+  const vis0 = (e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; };
+  const h1Els = [...document.querySelectorAll('h1')].filter(vis0);
+  const mains = [...document.querySelectorAll('main, [role="main"]')].filter(vis0);
+  let mainEl = mains.find((mn) => h1Els.some((h) => mn.contains(h))) || (h1Els.length ? null : mains[0]) || null;
+  if (mainEl) { let inM = 0, all = 0; for (const b of blocks) if (!b.partOf) { all += b.textLen; if (mainEl.contains(b.el)) inM += b.textLen; } if (all && inM < all * 0.3) mainEl = null; }
+  const SECTIONING = 'article, aside, main, nav, section, [role="main"], [role="article"], [role="complementary"], [role="region"]';
+  const frameOf = (el) => {
+    if (el.closest('nav, [role="navigation"]')) return 'меню';
+    if (fixedOf(el) === 'fixed') return 'закреплённое';
+    const hd = el.closest('header, [role="banner"]');
+    if (hd && (hd.getAttribute('role') === 'banner' || !(hd.parentElement && hd.parentElement.closest(SECTIONING))) && !hd.querySelector('h1') && hd.getBoundingClientRect().height < vh * 0.5) return 'шапка';
+    const ft = el.closest('footer, [role="contentinfo"]');
+    if (ft && (ft.getAttribute('role') === 'contentinfo' || !(ft.parentElement && ft.parentElement.closest(SECTIONING)))) return 'подвал';
+    if (mainEl && !mainEl.contains(el)) return 'вне <main>';
+    return null;
+  };
+  for (const b of blocks) b.frame = frameOf(b.el);
+  /* основной кегль: самый частый по длине текста у блоков от 40 знаков вне заголовков — в основном содержимом;
+     каркас (подвал, шапка) — только если в основном таких блоков нет */
   const votes = new Map();
-  for (const b of blocks) if (!b.partOf && !b.headTag && b.textLen >= 40 && b.fs < 30) { const k = Math.round(b.fs * 2) / 2; votes.set(k, (votes.get(k) || 0) + b.textLen); }
+  for (const pass of [(b) => !b.frame, () => true]) {
+    for (const b of blocks) if (!b.partOf && !b.headTag && b.textLen >= 40 && b.fs < 30 && pass(b)) { const k = Math.round(b.fs * 2) / 2; votes.set(k, (votes.get(k) || 0) + b.textLen); }
+    if (votes.size) break;
+  }
   const bodyFs = votes.size ? [...votes].sort((a, b) => b[1] - a[1])[0][0] : (parseFloat(cs(document.body).fontSize) || 16);
   for (const b of blocks) {
     const semantic = !!b.headTag;
@@ -500,27 +641,41 @@ async function measureInPage(o) {
   const paintBox = (e) => { if (painted(e)) return e; const r = e.getBoundingClientRect(); const A = r.width * r.height; for (const d of e.querySelectorAll('*')) { if (d.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue; const q = d.getBoundingClientRect(); const a = q.width * q.height; if (a < 0.8 * A || a > 1.25 * A || Math.abs(q.left - r.left) > r.width * 0.2 || Math.abs(q.top - r.top) > r.height * 0.2) continue; if (painted(d) && eff(d) > 0.05) return d; } return null; };
   /* меню: nav, а header — только короткой полосой (у VN3D первый экран лежит внутри <header>) */
   const navLike = (e) => { if (e.closest('nav, [role="navigation"]')) return true; const h = e.closest('header'); return !!h && h.getBoundingClientRect().height < vh * 0.35; };
-  const ctas = [];
+  const ctas = []; const ctaEl = new Map();
   for (const e of document.querySelectorAll('a[href], button, [role="button"], input[type="submit"], input[type="button"]')) {
-    if (ctas.length >= 40) break;
+    if (ctas.length >= 60) break;
     const r = e.getBoundingClientRect();
     if (r.height < 24 || r.height > 90 || r.width < 40 || r.width > vw * 0.95 || r.right <= 0 || r.left >= vw || r.top + scrollY > vh * 4) continue;
     if (eff(e) < 0.5 || !paintBox(e)) continue;
     const t = (e.innerText || e.value || '').replace(/\s+/g, ' ').trim(); if (!t) continue;
-    ctas.push({ sig: sig(e), text: t.slice(0, 40), rect: dr(r), vpBottom: Math.round(r.bottom), nav: navLike(e), fixed: fixedOf(e), parent: e.parentElement ? sig(e.parentElement) : null, ids: [...e.querySelectorAll('[data-ts]')].map((x) => x.getAttribute('data-ts')).concat(e.getAttribute('data-ts') || []).filter(Boolean) });
+    const c = { sig: sig(e), text: t.slice(0, 40), rect: dr(r), vpBottom: Math.round(r.bottom), nav: navLike(e), fixed: fixedOf(e), frame: frameOf(e), parent: e.parentElement ? sig(e.parentElement) : null, ids: [...e.querySelectorAll('[data-ts]')].map((x) => x.getAttribute('data-ts')).concat(e.getAttribute('data-ts') || []).filter(Boolean) };
+    ctas.push(c); ctaEl.set(c, e);
   }
   const stickyBar = ctas.some((c) => c.fixed === 'fixed' && c.vpBottom >= vh - 140);
   const hero = {}; let lede = null, cta = null;
   if (h1) {
     const hb = h1.rect.y + h1.rect.h;
-    lede = top.filter((b) => b.id !== h1.id && !b.headTag && b.role !== 'display' && !b.nav && !b.inButton && !b.inLink && b.textLen >= 20 && b.rect.y >= hb - 4 && b.rect.y < vh * 1.5 && b.rect.x < h1.rect.x + h1.rect.w && b.rect.x + b.rect.w > h1.rect.x).sort((a, b) => (a.rect.y - b.rect.y) || (a.rect.x - b.rect.x))[0] || null;
-    const free = ctas.filter((c) => !c.nav && !c.fixed);
     const nextHead = top.filter((b) => b.id !== h1.id && b.role === 'semantic' && /^h[1-3]$/.test(b.headTag) && b.rect.y > hb).sort((a, b) => a.rect.y - b.rect.y)[0];
     const limit = nextHead ? nextHead.rect.y : hb + vh * 3;
-    cta = free.filter((c) => c.rect.y >= h1.rect.y - 4 && c.rect.y < limit).sort((a, b) => (a.rect.y - b.rect.y) || (a.rect.x - b.rect.x))[0] || free.filter((c) => onFirst(c.rect)).sort((a, b) => a.rect.y - b.rect.y)[0] || null;
-    if (!cta) { const far = free.filter((c) => c.rect.y >= h1.rect.y - 4).sort((a, b) => a.rect.y - b.rect.y)[0]; if (far) hero.farCta = { text: far.text, y: far.rect.y }; }
+    /* блок первого экрана — самый широкий предок h1 до main/body, в котором нет следующего заголовка и нет шапки
+       или подвала сайта: кнопки и лид ищутся в нём, а не в полосе-анонсе, шапке или закреплённой вкладке */
+    const hEl = h1.el; const nEl = nextHead ? nextHead.el : null; let heroEl = null;
+    for (let e = hEl.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      if (e.matches('main, [role="main"]') || (nEl && e.contains(nEl)) || frameOf(e)) break;
+      if ([...e.querySelectorAll('header, footer, [role="banner"], [role="contentinfo"]')].some((x) => !x.contains(hEl) && !(heroEl && heroEl.contains(x)))) break;
+      heroEl = e;
+    }
+    const inHero = (el) => !heroEl || heroEl.contains(el);
+    hero.block = heroEl ? sig(heroEl) : null;
+    /* лид — ближайший блочный абзац под h1 (не строчный кусок вроде часов работы); крупный лид (display) — если мельче h1 */
+    const cand = top.filter((b) => b.id !== h1.id && !b.headTag && !b.frame && !b.nav && !b.inButton && !b.inLink && b.textLen >= 20 && (b.role !== 'display' || b.fs < h1.fs * 0.8) && b.rect.y >= hb - 4 && b.rect.y < vh * 1.5 && b.rect.x < h1.rect.x + h1.rect.w && b.rect.x + b.rect.w > h1.rect.x && inHero(b.el));
+    const byY = (a, b) => (a.rect.y - b.rect.y) || (a.rect.x - b.rect.x);
+    lede = cand.filter((b) => !/^inline/.test(b.disp || '')).sort(byY)[0] || cand.sort(byY)[0] || null;
+    const free = ctas.filter((c) => !c.nav && !c.fixed && !c.frame);
+    cta = free.filter((c) => inHero(ctaEl.get(c)) && c.rect.y >= h1.rect.y - 4 && c.rect.y < limit).sort(byY)[0] || (heroEl ? free.filter((c) => heroEl.contains(ctaEl.get(c)) && onFirst(c.rect)).sort(byY)[0] : null) || null;
+    if (!cta) { const far = free.filter((c) => c.rect.y >= h1.rect.y - 4).sort(byY)[0]; if (far) hero.farCta = { text: far.text, y: far.rect.y }; }
   }
-  const brief = (b) => b && { id: b.id, sig: b.sig, text: b.text.slice(0, 80), fs: b.fs, lines: b.lines.length, chars: b.lines.map((l) => l.chars), x0: b.x0, rect: b.rect, align: b.align };
+  const brief = (b) => b && { id: b.id, sig: b.sig, text: b.text.slice(0, 80), fs: b.fs, lines: b.fsLines || b.lines.length, ...(b.fsLines ? { allLines: b.lines.length, fsMin: b.fsMin } : {}), chars: b.lines.map((l) => l.chars), x0: b.x0, rect: b.rect, align: b.align, fromData: b.fromData };
   Object.assign(hero, {
     h1: h1 ? { ...brief(h1), how: h1How } : null, lede: brief(lede),
     cta: cta ? { ...cta, visible: cta.rect.y + cta.rect.h <= vh, topShare: r2(cta.rect.y / vh) } : null,
@@ -539,6 +694,8 @@ async function measureInPage(o) {
     hero.axis = { centered, dLeft, dCenter, row: row.length, ok: centered ? dCenter <= 6 : dLeft <= 4, lede: ledeD };
   }
   for (const b of blocks) delete b.el;
+  env.source = srcKey == null ? { ok: false, why: srcWhy } : { ok: true, chars: srcKey.length };
+  env.main = mainEl ? sig(mainEl) : null;
   return { blocks, bodyFs, env, fonts: { faces: faces.map((f) => ({ ...f, unicodeRange: f.unicodeRange.slice(0, 400) })), preload, files }, styles: [...styles.values()].map((s) => ({ ...s, chars: [...s.chars].join('') })), tnum, hero, capped, changes: ch.n || 0 };
 }
 
@@ -607,6 +764,46 @@ async function fallbackChars(page, combos) {
   return out;
 }
 
+/* В каком веб-шрифте страницы знак есть на самом деле (таблица знаков файла, а не unicode-range): каждая гарнитура
+   отдельно, запасной — monospace; браузер грузит грани, чей диапазон покрывает знак, и CDP говорит, нарисовал ли его
+   веб-шрифт. У Roboto Slab ₽ нет ни в одном подмножестве (latin-ext с U+20AD–20C0 грузится, знака в файле нет),
+   у IBM Plex Serif — есть. → { гарнитура: { знак: true|false } } */
+async function glyphOwners(page, chars, fams) {
+  if (!chars.length || !fams.length) return {};
+  await page.evaluate(async (chars, fams) => {
+    const old = document.getElementById('__ts_glyph'); if (old) old.remove();
+    const host = document.createElement('div'); host.id = '__ts_glyph';
+    host.style.cssText = 'position:absolute;left:-10000px;top:0;width:9000px;pointer-events:none;opacity:0';
+    fams.forEach((f, fi) => {
+      const d = document.createElement('div'); d.style.cssText = `font-family:${JSON.stringify(f.fam)},monospace;font-weight:${f.weight};font-style:${f.style};font-size:20px;white-space:pre`;
+      [...chars].forEach((ch, k) => { const s = document.createElement('span'); s.setAttribute('data-ts-g', `${fi}:${k}`); s.textContent = ch; d.appendChild(s); });
+      host.appendChild(d);
+    });
+    document.body.appendChild(host);
+    await Promise.all(fams.map((f) => document.fonts.load(`${f.style} ${f.weight} 20px ${JSON.stringify(f.fam)}`, chars).catch(() => null)));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }, chars.join(''), fams);
+  const out = {}; const list = [...chars];
+  const cdp = await page.createCDPSession();
+  try {
+    await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    const { nodeIds } = await cdp.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: '[data-ts-g]' });
+    for (let i = 0; i < nodeIds.length; i += 25) {
+      await Promise.all(nodeIds.slice(i, i + 25).map(async (nodeId) => {
+        try {
+          const { attributes } = await cdp.send('DOM.getAttributes', { nodeId });
+          const [fi, k] = attributes[attributes.indexOf('data-ts-g') + 1].split(':').map(Number);
+          const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+          const f = fams[fi]; if (!f) return;
+          (out[f.fam] = out[f.fam] || {})[list[k]] = fonts.some((x) => x.isCustomFont);
+        } catch { /* узел ушёл */ }
+      }));
+    }
+  } finally { await cdp.detach().catch(() => {}); await page.evaluate(() => { const x = document.getElementById('__ts_glyph'); if (x) x.remove(); }).catch(() => {}); }
+  return out;
+}
+
 /* Синтетика пикселями: проба с font-synthesis и без; расхождение > 10% — браузер рисует начертание сам */
 const PROBE_TEXT = 'ЖёлудьЩиЁж Handglove 0123';
 async function synthProbe(page, combos, sharp) {
@@ -655,9 +852,51 @@ const LEADING = [[0, 14.5, 1.4, 1.6], [14.5, 18.5, 1.5, 1.65], [18.5, 24.5, 1.35
 const leadingRange = (fs) => LEADING.find(([a, b]) => fs >= a && fs < b) || LEADING[0];
 const STYLE_RULES = new Set(['leading', 'caps-track', 'scale', 'families', 'weights']);
 const DECIDABLE = new Set([...STYLE_RULES, 'measure', 'h-lines', 'proximity', 'justify', 'hero', 'balance', 'near-align']);
-const RULE_IDS = ['measure', 'hang', 'orphan', 'lead', 'num-unit', 'hyphen-break', 'h-lines', 'balance', 'proximity', 'justify', 'hyphens', 'leading', 'caps-track', 'scale', 'families', 'weights', 'synthetic', 'weight-miss', 'fallback', 'fallback-all', 'font-error', 'font-display', 'preload', 'format', 'lang-mismatch', 'nbsp', 'tnum', 'hero', 'word-overflow', 'near-align'];
+const RULE_IDS = ['measure', 'hang', 'orphan', 'lead', 'num-unit', 'hyphen-break', 'h-lines', 'balance', 'proximity', 'justify', 'hyphens', 'leading', 'caps-track', 'scale', 'families', 'weights', 'synthetic', 'weight-miss', 'fallback', 'fallback-all', 'font-error', 'font-display', 'preload', 'format', 'lang-mismatch', 'nbsp', 'tnum', 'hero', 'word-overflow', 'near-align', 'frame'];
+/* кегли с длиной текста; заголовок из надписи и подписи разного кегля (mixed) — кеглями своих частей */
+function sizeMap(list, byId) {
+  const m = new Map();
+  for (const b of list) { if (b.changing) continue; const parts = b.mixed && b.inner ? b.inner.map((id) => byId.get(id)).filter(Boolean) : [b]; for (const x of parts.length ? parts : [b]) { const k = Math.round(x.fs); m.set(k, (m.get(k) || 0) + x.textLen); } }
+  return m;
+}
 const LANG_OK = /^(ru|uk|be|bg|sr|kk)\b/i;
 const MONO_ICON = /mono|code|courier|consol|icon|awesome|material|symbols|glyph|fontello|icomoon/i;
+
+/**
+ * Почему знаки набраны системным шрифтом и что делать: по unicode-range первой гарнитуры (outChars блока) и по
+ * таблице знаков веб-шрифтов страницы (glyphOwners, только Chrome). → { text, facts[] }
+ */
+function fallbackWhy(visible, fams, list, glyphs, gecko) {
+  if (!visible.length) return { text: '', facts: [] };
+  const facts = []; const parts = [];
+  const q = (cs) => cs.map((c) => `${c} (${U(c)})`).join(', ');
+  for (const F of fams.slice(0, 2)) {
+    const own = list.filter((x) => x.b.fam === F);
+    const chars = visible.filter((c) => own.some((x) => x.b.text.includes(c))).slice(0, 6);
+    if (!chars.length) continue;
+    const outR = chars.filter((c) => own.some((x) => (x.b.outChars || []).includes(c)));
+    const inR = chars.filter((c) => !outR.includes(c));
+    const known = glyphs && Object.keys(glyphs).length ? glyphs : null;
+    const owners = (c) => (known ? Object.keys(known).filter((g) => g.toLowerCase() !== String(F).toLowerCase() && known[g][c]) : []);
+    const selfG = known ? Object.entries(known).find(([g]) => g.toLowerCase() === String(F).toLowerCase()) : null;
+    for (const c of chars) facts.push({ ch: c, fam: F, inRange: inR.includes(c), inFile: selfG ? !!selfG[1][c] : null, has: owners(c) });
+    const why = [];
+    if (inR.length) why.push(`в файле «${F}» нет ${q(inR)}: грань с этим диапазоном загружена, знака в ней нет`);
+    if (outR.length) why.push(`в unicode-range граней «${F}» нет ${q(outR)}`);
+    const has = new Map(); const none = [];
+    for (const c of chars) { const o = owners(c); if (o.length) { const k = o[0]; if (!has.has(k)) has.set(k, []); has.get(k).push(c); } else none.push(c); }
+    const fix = [];
+    for (const [G, cs] of has) fix.push(`${cs.join('')} есть в «${G}» — поставить «${G}» в стек сразу за «${F}» (font-family: "${F}", "${G}", …) или набрать этот текст им`);
+    if (none.length) {
+      const rub = none.includes('₽');
+      if (known) fix.push(`${none.join('')} нет ни в одном шрифте страницы — добавить в стек шрифт с этим знаком${rub ? ' или писать «руб.»' : ''}${rub && none.some((c) => outR.includes(c)) ? '; у Google Fonts ₽ в подмножестве latin-ext (U+20AD–20C0) — поможет, только если знак есть в самом шрифте' : ''}`);
+      else if (rub && outR.includes('₽')) fix.push(`у Google Fonts ₽ в подмножестве latin-ext (U+20AD–20C0) — поможет, только если знак есть в самом шрифте${gecko ? '; какие шрифты страницы его содержат, видит прогон в Chrome' : ''}`);
+      else if (gecko) fix.push('в каком шрифте страницы знак есть, видит прогон в Chrome');
+    }
+    parts.push([why.join('; '), fix.join('; ')].filter(Boolean).join(' — '));
+  }
+  return { text: parts.join(' | '), facts };
+}
 
 /**
  * Вердикты одного прохода: d — замер (blocks, env, fonts, hero, synth, platform…), ctx — { vp, base, decisions, gecko }.
@@ -668,7 +907,8 @@ function judge(d, ctx) {
   const lines = []; const rules = {};
   const B = d.blocks; const byId = new Map(B.map((b) => [b.id, b]));
   const top = B.filter((b) => !b.partOf);
-  const lineRules = top.filter((b) => !b.changing && !b.nowrap && b.lines.length >= 2);
+  /* вертикальный текст (writing-mode: vertical-rl — подпись вдоль края): строки замера горизонтальные, строчные правила к нему не применимы */
+  const lineRules = top.filter((b) => !b.changing && !b.nowrap && !b.vertical && b.lines.length >= 2);
   const heroIds = new Set([d.hero.h1 && d.hero.h1.id, d.hero.lede && d.hero.lede.id, ...((d.hero.cta && d.hero.cta.ids) || [])].filter(Boolean));
   const isHero = (b) => heroIds.has(b.id);
   const base = ctx.base || null;
@@ -701,9 +941,14 @@ function judge(d, ctx) {
   const ex = (g, n = 5, f = (x) => x.note) => g.slice(0, n).map(f).join('; ') + (g.length > n ? `; … ещё ${g.length - n}` : '');
 
   /* ---- шрифты: не загрузился, весь текст системным, часть знаков системным ---- */
-  const errFaces = d.fonts.faces.filter((f) => f.status === 'error');
+  const errFaces = d.fonts.faces.filter((f) => f.status === 'error' && !f.localOnly);
+  const errLocal = d.fonts.faces.filter((f) => f.status === 'error' && f.localOnly);
   const failedFont = (d.failedFonts || []);
-  emit('font-error', errFaces.length ? [{ status: 'FAIL', note: [...new Set(errFaces.map((f) => `${f.family} ${f.weight} ${f.style}`))].join(', ') }] : [], (st, g) => ['шрифт не загрузился', `${g[0].note}${failedFont.length ? ` — ${failedFont.slice(0, 3).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 60)}`).join('; ')}` : ''}`]);
+  const feItems = [];
+  if (errFaces.length) feItems.push({ status: 'FAIL', note: [...new Set(errFaces.map((f) => `${f.family} ${f.weight} ${f.style}`))].join(', ') });
+  /* local() без файла: в этой системе нет такого шрифта — запасная грань с подогнанными метриками просто не участвует */
+  if (errLocal.length) feItems.push({ status: 'INFO', note: `только local(), в этой системе такого шрифта нет: ${[...new Set(errLocal.map((f) => f.family))].join(', ')} — запасная грань не участвует, текст рисует следующий шрифт стека` });
+  emit('font-error', feItems, (st, g) => (st === 'FAIL' ? ['шрифт не загрузился', `${g[0].note}${failedFont.length ? ` — ${failedFont.slice(0, 3).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 60)}`).join('; ')}` : ''}`] : ['запасная грань local()', g[0].note]));
   const allSys = [];
   for (const b of top) {
     if (!b.webFont) continue;
@@ -743,10 +988,10 @@ function judge(d, ctx) {
     const fams = [...new Set(list.map((x) => x.b.fam))];
     const byText = new Map(); for (const x of list) { const k2 = `${x.b.sig} «${short(x.b.text, 24)}»`; byText.set(k2, (byText.get(k2) || 0) + 1); }
     const where = [...byText].slice(0, 3).map(([k2, n]) => `${k2}${n > 1 ? ` ×${n}` : ''}`).join(', ') + (byText.size > 3 ? ` и ещё ${byText.size - 3}` : '');
-    const rub = chars.includes('₽');
+    const why = fallbackWhy(visible, fams, list, d.glyphs, ctx.gecko);
     fbItems.push({
-      status: st, sys: name, chars, blocks: list.map((x) => x.b.id), block: list[0].b.id, sig: list[0].b.sig, text: list[0].b.text,
-      note: `«${name}»: ${chars.length ? chars.slice(0, 10).map((c) => `${SPACE_CH.test(c) ? 'пробел' : c} (${U(c)})`).join(', ') : 'какие знаки — проба не нашла'} — ${where}; ${fams.join(', ')}${rub ? ' — у Google Fonts ₽ в подмножестве latin-ext (U+20AD–20C0), не в cyrillic и latin' : chars.length ? ' — знаков нет в шрифте или в его unicode-range' : ''}${!visible.length && chars.length ? ' (пробельный знак: на вид не заметно, ширина чужая)' : ''}`,
+      status: st, sys: name, chars, blocks: list.map((x) => x.b.id), block: list[0].b.id, sig: list[0].b.sig, text: list[0].b.text, why: why.facts,
+      note: `«${name}»: ${chars.length ? chars.slice(0, 10).map((c) => `${SPACE_CH.test(c) ? 'пробел' : c} (${U(c)})`).join(', ') : 'какие знаки — проба не нашла'} — ${where}; ${fams.join(', ')}${why.text ? ` — ${why.text}` : chars.length ? ' — знаков нет в шрифте или в его unicode-range' : ''}${!visible.length && chars.length ? ' (пробельный знак: на вид не заметно, ширина чужая)' : ''}`,
       marks: list.flatMap((x) => (x.b.charRects || []).slice(0, 4)),
     });
   }
@@ -777,39 +1022,60 @@ function judge(d, ctx) {
   emit('measure', meas.filter((x) => x.status !== 'OK'), (st, g) => [st === 'FAIL' ? `строки длиннее 95 знаков: ${pl(g.length, 'абзац', 'абзаца', 'абзацев')}` : st === 'WARN' ? `длина строки вне нормы ${norm}: ${pl(g.length, 'абзац', 'абзаца', 'абзацев')}` : `узкая или широкая колонка (норма ${norm}): ${pl(g.length, 'абзац', 'абзаца', 'абзацев')}`, `${ex(g, 4)}${st !== 'INFO' ? ' — сузить или расширить колонку (max-width в em), не кегль' : ' — для карточек и FAQ допустимо'}`]);
   if (meas.length && !meas.some((x) => x.status !== 'OK')) L('OK', `длина строки в норме ${norm}: ${pl(meas.length, 'абзац', 'абзаца', 'абзацев')}`, `медианы ${[...new Set(meas.map((x) => x.med))].sort((a, b) => a - b).slice(0, 8).join(', ')}`);
 
-  /* ---- висячие предлоги, частицы и тире, число и единица, дефис ---- */
+  /* ---- висячие предлоги, частицы и тире, число и единица, дефис ----
+     Каркас (шапка, подвал, анонс, меню, закреплённое — b.frame) не в этих правилах: он общий для всех страниц и
+     правится в общем шаблоне; его пункты — одной строкой INFO «каркас» ниже */
+  const frameItems = [];
+  const toFrame = (kind, items) => { const f = items.filter((x) => x.b && x.b.frame); for (const x of f) frameItems.push({ ...x, kind, status: 'INFO', frame: x.b.frame }); return items.filter((x) => !(x.b && x.b.frame)); };
+  /* текст из данных: в исходном HTML его нет — вставлен скриптом после загрузки (API, база, JSON) */
+  const DATA_TAG = ' [из данных]';
+  const withData = (b, note) => `${note}${b.fromData ? DATA_TAG : ''}`;
+  const where = (g, fix) => {
+    const dn = g.filter((x) => x.data).length, sn = g.length - dn;
+    const dataFix = 'текст пришёл из данных (вставлен скриптом после загрузки) — правится в данных или типографом при выводе';
+    if (!dn) return `${fix} в исходном тексте`;
+    if (!sn) return `${fix}: ${dataFix}`;
+    return `${fix}: в исходном тексте — ${sn}; ${dataFix} — ${dn}`;
+  };
   const hangAll = lineRules.filter((b) => !b.nav && b.hang.length);
-  const hangItems = hangAll.map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), note: `${S(b)} ${b.hang.map((h) => `«${h.word}» (стр. ${h.line})`).join(', ')}`, marks: b.hang.map((h) => h.at), places: b.hang.length }));
+  const hangItems = toFrame('hang', hangAll.map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), data: !!b.fromData, note: withData(b, `${S(b)} ${b.hang.map((h) => `«${h.word}» (стр. ${h.line})`).join(', ')}`), marks: b.hang.map((h) => h.at), places: b.hang.length, b })));
   emit('hang', hangItems, (st, g) => {
     const fst = g.filter((x) => x.first), rest = g.filter((x) => !x.first);
     const parts = [];
     if (fst.length) parts.push(`ПЕРВЫЙ ЭКРАН: ${ex(fst, 3)}`);
     if (rest.length) parts.push(ex(rest, 5));
-    return [`короткое слово в конце строки: ${pl(g.length, 'блок', 'блока', 'блоков')}, ${pl(g.reduce((a, x) => a + x.places, 0), 'место', 'места', 'мест')}${fst.length ? ` (первый экран — ${fst.length})` : ''}`, `${parts.join(' | ')} — неразрывный пробел после короткого слова в исходном тексте`];
+    return [`короткое слово в конце строки: ${pl(g.length, 'блок', 'блока', 'блоков')}, ${pl(g.reduce((a, x) => a + x.places, 0), 'место', 'места', 'мест')}${fst.length ? ` (первый экран — ${fst.length})` : ''}`, `${parts.join(' | ')} — ${where(g, 'неразрывный пробел после короткого слова')}`];
   });
-  if (!hangItems.length && lineRules.length) L('OK', 'коротких слов в конце строк нет', `блоков от 2 строк: ${lineRules.length}`);
-  emit('lead', lineRules.filter((b) => !b.nav && b.lead.length).map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), note: `${S(b)} ${b.lead.map((x) => `«${x.word}» (стр. ${x.line})`).join(', ')}`, marks: b.lead.map((x) => x.at) })), (st, g) => [`строка начинается с частицы или тире: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g)} — неразрывный пробел перед же, ли, бы и перед тире`]);
-  emit('num-unit', lineRules.filter((b) => !b.nav && b.numSplit.length).map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), note: `${S(b)} ${b.numSplit.map((x) => `«${x.pair}»`).join(', ')}`, marks: b.numSplit.map((x) => x.at) })), (st, g) => [`число оторвано от единицы или разряда: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g)} — 1&#8239;000&nbsp;₽, 5&nbsp;см, №&nbsp;5`]);
+  const mainLR = lineRules.filter((b) => !b.frame);
+  if (!hangItems.length && mainLR.length) L('OK', 'коротких слов в конце строк нет', `блоков от 2 строк: ${mainLR.length}${mainLR.length < lineRules.length ? ` (и ${lineRules.length - mainLR.length} в каркасе)` : ''}`);
+  emit('lead', toFrame('lead', lineRules.filter((b) => !b.nav && b.lead.length).map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), data: !!b.fromData, note: withData(b, `${S(b)} ${b.lead.map((x) => `«${x.word}» (стр. ${x.line})`).join(', ')}`), marks: b.lead.map((x) => x.at), b }))), (st, g) => [`строка начинается с частицы или тире: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g)} — ${where(g, 'неразрывный пробел перед же, ли, бы и перед тире')}`]);
+  emit('num-unit', toFrame('num-unit', lineRules.filter((b) => !b.nav && b.numSplit.length).map((b) => ({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), data: !!b.fromData, note: withData(b, `${S(b)} ${b.numSplit.map((x) => `«${x.pair}»`).join(', ')}`), marks: b.numSplit.map((x) => x.at), b }))), (st, g) => [`число оторвано от единицы или разряда: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g)} — ${where(g, '1&#8239;000&nbsp;₽, 5&nbsp;см, №&nbsp;5')}`]);
   const hyb = [];
-  for (const b of top.filter((x) => !x.changing && !x.nav)) for (const w of b.broken) { if (w.type !== 'hyphen') continue; const bef = w.before.replace(/[-‐]$/, '').replace(/^[«„"(]+/, ''); const aft = w.after.replace(/[.,;:!?»)]+$/, ''); if (bef.length <= 4 || aft.length <= 3) hyb.push({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), note: `${S(b)} «${w.before}|${w.after}» (стр. ${w.line})`, marks: [w.at] }); }
-  emit('hyphen-break', hyb, (st, g) => [`разрыв на коротком дефисе: ${pl(g.length, 'место', 'места', 'мест')}`, `${ex(g)} — неразрывный дефис U+2011 или <span style="white-space:nowrap">`]);
+  for (const b of top.filter((x) => !x.changing && !x.nav && !x.vertical)) for (const w of b.broken) { if (w.type !== 'hyphen') continue; const bef = w.before.replace(/[-‐]$/, '').replace(/^[«„"(]+/, ''); const aft = w.after.replace(/[.,;:!?»)]+$/, ''); if (bef.length <= 4 || aft.length <= 3) hyb.push({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), data: !!b.fromData, note: withData(b, `${S(b)} «${w.before}|${w.after}» (стр. ${w.line})`), marks: [w.at], b }); }
+  emit('hyphen-break', toFrame('hyphen-break', hyb), (st, g) => [`разрыв на коротком дефисе: ${pl(g.length, 'место', 'места', 'мест')}`, `${ex(g)} — ${where(g, 'неразрывный дефис U+2011 или <span style="white-space:nowrap">')}`]);
 
-  /* ---- одно слово в последней строке ---- */
+  /* ---- одно слово в последней строке ----
+     Не в счёт: последняя строка после <br> или границы вложенного блока (разрыв задан разметкой: «Забронировать<br>стол»).
+     Неустранимо (INFO): два последних слова вместе шире колонки — неразрывный пробел между ними даст вылет
+     («Ближайшие события» на 320 px) */
   const orph = [];
   for (const b of lineRules) {
-    if (b.nav || !b.lastLine || b.lastLine.n !== 1) continue;
+    if (b.nav || !b.lastLine || b.lastLine.n !== 1 || b.lastLine.forced) continue;
     const headLike = b.role === 'semantic' || b.role === 'display';
     if (!headLike && !(b.lastLine.chars <= 12 || b.lastLine.share < 0.2)) continue;
     const pretty = /pretty/.test(`${b.textWrapStyle} ${b.textWrap}`);
-    orph.push({ status: 'WARN', sig: b.sig, block: b.id, text: b.text, first: isHero(b), head: headLike, note: `${S(b)} → «${b.lastLine.word}» (${b.lastLine.chars} зн.)${pretty ? ' [text-wrap: pretty есть, но не сработал]' : ''}`, marks: [b.lastLine.at] });
+    const unfix = b.lastLine.fits === false;
+    orph.push({ status: unfix ? 'INFO' : 'WARN', unfix, sig: b.sig, block: b.id, text: b.text, first: isHero(b), head: headLike, data: !!b.fromData, note: withData(b, `${S(b)} → «${b.lastLine.word}» (${b.lastLine.chars} зн.)${unfix ? ` [два последних слова ${b.lastLine.tail}px при колонке ${b.lastLine.tailBox}px]` : pretty ? ' [text-wrap: pretty есть, но не сработал]' : ''}`), marks: [b.lastLine.at], b });
   }
-  emit('orphan', orph, (st, g) => {
+  emit('orphan', toFrame('orphan', orph), (st, g) => {
+    if (st === 'INFO') return [`одно слово в последней строке неустранимо: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g, 4)} — два последних слова вместе шире колонки: неразрывный пробел даст вылет за край; помогут короче текст, меньше кегль или шире колонка`];
     const fst = g.filter((x) => x.first), hd = g.filter((x) => !x.first && x.head), pr = g.filter((x) => !x.first && !x.head);
     const parts = [];
     if (fst.length) parts.push(`ПЕРВЫЙ ЭКРАН: ${ex(fst, 3)}`);
     if (hd.length) parts.push(`заголовки: ${ex(hd, 3)}`);
     if (pr.length) parts.push(`абзацы: ${ex(pr, 4)}`);
-    const rec = d.env.supports.pretty ? 'p, li, dd { text-wrap: pretty }; заголовки — text-wrap: balance; Firefox pretty не понимает — неразрывный пробел между двумя последними словами' : 'этот браузер не понимает text-wrap: pretty — неразрывный пробел между двумя последними словами в исходном тексте';
+    const nb = where(g, 'неразрывный пробел между двумя последними словами (вместе они в колонку влезают)');
+    const rec = d.env.supports.pretty ? `p, li, dd { text-wrap: pretty }; заголовки — text-wrap: balance; Firefox pretty не понимает — ${nb}` : `этот браузер не понимает text-wrap: pretty — ${nb}`;
     return [`одно слово в последней строке: ${pl(g.length, 'блок', 'блока', 'блоков')}${fst.length ? ` (первый экран — ${fst.length})` : ''}`, `${parts.join(' | ')} — ${rec}`];
   });
 
@@ -818,15 +1084,16 @@ function judge(d, ctx) {
   const heroH1 = d.hero.h1 ? byId.get(d.hero.h1.id) : null;
   for (const b of top) {
     if (b.changing || b.role !== 'semantic' && b !== heroH1) continue;
-    const isH1 = b.headTag === 'h1' || b === heroH1; const n = b.lines.length;
+    /* строки заголовка из надписи и подписи разного кегля — строки крупного текста (подпись не в счёт) */
+    const isH1 = b.headTag === 'h1' || b === heroH1; const n = b.fsLines || b.lines.length;
     let st = 'OK', lim = '';
     if (isH1) { const [ok, warn] = phone || tablet ? [4, 6] : [3, 5]; st = n <= ok ? 'OK' : n <= warn ? 'WARN' : 'FAIL'; lim = `до ${ok}`; }
     else if (b.headTag === 'h2') { const ok = phone || tablet ? 4 : 3; st = n > ok ? 'WARN' : 'OK'; lim = `до ${ok}`; }
     else continue;
-    if (st !== 'OK') hl.push({ status: st, sig: b.sig, block: b.id, text: b.text, first: b === heroH1, note: `${isH1 ? 'h1' : 'h2'} ${S(b)} — ${pl(n, 'строка', 'строки', 'строк')} (норма ${lim})`, marks: [] });
+    if (st !== 'OK') hl.push({ status: st, sig: b.sig, block: b.id, text: b.text, first: b === heroH1, note: `${isH1 ? 'h1' : 'h2'} ${S(b)} — ${pl(n, 'строка', 'строки', 'строк')}${b.fsLines ? ` текста ${Math.round(b.fs)}px (всего с подписью ${b.lines.length})` : ''} (норма ${lim})`, marks: [] });
   }
   emit('h-lines', hl, (st, g) => [`слишком много строк в заголовке: ${pl(g.length, 'заголовок', 'заголовка', 'заголовков')}`, `${ex(g, 4)} — сокращать текст, а не уменьшать кегль`]);
-  const bal = lineRules.filter((b) => (b.role === 'semantic' || b.role === 'display') && !/balance/.test(`${b.textWrapStyle} ${b.textWrap}`)).filter((b) => { const w = b.lines.map((l) => l.chars); return w[w.length - 1] < 0.4 * Math.max(...w); });
+  const bal = lineRules.filter((b) => (b.role === 'semantic' || b.role === 'display') && !b.mixed && !(b.lastLine && b.lastLine.forced) && !/balance/.test(`${b.textWrapStyle} ${b.textWrap}`)).filter((b) => { const w = b.lines.map((l) => l.chars); return w[w.length - 1] < 0.4 * Math.max(...w); });
   emit('balance', bal.map((b) => ({ status: 'INFO', sig: b.sig, block: b.id, text: b.text, note: `${S(b)} строки ${b.lines.map((l) => l.chars).join('/')}` })), (st, g) => [`неровные строки заголовка: ${pl(g.length, 'заголовок', 'заголовка', 'заголовков')}`, `${ex(g, 4)} — h1, h2, h3 { text-wrap: balance }${d.env.supports.balance ? '' : ' (этот браузер balance не понимает)'}`]);
   const prox = [];
   for (const b of top) {
@@ -856,6 +1123,8 @@ function judge(d, ctx) {
   /* ---- стиль: интерлиньяж, разрядка, шкала, гарнитуры, начертания ---- */
   const lead = [];
   for (const b of lineRules) {
+    /* надпись и подпись разного кегля: интерлиньяж крупного текста меряется, только если он сам в 2+ строки */
+    if (b.mixed && (b.fsLines || 0) < 2) continue;
     /* h1 и дисплей от 80 px в 2+ строки — 0.8–1.05 (сайты: 0.8–0.92); выше верхней границы — не ошибка
        (длинная строка, тонкий текст на тёмном: quaker 21/1.6, g-part 15/1.73), ниже нижней — ошибка */
     const headish = b.role === 'semantic' || b.role === 'display';
@@ -882,10 +1151,14 @@ function judge(d, ctx) {
   }
   const capsKind = (x) => (x.upper && x.fs <= 14 && x.ls < 0.02 ? 'caps-small' : x.upper && x.fs >= 32 && x.ls > 0.1 ? 'caps-big' : !x.upper && x.fs >= 40 && x.ls > 0.01 ? 'lower-plus' : x.role === 'prose' && Math.abs(x.ls) > 0.03 ? 'prose' : null);
   emit('caps-track', caps, (st, g) => ['разрядка', `${ex(g, 4)} — правило только для капса, который уже есть в языке сайта: подписи капсом не добавлять (cliche)`], { baseMatch: (it) => baseTop.some((x) => capsKind(x) === it.kind && Math.abs(x.ls - it.ls) <= 0.01) });
-  /* шкала */
-  const sizes = new Map(); for (const b of top) { if (b.changing) continue; const k = Math.round(b.fs); sizes.set(k, (sizes.get(k) || 0) + b.textLen); }
+  /* шкала — по основному содержимому: каркас (шапка, подвал, анонс, меню, закреплённое) считается отдельно;
+     заголовок из надписи и подписи разного кегля — кеглями своих частей */
+  const sizes = sizeMap(top.filter((b) => !b.frame), byId);
   const sig20 = [...sizes].filter(([, v]) => v >= 20).map(([k]) => k).sort((a, b) => b - a);
-  const lvl = {}; for (const b of top) if (b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lvl[b.headTag] = lvl[b.headTag] || []).push(b);
+  const fSizes = sizeMap(top.filter((b) => b.frame), byId);
+  const frameOnly = [...fSizes].filter(([k, v]) => v >= 20 && !sig20.includes(k)).map(([k]) => k).sort((a, b) => b - a);
+  if (frameOnly.length) frameItems.push({ status: 'INFO', kind: 'scale', sizes: frameOnly, frames: [...new Set(top.filter((b) => b.frame && frameOnly.includes(Math.round(b.fs))).map((b) => b.frame))], note: `кегли только каркаса: ${frameOnly.join(', ')} — в шкалу страницы не входят` });
+  const lvl = {}; for (const b of top) if (!b.frame && b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lvl[b.headTag] = lvl[b.headTag] || []).push(b);
   const levels = ['h1', 'h2', 'h3', 'h4'].filter((h) => lvl[h]).map((h) => { const fsz = median(lvl[h].map((b) => b.fs)); const wts = lvl[h].map((b) => String(b.weight)); const w = wts.sort((a, b) => wts.filter((x) => x === b).length - wts.filter((x) => x === a).length)[0]; return { h, fs: fsz, w }; });
   const scaleItems = [];
   if (sig20.length > 8) scaleItems.push({ status: 'WARN', kind: 'count', n: sig20.length, note: `кеглей с текстом от 20 знаков: ${sig20.length} (${sig20.join(', ')}) — не больше 8, лучше 3–4 заметно разных` });
@@ -895,6 +1168,17 @@ function judge(d, ctx) {
   const bs = base && base.summary;
   emit('scale', scaleItems, (st, g) => ['шкала', g.map((x) => x.note).join('; ')], { baseMatch: (it) => bs && ((it.kind === 'count' && bs.sizes && bs.sizes.length >= it.n) || (it.kind === 'close' && (bs.closeLevels || []).some(([a, b]) => Math.abs(a - it.pair[0]) <= 1 && Math.abs(b - it.pair[1]) <= 1)) || (it.kind === 'ratio' && bs.h1Ratio && Math.abs(bs.h1Ratio - it.ratio) <= 0.25)) });
   if (!scaleItems.length) L('OK', `шкала: кеглей с текстом от 20 знаков ${sig20.length}`, `${sig20.join(', ')}${levels.length ? `; уровни ${levels.map((l) => `${l.h} ${l.fs}`).join(' > ')}` : ''}; основной ${d.bodyFs}px`);
+  /* каркас — одной строкой INFO: висячие, одинокие, тире, числа, дефисы и кегли шапки, подвала, анонса, меню */
+  emit('frame', frameItems, (st, g) => {
+    const labels = [...new Set(g.flatMap((x) => x.frames || [x.frame]).filter(Boolean))];
+    const by = (ks) => g.filter((x) => ks.includes(x.kind));
+    const parts = [];
+    const hk = by(['hang']); if (hk.length) parts.push(`короткое слово в конце строки: ${ex(hk, 3)}`);
+    const ok = by(['orphan']); if (ok.length) parts.push(`одно слово в последней строке: ${ex(ok, 3)}`);
+    const ot = by(['lead', 'num-unit', 'hyphen-break']); if (ot.length) parts.push(`тире, числа, дефисы: ${ex(ot, 3)}`);
+    const sc = by(['scale']); if (sc.length) parts.push(sc[0].note);
+    return [`каркас (${labels.join(', ')}) — вне основного содержимого, в правила страницы не входит`, `${parts.join(' | ')} — правится в общем шаблоне сайта`];
+  });
   /* гарнитуры и начертания: свои веб-шрифты, нарисованные на экране (Chrome — по CDP) */
   const famChars = new Map(); let allChars = 0;
   for (const b of top) {
@@ -912,7 +1196,8 @@ function judge(d, ctx) {
 
   /* ---- загрузка шрифтов ---- */
   const loaded = d.fonts.faces.filter((f) => f.status === 'loaded');
-  const disp = new Map(); for (const f of loaded) { if (f.display && /^(auto|block)$/.test(f.display)) disp.set(f.family, f.display); }
+  /* грань только с local() — системный шрифт с подогнанными метриками: файла нет, текст не прячется, font-display не важен */
+  const disp = new Map(); for (const f of loaded) { if (!f.localOnly && f.display && /^(auto|block)$/.test(f.display)) disp.set(f.family, f.display); }
   const fdItems = [...disp].map(([fam, v]) => ({ status: MONO_ICON.test(fam) ? 'INFO' : 'WARN', note: `${fam}: font-display ${v}` }));
   if (d.env.fontDisplayKnown === false && loaded.length) fdItems.push({ status: 'INFO', note: 'font-display этот браузер не показывает (FontFace.display нет)' });
   emit('font-display', fdItems, (st, g) => [st === 'WARN' ? 'font-display: auto или block — до 3 с невидимого текста' : 'font-display', `${ex(g, 5)}${st === 'WARN' ? ' — swap для текста, optional — если важнее без сдвига' : ''}`]);
@@ -924,14 +1209,18 @@ function judge(d, ctx) {
   emit('preload', plItems, (st, g) => ['preload шрифтов', ex(g, 3)]);
   const notWoff2 = [...new Set([...(d.fonts.files || []), ...(d.fontRequests || [])])].filter((u) => /\.(woff|ttf|otf|eot)(\?|#|$)/i.test(u) && !/\.woff2(\?|#|$)/i.test(u));
   emit('format', notWoff2.length ? [{ status: 'WARN', note: notWoff2.slice(0, 4).map((u) => u.split('/').pop().slice(0, 60)).join(', ') }] : [], (st, g) => ['шрифт не в woff2', `${g[0].note} — только woff2 и свои файлы`]);
-  if (!errFaces.length && !fdItems.some((x) => x.status === 'WARN') && !plItems.some((x) => x.status === 'WARN') && !notWoff2.length && loaded.length) L('OK', `шрифты загружены: ${pl(loaded.length, 'грань', 'грани', 'граней')}`, `font-display: ${[...new Set(loaded.map((f) => f.display || '?'))].join(', ')}; preload ${d.fonts.preload.length}`);
+  if (!errFaces.length && !fdItems.some((x) => x.status === 'WARN') && !plItems.some((x) => x.status === 'WARN') && !notWoff2.length && loaded.length) L('OK', `шрифты загружены: ${pl(loaded.length, 'грань', 'грани', 'граней')}`, `font-display: ${[...new Set(loaded.filter((f) => !f.localOnly).map((f) => f.display || '?'))].join(', ') || '—'}; preload ${d.fonts.preload.length}${loaded.some((f) => f.localOnly) ? `; только local() (запасные, font-display не важен): ${[...new Set(loaded.filter((f) => f.localOnly).map((f) => f.family))].join(', ')}` : ''}`);
 
   /* ---- язык, неразрывные пробелы, цифры ---- */
   const lang = d.env.lang;
   if (d.env.cyrShare > 0.5 && lang && !LANG_OK.test(lang)) emit('lang-mismatch', [{ status: 'WARN', note: `кириллицы ${Math.round(d.env.cyrShare * 100)}%, а lang="${lang}"` }], (st, g) => ['язык страницы не совпадает с lang', `${g[0].note} — переносы и кавычки будут по чужим правилам: <html lang="ru">`]);
   else if (d.env.cyrShare > 0.5 && !lang) emit('lang-mismatch', [{ status: 'INFO', note: 'lang не задан' }], () => ['lang не задан', 'это провал a11y.mjs; переносы (hyphens: auto) без lang не работают']);
   const shortTotal = top.filter((b) => !b.nav).reduce((a, b) => a + b.shortTotal, 0), shortNb = top.filter((b) => !b.nav).reduce((a, b) => a + b.shortNb, 0);
-  if (shortTotal) emit('nbsp', [{ status: 'INFO', total: shortTotal, nb: shortNb, note: `привязано неразрывным пробелом ${shortNb} из ${shortTotal}` }], (st, g) => [`привязано неразрывным пробелом ${shortNb} из ${pl(shortTotal, 'короткого слова', 'коротких слов', 'коротких слов')}`, shortNb < shortTotal ? 'неразрывные пробелы ставятся в исходном тексте и данных, не скриптом на странице' : '']);
+  /* непривязанные короткие слова в тексте из данных (вставлен скриптом после загрузки) — правятся не в разметке */
+  const looseData = top.filter((b) => !b.nav && b.fromData).reduce((a, b) => a + (b.shortTotal - b.shortNb), 0);
+  const srcOk = d.env.source && d.env.source.ok;
+  if (shortTotal) emit('nbsp', [{ status: 'INFO', total: shortTotal, nb: shortNb, loose: shortTotal - shortNb, looseData, note: `привязано неразрывным пробелом ${shortNb} из ${shortTotal}` }], (st, g) => [`привязано неразрывным пробелом ${shortNb} из ${pl(shortTotal, 'короткого слова', 'коротких слов', 'коротких слов')}`, shortNb < shortTotal ? (looseData ? `непривязанных ${shortTotal - shortNb}, из них в тексте из данных ${looseData} (вставлен скриптом после загрузки) — правится в данных или типографом при выводе; остальные — в исходном тексте` : `неразрывные пробелы ставятся в исходном тексте${srcOk ? '' : ' и данных'}, не скриптом на странице`) : '']);
+  if (d.env.source && !d.env.source.ok) L('INFO', 'исходный HTML не получен', `${d.env.source.why || 'нет ответа'} — откуда текст (разметка или данные), не определено; советы — «в исходном тексте»`);
   const tn = (d.tnum || []).filter((t) => !t.tabular && t.differ);
   emit('tnum', tn.map((t) => ({ status: 'INFO', block: (t.ids || [])[0], sig: t.container, note: `${t.container}: ${t.count} чисел в колонку (${t.sample.map((x) => `«${short(x, 12)}»`).join(', ')}), «1111» и «8888» разной ширины (${t.diff}px)` })), (st, g) => ['цифры в колонку без tabular-nums', `${ex(g, 3)} — font-variant-numeric: tabular-nums`]);
 
@@ -939,7 +1228,7 @@ function judge(d, ctx) {
   const hero = d.hero; const heroItems = [];
   if (!hero.h1) heroItems.push({ status: 'INFO', note: 'на первом экране нет ни h1, ни крупного заголовка' });
   else {
-    if (!hero.cta) heroItems.push({ status: 'INFO', note: `главной кнопки с заливкой у h1 нет (до следующего заголовка, без него — 3 экрана)${hero.farCta ? `; ближайшая — «${hero.farCta.text}» на ${hero.farCta.y}px` : ''}` });
+    if (!hero.cta) heroItems.push({ status: 'INFO', note: `кнопка не найдена: в блоке первого экрана${hero.block ? ` (${hero.block})` : ''} до следующего заголовка нет кнопки с заливкой — шапка, полоса-анонс, меню и закреплённые вкладки не в счёт${hero.farCta ? `; ближайшая ниже — «${hero.farCta.text}» на ${hero.farCta.y}px` : ''}` });
     else if (!hero.cta.visible) {
       const mobS = vw <= 340;
       heroItems.push({ status: mobS && hero.stickyBar ? 'INFO' : 'WARN', sig: hero.cta.sig, note: `кнопка «${hero.cta.text}» ниже окна: верх ${hero.cta.rect.y}px при окне ${d.env.vh}px${mobS && hero.stickyBar ? ' — есть закреплённая панель действия' : ''}` });
@@ -951,8 +1240,8 @@ function judge(d, ctx) {
     if (hero.lede && hero.lede.lines > 3) heroItems.push({ status: 'INFO', note: `лид в ${pl(hero.lede.lines, "строку", "строки", "строк")} (1–3)` });
   }
   emit('hero', heroItems, (st, g) => ['первый экран', g.map((x) => x.note).join('; ')]);
-  const heroBad = heroItems.some((x) => x.status === 'WARN') || hl.some((x) => x.first) || hangItems.some((x) => x.first) || orph.some((x) => x.first);
-  if (hero.h1) L(heroBad ? 'INFO' : 'OK', `первый экран: h1 ${pl(hero.h1.lines, 'строка', 'строки', 'строк')} (${hero.h1.fs}px, ${hero.h1.how})`, [`${hero.h1.sig} «${short(hero.h1.text, 40)}»`, hero.lede ? `лид ${hero.lede.sig} ${pl(hero.lede.lines, 'строка', 'строки', 'строк')}` : 'лида нет', hero.cta ? `кнопка «${hero.cta.text}» ${hero.cta.visible ? `видна (верх ${hero.cta.rect.y}px из ${d.env.vh})` : 'ниже окна'}` : 'кнопки нет', hero.ratio ? `h1/основной ${hero.ratio}` : ''].filter(Boolean).join('; '));
+  const heroBad = heroItems.some((x) => x.status === 'WARN') || hl.some((x) => x.first) || hangItems.some((x) => x.first) || ((rules.orphan && rules.orphan.items) || []).some((x) => x.first && x.status === 'WARN');
+  if (hero.h1) L(heroBad ? 'INFO' : 'OK', `первый экран: h1 ${pl(hero.h1.lines, 'строка', 'строки', 'строк')} (${hero.h1.fs}px${hero.h1.fsMin ? ` — крупнейший текст внутри, подпись ${hero.h1.fsMin}px` : ''}, ${hero.h1.how})`, [`${hero.h1.sig} «${short(hero.h1.text, 40)}»`, hero.lede ? `лид ${hero.lede.sig} ${pl(hero.lede.lines, 'строка', 'строки', 'строк')}` : 'лида нет', hero.cta ? `кнопка «${hero.cta.text}» ${hero.cta.visible ? `видна (верх ${hero.cta.rect.y}px из ${d.env.vh})` : 'ниже окна'}` : 'кнопка не найдена', hero.ratio ? `h1/основной ${hero.ratio}` : ''].filter(Boolean).join('; '));
 
   /* ---- слово шире блока, почти одна ось ---- */
   emit('word-overflow', top.filter((b) => b.overflow && b.overflow.length).map((b) => ({ status: 'INFO', sig: b.sig, block: b.id, text: b.text, note: `${S(b)} «${b.overflow[0].word}» на ${b.overflow[0].over}px`, marks: b.overflow.map((x) => x.at) })), (st, g) => [`слово шире блока: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g, 4)} — вылезает ли за экран, проверяет runtime.mjs --scroll`]);
@@ -964,6 +1253,8 @@ function judge(d, ctx) {
   /* ---- что не проверялось ---- */
   const chg = top.filter((b) => b.changing);
   if (chg.length) L('INFO', `текст меняется сам: ${pl(chg.length, 'блок', 'блока', 'блоков')} — строчные правила для них не выносились`, chg.slice(0, 4).map(S).join('; '));
+  const vert = top.filter((b) => b.vertical && b.words > 1);
+  if (vert.length) L('INFO', `вертикальный текст (writing-mode): ${pl(vert.length, 'блок', 'блока', 'блоков')} — строчные правила не выносились`, vert.slice(0, 3).map(S).join('; '));
   const prettyDep = top.filter((b) => /pretty/.test(`${b.textWrapStyle} ${b.textWrap}`));
   if (prettyDep.length && !ctx.gecko) L('INFO', `text-wrap: pretty у ${pl(prettyDep.length, 'блока', 'блоков', 'блоков')}`, 'Firefox 156 его не понимает (браузер пользователя) — проверьте --browser firefox; на первом экране — неразрывный пробел');
   if (ctx.gecko) L('INFO', 'не проверено в Firefox', `подмена шрифта по CDP (проверены только знаки вне unicode-range)${d.synth && d.synth.length ? '' : ', синтетика'} — основной прогон в Chrome`);
@@ -977,8 +1268,9 @@ function judge(d, ctx) {
 /* сводка для --baseline: что сравнивать с донором */
 function summaryOf(d) {
   const top = d.blocks.filter((b) => !b.partOf);
-  const sizes = new Map(); for (const b of top) { const k = Math.round(b.fs); sizes.set(k, (sizes.get(k) || 0) + b.textLen); }
-  const lv = {}; for (const b of top) if (b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lv[b.headTag] = lv[b.headTag] || []).push(b.fs);
+  /* как в judge: шкала и уровни — по основному содержимому, без каркаса */
+  const sizes = sizeMap(top.filter((b) => !b.frame), new Map(d.blocks.map((b) => [b.id, b])));
+  const lv = {}; for (const b of top) if (!b.frame && b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lv[b.headTag] = lv[b.headTag] || []).push(b.fs);
   const levels = ['h1', 'h2', 'h3', 'h4'].filter((h) => lv[h]).map((h) => median(lv[h]));
   const closeLevels = []; for (let i = 1; i < levels.length; i++) if (levels[i - 1] / levels[i] < 1.1) closeLevels.push([levels[i - 1], levels[i]]);
   const famW = {}; for (const b of top) if (b.webFont && !MONO_ICON.test(b.fam)) { famW[b.fam] = famW[b.fam] || new Set(); famW[b.fam].add(String(b.weight) + (/italic|oblique/.test(b.style) ? 'i' : '')); }
@@ -1038,7 +1330,10 @@ async function runPass(browser, url, vpName, vp, o) {
     /* 1 с наблюдения: что меняется само */
     await evaluateWith(page, observeInPage, 1000);
     const tm = Date.now();
-    const d = await evaluateWith(page, measureInPage, { maxBlocks: 800 }, { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, lines: LINES_FN });
+    /* исходный HTML для «текст из данных»: file:// страница сама себя не запросит — файл читается здесь */
+    let srcHtml = null;
+    if (/^file:/i.test(url)) { try { srcHtml = fs.readFileSync(fileURLToPath(url.split('#')[0].split('?')[0]), 'utf8'); } catch { srcHtml = null; } }
+    const d = await evaluateWith(page, measureInPage, { maxBlocks: 800, srcHtml }, { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN, lines: LINES_FN });
     timing.measureMs = Date.now() - tm;
     d.limits = page.rwLimits || [];
     d.consoleWarnings = (page.log.console || []).filter((c) => c.type === 'warning').map((c) => c.text);
@@ -1061,6 +1356,15 @@ async function runPass(browser, url, vpName, vp, o) {
       const need = combos.filter((c) => c.blocks.some((id) => { const p = (byId.get(id) || {}).platform; return p && Object.values(p).some((v) => !v.custom); }));
       const chars = need.map((c) => ({ key: c.key, stack: c.stack, weight: c.weight, style: c.style, chars: [...c.chars].filter((ch) => !/\s/.test(ch) || SPACE_CH.test(ch)).filter((ch) => ch.codePointAt(0) > 0x20).slice(0, 400) }));
       d.sysChars = await fallbackChars(page, chars).catch(() => ({}));
+      /* знаки системным шрифтом: в каком веб-шрифте страницы они есть по таблице знаков */
+      const fbSet = new Set(Object.values(d.sysChars || {}).flat().map((x) => x.ch).filter((ch) => !/\s/.test(ch) && !SPACE_CH.test(ch)));
+      for (const b of d.blocks) if (b.webFont && b.outChars) for (const ch of b.outChars) if (!/\s/.test(ch) && !SPACE_CH.test(ch) && b.platform && Object.values(b.platform).some((v) => !v.custom)) fbSet.add(ch);
+      if (fbSet.size) {
+        const famW = new Map();
+        for (const f of d.fonts.faces) { if (f.status === 'error' || f.localOnly || MONO_ICON.test(f.family)) continue; const k = f.family.toLowerCase(); if (!famW.has(k) || (f.style === 'normal' && famW.get(k).style !== 'normal')) famW.set(k, { fam: f.family, weight: String(f.weight).split(/\s+/)[0] || '400', style: f.style === 'normal' ? 'normal' : f.style }); }
+        const fams = [...famW.values()].slice(0, 8);
+        d.glyphs = await glyphOwners(page, [...fbSet].slice(0, 24), fams).catch(() => null);
+      }
       timing.fontsMs = Date.now() - tp;
     }
     /* синтетика пикселями */
@@ -1111,7 +1415,7 @@ async function runPass(browser, url, vpName, vp, o) {
       }
       const PRI = ['hang', 'orphan', 'justify', 'fallback', 'fallback-all', 'hyphen-break', 'lead', 'num-unit', 'measure', 'synthetic'];
       const cand = [];
-      for (const l of res.lines) for (const it of l.items) if (it.block) cand.push({ rule: l.rule, status: l.status, it, pri: (l.status === 'FAIL' ? 0 : it.first ? 1 : 2) * 100 + (PRI.indexOf(l.rule) >= 0 ? PRI.indexOf(l.rule) : 50) });
+      for (const l of res.lines) for (const it of l.items) if (it.block && l.rule !== 'frame') cand.push({ rule: l.rule, status: l.status, it, pri: (l.status === 'FAIL' ? 0 : it.first ? 1 : 2) * 100 + (PRI.indexOf(l.rule) >= 0 ? PRI.indexOf(l.rule) : 50) });
       cand.sort((a, b) => a.pri - b.pri);
       const done = new Set(); let n = 0;
       for (const c of cand) {
@@ -1150,7 +1454,7 @@ function protocol(url, vpName, vp, slug, bInfo, pass) {
   return {
     url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, page: slug, browser: bInfo, takenAt: new Date().toISOString(),
     env: { ...d.env, limits: d.limits, consent: pass.consent && pass.consent.found ? { closed: pass.consent.closed, box: pass.consent.box } : null, scroll: pass.scroll, changes: d.changes },
-    fonts: { ...d.fonts, platform: d.platformStats || null, sysChars: d.sysChars || null },
+    fonts: { ...d.fonts, platform: d.platformStats || null, sysChars: d.sysChars || null, glyphs: d.glyphs || null },
     blocks, synth: (d.synth || []).map(({ stack, ...s }) => s), hero: d.hero, tnum: d.tnum, summary: summaryOf(d),
     rules: Object.fromEntries(Object.entries(res.rules).map(([k, r]) => [k, { status: r.status, count: r.count, items: r.items.map(({ b, marks, ...it }) => it) }])),
     lines: res.lines.map(({ items, ...l }) => l), verdict: res.verdict, timing: pass.timing,
@@ -1302,7 +1606,7 @@ async function runSelftest({ browserKind, vps, explicitVp }) {
   try {
     for (const [name, vp] of order) {
       await open(!!vp.isMobile);
-      for (const pg of ['index.html', 'hero-low.html']) {
+      for (const pg of ['index.html', 'hero-low.html', 'frame.html']) {
         const t = Date.now();
         const pass = await runPass(browser, base + pg, name, vp, { crops: 12, cropsDir: path.join(outDir, `${pg.replace('.html', '')}-${name}`) });
         R[`${pg}|${name}`] = pass;
@@ -1382,6 +1686,21 @@ const SELFTEST = {
     ['кнопка не на оси h1 (6 px) — hero INFO', (a) => { const h = a.d.hero; return [h.axis && !h.axis.ok && a.items('hero').some((x) => x.status === 'INFO' && /не на одной оси/.test(x.note)), h.axis ? `dLeft ${h.axis.dLeft}` : 'нет оси']; }, 'layout'],
     ['текст печатается сам — «меняется само», висячих у него нет', (a) => { const b = a.byEl('p-typing'); return [b && b.changing && a.st('hang', 'p-typing') === 'none', b ? `changing ${b.changing}` : 'блок не найден (пустой в момент замера?)']; }],
     ['h1 с неразрывными пробелами — нет висячих и одиноких', (a) => [a.st('hang', 'h1') === 'none' && a.st('orphan', 'h1') === 'none', `hang ${a.st('hang', 'h1')}, orphan ${a.st('orphan', 'h1')}`]],
+  ],
+  /* жалобы «Эпицентра» 29.09: каркас, составной h1, лид, <br>, неустранимое одинокое слово, ₽, local(), данные */
+  'frame.html': [
+    ['#h1c: кегль по крупнейшему видимому тексту (надпись), текст для читалки не в счёт, уровни не перевёрнуты', (a, e) => { const h = a.d.hero.h1; const inv = (a.res.rules.scale ? a.res.rules.scale.items : []).filter((x) => /перевёрнуты/.test(x.note)); return [h && /#h1c/.test(h.sig) && h.fs >= (e.phone ? 45 : 90) && h.lines === 1 && !/квартал/.test(h.text) && !inv.length && a.st('lead', 'h1c') === 'none' && h.fromData === false, h ? `h1 ${h.fs}px, строк ${h.lines}, «${short(h.text, 40)}», перевёрнуто ${inv.length}, lead ${a.st('lead', 'h1c')}, из данных ${h.fromData}` : 'h1 нет']; }],
+    ['первый экран: кнопка полосы-анонса не в счёт — «кнопка не найдена»', (a) => { const h = a.d.hero; return [!h.cta && /#hero/.test(h.block || '') && a.items('hero').some((x) => /кнопка не найдена/.test(x.note)), h.cta ? `кнопка «${h.cta.text}» ${h.cta.sig}` : `кнопки нет, блок ${h.block}`]; }],
+    ['лид — p#lede под h1, а не span строки часов', (a) => { const l = a.d.hero.lede; return [l && /#lede/.test(l.sig), l ? l.sig : 'лида нет']; }],
+    ['«Забронировать<br>стол» — не одинокое слово и не «неровные строки»', (a) => [a.st('orphan', 'promo-br') === 'none' && a.st('balance', 'promo-br') === 'none', `orphan ${a.st('orphan', 'promo-br')}, balance ${a.st('balance', 'promo-br')}`]],
+    ['основной кегль — по основному содержимому, не по подвалу', (a) => [a.d.bodyFs === 16, `${a.d.bodyFs}px`]],
+    ['«Ближайшие события» вдвоём шире колонки — orphan INFO «неустранимо»', (a) => { const it = a.items('orphan', 'h2-events'); return [it.length === 1 && it[0].status === 'INFO' && it[0].unfix && a.res.lines.some((l) => l.rule === 'orphan' && l.status === 'INFO' && /неустранимо/.test(l.what)), it.map((x) => `${x.status} ${x.note}`).join('; ') || 'нет']; }],
+    ['каркас: висячее «и» в подвале — строка frame INFO, не hang', (a) => [a.st('hang', 'foot-hang') === 'none' && a.items('frame', 'foot-hang').some((x) => x.kind === 'hang' && x.frame === 'подвал') && a.st('frame') === 'INFO', `hang ${a.st('hang', 'foot-hang')}, frame ${a.items('frame', 'foot-hang').map((x) => `${x.kind}/${x.frame}`).join(',') || 'нет'}`]],
+    ['шкала — без каркаса: 13 и 14 px (подвал, анонс) только в строке frame', (a) => { const s = summaryOf(a.d).sizes; const f = a.items('frame').find((x) => x.kind === 'scale'); return [!s.includes(13) && !s.includes(14) && f && f.sizes.includes(13) && f.sizes.includes(14), `шкала ${s.join(', ')}; каркас ${f ? f.sizes.join(', ') : 'нет'}`]; }],
+    ['local(): font-display auto — не WARN, текст не «системным при веб-шрифте»', (a) => [!a.items('font-display').some((x) => /LocalFb/.test(x.note)) && a.st('fallback-all', 'p-local') === 'none' && a.d.fonts.faces.some((f) => f.family === 'LocalFb' && f.localOnly), `font-display ${a.items('font-display').map((x) => x.note).join('; ') || 'нет'}, fallback-all ${a.st('fallback-all', 'p-local')}`]],
+    ['₽ в NoRub: «в файле нет», совет — «Rub», где знак есть (только Chrome: CDP)', (a, e) => { if (e.gecko) return null; const it = a.items('fallback', 'p-rub'); return [it.some((x) => x.chars.includes('₽') && /в файле «NoRub» нет ₽/.test(x.note) && /есть в «Rub»/.test(x.note) && !/latin-ext/.test(x.note)), it.map((x) => x.note).join('; ') || 'нет']; }],
+    ['текст из данных: висячее «до» — [из данных], совет — в данных; «по» в разметке — в исходном тексте', (a) => { const d0 = a.items('hang', 'p-data'), s0 = a.items('hang', 'p-src'); const ln = a.res.lines.find((l) => l.rule === 'hang' && l.status === 'WARN'); return [d0.some((x) => x.data) && s0.some((x) => !x.data) && ln && /в данных или типографом при выводе/.test(ln.details) && /в исходном тексте/.test(ln.details) && a.d.env.source && a.d.env.source.ok, `data ${d0.map((x) => x.data)}, src ${s0.map((x) => x.data)}; ${ln ? short(ln.details.split(' — ').slice(-1)[0], 120) : 'строки hang нет'}`]; }],
+    ['вертикальная подпись — строчные правила не выносятся', (a) => [a.st('orphan', 'p-vert') === 'none' && a.st('leading', 'p-vert') === 'none' && a.res.lines.some((l) => /вертикальный текст/.test(l.what)), `orphan ${a.st('orphan', 'p-vert')}, leading ${a.st('leading', 'p-vert')}`]],
   ],
 };
 
