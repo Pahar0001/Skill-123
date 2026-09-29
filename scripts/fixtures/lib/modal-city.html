@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: окно выбора города</title>
+<!--
+  Стенд SITE_REWORK_DISMISS и checkOpenModal (fixtures/lib/selftest.mjs) — как у mamuka.rest (29.09): через
+  1,5 с после загрузки открывается окно fancybox «Ярославль / Рыбинск», крестик .fancybox-close-small у темы
+  display:none, варианты — пункты списка со ссылками на другие адреса; клик по пункту закрывает окно без перехода.
+  ?close=1 — крестик видимый.
+  Ждём: без переменной — WARN «на странице открыто окно … SITE_REWORK_DISMISS=".fancybox-container
+  li.style-listing-items__item"» (крестик скрыт); SITE_REWORK_DISMISS=".fancybox-container .fancybox-close-small" —
+  WARN «найдено, но скрыто (display:none)»; ".fancybox-container li.style-listing-items__item" — INFO «нажато»,
+  окна нет; ".nope" — WARN «не найдено за 5 с»; с ?close=1 без переменной — предложен крестик.
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Georgia, serif; }
+  header { display: flex; gap: 24px; padding: 20px 32px; background: #222; color: #fff; }
+  header a { color: #fff; }
+  main { padding: 32px; }
+  main section { height: 700px; border-bottom: 1px solid #ddd; }
+  .fancybox-container { position: fixed; inset: 0; z-index: 99992; }
+  .fancybox-bg { position: absolute; inset: 0; background: rgba(0, 0, 0, .2); }
+  .fancybox-slide { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .fancybox-content { position: relative; background: #fff; padding: 8px; min-width: 240px; }
+  .fancybox-close-small { display: none; position: absolute; top: 0; right: 0; }
+  .show-close .fancybox-close-small { display: block; }
+  .style-listing-items { list-style: none; margin: 0; padding: 0; }
+  .style-listing-items__item { cursor: grab; }
+  .style-listing__link { display: block; padding: 14px 20px; color: #222; text-decoration: none; }
+  .style-listing__link.is-active { background: #333; color: #fff; }
+</style>
+</head>
+<body>
+<header><strong>Ресторан</strong><a href="#menu">Меню</a><a href="#about">О ресторане</a><a href="#contacts">Контакты</a></header>
+<main><h1>Ресторан у реки</h1><section>Первый раздел</section><section>Второй раздел</section></main>
+<script>
+  setTimeout(() => {
+    const c = document.createElement('div');
+    c.className = 'fancybox-container fancybox-is-open fancybox-can-swipe' + (/[?&]close=1/.test(location.search) ? ' show-close' : '');
+    c.innerHTML = '<div class="fancybox-bg"></div><div class="fancybox-slide"><div class="fancybox-content">'
+      + '<ul class="style-listing-items">'
+      + '<li class="style-listing-items__item"><a class="style-listing__link is-active" href="https://example.org/?force">Ярославль</a></li>'
+      + '<li class="style-listing-items__item"><a class="style-listing__link" href="https://ryb.example.org/?force">Рыбинск</a></li>'
+      + '</ul><button type="button" class="fancybox-button fancybox-close-small" data-fancybox-close title="Close">×</button></div></div>';
+    document.body.appendChild(c);
+    const close = () => c.remove();
+    for (const li of c.querySelectorAll('.style-listing-items__item')) li.addEventListener('click', (e) => { if (e.target === li) close(); });
+    c.querySelector('.fancybox-close-small').addEventListener('click', close);
+  }, 1500);
+</script>
+</body>
+</html>

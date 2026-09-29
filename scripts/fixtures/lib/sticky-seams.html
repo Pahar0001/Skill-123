@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: закреплённое на швах склейки</title>
+<!--
+  Стенд fullPageShot mode segments (fixtures/lib/selftest.mjs и shots.mjs): высота ~4 экрана. Цвета-метки, по ним
+  считаются строки снимка (столбец x=4 и x=середина):
+    #FF00AA шапка fixed сверху 60 px — в склейке один раз, наверху;
+    #00C8FF липкая лента (sticky) посреди страницы, 40 px — один раз, на своём месте (y 1200);
+    #33AA33 нижняя панель fixed 50 px — один раз, внизу склейки;
+    #FFAA00 стеклянная вкладка fixed справа посередине — один раз;
+    зерно на весь экран (pointer-events:none) — в каждом окне (на цвет меток не влияет: opacity .04).
+  До 29.09 склейка повторяла шапку, ленту и вкладку на каждом шве (menu-desktop-full.png, afisha-desktop-full.png).
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; background: #fff; }
+  .hdr { position: fixed; top: 0; left: 0; right: 0; height: 60px; background: #ff00aa; z-index: 30; }
+  .bar { position: fixed; bottom: 0; left: 0; right: 0; height: 50px; background: #33aa33; z-index: 30; }
+  .tab { position: fixed; right: 0; top: calc(50% - 60px); width: 40px; height: 120px; background: #ffaa00; z-index: 30; }
+  .grain { position: fixed; inset: 0; z-index: 40; pointer-events: none; opacity: .04; background: repeating-linear-gradient(0deg, #000 0 1px, transparent 1px 3px); }
+  main { padding-top: 60px; }
+  .blk { height: 1140px; background: #f2f2f2; border-bottom: 1px solid #ddd; }
+  .rib { position: sticky; top: 60px; height: 40px; background: #00c8ff; z-index: 20; }
+  .blk2 { height: 2400px; background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="hdr"></div>
+<main>
+  <div class="blk">Первый блок</div>
+  <div class="rib"></div>
+  <div class="blk2">Длинный блок под липкой лентой</div>
+</main>
+<div class="tab"></div>
+<div class="bar"></div>
+<div class="grain"></div>
+</body>
+</html>

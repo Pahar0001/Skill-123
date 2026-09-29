@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: окон нет</title>
+<!--
+  Контроль checkOpenModal (fixtures/lib/selftest.mjs): закреплённая шапка, зерно на весь экран (pointer-events:none),
+  закреплённый фон под страницей (z-index −1), маленький виджет чата в углу и закрытый <dialog> — ни одного WARN
+  «на странице открыто окно».
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; }
+  .bg { position: fixed; inset: 0; z-index: -1; background: linear-gradient(#f4efe6, #e6dccb); }
+  .grain { position: fixed; inset: 0; z-index: 50; pointer-events: none; opacity: .08; background: repeating-linear-gradient(45deg, #000 0 1px, transparent 1px 3px); }
+  header { position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 40; display: flex; gap: 24px; align-items: center; padding: 0 24px; background: #fff; }
+  main { padding: 96px 24px 24px; }
+  main section { height: 800px; }
+  .chat { position: fixed; right: 16px; bottom: 16px; width: 64px; height: 64px; border-radius: 50%; background: #2a7; z-index: 60; }
+</style>
+</head>
+<body>
+<div class="bg"></div><div class="grain"></div>
+<header><strong>Кофейня</strong><a href="#menu">Меню</a><a href="#about">О нас</a></header>
+<main><h1>Кофейня у моста</h1><section>Раздел</section><section>Ещё раздел</section></main>
+<button class="chat" type="button" aria-label="Чат"></button>
+<dialog id="d"><p>Закрытое окно</p><button type="button">Закрыть</button></dialog>
+</body>
+</html>

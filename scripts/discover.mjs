@@ -25,12 +25,27 @@
  *   --no-texture       не снимать фактуру по пикселям (слои всё равно перечисляются)
  *   --no-texture-module  не подключать texture.mjs, даже если он рядом: запасной путь discover
  *                      (для проверки и на случай, если texture.mjs сломан)
- *   --keep-consent     не закрывать окно согласия cookie. По умолчанию оно закрывается до первого
- *                      снимка, как заставка: кнопкой «Accept all» / «Accept» / «Принять» / «Согласен» /
- *                      «OK», если её нет — «Reject» / «Отклонить», затем крестиком. Окно — закреплённый
- *                      блок или диалог с текстом про cookie / consent / куки. Что закрыто — в
- *                      discovery.md («Техника»); кнопки окна не считаются кнопками сайта. Согласие
- *                      остаётся в браузере: на следующих экранах окно обычно уже не появляется
+ *   --keep-consent     не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18»). По
+ *                      умолчанию они закрываются до первого снимка, как заставка: кнопкой «Accept all» /
+ *                      «Accept» / «Принять» / «Согласен» / «OK», если её нет — «Reject» / «Отклонить», затем
+ *                      крестиком. Окно — закреплённый блок или диалог с текстом про cookie / consent / куки.
+ *                      Что закрыто — в discovery.md («Техника»); кнопки окна не считаются кнопками сайта.
+ *                      Согласие остаётся в браузере: на следующих экранах окно обычно уже не появляется.
+ *                      SITE_REWORK_DISMISS (что нажать после загрузки: «селектор||text:Надпись») нажимается и
+ *                      с --keep-consent — переменную задали явно
+ *
+ * Окна при загрузке. SITE_REWORK_DISMISS ждётся до 5 с от начала загрузки; итог — всегда строкой «окна при
+ * загрузке» в discovery.md («Техника»): не задана / нажато … / не найдено за 5,1 с от начала загрузки / найдено, но скрыто
+ * (display:none, 0×0) / не появилось — выбор запомнен (на следующих экранах). Открытое окно без слов про cookie
+ * (fancybox, dialog, aria-modal, закреплённый слой от 30% экрана: окно выбора города mamuka.rest) — там же и
+ * WARN «на странице открыто окно …, задайте SITE_REWORK_DISMISS="…"» с предложенным селектором: видимый
+ * крестик, иначе первый вариант выбора (пункт списка, кнопка). Проверяется после закрытия окна согласия и ещё
+ * раз после прокрутки.
+ *
+ * Шрифты — по замеру: гарнитура заголовков — у видимого текста в h1–h6 или крупнее основного в 1,5 раза (у
+ * донора без h1–h2, с заголовками на div, раньше выходило «null»), навигации — у пунктов nav/header и ссылок с
+ * классом шапки или меню наверху страницы; больше всего знаков — она, с образцом и тем, чем образец набран на
+ * экране (CDP, как у typeset: «IBM Plex Serif Medium»). В паспорте у каждой роли — гарнитура.
  *   --no-clicks        не нажимать на найденные аккордеоны и переключатели меню. По умолчанию в конце
  *                      прохода каждого экрана discover наводит мышь на вопрос (показался ответ — это
  *                      наведение, не аккордеон), нажимает на него (раскрылся ли ответ, закрывается ли
@@ -45,7 +60,9 @@
  *                      страница (шаблоны с большим числом адресов, потом отдельные страницы по числу
  *                      ссылок), затем найденные только в sitemap.xml. Снимок всей страницы после
  *                      прокрутки и видимые заголовки h1–h3 — на первом экране из --viewports, в
- *                      <папка>/pages/<тип>.png. По умолчанию 0: чужие страницы не открываются
+ *                      <папка>/pages/<тип>.png: сегменты шаблона через «-», «*» — «item» (/dinners →
+ *                      dinners.png, /dinners/* → dinners-item.png, / → home.png; совпало — «-2»).
+ *                      По умолчанию 0: чужие страницы не открываются
  *   --strict           код выхода 1, если в итоговых вердиктах есть FAIL (переполнение по ширине,
  *                      экран или проход 320 px не снялся); без него FAIL только печатается, код 0
  *   --help, -h         эта справка (ничего не создаёт и не запускает браузер)
@@ -69,7 +86,8 @@
  *                    «нет». Если зерно не измерено ни на одном экране, фактура снята запасным
  *                    путём или не снималась (--no-texture), блока нет, причина — в discovery.md
  *                    (раздел «Дизайн-система») и в discovery.json (textureTokens)
- *   pages/           с --pages-shots: по снимку на тип страницы (<тип>.png, например expansions.png)
+ *   pages/           с --pages-shots: по снимку на тип страницы (<тип>.png: /expansions — expansions.png,
+ *                    /expansions/* — expansions-item.png)
  *
  * Кнопки и карточки-ссылки. Кнопка — компактный элемент действия с заливкой, контуром или
  * градиентом у самого элемента или у вложенного блока на всю его площадь (Framer: у <a> фона
@@ -109,8 +127,9 @@
  *
  * В конце печатаются строки «FAIL|WARN <что>» и строка «Итог: FAIL N · WARN M» (или «Итог: OK»).
  * FAIL — переполнение по ширине и экран (или проход 320 px), который не снялся. Среди WARN —
- * окно cookie, которое не закрылось, заливка кнопок, которой не видно в их коробках (меньше 20%),
- * и страница типа, которая не снялась (--pages-shots).
+ * окно cookie, которое не закрылось, открытое окно без слов про cookie, SITE_REWORK_DISMISS не найдено или
+ * скрыто, заливка кнопок, которой не видно в их коробках (меньше 20%), и страница типа, которая не снялась
+ * (--pages-shots). Строки INFO (SITE_REWORK_DISMISS нажато) в счёт не идут.
  *
  * Фактура (зерно, вуали) — через scripts/texture.mjs, если он рядом; без него —
  * запасной путь внутри этого файла (поиск слоёв и замер «со слоем / без»).
@@ -126,6 +145,7 @@ import {
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
   waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE, closeConsent, consentNote,
   EFFECTIVE_ZOOM_FN, CLIP_SHARE_FN, IS_TILDA_SERVICE_FN, TILDA_PH, tildaInfo, collectWarnings, takeWarnings, trackModule,
+  checkOpenModal, modalNote, dismissNote, collectNotes, takeNotes,
 } from './lib.mjs';
 import { findClickTargets, probeAccordions, probeToggles, accordionItems, accordionOk, accordionNote as accGroupNote, SCREEN_POINT_FN } from './clicks.mjs';
 import { tildaSnapshot, tildaSummary, pageTypes as tildaPageTypes } from './tilda.mjs';
@@ -419,13 +439,14 @@ function inPage(arg) {
   const dom = { nodes: document.getElementsByTagName('*').length, pageHeight: document.documentElement.scrollHeight, screens: Math.round(document.documentElement.scrollHeight / vh * 10) / 10, horizontalOverflow: document.documentElement.scrollWidth > vw + 1, htmlBytes: document.documentElement.outerHTML.length };
 
   /* --- текст: основной кегль по весу собственного текста (D12), шрифты --- */
-  const fam = {}, fg = {}, sizeW = {};
+  const fam = {}, fg = {}, sizeW = {}; const famEl = {}; /* famEl — образец гарнитуры: элемент с самым длинным своим текстом */
   for (const el of all) {
     const own = ownText(el); if (!own.length) continue;
     const s = cs(el); const o = E(el); const fs = fsz(el, s);
     if (fs < 6) continue; /* font-size:0 у обёрток Tilda */
     bump(fg, base(hex(s.color)), own.length * o * alphaOf(hex(s.color)));
-    bump(fam, fam1(s.fontFamily), own.length);
+    const f1 = fam1(s.fontFamily); bump(fam, f1, own.length);
+    if (!famEl[f1] || own.length > famEl[f1].n) famEl[f1] = { el, n: own.length };
     if (own.length >= 20) bump(sizeW, Math.round(fs * 100) / 100, own.length);
   }
   const bodySizes = Object.entries(sizeW).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, n]) => ({ size: v + 'px', chars: n }));
@@ -790,26 +811,54 @@ function inPage(arg) {
 
   /* --- паспорт донора (D7, A5): что у него есть — и чего нет --- */
   const ctaSet = new Set(ctaEls); const cardSet = new Set(cardRaw.map((c) => c.el));
+  /* навигация: внутри nav/header/role=navigation|banner|menubar — или ссылка, у которой (или у предка до 6 уровней)
+     класс шапки или меню (header-bottom-menu__item у mamuka.rest: шапка там div, а не header — пункты меню 24px
+     шли в «заголовки»), и она в верхней трети первого экрана или в закреплённой панели (карточки «…-menu-card»
+     ниже по странице — не навигация) */
+  const NAVCLS = /(^|[-_\s])(header|nav|navbar|navigation|menu|topbar|top-bar)(?=[-_\s]|$)/i;
+  const inFixed = (e) => fixedAll.some((f) => f.contains(e));
+  const isNav = (el) => {
+    if (el.closest('nav, header, [role="navigation"], [role="banner"], [role="menubar"]')) return true;
+    const link = el.closest('a, button, [role="link"], [role="menuitem"]'); if (!link) return false;
+    let hit = false; for (let e = link, i = 0; e && e !== document.body && i < 6; e = e.parentElement, i++) if (typeof e.className === 'string' && NAVCLS.test(e.className)) { hit = true; break; }
+    return hit && (R(link).top + sy < vh * 0.35 || inFixed(link));
+  };
   const roleOf = (el) => {
     const b = el.closest('a,button,[role="button"]'); if (b && ctaSet.has(b)) return 'кнопки';
     if (b && cardSet.has(b)) return 'карточки-ссылки';
-    if (el.closest('nav, header')) return 'навигация';
+    if (isNav(el)) return 'навигация';
     const fs = fsz(el);
     if (el.closest('h1,h2,h3,h4,h5,h6') || fs >= bodyPx * 1.5) return 'заголовки';
     if (fs < Math.min(14, bodyPx * 0.9)) return 'подписи';
     return 'текст';
   };
-  const typeRoles = {};
+  const typeRoles = {}; const famChars = {}; /* famChars[роль][гарнитура] = { chars, n, fs, el } — гарнитура по замеру */
   for (const el of all) {
     const t = ownText(el); if (t.length < 2 || !/[A-Za-zА-Яа-яЁё0-9]/.test(t) || inConsent(el)) continue;
     const s = cs(el); const fs0 = parseFloat(s.fontSize); const fs = fs0 * Z(el); if (fs < 6) continue;
     const ls = s.letterSpacing === 'normal' ? 0 : parseFloat(s.letterSpacing) || 0; const em = r2(ls / fs0);
     const caps = s.textTransform === 'uppercase' || (t === t.toUpperCase() && /[A-ZА-ЯЁ]{2}/.test(t));
     const rl = roleOf(el); const row = typeRoles[rl] || (typeRoles[rl] = { total: 0, caps: 0, ls: {}, sizes: {}, weights: {}, families: {}, wide: [] });
-    row.total++; if (caps) row.caps++; bump(row.ls, String(em)); bump(row.sizes, Math.round(fs)); bump(row.weights, s.fontWeight); bump(row.families, fam1(s.fontFamily));
+    const f1 = fam1(s.fontFamily);
+    row.total++; if (caps) row.caps++; bump(row.ls, String(em)); bump(row.sizes, Math.round(fs)); bump(row.weights, s.fontWeight); bump(row.families, f1);
     if (em >= 0.05 && row.wide.length < 3) row.wide.push({ el: sigNoId(el), fs: Math.round(fs), em, caps, text: t.slice(0, 30) });
+    const fc = famChars[rl] || (famChars[rl] = {}); const e = fc[f1] || (fc[f1] = { chars: 0, n: 0, fs: 0, el: null });
+    e.chars += t.length; e.n++; if (fs > e.fs) { e.fs = fs; e.el = el; }
   }
   for (const k of Object.keys(typeRoles)) { const row = typeRoles[k]; row.wideN = Object.entries(row.ls).filter(([v]) => parseFloat(v) >= 0.05).reduce((a, [, n]) => a + n, 0); row.ls = top(row.ls, 5); row.sizes = top(row.sizes, 5); row.weights = top(row.weights, 3); row.families = top(row.families, 3); }
+  /* гарнитура роли по замеру: больше всего знаков видимого текста; образец — самый крупный текст этой гарнитуры,
+     он помечается data-rw-font (Node снимет через CDP, каким шрифтом он набран на экране). Раньше заголовки брались
+     с первого h1/h2 в DOM — у донора без h1–h2 (заголовки на div) выходило «null» */
+  const famOfRole = (rl, mark) => {
+    const fc = famChars[rl]; if (!fc) return null;
+    const list = Object.entries(fc).sort((a, b) => b[1].chars - a[1].chars); if (!list.length) return null;
+    const [family, v] = list[0];
+    if (v.el) v.el.setAttribute('data-rw-font', mark);
+    return { family, chars: v.chars, count: v.n, maxFs: Math.round(v.fs), weight: v.el ? cs(v.el).fontWeight : null, sample: v.el ? { el: sigNoId(v.el), fs: Math.round(v.fs), text: ownText(v.el).slice(0, 30) } : null, others: list.slice(1, 3).map(([f, x]) => ({ family: f, chars: x.chars })) };
+  };
+  const headingMeasure = famOfRole('заголовки', 'heading');
+  const navMeasure = famOfRole('навигация', 'nav');
+  if (famEl[bodyFont] && famEl[bodyFont].el) famEl[bodyFont].el.setAttribute('data-rw-font', 'body');
   const visCount = (sel) => [...document.querySelectorAll(sel)].filter((e) => onScreen(e)).length;
   const inputsAll = [...document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]), textarea')].filter((e) => onScreen(e));
   const fieldStyle = inputsAll.slice(0, 1).map((i) => { const s = cs(i); return { radius: s.borderTopLeftRadius, h: px(R(i).height), bg: hex(s.backgroundColor), border: parseFloat(s.borderTopWidth) > 0 ? `${s.borderTopWidth} ${hex(s.borderTopColor)}` : 'нет', fs: s.fontSize }; })[0] || null;
@@ -890,7 +939,7 @@ function inPage(arg) {
     visual: {
       palette: { backgrounds: topColors(bg, 8), text: topColors(fg, 6), ctaBackgrounds: topColors(buttons.reduce((m, c) => { if (c.filled) bump(m, base(c.bg), c.w * c.h); return m; }, {}), 4) },
       accent, neutralFills, btnBoxes,
-      fonts: { used: top(fam, 5), heading: headingFont, body: bodyFont, bodySize: bodySizes.length ? bodySizes[0].size : cs(document.body).fontSize, bodySizes, levels, h1: h1s ? { size: zpx(h1, h1s.fontSize), weight: h1s.fontWeight, lineHeight: zpx(h1, h1s.lineHeight), transform: h1s.textTransform, family: fam1(h1s.fontFamily) } : null, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length, failed: [...document.fonts].filter((f) => f.status === 'error').length },
+      fonts: { used: top(fam, 5), heading: headingMeasure ? headingMeasure.family : headingFont, headingFrom: headingMeasure ? 'замер' : headingFont ? 'первый h1/h2' : null, headingMeasure, nav: navMeasure, body: bodyFont, bodySize: bodySizes.length ? bodySizes[0].size : cs(document.body).fontSize, bodySizes, levels, h1: h1s ? { size: zpx(h1, h1s.fontSize), weight: h1s.fontWeight, lineHeight: zpx(h1, h1s.lineHeight), transform: h1s.textTransform, family: fam1(h1s.fontFamily) } : null, loaded: [...document.fonts].filter((f) => f.status === 'loaded').length, failed: [...document.fonts].filter((f) => f.status === 'error').length },
       radius: top(radius, 6), shadows: Object.keys(shadows).length, sections, firstScreen, panels,
     },
     surface, techniques, slots, mediaShare, passport, motion, interactive, inPageErrors,
@@ -1096,17 +1145,39 @@ function faqSummary(d) {
   return { found: !!f.heading || fg.length > 0, heading: f.heading || null, top: f.top, items, details: acc.detailsNearFaq || 0, groups: fg.map((g) => ({ sig: g.sig, kind: g.kind, count: g.count, chevron: g.chevron, how: g.how, status: g.status || 'не проверен', opened: g.opened, tried: g.tried, closed: g.closed, skip: g.skip })) };
 }
 
+/* Каким шрифтом набраны образцы (data-rw-font: heading, nav, body — ставит inPage) на экране: CDP
+   CSS.getPlatformFontsForNode — имя начертания, как у typeset («IBM Plex Serif Medium»), а не первое имя стека.
+   → { heading, nav, body } (строки; нет образца или не Chrome — нет поля) */
+async function renderedFonts(page) {
+  let cdp; try { cdp = await page.createCDPSession(); } catch { return null; }
+  const out = {};
+  try {
+    await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    for (const k of ['heading', 'nav', 'body']) {
+      const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: `[data-rw-font="${k}"]` }).catch(() => ({}));
+      if (!nodeId) continue;
+      const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId }).catch(() => ({ fonts: [] }));
+      if (fonts && fonts.length) out[k] = [...fonts].sort((a, b) => b.glyphCount - a.glyphCount).slice(0, 2).map((f) => `${f.familyName}${f.isCustomFont ? '' : ' (системный)'}`).join(' + ');
+    }
+  } catch { /* CDP недоступен — без замера набора */ } finally { await cdp.detach().catch(() => {}); }
+  return out;
+}
+
 /* =====================================================================
    Прогон одного экрана
    ===================================================================== */
 async function inspect(browser, url, name, vp, shotsDir, opt) {
   const notes = [];
-  const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
+  /* окно при загрузке проверяется после закрытия окна согласия (modalCheck: false здесь): ворота «ENTER»,
+     которые closeConsent закроет, — не «открытое окно» */
+  const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light', modalCheck: false });
   try {
     const t0 = Date.now();
     /* окно согласия cookie — до первого снимка, как заставка (--keep-consent: только найти) */
     let consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 120) }));
-    if (consent.closed && page.overlay && page.overlay.hadOverlay && !page.overlay.gone) page.overlay = { ...(await waitForOverlay(page, 1500)), afterConsent: true };
+    if (consent.closed && page.overlay && page.overlay.hadOverlay && !page.overlay.gone) page.overlay = { ...(await waitForOverlay(page, 1500, { dismiss: false, modalCheck: false })), afterConsent: true };
+    const modal = await checkOpenModal(page, { warn: false }).catch(() => null);
     await page.screenshot({ path: path.join(shotsDir, `${name}-first.png`) });
     const early = await evaluateWith(page, earlyInPage, null, DEPS);
     await forceInstantScroll(page);
@@ -1117,6 +1188,8 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     const reveal = await evaluateWith(page, revealInPage, null, DEPS).catch((e) => ({ error: e.message }));
     /* окно, которое появилось позже (по таймеру, при прокрутке), — закрыть до замеров */
     if (!consent.found) { const late = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => null); if (late && late.found) consent = { ...late, late: true }; }
+    /* окно, открывшееся позже (по таймеру, при прокрутке: «подпишитесь»), — в сводку отдельно: замеры ниже идут под ним */
+    const modalLate = modal ? null : await checkOpenModal(page, { warn: false }).catch(() => null);
 
     /* слои фактуры — после прокрутки (ленивые фоны Tilda грузятся при прокрутке); с пометкой,
        чтобы палитра не взяла их цвет, а замер мог их спрятать */
@@ -1132,6 +1205,7 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     const tinfo = await tildaInfo(page);
     const data = await evaluateWith(page, inPage, { veilKeys, tilda: !!tinfo.tilda }, DEPS);
     for (const e of data.inPageErrors || []) notes.push(e);
+    data.visual.fonts.rendered = await renderedFonts(page).catch(() => null);
     /* Tilda: карта из атрибутов (tilda.mjs) — страница уже пройдена прокруткой; в json — выжимка, полная карта — tilda.mjs */
     if (tinfo.tilda) {
       try {
@@ -1224,8 +1298,9 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
     const timing = await page.evaluate(() => { const n = performance.getEntriesByType('navigation')[0]; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)])); return n ? { ttfb: Math.round(n.responseStart), domContentLoaded: Math.round(n.domContentLoadedEventEnd), load: Math.round(n.loadEventEnd), fcp: p['first-contentful-paint'] || null, transferKb: Math.round((n.transferSize || 0) / 1024) } : null; });
     const afterScroll = { stillHidden: hidden.reduce((a, g) => a + g.count, 0), pageHeight: scroll.pageHeight, animationsNow: data.motion.total, horizontalOverflow: overflow.verdict !== 'OK' };
     const fullShot = { file: `${name}-full.png`, mode: fullMode };
+    const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : [], modal, ...(modalLate ? { modalLate } : {}) };
     return {
-      ...data, early, reveal, hidden, overflow, found, texture, tiles, fullShot, notes, consent,
+      ...data, early, reveal, hidden, overflow, found, texture, tiles, fullShot, notes, consent, windows,
       nav: page.gotoInfo || { attempt: 1, waitUntil: 'networkidle2' }, overlay: page.overlay, afterScroll, timing,
       log: { consoleErrors: page.log.console.filter((c) => c.type === 'error'), consoleWarnings: page.log.console.filter((c) => c.type === 'warning').length, pageErrors: page.log.errors, failedRequests: page.log.failed.slice(0, 20) },
       resources: summarizeRequests(page.log.requests), took: Date.now() - t0,
@@ -1236,15 +1311,16 @@ async function inspect(browser, url, name, vp, shotsDir, opt) {
 
 /* Проход только ради переполнения (320 px по умолчанию): без снимков (D20). */
 async function overflowPass(browser, url, name, vp, opt) {
-  const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
+  const page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light', modalCheck: false });
   try {
     const t0 = Date.now();
     const consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => ({ found: false }));
+    const modal = await checkOpenModal(page, { warn: false }).catch(() => null);
     await forceInstantScroll(page);
     const scroll = await scrollThrough(page, { pause: 250 });
     const overflow = await findOverflow(page);
     const panels = await evaluateWith(page, () => [...document.body.querySelectorAll('*')].filter((el) => { const s = getComputedStyle(el); if (s.position !== 'fixed' && s.position !== 'sticky') return false; const r = el.getBoundingClientRect(); return r.width >= innerWidth * 0.3 && r.height >= 20 && r.height < innerHeight * 0.6 && eff(el) > 0.05; }).slice(0, 6).map((el) => { const r = el.getBoundingClientRect(); return { el: sig(el), place: r.top + r.height / 2 < innerHeight / 2 ? 'сверху' : 'снизу', height: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) }; }), null, DEPS).catch(() => []);
-    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, consent, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, viewH: scroll.viewH, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
+    return { overflowOnly: true, viewport: { width: vp.width, height: vp.height, dpr: vp.deviceScaleFactor || 1 }, overflow, panels, consent, windows: { dismiss: page.rwDismiss ? page.rwDismiss.list : [], modal }, nav: page.gotoInfo, took: Date.now() - t0, scroll: { pageHeight: scroll.pageHeight, viewH: scroll.viewH, reachedBottom: scroll.reachedBottom, stuck: scroll.stuck, maxScrollY: scroll.maxScrollY, capped: scroll.capped } };
   } finally { await page.close().catch(() => {}); }
 }
 
@@ -1382,17 +1458,28 @@ function pageTypes(url, per, order, sm) {
     sitemap: sm ? { url: sm.url, count: (sm.urls || []).length, error: sm.error || null, index: sm.index || null } : null,
   };
 }
+/* Имя снимка типа страницы: сегменты шаблона через «-», «*» — «item»: /dinners → dinners, /dinners/* →
+   dinners-item, /en/blog/* → en-blog-item, / → home. Раньше «*» просто выбрасывалась, и страница события
+   /dinners/* затиралась снимком списка /dinners (mamuka.rest, 29.09). Совпало с уже взятым — «-2», «-3». */
+function pageShotName(key, used = new Set()) {
+  const base = String(key).split('/').filter(Boolean).map((s) => (s === '*' ? 'item' : s)).join('-')
+    .replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 60) || 'home';
+  let name = base; for (let k = 2; used.has(name); k++) name = `${base}-${k}`;
+  used.add(name);
+  return name;
+}
 /* По одной странице каждого типа: открыть, закрыть окно согласия, прокрутить (ленивое и появления),
    снимок всей страницы и видимые h1–h3. */
 async function shootPages(browser, types, n, vpName, vp, dir, opt) {
-  const out = [];
+  const out = []; const used = new Set();
   for (const t of types.filter((x) => x.example).slice(0, n)) {
-    const slug = t.key.replace(/\*/g, '').replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 60) || 'home';
+    const slug = pageShotName(t.key, used);
     const file = `${slug}.png`; const t0 = Date.now(); let page = null;
     process.stdout.write(`· страница типа ${t.key} (${vpName}) … `);
     try {
-      page = await openPage(browser, t.example, vp, { scheme: opt.scheme || 'light' });
+      page = await openPage(browser, t.example, vp, { scheme: opt.scheme || 'light', modalCheck: false });
       const consent = await closeConsent(page, { click: !opt['keep-consent'] }).catch(() => ({ found: false }));
+      const modal = await checkOpenModal(page, { warn: false }).catch(() => null);
       await forceInstantScroll(page);
       await scrollThrough(page, { pause: 250 });
       const mode = await fullPageShot(page, path.join(dir, file));
@@ -1401,8 +1488,9 @@ async function shootPages(browser, types, n, vpName, vp, dir, opt) {
         heads: [...document.querySelectorAll('h1,h2,h3')].filter((h) => { const r = h.getBoundingClientRect(); return r.width > 0 && r.height > 0 && eff(h) > 0.05; }).map((h) => ({ level: h.tagName.toLowerCase(), text: (h.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90) })).filter((h) => h.text).slice(0, 40),
       }), null, DEPS);
       const doc = page.log.requests.find((r) => r.type === 'document');
-      out.push({ key: t.key, example: t.example, file, mode, status: doc ? doc.status : null, ...info, consent: consent.found ? consentNote(consent) : null, took: Date.now() - t0 });
-      console.log(`ок (${((Date.now() - t0) / 1000).toFixed(1)} с${doc && doc.status >= 400 ? `, HTTP ${doc.status}` : ''})`);
+      out.push({ key: t.key, example: t.example, file, mode, status: doc ? doc.status : null, ...info, consent: consent.found && consent.kind !== 'dismiss' ? consentNote({ ...consent, dismiss: null }) : null,
+        dismiss: page.rwDismiss ? dismissNote(page) : null, modal: modal ? modalNote(modal, page) : null, took: Date.now() - t0 });
+      console.log(`ок (${((Date.now() - t0) / 1000).toFixed(1)} с${doc && doc.status >= 400 ? `, HTTP ${doc.status}` : ''}${modal ? ', открыто окно — снимок под ним' : ''})`);
     } catch (e) {
       out.push({ key: t.key, example: t.example, error: String(e.message || e).replace(/\n/g, ' ').slice(0, 200) });
       console.log(`сбой: ${String(e.message || e).split('\n')[0].slice(0, 120)}`);
@@ -1454,7 +1542,7 @@ function passportLines(d, m) {
   for (const r of roles) {
     const row = P.typeRoles[r]; if (!row) continue;
     const wide = row.wide.length ? ` · разрядка ≥ .05em: ${row.wide.map((w) => `${w.el} ${w.fs}px ${w.em}em «${w.text}»`).join('; ')}` : '';
-    L.push(`- ${r} (${row.total}): кегль ${row.sizes.map((x) => `${x.value}px ×${x.weight}`).join(', ')} · начертание ${row.weights.map((x) => x.value).join('/')} · капс ${row.caps} из ${row.total} · letter-spacing ${lsLine(row)}${wide}`);
+    L.push(`- ${r} (${row.total}): гарнитура ${row.families.map((x) => `${x.value}${row.families.length > 1 ? ` ×${x.weight}` : ''}`).join(', ') || '?'} · кегль ${row.sizes.map((x) => `${x.value}px ×${x.weight}`).join(', ')} · начертание ${row.weights.map((x) => x.value).join('/')} · капс ${row.caps} из ${row.total} · letter-spacing ${lsLine(row)}${wide}`);
   }
   const bs = d.content.buttonStyles.slice(0, 5);
   if (bs.length) L.push(`- кнопки по стилям: ${bs.map((b) => `${b.bg ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.border ? `контур ${b.border}` : 'без заливки'}${b.surface ? ` (у ${b.surface})` : ''}, ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}, высота ${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''} ×${b.count} («${b.examples[0]}»)`).join('; ')}`);
@@ -1525,12 +1613,31 @@ function textureLines(per, order, texResults) {
   return L;
 }
 
+/* окно согласия cookie — само окно; что нажато по SITE_REWORK_DISMISS — в строке «окна при загрузке» (windowsLine) */
 function consentLine(per, order) {
-  const found = order.filter((v) => per[v].consent && per[v].consent.found);
+  const found = order.filter((v) => per[v].consent && per[v].consent.found && per[v].consent.kind !== 'dismiss');
   if (!found.length) return `- окно согласия cookie: не появлялось${order.some((v) => per[v].consent && per[v].consent.error) ? ` (проверка не прошла: ${order.map((v) => per[v].consent && per[v].consent.error).filter(Boolean)[0]})` : ''}`;
   const rest = order.filter((v) => !found.includes(v));
   const closed = found.some((v) => per[v].consent.closed);
-  return `- окно согласия cookie: ${found.map((v) => `${v} — ${consentNote(per[v].consent)}`).join('; ')}${rest.length ? `; ${rest.join(', ')} — не появлялось${closed ? ' (согласие уже дано в этом браузере)' : ''}` : ''}${closed ? '. Кнопки окна в кнопки сайта не входят' : ''}`;
+  return `- окно согласия cookie: ${found.map((v) => `${v} — ${consentNote({ ...per[v].consent, dismiss: null })}`).join('; ')}${rest.length ? `; ${rest.join(', ')} — не появлялось${closed ? ' (согласие уже дано в этом браузере)' : ''}` : ''}${closed ? '. Кнопки окна в кнопки сайта не входят' : ''}`;
+}
+/* Окна при загрузке — всегда строкой: что нажато по SITE_REWORK_DISMISS (нажато / не найдено / скрыто / не
+   задана) и открытое окно без слов про cookie (или «нет») по экранам, с предложенным селектором */
+function windowsLine(per, order, extra320) {
+  const all = [...order.map((v) => [v, per[v]]), ...Object.entries(extra320 || {}).filter(([, p]) => p && !p.error)];
+  const env = String(process.env.SITE_REWORK_DISMISS || '').trim();
+  /* одна запись в переменной — без её повтора у каждого экрана */
+  const one = (d, many) => `${many ? `«${d.spec}» ` : ''}${d.found ? `нажато ${d.sig}${d.label ? ` «${d.label}»` : ''}${d.nav ? `, перешли на ${d.nav}` : d.gone ? ', исчезло' : ', **осталось на экране**'}` : d.why}`;
+  const ds = env ? all.map(([v, p]) => { const l = (p.windows && p.windows.dismiss) || []; return `${v} — ${l.length ? l.map((d) => one(d, l.length > 1)).join('; ') : dismissNote(l)}`; }).join('; ') : 'не задана';
+  const ms = all.map(([v, p]) => { const w = p.windows || {}; return w.modal ? `${v} — ${modalNote(w.modal)}` : w.modalLate ? `${v} — после прокрутки: ${modalNote(w.modalLate)}` : null; }).filter(Boolean);
+  return `- окна при загрузке: SITE_REWORK_DISMISS ${env ? `«${env}» — ${ds}` : ds} · открытое окно: ${ms.length ? `**${ms.join('; ')}**` : 'нет'}`;
+}
+/* гарнитура роли для строки «шрифты»: «IBM Plex Serif» 500, до 44px (по замеру: 12 текстов, 340 зн., образец
+   div.x «Основное меню»; набрано IBM Plex Serif Medium) или «не найдено» */
+function fontRoleNote(family, m, rendered, from) {
+  if (!family) return 'не найдены (ни h1–h6, ни текста крупнее основного)';
+  if (!m || from !== 'замер') return `«${family}»${from ? ` (${from})` : ''}${rendered ? ` — набрано ${rendered}` : ''}`;
+  return `«${family}»${m.weight ? ` ${m.weight}` : ''}${m.maxFs ? `, до ${m.maxFs}px` : ''} (по замеру: текстов ${m.count}, знаков ${m.chars}${m.sample ? `, образец ${m.sample.el} «${m.sample.text}»` : ''}${m.others && m.others.length ? `; ещё ${m.others.map((o) => `«${o.family}» ${o.chars} зн.`).join(', ')}` : ''}${rendered ? `; набрано ${rendered}` : ''})`;
 }
 function faqLine(fq) {
   if (!fq || typeof fq !== 'object') return fq ? 'есть' : 'нет';
@@ -1597,7 +1704,7 @@ function pagesLines(pg, shots, n) {
       for (const s of shots) {
         if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
         const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
-        L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px`, `  - заголовки: ${hs || 'нет видимых h1–h3'}`);
+        L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}`);
       }
     } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
     return L;
@@ -1616,7 +1723,7 @@ function pagesLines(pg, shots, n) {
     for (const s of shots) {
       if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
       const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
-      L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.consent ? ` · окно согласия: ${s.consent}` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}${s.heads.length > 10 ? ` · ещё ${s.heads.length - 10}` : ''}`);
+      L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.consent ? ` · окно согласия: ${s.consent}` : ''}${s.dismiss ? ` · SITE_REWORK_DISMISS: ${s.dismiss}` : ''}${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}${s.heads.length > 10 ? ` · ещё ${s.heads.length - 10}` : ''}`);
     }
   } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
   return L;
@@ -1642,6 +1749,7 @@ function writeSummary(url, run, per, design, order, extra) {
     `- переход: ${navNote.length ? `**${navNote.join('; ')}**` : 'с первой попытки на всех экранах'}`,
     `- заставка при загрузке: ${d.overlay && d.overlay.hadOverlay ? `${d.overlay.overlay}, ${d.overlay.gone ? `ушла через ${d.overlay.waitedMs} мс${d.overlay.afterConsent ? ' (после закрытия окна согласия)' : ''}` : `НЕ ушла за ${d.overlay.waitedMs} мс — закрывает страницу`}` : 'нет'}`,
     consentLine(per, order),
+    windowsLine(per, order, extra320),
     `- холсты: ${t.canvases.length ? t.canvases.slice(0, 6).map((c) => `${c.el} ${c.w}×${c.h} ${c.ctx}${c.ratioCss != null && c.ratioCss < 0.85 ? ` (буфер ${c.buffer} — размыт, ×${c.ratioCss})` : ''}`).join('; ') + (t.canvases.length > 6 ? `; ещё ${t.canvases.length - 6}` : '') : 'нет'} · видео: ${t.media.video} (автоплей ${t.media.autoplayVideo}) · iframe: ${t.media.iframes.length} · Lottie: ${t.media.lottie} · встроенных SVG: ${t.media.svgInline}`,
     `- картинки: ${im.count}, ленивых ${im.lazy}${im.tildaLazy ? ` (Tilda грузит по data-original: ${im.tildaLazy.dataOriginal}, фонов .t-bgimg загружено после прокрутки ${im.tildaLazy.bgLoaded} из ${im.tildaLazy.bg}, заглушек /-/resize/20x/ сейчас ${im.tildaLazy.placeholders})` : ''}, без alt ${im.noAlt}, битых ${im.broken}, фоновых ${im.bgImages} · форматы: ${Object.entries(im.formats).map(([k, v]) => `${k} ${v}`).join(', ') || '—'}${im.oversized.length ? ` · грузятся крупнее, чем показаны: ${im.oversized.map((o) => `${o.src} ${o.natural}→${o.shown}`).join('; ')}` : ''}`,
     `- meta: title «${t.meta.title}» · description ${t.meta.description ? 'есть' : 'НЕТ'} · viewport ${t.meta.viewport || 'НЕТ'} · lang ${t.meta.lang || 'НЕТ'} · h1 на странице: ${t.meta.h1Count} · og:image ${t.meta.ogImage ? 'есть' : 'нет'} · favicon ${t.meta.favicon ? 'есть' : 'нет'}`,
@@ -1697,7 +1805,7 @@ function writeSummary(url, run, per, design, order, extra) {
     `- цвета текста: ${vis.palette.text.map((x) => colorNote(x, sh, 0.02)).join(', ')}`,
     `- заливки кнопок: ${vis.palette.ctaBackgrounds.map((x) => fillNote(x, vis.btnShares)).join(', ') || 'нет'}`,
     accentLine(vis, vis.btnShares),
-    `- шрифты: заголовки «${vis.fonts.heading}», текст «${vis.fonts.body}» ${vis.fonts.bodySize}${vis.fonts.bodySizes.length > 1 ? ` (по объёму текста: ${vis.fonts.bodySizes.map((x) => `${x.size} ${x.chars} зн.`).join(', ')})` : ''} · загружено начертаний ${vis.fonts.loaded}, не загрузилось ${vis.fonts.failed}`,
+    `- шрифты: заголовки ${fontRoleNote(vis.fonts.heading, vis.fonts.headingMeasure, vis.fonts.rendered && vis.fonts.rendered.heading, vis.fonts.headingFrom)}, навигация ${fontRoleNote(vis.fonts.nav && vis.fonts.nav.family, vis.fonts.nav, vis.fonts.rendered && vis.fonts.rendered.nav, vis.fonts.nav ? 'замер' : null)}, текст «${vis.fonts.body}» ${vis.fonts.bodySize}${[vis.fonts.rendered && vis.fonts.rendered.body ? `набран ${vis.fonts.rendered.body}` : '', vis.fonts.bodySizes.length > 1 ? `по объёму текста: ${vis.fonts.bodySizes.map((x) => `${x.size} ${x.chars} зн.`).join(', ')}` : ''].filter(Boolean).map((x, i, a) => (i ? '; ' : ' (') + x + (i === a.length - 1 ? ')' : '')).join('')} · загружено начертаний ${vis.fonts.loaded}, не загрузилось ${vis.fonts.failed}`,
     ...['h1', 'h2', 'h3'].filter((k) => vis.fonts.levels[k]).map((k) => { const f = vis.fonts.levels[k]; return `- ${k}: «${f.family}» ${f.size}/${f.weight}, строка ${f.lineHeight}, ${f.transform}${f.letterSpacing !== 'normal' ? `, ls ${f.letterSpacing}` : ''}${f.style !== 'normal' ? `, ${f.style}` : ''} — «${f.text}»`; }),
     `- радиусы: ${vis.radius.map((x) => `${x.value} ×${x.weight}`).join(', ') || 'нет'} · теней: ${vis.shadows}`,
     `- первый экран: h1 ${vis.firstScreen.h1AboveFold ? 'виден' : 'НЕ виден'} · кнопок ${vis.firstScreen.ctasAboveFold} · крупное медиа ${vis.firstScreen.hasHeroMedia ? (vis.firstScreen.heroBgMedia ? 'есть (картинка-фон)' : 'есть') : 'нет'} · шапка ${vis.firstScreen.header ? `${vis.firstScreen.header.found}: ${vis.firstScreen.header.el} ${vis.firstScreen.header.height}px (${vis.firstScreen.header.shareOfScreen}% экрана, ${vis.firstScreen.header.position}, ${vis.firstScreen.header.place}${vis.firstScreen.header.bg ? `, фон ${vis.firstScreen.header.bg}` : ''}${vis.firstScreen.header.backdrop ? `, ${vis.firstScreen.header.backdrop}` : ''}${vis.firstScreen.header.radius ? `, радиус ${vis.firstScreen.header.radius}` : ''})` : 'не найдена'}`,
@@ -1797,8 +1905,10 @@ const vpSpec = opt.viewports != null ? opt.viewports : opt.viewport;
 const viewports = pickViewports(vpSpec); /* неизвестный экран: pickViewports печатает список и выходит с кодом 1 */
 if (!viewports.length) argFail(`Неизвестные экраны: ${vpSpec}`);
 const has320 = viewports.some(([, vp]) => vp.width <= 320);
-/* WARN из lib (свой стиль не вставился: строгий CSP) — собирать, а не печатать посреди «· desktop … ок»: в вердикт и discovery.json */
-collectWarnings();
+/* WARN из lib (свой стиль не вставился: строгий CSP; SITE_REWORK_DISMISS не найдено или скрыто) — собирать, а не
+   печатать посреди «· desktop … ок»: в вердикт и discovery.json; INFO (SITE_REWORK_DISMISS нажато) — в строку «окна
+   при загрузке» discovery.md, не в stderr */
+collectWarnings(); collectNotes();
 const run = ensureDir(runDir(opt, url));
 const tag = String(opt.tag || 'discover');
 const shotsDir = ensureDir(path.join(run, tag));
@@ -1809,7 +1919,10 @@ let pages = null; let pageShots = null;
 /* что сделано на экране: окно cookie, аккордеоны и меню по клику — в строку прогресса */
 const doneNote = (p) => {
   const x = [];
-  if (p.consent && p.consent.found) x.push(p.consent.closed ? `cookie: закрыто «${p.consent.pick}»` : `cookie: НЕ закрыто${p.consent.why ? ` (${p.consent.why})` : ''}`);
+  const w = p.windows || {};
+  for (const d of w.dismiss || []) x.push(`SITE_REWORK_DISMISS: ${d.found ? (d.gone ? `нажато «${d.label || d.sig}»` : 'нажато, осталось') : d.remembered ? 'не появилось (выбор запомнен)' : d.status}`);
+  if (w.modal) x.push(`открыто окно ${w.modal.sig} — снимки под ним`);
+  if (p.consent && p.consent.found && p.consent.kind !== 'dismiss') x.push(p.consent.closed ? `cookie: закрыто «${p.consent.pick}»` : `cookie: НЕ закрыто${p.consent.why ? ` (${p.consent.why})` : ''}`);
   const gs = (p.content.accordions && p.content.accordions.groups) || [];
   if (gs.length) x.push(`аккордеонов: ${gs.map((g) => `${g.native ? 'details ' : ''}${g.count} (${g.skip ? `не проверен: ${g.skip}` : g.status || 'не проверен'})`).join(', ')}`);
   const tg = p.interactive.toggles || [];
@@ -1870,10 +1983,12 @@ const paletteColors = [...new Set(order.flatMap((v) => { const p = good[v].visua
 const shares = await pixelShares(shotFiles, paletteColors).catch(() => null);
 const texResults = order.map((v) => good[v].texture).filter((t) => t && t.source === 'texture.mjs');
 
-const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN, warnings: takeWarnings() };
+/* одинаковые WARN lib с разных экранов (SITE_REWORK_DISMISS не найдено на каждом) — одной строкой */
+const uniqW = (l) => [...new Set(l)];
+const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN, warnings: uniqW(takeWarnings()), notes: uniqW(takeNotes()) };
 const textureSource = opt['no-texture-module'] ? 'discover (запасной путь, --no-texture-module)' : texNote || 'texture.mjs';
 const save = (design) => {
-  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null, warnings: extra.warnings });
+  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null, warnings: extra.warnings, notes: extra.notes });
   fs.writeFileSync(path.join(run, 'discovery.md'), writeSummary(url, run, good, design, order, extra));
 };
 
@@ -1912,7 +2027,7 @@ if (design) {
   const tt = extra.textureTokens;
   console.log(tt.written ? `· фактура → design/site.tokens.css: блок --grain-* (${tt.grain === 'есть' ? `зерно есть, opacity ${tt.opacity}, ${tt.blend}` : `зерна ${tt.grain}, opacity 0`}${tt.replaced ? ', прежний блок заменён' : ''})` : `· фактура: блок --grain-* в design/site.tokens.css не дописан — ${tt.why}`);
 }
-extra.warnings = [...extra.warnings, ...takeWarnings()];
+extra.warnings = uniqW([...extra.warnings, ...takeWarnings()]);
 save(design);
 
 /* вердикты в консоль */
@@ -1938,8 +2053,15 @@ for (const v of order) {
   const bad = vis.palette.ctaBackgrounds.map((x) => [x.value, fillShare(x, vis.btnShares)]).filter(([, b]) => b && b.share < FILL_MIN);
   if (bad.length) verdicts.push(['WARN', `${v}: заливка кнопок в CSS есть, в коробках кнопок почти не видна: ${bad.map(([c, b]) => `${c} ${b.share}%`).join(', ')}`]);
   const cn = good[v].consent;
-  if (cn && cn.found && !cn.closed && !opt['keep-consent']) verdicts.push(['WARN', `${v}: окно согласия cookie не закрылось — ${cn.why || 'причина неизвестна'} (${cn.box}, ${cn.place}, ${cn.share}% экрана на снимках)`]);
+  if (cn && cn.found && cn.kind !== 'dismiss' && !cn.closed && !opt['keep-consent']) verdicts.push(['WARN', `${v}: окно согласия cookie не закрылось — ${cn.why || 'причина неизвестна'} (${cn.box}, ${cn.place}, ${cn.share}% экрана на снимках)`]);
+  /* открытое окно без слов про cookie — снимки и замеры под ним */
+  const wn = good[v].windows || {};
+  if (wn.modal) verdicts.push(['WARN', `${v}: ${modalNote(wn.modal)}`]);
+  else if (wn.modalLate) verdicts.push(['WARN', `${v}: после прокрутки ${modalNote(wn.modalLate)}`]);
 }
+for (const [v, p] of Object.entries(extra320)) if (p && p.windows && p.windows.modal) verdicts.push(['WARN', `${v}: ${modalNote(p.windows.modal)}`]);
+for (const s of pageShots || []) if (s.modal) verdicts.push(['WARN', `страница типа ${s.key}: ${s.modal}`]);
+for (const n of extra.notes || []) verdicts.push(['INFO', n]);
 for (const s of pageShots || []) {
   if (s.error) verdicts.push(['WARN', `страница типа ${s.key} не снялась: ${s.error}`]);
   else if (s.status >= 400) verdicts.push(['WARN', `страница типа ${s.key} ответила HTTP ${s.status}: ${s.example}`]);
