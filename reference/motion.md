@@ -128,7 +128,8 @@ node scripts/motion.mjs selftest                                                
   `@keyframes`: переход разворачивается с текущего места, а ключевые кадры при быстром повторном клике
   начинают заново.
 - Появление без JS — `@starting-style`: браузер, который его не знает, просто покажет элемент сразу.
-- Движение из JS без библиотеки — WAAPI (`el.animate(…)`): прерывается и идёт так же гладко, как CSS.
+- Движение из JS — WAAPI (`el.animate(…)`) или Motion (`animate` на том же механизме, плюс пружины и прокрутка):
+  прерывается и идёт так же гладко, как CSS. Чем делать какой эффект — «Техника» ниже.
 - Заданное заранее движение — на CSS: оно не рвётся, пока страница грузится и считает скрипты; JS — для того,
   что зависит от действия человека.
 
@@ -193,6 +194,60 @@ node scripts/motion.mjs selftest                                                
 `scale(0)`, анимация на частом действии, рывки) — P2 в меню, форме и на телефоне, P4 в остальном; «заметно
 не так» и полировка — P4–P5, в отчёт. Чек-листы — `review-animations` (10 стандартов в `SKILL.md`, значения
 в `STANDARDS.md`) и `improve-animations/AUDIT.md` (8 разделов), без их `plans/`.
+
+## Техника: чем делать
+
+Годится любая техника, которая даёт эффект лучше (правило 5 в SKILL.md). Решает эффект, а не привычка:
+самое простое, что делает его хорошо, — первым; нужна пружина, прерывание, привязка к прокрутке или сцена с
+таймлайном — библиотека. Что двигать, зачем, какие кривые и длительности — по числам донора и «Когда чисел
+донора нет» выше; техника отвечает только на вопрос «чем».
+
+| эффект | чем | почему |
+|---|---|---|
+| цвет, тень, прозрачность по классу; наведение; меню, аккордеон, вкладки | CSS `transition` | браузер делает сам и разворачивает с текущего места |
+| появление при загрузке, простые петли (парение, пульс) | CSS `@keyframes`, `@starting-style` | прерывать не нужно |
+| появление при прокрутке, лесенка списка | Motion `inView` + `animate` + `stagger`; в React — `whileInView` | наблюдатель на 0,5 КБ, анимация прерывается |
+| свойство на прокрутке: параллакс, прогресс, затемнение | CSS `animation-timeline: view()` / `scroll()`; где его нет — Motion `scroll()` | идёт на видеокарте (ScrollTimeline), без обработчиков прокрутки |
+| закреплённый раздел с движением внутри | `position: sticky` + Motion `scroll()` с `target`; сцена с таймлайном — GSAP ScrollTrigger (`pin`, `scrub`) | sticky дешевле всего; у GSAP — таймлайны и закрепление с запасом |
+| текст по строкам, словам, буквам | GSAP SplitText или своё разбиение на `span` | у Motion разбиение текста только в платном Motion+ |
+| пружина, прерываемое движение, отклик на нажатие | Motion `{ type: "spring", bounce }`, `press`, `hover`; пружина в CSS — `linear()` (MCP `motion`, генератор пружин) | пружина сохраняет скорость, когда движение прервали |
+| уход из DOM с анимацией, смена раскладки, общий элемент (React) | Motion `AnimatePresence`, `layout`, `layoutId` | CSS не анимирует между двумя раскладками |
+| счётчик | Motion `animate(0, n, { onUpdate })` или свой `requestAnimationFrame` | бесплатно; готовый `AnimateNumber` — платный |
+| плавная прокрутка всей страницы | Lenis | только если она есть у донора или это характер сайта; при «меньше движения» — выключать |
+| иллюстрация с готовым движением | Lottie | только с готовым файлом |
+| 3D, частицы, шейдеры | Three.js, WebGL | `engines.md` → «3D» |
+
+**Motion без сборщика** — модуль с jsDelivr, версия точная. Первый экран — на CSS, скрипт — для того, что ниже:
+```html
+<script type="module">
+  import { animate, inView, scroll, stagger } from "https://cdn.jsdelivr.net/npm/motion@13.4.6/+esm";
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.documentElement.classList.add("motion-on");   /* в CSS: .motion-on .menu-list > * { opacity: 0 } — без JS всё видно */
+    inView(".menu-list", (list) => {                        /* колбэк — один раз, когда список вошёл в экран */
+      animate(list.children, { opacity: [0, 1], y: [16, 0] },
+        { delay: stagger(0.06), duration: 0.5, ease: [0.23, 1, 0.32, 1] });
+    }, { amount: 0.3 });
+    const hero = document.querySelector(".hero");           /* параллакс: фон привязан к прохождению блока через экран */
+    scroll(animate(".hero__bg", { y: [0, 120] }, { ease: "linear" }),
+      { target: hero, offset: ["start start", "end start"] });
+  }
+</script>
+```
+Для простых анимаций хватает мини-версии `animate` (`motion@13.4.6/mini/+esm`, около 2,5 КБ), полная — около 18 КБ.
+
+**Motion в React** (сайт на React или Next):
+```jsx
+import { motion, MotionConfig } from "motion/react";
+<MotionConfig reducedMotion="user">
+  <motion.li initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, amount: 0.3 }} transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }} />
+</MotionConfig>
+```
+Код на Motion — по навыку `motion`: `~/.claude/skills/motion/best-practices/` (`motion.md` — обычный JS, `react.md`,
+`css-or-motion.md`); документация и примеры — MCP `motion` (`search-motion-docs`), API не писать по памяти.
+Motion+ ($399: splitText, AnimateNumber, Ticker, Typewriter, аудиты MotionScore) — только с согласия владельца.
+GSAP (3.15) бесплатен целиком, включая ScrollTrigger и SplitText, коммерческие сайты разрешены; лицензия не
+открытая (нельзя встраивать в конструкторы анимаций, конкурирующие с Webflow) — для сайтов клиентов это не мешает.
 
 ## Рецепты
 
@@ -442,6 +497,18 @@ for (const b of document.querySelectorAll('.faq__q')) {
 ### `video-bg` — видео-фон
 `autoplay muted loop playsinline`, постер (он же LCP), `preload="metadata"`, пауза вне экрана,
 при «меньше движения» — постер вместо видео, вес ≤ 2–3 МБ (media.mjs режет петлю).
+
+Лёгкое фоновое видео — рецепт целиком:
+- ролик по смыслу дела (жарка у гриля, пар над чашкой, руки мастера), без звука, петля 6–12 с без видимого шва;
+  у ресторанного и производственного дела видео сильнее фото (`engines.md` → «Картинки и видео»);
+- два источника: `webm` (VP9) и `mp4` (H.264) 720p, битрейт под бюджет — на телефоне ≤ 2 МБ, на компьютере ≤ 3 МБ;
+  постер `webp` из кадра петли, он же первый кадр — без скачка при старте;
+- `<video autoplay muted loop playsinline preload="metadata" poster="…" aria-hidden="true" disablepictureinpicture>`:
+  декоративное — вне дерева доступности, смысл несёт текст рядом;
+- пауза вне экрана (`IntersectionObserver` или Motion `inView` с колбэком выхода) и при скрытой вкладке;
+  «меньше движения» или режим экономии (видео не стартовало) — остаётся постер;
+- текст поверх видео — на подложке или затемнении, контраст меряет `a11y.mjs` по снимку фона;
+- проверка: `runtime.mjs <url> --video --reduced-motion`, вес — `perf.mjs` (видео первого экрана считается отдельно).
 
 ## Своё и банк идей
 
