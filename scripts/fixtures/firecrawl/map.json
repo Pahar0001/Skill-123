@@ -1,0 +1,23 @@
+{
+ "success": true,
+ "links": [
+  { "url": "https://kofe.example/", "title": "Кофейня «Зерно» — Ярославль", "description": "Кофейня у Волги: обжарка по понедельникам" },
+  { "url": "https://kofe.example/menu", "title": "Меню — Зерно" },
+  { "url": "https://kofe.example/menu/zavtraki", "title": "Завтраки" },
+  { "url": "https://kofe.example/menu/deserty", "title": "Десерты" },
+  { "url": "https://kofe.example/product/efiopiya-sidamo", "title": "Эфиопия Сидамо, 250 г" },
+  { "url": "https://kofe.example/product/kolumbiya-supremo", "title": "Колумбия Супремо, 250 г" },
+  { "url": "https://kofe.example/product/keniya-aa" },
+  { "url": "https://kofe.example/blog/kak-zavarivat-v-turke", "title": "Как заваривать в турке" },
+  { "url": "https://kofe.example/blog/obzharka-po-ponedelnikam" },
+  { "url": "https://kofe.example/contacts/", "title": "Контакты" },
+  { "url": "https://kofe.example/contacts" },
+  { "url": "https://kofe.example/o-nas", "title": "О нас" },
+  { "url": "https://kofe.example/privacy-policy", "title": "Политика конфиденциальности" },
+  { "url": "https://kofe.example/en/blog/roasting", "title": "Roasting days" },
+  { "url": "https://www.kofe.example/dostavka", "title": "Доставка" },
+  { "url": "https://shop.kofe.example/product/turka-med", "title": "Турка медная" },
+  { "url": "https://kofe.example/files/menu-2026.pdf" },
+  { "url": "https://kofe.example/%D0%B0%D1%84%D0%B8%D1%88%D0%B0/dzhaz-vecher", "title": "Джазовый вечер" }
+ ]
+}

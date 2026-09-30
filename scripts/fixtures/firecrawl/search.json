@@ -1,0 +1,18 @@
+{
+ "success": true,
+ "data": {
+  "web": [
+   { "url": "https://x.com/kofe_yar/status/1", "title": "Кофейни Ярославля в X", "description": "Пост о кофейнях", "position": 1 },
+   { "url": "https://kofe-a.example/menu", "title": "Меню кофейни А — Ярославль", "description": "Капучино 250 ₽, раф от 290 ₽. Доставка бесплатно от 1 000 ₽.", "position": 2 },
+   { "url": "https://kofe-a.example/about", "title": "О кофейне А", "description": "Кофейня А на Советской", "position": 3 },
+   { "url": "https://www.youtube.com/watch?v=abc123", "title": "Обзор кофеен Ярославля", "description": "Видео", "position": 4 },
+   { "url": "https://kofe-b.example/prices.pdf", "title": "Прайс кофейни Б (PDF)", "description": "Цены на напитки", "position": 5 },
+   { "url": "http://192.168.0.10/", "title": "Роутер", "description": "Панель роутера", "position": 6 },
+   { "url": "https://kofe-b.example/", "title": "Кофейня Б — центр Ярославля", "description": "Без выходных, студентам скидка 10%", "position": 7 },
+   { "url": "https://kofe-c.example/uslugi", "title": "Кофейня В — услуги", "description": "Кейтеринг и выездной бар", "position": 8 },
+   { "url": "https://kofe-d.example/", "title": "Кофе-брейки в Ярославле", "description": "От 15 000 ₽ на 30 гостей", "position": 9 },
+   { "url": "https://kofe-e.example/", "title": "Кофейня Е", "description": "Кофе с собой", "position": 10 }
+  ]
+ },
+ "creditsUsed": 2
+}

@@ -1,0 +1,45 @@
+{
+ "https://kofe.example/menu": {
+  "success": true,
+  "data": {
+   "markdown": "# Меню\n\n## Кофе\n\n| Напиток | Объём | Цена |\n|---|---|---|\n| Эспрессо | 30 мл | 150 ₽ |\n| Капучино | 0,3 л | 220 ₽ |\n\nОбжариваем зерно по понедельникам, поэтому вкус у эспрессо меняется от недели к неделе.",
+   "branding": {
+    "colorScheme": "light",
+    "logo": "https://kofe.example/logo.svg",
+    "colors": { "primary": "#6B3E26", "accent": "#E3B04B", "background": "#FFF8F0", "textPrimary": "#2B1B12" },
+    "fonts": [ { "family": "Playfair Display" }, { "family": "Inter" } ],
+    "typography": { "fontFamilies": { "primary": "Inter", "heading": "Playfair Display" } }
+   },
+   "metadata": { "title": "Меню — Зерно", "description": "Меню кофейни", "language": "ru", "sourceURL": "https://kofe.example/menu", "url": "https://kofe.example/menu", "statusCode": 200, "creditsUsed": 1 }
+  }
+ },
+ "https://kofe-a.example/menu": {
+  "success": true,
+  "data": {
+   "markdown": "# Меню кофейни А\n\n[Главная](https://kofe-a.example/) / Меню\n\n| Напиток | Цена |\n|---|---|\n| Капучино | 250 ₽ |\n| Раф 0,4 л | от 290 ₽ |\n\nДоставка бесплатно при заказе от 1 000 ₽.\n\nГотовим заказ за 10 минут, забрать можно у окна выдачи.\n\n![Капучино в стакане](https://kofe-a.example/img/cup.jpg)",
+   "metadata": { "title": "Меню кофейни А — Ярославль", "language": "ru", "sourceURL": "https://kofe-a.example/menu", "url": "https://kofe-a.example/menu", "statusCode": 200, "creditsUsed": 1 }
+  }
+ },
+ "https://kofe-b.example/": {
+  "success": true,
+  "data": {
+   "markdown": "# Кофейня Б\n\nКофейня в центре Ярославля. Работаем без выходных с 8:00 до 22:00.\n\nСтудентам скидка 10% по будням.\n\nЗерно обжариваем раз в неделю, в зале всегда 12 сортов на выбор.",
+   "metadata": { "title": "Кофейня Б — центр Ярославля", "language": "ru", "sourceURL": "https://kofe-b.example/", "url": "https://kofe-b.example/", "statusCode": 200, "creditsUsed": 1 }
+  }
+ },
+ "https://kofe-c.example/uslugi": { "__status": 500, "success": false, "error": "All scraping engines failed" },
+ "https://glued.example/": {
+  "success": true,
+  "data": {
+   "markdown": "# Кофейнянауглу\n\nМыварималикофесутраидопозднейночиикаждыйденьпробовалиновыесортазерна.\n\nWeroastedcoffeeeverymorningandtastednewbeanseveryweek.\n\nРаботаемкаждыйденьбезвыходныхипраздниковсвосьмиутраидодесятивечера.\n\nСтоимостькапучино250рублейаэспрессо150рублей.",
+   "metadata": { "title": "Кофейня на углу", "language": "ru", "sourceURL": "https://glued.example/", "url": "https://glued.example/", "statusCode": 200, "creditsUsed": 1 }
+  }
+ },
+ "https://kofe-d.example/": {
+  "success": true,
+  "data": {
+   "markdown": "# Кофе-брейки в Ярославле\n\nКофе-брейк на 30 гостей — от 15 000 ₽.\n\nПриезжаем в течение 2 часов после заявки, посуду и столы привозим сами.",
+   "metadata": { "title": "Кофе-брейки в Ярославле", "language": "ru", "sourceURL": "https://kofe-d.example/", "url": "https://kofe-d.example/", "statusCode": 200, "creditsUsed": 1 }
+  }
+ }
+}

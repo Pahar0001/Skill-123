@@ -76,6 +76,12 @@ Git Bash `~` раскрывается сам, в PowerShell 5.1 — нет, та
 | Что главное (можно несколько) | заявки и продажи / красота и впечатление / телефон и скорость / тексты и наполнение | приоритеты P1–P2 в плане |
 | Контент: тексты, фото, видео, логотипы | пришлю свой (где лежит) / частично есть / **нет — сделай сам** | свой — главнее придуманного; частично — чего нет, пишем сами; нет — тексты и примеры цен, событий, отзывов пишем сами (в голосе дела, правдоподобно для отрасли и города), фото и видео ищем `media.mjs`, `copy.mjs lint --invent`; придуманное — списком в отчёте («Придумано — проверить владельцу», `<папка>/copy/invented.json`) |
 
+**Контент «нет — сделай сам» — сначала факты о деле.** `node ~/.claude/skills/site-rework/scripts/firecrawl.mjs facts
+--run <папка> --about "<дело, город>"` (около 7 кредитов): цены, сроки и условия по делу и городу со ссылками →
+`<папка>/copy/facts-candidates.json`. Это кандидаты: в `copy/facts.json` — только проверенное глазами; цена
+другого заведения — ориентир для примера, сам пример — в `copy/invented.json`. Нет ключа — пропуск, пишем
+правдоподобно, как раньше. Когда брать Firecrawl и когда нет — `reference/firecrawl.md`.
+
 Отдельным вопросом, если из брифа неясно: какие страницы донора нужны (`reference/donor-mode.md` §1)
 и куда выкладывать (только локально / ветка на GitHub / сразу на сайт — выкладка на сайт только словами
 пользователя). Проверка — быстрая по умолчанию (§4), не спрашивать.
@@ -119,6 +125,8 @@ streetwearbrands.ru нет формы, вопросов, шагов. Именн�
    меряют, агент смотрит»). MCP Refero работает только на платном тарифе (Pro, Team, Lifetime);
 2. отбор: близкое дело или настроение, живой многостраничный сайт, есть детали и движение (не голый
    шаблон), шрифты с кириллицей или ясной заменой из Google Fonts; снимки первых экранов трёх лучших;
+   фирменный стиль кандидатов одним запросом — `firecrawl.mjs scrape <кандидат> --run <папка> --formats branding`
+   (по кредиту на кандидата; подсказка, а не замер);
 3. выбор — вопрос пользователю: 3 кандидата со снимками и рекомендацией (разные ответы — разная работа);
    пользователь недоступен — рекомендованный;
 4. дальше — обычный режим донора по живому сайту выбранного: `discover`, `extract` (design-reference),
@@ -290,6 +298,7 @@ node ~/.claude/skills/site-rework/scripts/taste.mjs brief --run <папка> --b
 
 ```
 node ~/.claude/skills/site-rework/scripts/discover.mjs <url> --out <папка>        # техника, содержимое, визуал, фактура, паспорт, медиа-слоты, 320, дизайн-система; окно cookie закрывается само, аккордеоны и меню — кликом, страницы по типам (+ --pages-shots N для донора)
+node ~/.claude/skills/site-rework/scripts/firecrawl.mjs map <донор> --run <папка>   # режим донора: все адреса по типам страниц (1 кредит); firecrawl/map-*.md — пройти каждый тип и готовая строка --pages
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-scroll --scroll --canvas --motion --video --fullpage
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-menu --viewport mobile --scroll --click "<переключатель меню>" --shot menu   # селектор — из discovery.md
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag base-state --css --hover-all --nav     # автопроверки состояния, reference/qa.md
@@ -627,6 +636,7 @@ scripts/state.mjs      журнал задач и этапов: статусы �
 scripts/mirror.mjs     зеркало чужой страницы как верстак (rework.css / rework.js)
 scripts/flags-doc.mjs  справочник флагов из кода → reference/flags.md; --check — сверка кода, -h и документации (вручную перед коммитом скилла)
 scripts/serve.mjs      статический сервер (Range для видео, сжатие br/gzip как у хостинга, только эта машина); --proxy отдаёт остальное оригиналу
+scripts/firecrawl.mjs  сбор данных облаком Firecrawl: map (адреса по типам страниц), scrape (текст, фирменный стиль), search, facts (кандидаты фактов со ссылками), status; кэш и бюджет кредитов на прогон; без ключа — пропуск; selftest на подставном сервере
 scripts/security.mjs   безопасность и утечки: служебные файлы с сервера (/.env, /.git, резервные копии), админка и API без входа, формы, секреты в коде и репозитории (--repo), чужие скрипты и счётчики, заголовки; selftest на fixtures/security
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
 scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
@@ -646,6 +656,7 @@ reference/typography.md      длина строки, интерлиньяж, ш
 reference/new-site.md        сайт с нуля: реестр требований, вопросы, веб-сервис и демо, направления, план, изменения по ходу, сверка
 reference/donor-tilda.md     донор на Tilda: чему верить, zoom, движение Tilda → наши рецепты, что не переносить
 reference/security.md        безопасность и утечки: что проверяет security.mjs и типовые исправления
+reference/firecrawl.md       когда брать Firecrawl и когда нет, стоимость команд, бюджет, остаток кредитов
 templates/brief.md           форма запроса
 templates/report.md          форма отчёта
 ui/brief-form.html           форма в браузере, собирает текст брифа

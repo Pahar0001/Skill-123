@@ -11,8 +11,8 @@
    пришла, сервер жив. Playwright MCP выключен как дубль; Firefox скрипты открывают сами (`--browser firefox`).
 3. Скиллы рядом: `~/.claude/skills/design-reference` (снятие дизайн-системы),
    проектные скиллы вроде `predrelease` (проверки перед коммитом в конкретном репозитории).
-4. Картинки и 3D: Higgsfield — `balance` (кредиты); Figma — `whoami`; Firecrawl — `firecrawl --status`
-   (кредиты: 1000 в месяц, скиллу — до 50 на сайт).
+4. Картинки и 3D: Higgsfield — `balance` (кредиты); Figma — `whoami`; Firecrawl — `firecrawl.mjs status`
+   (или `firecrawl --status`; кредиты: 1000 в месяц, скиллу — до 50 на сайт).
    Серверы, которым нужна авторизация, в сессии не включить — записать как недоступные.
 5. Документация: Context7 (`resolve-library-id` → `query-docs`) для Three.js, GSAP, Swiper и прочих; Motion —
    MCP `motion` (`search-motion-docs`).
@@ -39,6 +39,7 @@
 | `scripts/ideas.mjs` | банк идей: удачное с прошлых сайтов и заготовки, где стояли, как отозвался пользователь; `pick --run <прогон> --kind motion --for "<о чём сайт>"` — свежее, не отвергнутое, не с последних сайтов | команды → `~/.claude/site-rework/taste/ideas.json`, `IDEAS.md` | не заменяет своё из товара — добавляет разнообразия | план (этап 2); после сдачи — записать удачное и отвергнутое | — |
 | chrome-devtools MCP | живой браузер из чата: `new_page`, `navigate_page`, `resize_page`, `emulate`, `click`, `hover`, `fill`, `press_key`, `drag`, `evaluate_script`, `take_screenshot`, `take_snapshot`, `list_console_messages`, `list_network_requests`, `performance_start_trace/stop_trace/analyze_insight`, `lighthouse_audit` | — | headless, изолированный профиль; экран по умолчанию нестандартный — задавать `resize_page`; на этой машине WebGL работает (ANGLE D3D11) | ручное исследование сложного поведения: пошаговое взаимодействие, трассировка производительности, Lighthouse (доступность, SEO, best practices) | массовые снимки и повторяемые проверки — это скрипты |
 | `scripts/security.mjs` | безопасность и утечки: служебные файлы с сервера (`/.env`, `/.git`, копии), админка и API без входа (`--admin`), формы (метод, личные данные в адресе), секреты в коде страницы и в репозитории (`--repo`), чужие скрипты и счётчики, заголовки (CSP, X-Frame-Options, HTTPS) | url → протокол OK/WARN/FAIL, `security/<tag>.json` | только смотрит, ничего не взламывает; за логином не ходит | полная проверка и перед каждой выкладкой; исправления — `reference/security.md` | правки текста и картинок |
+| `scripts/firecrawl.mjs` | сбор данных облаком Firecrawl: адреса сайта по типам страниц (map), текст и фирменный стиль страницы (scrape), поиск с выдержками (search), кандидаты фактов о деле со ссылками (facts), остаток кредитов (status); кэш и бюджет на папку прогона | url, запрос или «дело, город» → `firecrawl/map-*`, `scrape-*`, `search-*` (.md/.json), `copy/facts-candidates.json`, `firecrawl/budget.json` | облако не видит localhost и частные сети — отказ; x.com и PDF не читает; стиль — подсказка, не замер; текст страниц, перестроенных скриптом, бывает слипшимся; 1000 кредитов в месяц, до 50 на сайт | разведка донора (map), «сделай сам» (facts), подбор донора (scrape --formats branding трёх кандидатов), тон (scrape --formats markdown) | замеры, localhost, фото и видео, файлы клиента — `reference/firecrawl.md` |
 | `Read` на PNG | «открыть глазами» — единственный способ визуальной проверки | путь к снимку → картинка в контексте | большие full-page снимки читать по частям (сначала first, потом full) | всегда после снимка | — |
 
 ## Дизайн и анализ
@@ -56,7 +57,7 @@
 | Figma MCP (`get_design_context`, `get_screenshot`, `use_figma`, генерация дизайна) | читать макеты пользователя; выкладывать результат в Figma | только если у пользователя есть Figma-ссылка или он просит макет |
 | Context7 | актуальная документация библиотек | Three.js, GSAP, Swiper, Lenis — не писать API по памяти |
 | `WebSearch`, `WebFetch` | факты о платформе сайта, о конкурентах, о шрифтах | когда чего-то нет в DOM и в документации |
-| Firecrawl (`scripts/firecrawl.mjs`, навыки `firecrawl-*`) | карта сайта, тексты страниц, фирменный стиль кандидатов, факты о деле со ссылками | разведка донора, «сделай сам»; кредиты: 1000 в месяц, скиллу — до 50 на сайт; не localhost, не замеры, не файлы клиента — `reference/firecrawl.md` |
+| навыки `firecrawl-*` и консольная `firecrawl` | разовый поиск и чтение страниц вне прогона | тратят те же кредиты без бюджета прогона; в прогоне — `firecrawl.mjs` (кэш и бюджет) |
 | `Agent` (Explore / Plan / general-purpose) | параллельная разведка исходников, план по большому репозиторию | большой проект; несколько референсов сразу |
 
 ## Код

@@ -1,0 +1,9 @@
+{
+ "success": true,
+ "links": [
+  "https://old.example/",
+  "https://old.example/menu",
+  "https://old.example/blog/pervaya-zapis",
+  "https://old.example/blog/vtoraya-zapis"
+ ]
+}
