@@ -82,7 +82,7 @@ export const LICENSES = {
   kaboompics: { name: 'Kaboompics License', url: 'https://kaboompics.com/page/license-and-faq', attribution: false, manual: true, note: 'только Standard License: кадры «Editorial Use Only» в рекламу и сайт нельзя' },
   burst: { name: 'Burst (Shopify) License', url: 'https://www.shopify.com/stock-photos/licenses/shopify-some-rights-reserved', attribution: false },
   picjumbo: { name: 'Picjumbo License', url: 'https://picjumbo.com/faq-and-terms/', attribution: false, note: 'у части кадров нет model/property release; премиум вперемешку с бесплатным' },
-  foodiesfeed: { name: 'Foodiesfeed License (CC0-эквивалент)', url: 'https://www.foodiesfeed.com/license/', attribution: false, note: 'только фото: кадры из /generated/ сделаны нейросетью' },
+  foodiesfeed: { name: 'Foodiesfeed License (CC0-эквивалент)', url: 'https://www.foodiesfeed.com/license/', attribution: false, note: 'кадры из /generated/ сделаны нейросетью — можно, но это придуманная еда: в список для владельца' },
   'mixkit-free': { name: 'Mixkit Stock Video Free License', url: 'https://mixkit.co/license/#videoFree', attribution: false, video: true, note: 'только data-license="videoFree"; Restricted — нельзя' },
   'adobe-stock-free': { name: 'Adobe Stock Standard License (бесплатная коллекция)', url: 'https://stock.adobe.com/license-terms', attribution: false, manual: true, note: 'только ручная загрузка после входа; лицензия на одного клиента; файл нельзя раздавать отдельно' },
 };

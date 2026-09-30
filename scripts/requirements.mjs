@@ -750,7 +750,7 @@ function findConflicts(R, taste) {
   for (const q of act.filter((x) => x.kind !== 'fact')) {
     const cats = factCats(q.text).filter((c) => !facts.some((f) => factCats(f.text).includes(c)));
     if (q.kind === 'integration' && !facts.some((f) => /ключ|токен|аккаунт|(?<![a-z])api(?![a-z])|сервис/i.test(f.text)) && !(qFor([q.id]) || {}).answer) cats.push('какой сервис и чей ключ');
-    if (cats.length) add('fact', '·', [q.id], `${lbl(q)} просит: ${cats.join(', ')} — фактов нет`, '«Ничего не выдумывать»: в вёрстке [уточнить: …], строка в «Ждём от вас»', { facts: cats });
+    if (cats.length) add('fact', '·', [q.id], `${lbl(q)} просит: ${cats.join(', ')} — фактов нет`, 'нет своего — придумать правдоподобно для дела и города и записать в copy/invented.json (раздел отчёта «Придумано — проверить владельцу»); строка в «Ждём от вас» — владелец пришлёт своё', { facts: cats });
   }
   /* 3. запрет вкуса и приёмы из каталога шаблонов */
   let bans = {};

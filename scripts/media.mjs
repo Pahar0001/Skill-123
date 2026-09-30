@@ -87,8 +87,9 @@
  *       --start --dur --need --focus; точный режим --size --thumb --thumb-dir --format --quality]
  *       [--run <slug, url сайта или папка прогона — как у search>]
  *     Кадр выбрал человек на сайте без API (Kaboompics, Burst, Picjumbo,
- *     Foodiesfeed — только /legacy/ и /uploads/: у локального файла обязателен
- *     --file-url, иначе не видно, не нейросеть ли это; Mixkit — поштучно, файл
+ *     Foodiesfeed — /legacy/ и /uploads/ фото, /generated/ нейросеть: можно, но
+ *     придумано — invented в credits.json и в список для владельца; у локального
+ *     файла обязателен --file-url, иначе не видно, не нейросеть ли это; Mixkit — поштучно, файл
  *     должен быть того же ролика, что страница; Adobe Stock Free).
  *     Лицензии: cc0 pdm unsplash pexels pixabay kaboompics burst picjumbo
  *     foodiesfeed mixkit-free adobe-stock-free. Kaboompics — только с
@@ -759,6 +760,7 @@ async function processAndCredit(sharp, c, buf, meta, o, extra = {}) {
     ...(c.credit_line ? { credit_line: c.credit_line } : {}),
     ...(c.art ? { art: { death_year: c.art.death_year, work_year: c.art.work_year, term: c.art.term?.why, ...(c.art.photographer ? { photographer: c.art.photographer } : {}) } } : {}),
     ...(extra.note ? { note: extra.note } : {}),
+    ...(extra.invented ? { invented: extra.invented } : {}),
   };
   rec.credit_need = creditNeed(rec);
   saveCredit(o.dest, rec);
@@ -936,11 +938,14 @@ async function cmdImport() {
   const originUrl = isLocal ? fileUrlOpt : fileArg;
 
   /* проверки по источнику */
+  let invented = '';
   if (lic.id === 'foodiesfeed') {
-    /* нейросеть видно только по пути файла у источника (/generated/); по локальному пути её не узнать */
-    if (/\/generated\//i.test(`${pageUrl} ${originUrl}`)) fail('Foodiesfeed: файл из /generated/ сделан нейросетью — выдуманная еда на сайте клиента недопустима. Берите кадры из /legacy/ или /uploads/.', 2);
-    if (!originUrl) fail('Foodiesfeed: у скачанного файла не видно, фото это или кадр нейросети. Передайте адрес файла вторым аргументом или добавьте --file-url <адрес файла на Foodiesfeed> (путь с /legacy/ или /uploads/).', 2);
-    if (!/\/(legacy|uploads)\//i.test(new URL(originUrl).pathname)) fail(`Foodiesfeed: адрес файла ${originUrl} не из /legacy/ или /uploads/ — фото там; /generated/ и прочее не берём.`, 2);
+    /* нейросеть видно только по пути файла у источника (/generated/); по локальному пути её не узнать. Кадр нейросети
+       можно, но это придуманная еда: пометка invented в credits.json и раздел отчёта «Придумано — проверить владельцу» */
+    const ai = /\/generated\//i.test(`${pageUrl} ${originUrl}`);
+    if (!originUrl && !ai) fail('Foodiesfeed: у скачанного файла не видно, фото это или кадр нейросети. Передайте адрес файла вторым аргументом или добавьте --file-url <адрес файла на Foodiesfeed> (путь с /legacy/, /uploads/ или /generated/).', 2);
+    if (!ai && !/\/(legacy|uploads)\//i.test(new URL(originUrl).pathname)) fail(`Foodiesfeed: адрес файла ${originUrl} не из /legacy/, /uploads/ (фото) или /generated/ (нейросеть) — не понять, что это.`, 2);
+    if (ai) invented = 'кадр нейросети (Foodiesfeed /generated/) выдаёт себя за настоящую еду — проверить владельцу до показа клиентам';
   }
   if (lic.id === 'kaboompics' && !opt['not-editorial']) fail('Kaboompics: подтвердите, что на странице кадра НЕТ пометки «Editorial Use Only» (такие в рекламу и на сайт нельзя) — флаг --not-editorial.', 2);
   if (lic.id === 'mixkit-free' && !/(^|\.)mixkit\.co$/.test(host)) fail(`--license mixkit-free: страница должна быть на mixkit.co, а не ${host}.`, 2);
@@ -997,7 +1002,8 @@ async function cmdImport() {
     try { got = await fetchPhoto(c, { url: fileArg }); }
     catch (e) { fail(`Не скачался: ${net.describeError(e)}${/403/.test(String(e.message)) ? ' — сайт закрыт для скриптов: скачайте файл в браузере и передайте путь.' : ''}`); }
   }
-  const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? (fileUrlOpt || path.basename(fileArg)) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}`, pre: dups });
+  const pre = invented ? [...dups, `придумано — в список для владельца (раздел отчёта «Придумано — проверить владельцу»): ${invented}`] : dups;
+  const { rec, res, warnings } = await processAndCredit(sharp, c, got.buf, { url: isLocal ? (fileUrlOpt || path.basename(fileArg)) : fileArg, bytes: got.bytes, sha256: got.sha256, format: got.format }, o, { note: lic.note || '', label: `с ${host}`, pre, invented });
   printTail(rec, res.markup, lic.note ? [`Лицензия: ${lic.note}`] : [], o.dest, warnings);
 }
 

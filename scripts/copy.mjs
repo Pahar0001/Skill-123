@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Тексты сайта: штампы, канцелярит, «ИИ-ритм», жаргон, выдуманные факты и забытые заполнители;
- * типограф; пары «было → стало» для отчёта. Голос у каждого бизнеса свой: скрипт ловит штампы,
- * канцелярит и выдуманное во всех текстах, но тон не выравнивает — кофейня теплее студии, «ты»
- * у барбершопа и «я» у мастера находкой не считаются. Как писать — reference/copy.md, правила и
- * словари — scripts/copy-rules.mjs.
+ * Тексты сайта: штампы, канцелярит, «ИИ-ритм», жаргон, забытые заполнители и придуманное (числа без
+ * источника, текст под copy:stub — список для владельца); типограф; пары «было → стало» для отчёта. Голос у
+ * каждого бизнеса свой: скрипт ловит штампы, канцелярит и заполнители во всех текстах, но тон не выравнивает —
+ * кофейня теплее студии, «ты» у барбершопа и «я» у мастера находкой не считаются. Как писать —
+ * reference/copy.md, правила и словари — scripts/copy-rules.mjs.
  *
  *   node copy.mjs lint <файл|папка|url> [--pages "/,/about"] [--viewport mobile] [--out <прогон>] [--tag after]
  *        [--facts <facts.json>] [--baseline <before.json|папка|url>] [--no-facts] [--donor <donor.json|папка|url>]
- *        [--allow <copy.allow.json>] [--taste] [--run <прогон>] [--release] [--all] [--quiet] [--json <файл>|-]
+ *        [--allow <copy.allow.json>] [--taste] [--run <прогон>] [--invent] [--all] [--quiet] [--json <файл>|-]
  *   node copy.mjs snapshot <url|папка|файл> --out <прогон> [--pages "/,/about"] [--tag before|donor]
  *   node copy.mjs pairs <до> <после> [--md] [--all] [--limit N] [--json <файл>|-]
  *   node copy.mjs fix --typograph <файл|папка|-> [--write | --out <файл>] [--diff] [--limit N]
@@ -17,12 +17,13 @@
  *   node copy.mjs selftest [--no-browser]        (то же: --selftest)
  *   node copy.mjs --help
  *
- * lint — находки по страницам. FAIL — выкладывать нельзя: выдуманный факт (copy-unverified), забытый
- *   заполнитель (copy-todo: [уточнить: …], {{X}} кроме разрешённых, TODO), текст донора, заглушка при
- *   --release, запрет журнала вкуса. WARN — переписать или записать причину: штамп, пустая оценка,
- *   «не просто X, а Y», подводка, риторический вопрос, оправдания, канцелярит, калька, жаргон, тройка,
+ * lint — находки по страницам. FAIL — выкладывать нельзя: незаполненное (copy-todo: [уточнить: …], [цена],
+ *   TODO, XXX, Lorem ipsum, {{X}} кроме разрешённых), текст донора, запрет журнала вкуса. Придуманное —
+ *   WARN «в список для владельца» (с --invent — подсказка), итог из-за него не FAIL: заявление без источника
+ *   (copy-unverified), текст под пометкой copy:stub. WARN — переписать или записать причину: штамп, пустая
+ *   оценка, «не просто X, а Y», подводка, риторический вопрос, оправдания, канцелярит, калька, жаргон, тройка,
  *   два тире, восклицание, кнопка без действия, заголовок-лозунг… NOTE — подсказка, в вердикт не идёт.
- *   Полный каталог — команда rules.
+ *   Полный каталог — команда rules. Пустые кнопки и ссылки без имени — a11y.mjs.
  *   Файл и папка разбираются без браузера: роли — из разметки (h1–h6, lead, text, li, button, label,
  *   faq-q, faq-a, caption, nav, footer, title); атрибуты alt, placeholder, aria-label, meta description,
  *   og:title, og:description и value кнопок — отдельными прогонами attr:<имя> (типограф их не трогает).
@@ -31,13 +32,16 @@
  *   SITE_REWORK_DISMISS закрыл выбором, увело на другую страницу (mamuka.rest/menu → главная) — адрес открывается
  *   заново (строка INFO), иначе в снимок шли бы тексты чужой страницы.
  *   Факты: цена, процент, срок, счётчик, гарантия, ранг ищутся в facts.json (записи с source) и в
- *   текстах сайта «до» (--baseline). Не нашлось — FAIL: ничего не выдумывать. Сверять не с чем (ни
- *   facts.json, ни снимка «до») — тоже FAIL. Только для разведки чужого сайта (донор, этап 1 без
- *   снимка) — --no-facts: заявления подсказками и WARN copy-unchecked на страницу.
+ *   текстах сайта «до» (--baseline). Не нашлось — придумано: WARN copy-unverified «в список для владельца»
+ *   (с --invent — подсказка). Сверять не с чем (ни facts.json, ни снимка «до») — придуманным считается всякое
+ *   заявление. С --out список придуманного (заявления и copy:stub) пишется в <прогон>/copy/invented.json:
+ *   записи проверенных страниц с by "copy.mjs" заменяются, записи руками и других страниц остаются. Только для
+ *   разведки чужого сайта (донор, этап 1 без снимка) — --no-facts: заявления подсказками, WARN copy-unchecked на
+ *   страницу, список не пишется.
  *   «X, а не Y» — одно на странице допустимо (подсказка), со второго — WARN.
  *   Страницы нет в снимке «до» (он снят с других страниц; и когда с каждой стороны по одной странице с разными
- *   именами) — WARN copy-unchecked «нет снимка «до» для <путь> — FAIL по её заявлениям может быть ложным» с командой
- *   снять снимок и с неё; FAIL остаётся (ничего не выдумывать), в итоге — «без снимка «до»: <страницы>».
+ *   именами) — WARN copy-unchecked «нет снимка «до» для <путь> — в список придуманного могли попасть факты с
+ *   сайта «до»» с командой снять снимок и с неё, в итоге — «без снимка «до»: <страницы>».
  *   Подпись автора фото — по строению, а не по одному слову: «Фото:», «Photo by», «©» в начале или элемент подписи
  *   (small, figcaption, *credit*) с лицензией или фотобанком, остальное — только имя автора («Фото: … · CC BY-SA 4.0 ·
  *   Wikimedia Commons», «Фото: …, бесплатная лицензия Pexels»). Не повтор, лицензия в ней не заявление; фотобанк в
@@ -48,8 +52,8 @@
  * snapshot — все тексты сайта «до» или донора с ролями → <прогон>/copy/<tag>.json: база фактов для
  *   --baseline, основа для --donor, левая сторона для pairs.
  * pairs — «было → стало» по странице, роли и порядку; изменённое — по сходству слов (от 0.4). Новые
- *   числа и обещания помечаются: им нужен источник. <до> и <после> — протокол snapshot или lint
- *   (.json), файл, папка или адрес. --md — готовый список для отчёта.
+ *   числа и обещания помечаются: своё — источник в facts.json, придуманное — в список для владельца. <до> и
+ *   <после> — протокол snapshot или lint (.json), файл, папка или адрес. --md — готовый список для отчёта.
  * fix --typograph — неразрывные пробелы после коротких слов, перед тире, в числах, телефонах, «ул.»,
  *   инициалах; «—» между словами, «–» в диапазонах, «−», «×», «ёлочки» и „лапки“, «…» — только
  *   в текстовых узлах. ПО УМОЛЧАНИЮ НИЧЕГО НЕ ПИШЕТ: печатает счёт по правилам и «было / стало»
@@ -62,22 +66,25 @@
  * Флаги:
  *   --pages "/,/a"      адрес: пути от адреса; папка: /a → a.html, a/index.html или a
  *   --viewport <экран>  адрес: экран (mobile по умолчанию; desktop, laptop, tablet, mobile-s, 320x568@2)
- *   --out <прогон>      папка прогона: протокол <прогон>/copy/<tag>.json; оттуда же по умолчанию
- *                       copy/facts.json, copy/before.json (сайт «до»), copy/donor.json, copy.allow.json.
+ *   --out <прогон>      папка прогона: протокол <прогон>/copy/<tag>.json и список придуманного
+ *                       copy/invented.json; оттуда же по умолчанию copy/facts.json, copy/before.json (сайт
+ *                       «до»), copy/donor.json, copy.allow.json.
  *                       fix: файл, куда записать результат (исходник не трогается)
  *   --run <прогон>      папка прогона для --taste и файлов по умолчанию, если нет --out
  *   --tag <имя>         имя протокола: lint — lint (after, base…), snapshot — before, fix — fix
- *   --facts <файл>      facts.json: [{ "fact": "20 000 ₽", "what": "…", "source": "бриф 28.09" }];
- *                       запись без source — FAIL «факт без источника»
+ *   --facts <файл>      facts.json — своё от владельца: [{ "fact": "20 000 ₽", "what": "…", "source": "бриф 28.09" }];
+ *                       запись без source — WARN: фактом не считается (source или перенести в invented.json)
  *   --baseline <откуда> тексты сайта «до»: протокол snapshot или lint, папка, файл или адрес
- *   --no-facts          не сверять факты (разведка чужого сайта): подсказки и WARN copy-unchecked
+ *   --no-facts          не сверять факты (разведка чужого сайта): подсказки и WARN copy-unchecked; список
+ *                       придуманного не пишется
+ *   --invent            анкета: контент «нет — сделай сам» — придуманное (заявления без источника, copy:stub)
+ *                       подсказкой, а не WARN; список для владельца пишется так же
  *   --donor <откуда>    тексты донора (snapshot --tag donor, папка, адрес): 8 слов подряд — FAIL
  *   --allow <файл>      copy.allow.json: { brand, words, phrases, rules: { правило: [фразы] }, off, templates }
  *   --taste             журнал вкуса (taste.mjs, activeBans): запрет пользователя по правилу copy-*
  *                       поднимает WARN → FAIL, подсказку → WARN; принято пользователем — WARN →
  *                       подсказка; свой отсев (by self) — только пометка. Прогон — --run или --out
  *   --taste-dir <папка> журнал вкуса, если не ~/.claude/site-rework/taste (или SITE_REWORK_TASTE)
- *   --release           заглушки (copy:stub, data-copy="stub", пометка в комментарии) — FAIL
  *   --all               печатать и подсказки (NOTE); pairs — и неизменённые тексты
  *   --quiet             только строки страниц и итог
  *   --json <файл>|-     протокол ещё и в файл; «-» — в stdout (вывод для человека тогда в stderr)
@@ -94,20 +101,24 @@
  *   --help, -h          эта справка
  *
  * Разметка: data-copy-allow="copy-buzz copy-contrast" снимает правила внутри элемента (all — все);
- *   data-copy="stub" [data-copy-note="…"] или <!-- copy:stub … -->…<!-- /copy:stub --> — заглушка
- *   (выдумка по просьбе владельца, текст до ответа владельца): WARN, с --release FAIL; комментарий со
- *   словами ЗАГЛУШКА, ПРИДУМАНО, ЛЕГЕНДА, уточнить помечает следующий за ним элемент так же;
+ *   data-copy="stub" [data-copy-note="что придумано"] или <!-- copy:stub что придумано -->…<!-- /copy:stub -->
+ *   — пометка придуманного без чисел (история, имя, отзыв), не блокировка: WARN «в список для владельца»
+ *   (с --invent — подсказка), строка в copy/invented.json; комментарий со словами ЗАГЛУШКА, ПРИДУМАНО,
+ *   ЛЕГЕНДА, уточнить помечает следующий за ним элемент так же;
  *   data-copy="legal" — юридический текст: только заполнители (сам он узнаётся и по словарю);
  *   data-typo="off", class="notypo", translate="no", contenteditable — типограф не трогает.
  *
  * Протокол lint (lib.writeJson, поле generator): { tool: "copy", mode, source, url|path, startedAt,
  *   viewport, verdict, options, totals: { pages, words, fail, warn, note, index, indexBase, facts,
- *   factsNoSource, stubs }, steps: [{ what, status, words, fail, warn, note, index, byRule }],
- *   findings: [{ page, rule, sev, w, line, role, path, quote, match, suggest, kind, taste }],
+ *   factsNoSource, stubs, invented, inventedList }, steps: [{ what, status, words, fail, warn, note, index,
+ *   byRule }], findings: [{ page, rule, sev, w, line, role, path, quote, match, suggest, kind, invented, taste }],
  *   pages: [{ what, runs: [{ role, line, text }] }] }. Шаг на страницу — доказательство для
  *   state.mjs … --evidence <прогон>/copy/after.json#<часть имени страницы>; протокол с FAIL
  *   state.mjs не примет. Индекс = Σ весов WARN и FAIL × 1000 / слов (страница короче 30 слов — без
- *   индекса); ориентиры: одобренные тексты 0–1.5, до вычитки 2–6, до ревью 5–12, стенд с ошибками 16.
+ *   индекса; придуманное веса не имеет — его считает totals.invented); ориентиры: одобренные тексты 0–1.5,
+ *   до вычитки 2–6, до ревью 5–12, стенд с ошибками 16.
+ * Список придуманного copy/invented.json: [{ page, what, text, quote, by: "copy.mjs", tag, note? }]; запись
+ *   руками — { what, text, page?, note? } без by "copy.mjs" (имя мастера, отзыв, адрес, телефон, награда).
  *
  * Код выхода: 0 — OK или WARN; 1 — FAIL, неверные аргументы, страница не открылась, провал selftest.
  * Без команды («copy.mjs <url|файл> …») — код 1 и «нужна команда: lint|snapshot|…» с готовой строкой lint.
@@ -120,7 +131,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs, writeJson, launch, openPage, gotoRetry, waitForOverlay, pagesFrom, resolveViewport, unmangle } from './lib.mjs';
 import {
   RULES, TYPO_RULES, lintRuns, indexOf, claimsOf, factIndex, confirmed, donorShingles, typographRun, lockedOf,
-  collapse, clip, words, buzzSource, isCredit,
+  collapse, clip, words, buzzSource, isCredit, norm,
 } from './copy-rules.mjs';
 import { tasteDir, readJournal, activeBans, isUserWord, appliesTo, runName } from './taste.mjs';
 
@@ -550,25 +561,25 @@ const worst = (list) => (list.includes('FAIL') ? 'FAIL' : list.includes('WARN') 
 const byRuleOf = (found, sev = null) => { const o = {}; for (const f of found) if (sev ? f.sev === sev : f.sev !== 'NOTE') o[f.rule] = (o[f.rule] || 0) + 1; return o; };
 const ruleList = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
 
-/** Проверка страниц: → { steps, findings, pagesOut, totals }. ctx: { allow, facts, noFacts, donor, release, taste } */
+/** Проверка страниц: → { steps, findings, pagesOut, totals }. ctx: { allow, facts, noFacts, donor, invent, taste } */
 export function lintPages(pages, ctx = {}) {
   const steps = []; const findings = []; const pagesOut = []; let W = 0, S = 0;
   for (const pg of pages) {
-    const found = applyTaste(lintRuns(pg.lint, { allow: ctx.allow, facts: ctx.facts, noFacts: ctx.noFacts, donor: ctx.donor, release: ctx.release }), ctx.taste);
+    const found = applyTaste(lintRuns(pg.lint, { allow: ctx.allow, facts: ctx.facts, noFacts: ctx.noFacts, donor: ctx.donor, invent: ctx.invent }), ctx.taste);
     /* страницы нет в снимке «до» (before.json снят с других страниц): её тексты «до» в базу фактов не попали —
-       WARN «нет снимка “до” для <путь>», у FAIL copy-unverified — чем это закрыть (epicentr 29.09: 7 FAIL на
-       /booking, /contacts, /venue/mosty — тексты были на сайте «до», снимок снят только с /, /menu, /afisha) */
+       WARN «нет снимка “до” для <путь>» и у придуманного — чем это закрыть (epicentr 29.09: 7 заявлений на
+       /booking, /contacts, /venue/mosty были на сайте «до», а снимок снят только с /, /menu, /afisha) */
     const nb = ctx.noBase && ctx.noBase.pages.includes(pg.what) ? ctx.noBase : null;
     if (nb) {
       /* заявления сверены — с facts.json и текстами других страниц «до»; не хватает текстов «до» этой страницы, поэтому
-         FAIL по ним может быть ложным (факт был на старой странице), а не «факты не сверить». Снимок с одной страницы
-         под другим именем (lint одной страницы) — может быть та же страница: так и сказано */
-      const unv = found.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL');
+         в список придуманного мог попасть факт со старой страницы. Снимок с одной страницы под другим именем (lint
+         одной страницы) — может быть та же страница: так и сказано */
+      const unv = found.filter((f) => f.rule === 'copy-unverified' && !f.unchecked);
       const all = [...new Set([...nb.had, ...nb.pages])];
       const redo = `снять снимок «до» и с неё: node copy.mjs snapshot <адрес или папка сайта «до»> --pages "${all.join(',')}" --out <прогон> — или факт в facts.json с source`;
-      const from = nb.renamed ? `снимок «до» ${nb.file} снят с одной страницы — ${nb.had[0]}: если это она же под другим именем, FAIL настоящий; иначе ${redo}` : `снимок «до» ${nb.file} снят со страниц ${nb.had.join(', ')}; ${redo}`;
-      for (const f of unv) f.suggest = `${f.suggest}; страницы ${pg.what} нет в снимке «до» (${nb.file}) — FAIL может быть ложным`;
-      found.push({ rule: 'copy-unchecked', sev: unv.length ? 'WARN' : 'NOTE', w: RULES['copy-unchecked'].w, line: null, role: 'page', path: '', quote: unv.length ? `нет снимка «до» для ${pg.what} — FAIL по её заявлениям может быть ложным` : `нет снимка «до» для ${pg.what}`, match: unv.length ? `без подтверждения ${unv.length}` : 'заявлений без подтверждения нет', suggest: from, kind: 'baseline', run: null });
+      const from = nb.renamed ? `снимок «до» ${nb.file} снят с одной страницы — ${nb.had[0]}: если это она же под другим именем, список придуманного верный; иначе ${redo}` : `снимок «до» ${nb.file} снят со страниц ${nb.had.join(', ')}; ${redo}`;
+      for (const f of unv) f.suggest = `${f.suggest}; страницы ${pg.what} нет в снимке «до» (${nb.file}) — может быть факт с сайта «до»`;
+      found.push({ rule: 'copy-unchecked', sev: unv.length ? 'WARN' : 'NOTE', w: RULES['copy-unchecked'].w, line: null, role: 'page', path: '', quote: unv.length ? `нет снимка «до» для ${pg.what} — в список придуманного могли попасть факты с сайта «до»` : `нет снимка «до» для ${pg.what}`, match: unv.length ? `придумано ${unv.length}` : 'придуманного нет', suggest: from, kind: 'baseline', run: null });
     }
     found.sort((a, b) => SEVS[a.sev] - SEVS[b.sev] || (a.line ?? 0) - (b.line ?? 0));
     const n = wordsOf(pg.lint); W += n; S += found.filter((f) => f.sev !== 'NOTE').reduce((a, f) => a + (f.w || 0), 0);
@@ -582,7 +593,7 @@ export function lintPages(pages, ctx = {}) {
   return { steps, findings, pagesOut, totals: { pages: steps.length, words: W, fail: tot('fail'), warn: tot('warn'), note: tot('note'), index: W >= 30 ? Math.round(S * 10000 / W) / 10 : null } };
 }
 
-/** facts.json: список записей; запись без source — FAIL-находка. */
+/** facts.json: список записей; запись без source — WARN-находка (своим не считается). */
 function readFacts(file) {
   let j; try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`facts.json: не прочитать ${file} — ${e.message}`); }
   const list = Array.isArray(j) ? j : j && Array.isArray(j.facts) ? j.facts : null;
@@ -590,7 +601,45 @@ function readFacts(file) {
   return list;
 }
 export function factsFindings(noSource, file) {
-  return noSource.map((fact) => ({ page: path.basename(file || 'facts.json'), rule: 'copy-unverified', sev: 'FAIL', w: RULES['copy-unverified'].w, line: null, role: 'facts', path: '', quote: clip(fact), match: clip(fact, 80), suggest: 'факт без источника: добавить source — где подтверждено (сайт «до», бриф, слова владельца с датой, договор) — или удалить запись', kind: 'facts', taste: null }));
+  return noSource.map((fact) => ({ page: path.basename(file || 'facts.json'), rule: 'copy-unverified', sev: 'WARN', w: RULES['copy-unverified'].w, line: null, role: 'facts', path: '', quote: clip(fact), match: clip(fact, 80), suggest: 'запись без source своим не считается: добавить source (сайт «до», бриф, слова владельца с датой, договор); придумано — перенести в copy/invented.json', kind: 'facts', taste: null }));
+}
+
+/* =====================================================================
+   Список придуманного для владельца: <прогон>/copy/invented.json
+   Контента нет — придумываем сами, но всё придуманное — списком: владелец сверяет до показа своим клиентам
+   (раздел отчёта «Придумано — проверить владельцу»). lint с --out дописывает сам заявления без источника и
+   текст под copy:stub; записи руками (имя мастера, отзыв, адрес, телефон, награда) и записи других страниц
+   не трогает.
+   ===================================================================== */
+/** Находки придуманного → записи списка: [{ page, what, text, quote, by: 'copy.mjs', tag, note? }], без повторов. */
+export function inventedOf(findings, tag) {
+  const out = []; const seen = new Set();
+  for (const f of findings) {
+    if (!f.invented) continue;
+    const k = `${f.page}|${f.invented.what}|${norm(f.invented.text)}`; if (seen.has(k)) continue; seen.add(k);
+    out.push({ page: f.page, what: f.invented.what, text: f.invented.text, quote: f.quote, by: 'copy.mjs', tag, ...(f.invented.note ? { note: f.invented.note } : {}) });
+  }
+  return out;
+}
+/** Слить со старым списком: записи copy.mjs по проверенным страницам заменяются, остальное (руками, другие страницы) остаётся. */
+export function mergeInvented(prev, auto, pagesNow) {
+  const now = new Set(pagesNow);
+  const keep = (prev || []).filter((e) => !(e && typeof e === 'object' && e.by === 'copy.mjs' && now.has(e.page)));
+  const seen = new Set(keep.map((e) => `${(e && e.page) ?? ''}|${norm((e && e.text) ?? '')}`));
+  const add = auto.filter((e) => { const k = `${e.page}|${norm(e.text)}`; if (seen.has(k)) return false; seen.add(k); return true; });
+  return { list: [...keep, ...add], kept: keep.length, added: add.length, hand: keep.filter((e) => !(e && e.by === 'copy.mjs')).length };
+}
+/** Записать список: старый файл не читается — не перезаписываем (там могли быть записи руками). */
+function saveInvented(file, auto, pagesNow) {
+  let prev = [];
+  if (fs.existsSync(file)) {
+    let j; try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { file, error: `не прочитать (${e.message}) — не перезаписан, записи руками целы` }; }
+    prev = Array.isArray(j) ? j : j && Array.isArray(j.items) ? j.items : null;
+    if (!prev) return { file, error: 'ждал массив [{ what, text, page? }] — не перезаписан' };
+  }
+  const m = mergeInvented(prev, auto, pagesNow);
+  writeJson(file, m.list);
+  return { file, total: m.list.length, added: m.added, hand: m.hand };
 }
 
 function fileIf(p) { return p && fs.existsSync(p) && fs.statSync(p).isFile() ? p : null; }
@@ -627,29 +676,31 @@ async function cmdLint(target, opt, B) {
     const miss = col.pages.map((p) => p.what).filter((w) => !keys.has(pageKey(w)));
     if (miss.length) noBase = { pages: miss, had: base.pages.map((p) => p.what), file: path.basename(String(base.file)), renamed: base.pages.length === 1 && col.pages.length === 1 };
   }
-  const res = lintPages(col.pages, { allow, facts: idx, noFacts: !!opt['no-facts'], donor, release: !!opt.release, taste, noBase });
+  const res = lintPages(col.pages, { allow, facts: idx, noFacts: !!opt['no-facts'], donor, invent: !!opt.invent, taste, noBase });
   const extra = idx ? factsFindings(idx.noSource, factsFile) : [];
-  if (extra.length) res.steps.push({ what: path.basename(factsFile), status: 'FAIL', words: 0, fail: extra.length, warn: 0, note: 0, index: null, byRule: { 'copy-unverified': extra.length } });
+  if (extra.length) res.steps.push({ what: path.basename(factsFile), status: 'WARN', words: 0, fail: 0, warn: extra.length, note: 0, index: null, byRule: { 'copy-unverified': extra.length } });
   const findings = [...extra, ...res.findings];
   const verdict = worst(res.steps.map((s) => s.status));
   const stubs = new Set(findings.filter((f) => f.rule === 'copy-stub').map((f) => `${f.page}|${f.line}|${f.quote}`)).size;
+  /* придуманное — в список для владельца (файл пишет main при --out); разведка чужого сайта списка не даёт */
+  const invented = opt['no-facts'] ? [] : inventedOf(res.findings, tag);
   const data = {
     tool: 'copy', mode: 'lint', source: col.source, ...(col.source === 'url' ? { url: target, viewport: col.viewport } : { path: col.base }), startedAt, tag, verdict,
-    options: { facts: factsFile, baseline: base ? base.file : null, noFacts: !!opt['no-facts'], donor: donorSrc || null, allow: allowFile, taste: !!opt.taste, tasteDir: opt.taste ? tDir : null, run: run ? runName(run) : null, release: !!opt.release },
-    totals: { ...res.totals, fail: res.totals.fail + extra.length, indexBase: base ? base.index : null, facts: idx ? idx.facts : null, baselineTexts: base ? base.texts.length : null, ...(noBase ? { pagesNoBase: noBase.pages, failNoBase: res.findings.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL' && noBase.pages.includes(f.page)).length } : {}), factsNoSource: extra.length, stubs },
+    options: { facts: factsFile, baseline: base ? base.file : null, noFacts: !!opt['no-facts'], donor: donorSrc || null, allow: allowFile, taste: !!opt.taste, tasteDir: opt.taste ? tDir : null, run: run ? runName(run) : null, invent: !!opt.invent },
+    totals: { ...res.totals, warn: res.totals.warn + extra.length, indexBase: base ? base.index : null, facts: idx ? idx.facts : null, baselineTexts: base ? base.texts.length : null, ...(noBase ? { pagesNoBase: noBase.pages, inventedNoBase: invented.filter((e) => noBase.pages.includes(e.page)).length } : {}), factsNoSource: extra.length, stubs, invented: invented.length },
     steps: res.steps, findings, pages: res.pagesOut.map(({ found, ...p }) => p),
   };
-  return { data, res, extra, idx, base, taste, tDir, noBase };
+  return { data, res, extra, idx, base, taste, tDir, noBase, invented };
 }
 
-function printLint({ data, res, extra, idx, base, taste, noBase }, opt, say) {
+function printLint({ data, res, extra, idx, base, taste, noBase, inv }, opt, say) {
   const url = data.source === 'url';
   if (!opt['no-facts']) {
-    const parts = []; if (data.options.facts) parts.push(`facts.json (${idx.facts} с источником${extra.length ? `, без источника ${extra.length}` : ''})`); if (base) parts.push(`сайт «до» (${path.basename(String(base.file))}, текстов ${base.texts.length}${noBase ? `; снимок со страниц ${noBase.had.join(', ')} — нет снимка «до» для ${noBase.pages.join(', ')}: FAIL copy-unverified там может быть ложным` : ''})`);
-    say(parts.length ? `факты: ${parts.join(' + ')}` : 'факты: сверять не с чем (нет facts.json и снимка «до») — всякая цена, срок, гарантия — FAIL; разведка чужого сайта — --no-facts');
-  } else say('факты: не сверялись (--no-facts) — протокол не доказывает, что факты не выдуманы');
+    const parts = []; if (data.options.facts) parts.push(`facts.json (${idx.facts} с источником${extra.length ? `, без источника ${extra.length} — своим не считается` : ''})`); if (base) parts.push(`сайт «до» (${path.basename(String(base.file))}, текстов ${base.texts.length}${noBase ? `; снимок со страниц ${noBase.had.join(', ')} — нет снимка «до» для ${noBase.pages.join(', ')}: в список придуманного там могли попасть факты с сайта «до»` : ''})`);
+    say(parts.length ? `факты: ${parts.join(' + ')}` : 'факты: сверять не с чем (нет facts.json и снимка «до») — всякая цена, срок, гарантия считается придуманной (в список для владельца); своё от владельца — в copy/facts.json с source; разведка чужого сайта — --no-facts');
+  } else say('факты: не сверялись (--no-facts) — список придуманного не пишется');
   if (taste) say(`журнал вкуса: запретов по copy-* ${Object.keys(taste.bans).length}${Object.keys(taste.bans).length ? ` (${Object.keys(taste.bans).join(', ')})` : ''}, принято пользователем ${Object.keys(taste.ok).length}, свой отсев ${Object.keys(taste.self).length}`);
-  for (const f of extra) say(`FAIL  ${f.page} · ${f.suggest}: «${f.quote}»`);
+  for (const f of extra) say(`WARN  ${f.page} · ${f.suggest}: «${f.quote}»`);
   res.pagesOut.forEach((pg, i) => {
     const st = res.steps[i];
     say(`${st.status.padEnd(5)} ${pg.what} · слов ${st.words} · FAIL ${st.fail} · WARN ${st.warn} · подсказок ${st.note}${st.index != null ? ` · индекс ${st.index}` : ''}`);
@@ -663,9 +714,14 @@ function printLint({ data, res, extra, idx, base, taste, noBase }, opt, say) {
     }
   });
   const T = data.totals; const fails = byRuleOf(data.findings, 'FAIL'); const warns = byRuleOf(data.findings, 'WARN');
-  /* из FAIL copy-unverified — сколько на страницах без снимка «до» (может быть ложным): итог объясняет себя сам */
-  const nbFail = noBase ? data.findings.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL' && noBase.pages.includes(f.page)).length : 0;
-  say(`Итог: ${data.verdict} — страниц ${res.steps.length}, FAIL ${T.fail}${T.fail ? ` (${ruleList(fails)})` : ''}, WARN ${T.warn}${T.warn ? ` (${ruleList(warns)})` : ''}, подсказок ${T.note}, индекс ${T.index ?? '—'}${T.indexBase != null ? ` (сайт «до» ${T.indexBase})` : ''}${T.stubs ? ` · заглушек ${T.stubs}` : ''}${noBase ? ` · без снимка «до»: ${noBase.pages.join(', ')}${nbFail ? ` (FAIL copy-unverified там ${nbFail} — может быть ложным)` : ''}` : ''}${data.file ? ` · протокол ${data.file}` : ''}`);
+  /* придуманное на страницах без снимка «до» может оказаться фактом со старой страницы: итог объясняет себя сам */
+  const nbInv = noBase ? T.inventedNoBase || 0 : 0;
+  say(`Итог: ${data.verdict} — страниц ${res.steps.length}, FAIL ${T.fail}${T.fail ? ` (${ruleList(fails)})` : ''}, WARN ${T.warn}${T.warn ? ` (${ruleList(warns)})` : ''}, подсказок ${T.note}, индекс ${T.index ?? '—'}${T.indexBase != null ? ` (сайт «до» ${T.indexBase})` : ''}${T.invented ? ` · придумано ${T.invented}${T.stubs ? ` (под copy:stub ${T.stubs})` : ''}` : ''}${noBase ? ` · без снимка «до»: ${noBase.pages.join(', ')}${nbInv ? ` (придумано там ${nbInv} — может быть с сайта «до»)` : ''}` : ''}${data.file ? ` · протокол ${data.file}` : ''}`);
+  /* список для владельца: пишет main при --out */
+  if (opt['no-facts']) return;
+  if (inv && inv.error) say(`WARN  список придуманного ${inv.file}: ${inv.error}`);
+  else if (inv) say(`Придумано — проверить владельцу: ${inv.file} — записей ${inv.total} (из этой проверки ${inv.added}, руками ${inv.hand}, других страниц ${inv.total - inv.added - inv.hand}); в отчёт — раздел «Придумано — проверить владельцу»${T.invented && !opt.invent ? '; анкета: контент «нет — сделай сам» — --invent' : ''}`);
+  else if (T.invented) say(`Придумано ${T.invented} — список для владельца пишется с --out <прогон> (copy/invented.json)`);
 }
 
 /* =====================================================================
@@ -741,7 +797,7 @@ function printPairs(pages, opt, say) {
       const ch = pg.pairs.filter((p) => p.kind !== 'same'); if (!ch.length) continue;
       say(`**${pg.what}**${pg.status === 'new' ? ' (новая страница)' : pg.status === 'gone' ? ' (страница убрана)' : ''}`);
       for (const p of ch.slice(0, lim)) {
-        const nc = p.newClaims && p.newClaims.length ? ` — новое число или обещание: ${p.newClaims.map((c) => c.text).join(', ')} (источник?)` : '';
+        const nc = p.newClaims && p.newClaims.length ? ` — новое число или обещание: ${p.newClaims.map((c) => c.text).join(', ')} (своё — источник в facts.json; придумано — в список для владельца)` : '';
         if (p.kind === 'changed') say(`- «${clip(p.before.text, 220)}» → «${clip(p.after.text, 220)}»${nc}`);
         else if (p.kind === 'removed') say(`- убрано: «${clip(p.before.text, 220)}»`);
         else say(`- добавлено: «${clip(p.after.text, 220)}»${nc}`);
@@ -762,10 +818,10 @@ function printPairs(pages, opt, say) {
       const role = (p.after || p.before).role;
       if (p.kind !== 'added') say(`   ${String(role).padEnd(7)} было:  «${clip(p.before.text, 200)}»`);
       if (p.kind !== 'removed') say(`   ${p.kind === 'added' ? String(role).padEnd(7) : ' '.repeat(7)} ${p.kind === 'added' ? 'новое: ' : 'стало: '}«${clip(p.after.text, 200)}»`);
-      if (p.newClaims && p.newClaims.length) say(`           новое число или обещание: ${p.newClaims.map((x) => `${x.text} (${x.kind})`).join(', ')} — источник → facts.json`);
+      if (p.newClaims && p.newClaims.length) say(`           новое число или обещание: ${p.newClaims.map((x) => `${x.text} (${x.kind})`).join(', ')} — своё: источник → facts.json; придумано → список для владельца (copy/invented.json)`);
     }
   }
-  say(`Итог: страниц ${pages.length}, изменено ${pages.reduce((a, p) => a + p.pairs.filter((x) => x.kind === 'changed').length, 0)}, новых чисел и обещаний ${totalNew}${totalNew ? ' — у каждого должен быть источник (lint --facts)' : ''}`);
+  say(`Итог: страниц ${pages.length}, изменено ${pages.reduce((a, p) => a + p.pairs.filter((x) => x.kind === 'changed').length, 0)}, новых чисел и обещаний ${totalNew}${totalNew ? ' — у каждого источник (facts.json) или строка в списке придуманного (copy/invented.json)' : ''}`);
 }
 
 /* =====================================================================
@@ -808,7 +864,9 @@ async function readStdin() { const chunks = []; for await (const c of process.st
    Командная строка
    ===================================================================== */
 const VALUES = ['pages', 'viewport', 'out', 'run', 'tag', 'facts', 'baseline', 'donor', 'allow', 'taste-dir', 'json', 'limit', 'nbsp', 'role', 'out-dir'];
-const FLAGS = ['help', 'h', 'selftest', 'typograph', 'write', 'dry-run', 'diff', 'md', 'all', 'quiet', 'taste', 'release', 'no-facts', 'html', 'no-browser'];
+const FLAGS = ['help', 'h', 'selftest', 'typograph', 'write', 'dry-run', 'diff', 'md', 'all', 'quiet', 'taste', 'invent', 'no-facts', 'html', 'no-browser'];
+/* снятые флаги: вместо «может быть, --…?» — что стало */
+const REMOVED = { release: 'снят 30.09.2026: пометка copy:stub и придуманное больше не блокируют — список для владельца пишет lint --out в copy/invented.json' };
 const COMMANDS = ['lint', 'snapshot', 'pairs', 'fix', 'rules', 'selftest'];
 function lev(a, b) { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; }
 /** Неизвестный флаг — ошибка (а не WARN, как у parseArgs): опечатка в --facts не должна молча выключать сверку. */
@@ -816,7 +874,7 @@ export function badFlags(argv) {
   const known = new Set([...VALUES, ...FLAGS]); const bad = [];
   for (const a of argv) {
     if (a === '--') break;
-    if (/^--[^-]/.test(a)) { const k = a.slice(2).split('=')[0]; if (!known.has(k)) { const g = [...known].map((x) => [lev(k, x), x]).sort((p, q) => p[0] - q[0])[0]; bad.push(`--${k}${g && g[0] <= 3 ? ` (может быть, --${g[1]}?)` : ''}`); } }
+    if (/^--[^-]/.test(a)) { const k = a.slice(2).split('=')[0]; if (REMOVED[k]) { bad.push(`--${k} (${REMOVED[k]})`); continue; } if (!known.has(k)) { const g = [...known].map((x) => [lev(k, x), x]).sort((p, q) => p[0] - q[0])[0]; bad.push(`--${k}${g && g[0] <= 3 ? ` (может быть, --${g[1]}?)` : ''}`); } }
     else if (/^-[^-]/.test(a) && a !== '-h') bad.push(`${a} (флаги пишутся через два дефиса; справка — -h)`);
   }
   return bad;
@@ -849,7 +907,12 @@ async function main(argv) {
     if (cmd === 'lint') {
       if (args.length !== 1) { console.error('Нужно: node copy.mjs lint <файл|папка|url> [--out <прогон>] [--facts …] [--baseline …] (подробно: --help)'); return 1; }
       const r = await cmdLint(args[0], opt, B);
-      if (opt.out) { const f = path.join(path.resolve(unmangle(opt.out)), 'copy', `${r.data.tag}.json`); writeJson(f, r.data); r.data.file = f; }
+      if (opt.out) {
+        const dir = path.join(path.resolve(unmangle(opt.out)), 'copy');
+        /* список придуманного для владельца — до протокола, чтобы протокол знал, куда он лёг */
+        if (!opt['no-facts']) { r.inv = saveInvented(path.join(dir, 'invented.json'), r.invented, r.data.pages.map((p) => p.what)); r.data.options.invented = r.inv.file; if (!r.inv.error) r.data.totals.inventedList = r.inv.total; }
+        const f = path.join(dir, `${r.data.tag}.json`); writeJson(f, r.data); r.data.file = f;
+      }
       if (jsonOut && jsonOut !== '-') { writeJson(path.resolve(unmangle(jsonOut)), r.data); if (!r.data.file) r.data.file = jsonOut; }
       printLint(r, opt, say);
       if (jsonOut === '-') console.log(JSON.stringify(r.data, null, 1));
@@ -969,7 +1032,7 @@ async function selftest(opt) {
     say(!inP('Бесплатная доставка за 30 минут, фото с Unsplash.') && !inP('Pexels') && !inP('Все фото — Pexels, бесплатно, скидка 20% на первый заказ') && !cr('Все фото — Pexels, бесплатно, скидка 20% на первый заказ') && !isCredit({ path: 'section.photo>p', role: 'text' }, 'Фото: сделаем бесплатно в конце вечера') && !isCredit({ path: 'figure>figcaption', role: 'caption' }, 'Фото: Иван Петров · Pexels. Скидка 20% на первый заказ.'),
       'isCredit не по одному слову: фотобанк в абзаце, «Все фото — Pexels, бесплатно, скидка 20%» (и в small), «Фото: сделаем бесплатно…», подпись со скидкой — не подпись');
     const reg = lintRuns(lintView(runsOf('<p>Бесплатная доставка за 30 минут, фото с Unsplash.</p><figure><figcaption>Фото: iram shehzad, бесплатная лицензия Pexels</figcaption></figure>')), { facts: idx }).filter((f) => f.rule === 'copy-unverified').map((f) => f.match);
-    say(reg.join(' | ') === 'Бесплатная | за 30 минут', `фотобанк в конце абзаца — заявления сверяются (FAIL «Бесплатная», «за 30 минут», как у master); «бесплатная лицензия» в подписи — не заявление (${reg.join(' | ') || 'ничего'})`);
+    say(reg.join(' | ') === 'Бесплатная | за 30 минут', `фотобанк в конце абзаца — заявления сверяются (придумано: «Бесплатная», «за 30 минут»); «бесплатная лицензия» в подписи — не заявление (${reg.join(' | ') || 'ничего'})`);
   }
   {
     const c1 = lintRuns(runsOf('<p>Меню словами, а не картинкой.</p><p>Цены в панели.</p>'), { facts: idx });
@@ -977,9 +1040,12 @@ async function selftest(opt) {
   }
   const st = groupsCheck('stub.html');
   {
-    const rel = lintRuns(runsOf(read('stub.html')), { facts: idx, release: true }).filter((f) => f.rule === 'copy-stub');
-    say(rel.length === 3 && rel.every((f) => f.sev === 'FAIL'), `stub.html с --release: заглушки — FAIL (${rel.length} из 3)`);
-    say(st.found.filter((f) => f.rule === 'copy-stub').length === 3, 'stub.html: три вида пометки (copy:stub, data-copy="stub", комментарий «ЛЕГЕНДА») — по находке на заглушку');
+    const sf = st.found.filter((f) => f.rule === 'copy-stub');
+    say(sf.length === 3 && sf.every((f) => f.sev === 'WARN' && f.invented && f.invented.text), `stub.html: три вида пометки придуманного (copy:stub, data-copy="stub", комментарий «ЛЕГЕНДА») — по WARN «в список для владельца» с текстом для списка (${sf.map((f) => f.sev).join(',')})`);
+    const inv = lintRuns(runsOf(read('stub.html')), { facts: idx, invent: true }).filter((f) => f.rule === 'copy-stub');
+    say(inv.length === 3 && inv.every((f) => f.sev === 'NOTE'), `stub.html с --invent (контент «нет — сделай сам»): пометки — подсказки, не блокировка (${inv.map((f) => f.sev).join(',')})`);
+    const note = sf.find((f) => f.match === 'data-copy="stub"');
+    say(!!note && note.invented.note === 'имя мастера — ждём от владельца', `data-copy-note уходит в список для владельца как note («${note && note.invented.note}»)`);
   }
 
   /* 2. факты */
@@ -991,14 +1057,22 @@ async function selftest(opt) {
     say(!confirmed(i2, claimsOf('Кружка 500 ₽')[0]) && !confirmed(i2, claimsOf('за 2 недели')[0]) && confirmed(i2, claimsOf('всего 1 500 ₽')[0]), '«500 ₽» не подтверждается «1500 ₽», «2 недели» — «12 недель»; «1 500 ₽» — подтверждается');
     const runs = runsOf('<p>Доставим за 2 дня, гарантия 3 года.</p>');
     const none = lintRuns(runs, {});
-    say(none.filter((f) => f.rule === 'copy-unverified' && f.sev === 'FAIL').map((f) => f.match).join(' | ') === 'за 2 дня | гарантия | 3 года', 'нет ни facts.json, ни снимка «до» — все три заявления FAIL: «за 2 дня», «гарантия», «3 года» (ничего не выдумывать)');
+    say(none.filter((f) => f.rule === 'copy-unverified' && f.sev === 'WARN' && f.invented).map((f) => f.match).join(' | ') === 'за 2 дня | гарантия | 3 года' && !none.some((f) => f.sev === 'FAIL'), 'нет ни facts.json, ни снимка «до» — все три заявления придуманы: WARN «в список для владельца» («за 2 дня», «гарантия», «3 года»), FAIL нет');
+    const inv = lintRuns(runsOf('<p>Доставим за 2 дня, гарантия 3 года.</p>'), { invent: true }).filter((f) => f.rule === 'copy-unverified');
+    say(inv.length === 3 && inv.every((f) => f.sev === 'NOTE' && f.invented) && inv[0].invented.what === 'срок', `--invent (контент «нет — сделай сам»): придуманное — подсказки, в списке — «${inv.map((f) => f.invented.what).join(', ')}»`);
+    const td = lintRuns(runsOf('<p>Капучино — [цена], открыты до XXX.</p><p>Lorem ipsum dolor.</p>'), { invent: true }).filter((f) => f.rule === 'copy-todo');
+    say(td.length === 3 && td.every((f) => f.sev === 'FAIL'), `незаполненное — FAIL и с --invent: [цена], XXX, Lorem ipsum (${td.map((f) => f.match).join(' | ')})`);
     const nf = lintRuns(runsOf('<p>Доставим за 2 дня, гарантия 3 года.</p>'), { noFacts: true });
     say(nf.every((f) => f.sev !== 'FAIL') && nf.some((f) => f.rule === 'copy-unchecked' && f.sev === 'WARN') && nf.some((f) => f.rule === 'copy-unverified' && f.sev === 'NOTE'), '--no-facts (разведка) — подсказки и WARN copy-unchecked, без FAIL');
     const withBase = lintRuns(runsOf('<p>Доставим за 2 дня, гарантия 3 года.</p>'), { facts: factIndex({ texts: ['Доставка за 2 дня. Гарантия на всё — 3 года.'] }) });
     say(!withBase.some((f) => f.sev === 'FAIL'), 'снимок «до» подтверждает те же числа — FAIL нет');
     const noSrc = factIndex({ facts: [{ fact: '5000 гостей', what: 'посетители' }, { fact: '20 ₽', source: 'слова владельца' }] });
     const ff = factsFindings(noSrc.noSource, 'facts.json');
-    say(ff.length === 1 && ff[0].sev === 'FAIL' && noSrc.facts === 1 && !confirmed(noSrc, claimsOf('5000 гостей')[0]), 'facts.json: запись без source — FAIL «факт без источника» и в базу не входит');
+    say(ff.length === 1 && ff[0].sev === 'WARN' && noSrc.facts === 1 && !confirmed(noSrc, claimsOf('5000 гостей')[0]), 'facts.json: запись без source — WARN (своим не считается) и в базу не входит');
+    /* список для владельца: записи руками и других страниц остаются, записи copy.mjs проверенной страницы заменяются */
+    const m = mergeInvented([{ what: 'имя мастера', text: 'Иван', page: 'a.html', by: 'руками' }, { page: 'a.html', what: 'цена', text: '999 ₽', by: 'copy.mjs' }, { page: 'b.html', what: 'цена', text: '1 ₽', by: 'copy.mjs' }],
+      inventedOf([{ page: 'a.html', quote: 'Капучино 250 ₽', invented: { what: 'цена', text: '250 ₽' } }, { page: 'a.html', quote: 'Капучино 250 ₽', invented: { what: 'цена', text: '250 ₽' } }, { page: 'a.html', quote: 'Иван', invented: { what: 'текст под пометкой', text: 'Иван' } }], 'after'), ['a.html']);
+    say(m.list.map((e) => `${e.page}:${e.text}`).join(' | ') === 'a.html:Иван | b.html:1 ₽ | a.html:250 ₽' && m.hand === 1 && m.added === 1, `invented.json: руками и другие страницы остаются, старое copy.mjs этой страницы заменено, повтор и то, что уже записано руками, не дублируется (${m.list.map((e) => `${e.page}:${e.text}`).join(' | ')})`);
   }
 
   /* 3. донор, журнал вкуса, словарь BUZZ, склейка */
@@ -1076,11 +1150,23 @@ async function selftest(opt) {
     const r7 = node(['lint', path.join(FIXTURES, 'bad.html'), '--out', runDirT, '--tag', 'after', '--facts', path.join(FIXTURES, 'facts.json'), '--quiet']);
     let pj = null; try { pj = JSON.parse(fs.readFileSync(path.join(runDirT, 'copy', 'after.json'), 'utf8')); } catch { /* нет */ }
     say(r7.status === 1 && pj && pj.verdict === 'FAIL' && pj.generator && pj.generator.script === 'copy.mjs' && pj.steps[0].what === 'bad.html' && pj.findings.length > 10 && pj.pages[0].runs.length > 10, `lint --out: протокол copy/after.json (verdict ${pj && pj.verdict}, generator ${pj && pj.generator && pj.generator.script}, шагов ${pj ? pj.steps.length : 0}), код 1 при FAIL`);
+    /* FAIL у bad.html — от незаполненного ([уточнить: …], {{TITLE}}), а не от придуманного */
+    const failRules = pj ? [...new Set(pj.findings.filter((f) => f.sev === 'FAIL').map((f) => f.rule))] : [];
+    say(failRules.length === 1 && failRules[0] === 'copy-todo' && pj.findings.some((f) => f.rule === 'copy-unverified' && f.sev === 'WARN'), `bad.html: FAIL только незаполненное (${failRules.join(', ') || '—'}), придуманное — WARN`);
+    let ij = null; try { ij = JSON.parse(fs.readFileSync(path.join(runDirT, 'copy', 'invented.json'), 'utf8')); } catch { /* нет */ }
+    say(Array.isArray(ij) && ij.length > 0 && ij.length === pj.totals.invented && ij.every((e) => e.by === 'copy.mjs' && e.page === 'bad.html' && e.what && e.text && e.tag === 'after') && ij.some((e) => /5000/.test(e.text)) && pj.options.invented && /Придумано — проверить владельцу: .*invented\.json — записей \d+/.test(r7.stdout),
+      `lint --out: список для владельца copy/invented.json (${Array.isArray(ij) ? ij.length : 'нет'} записей: ${Array.isArray(ij) ? ij.slice(0, 3).map((e) => `${e.what} «${e.text}»`).join(', ') : '—'}), строка «Придумано — проверить владельцу»`);
+    fs.writeFileSync(path.join(runDirT, 'copy', 'invented.json'), JSON.stringify([...ij || [], { what: 'отзыв гостя', text: '«Раф как в Питере» — Анна', page: 'bad.html', by: 'руками' }], null, 1));
+    const r7b = node(['lint', path.join(FIXTURES, 'bad.html'), '--out', runDirT, '--tag', 'after', '--facts', path.join(FIXTURES, 'facts.json'), '--quiet']);
+    let ij2 = null; try { ij2 = JSON.parse(fs.readFileSync(path.join(runDirT, 'copy', 'invented.json'), 'utf8')); } catch { /* нет */ }
+    say(r7b.status === 1 && Array.isArray(ij2) && ij2.length === ij.length + 1 && ij2.some((e) => e.by === 'руками' && /Анна/.test(e.text)), `повторный lint --out: запись руками в invented.json цела, записи copy.mjs не удвоились (${Array.isArray(ij2) ? ij2.length : 'нет'} = ${ij ? ij.length : 0} + 1)`);
+    const r7c = node(['lint', path.join(FIXTURES, 'bad.html'), '--release']);
+    say(r7c.status === 1 && /--release \(снят 30\.09\.2026/.test(r7c.stderr) && /copy\/invented\.json/.test(r7c.stderr), `снятый --release — ошибка с объяснением (${clip(r7c.stderr.trim(), 100)})`);
     const r8 = node(['snapshot', path.join(FIXTURES, 'pairs-before.html'), '--out', runDirT]);
     const r9 = node(['pairs', path.join(runDirT, 'copy', 'before.json'), path.join(FIXTURES, 'pairs-after.html'), '--md']);
     say(r8.status === 0 && r9.status === 0 && /→/.test(r9.stdout) && /новое число или обещание: 5 000 ₽/.test(r9.stdout) && /убрано:/.test(r9.stdout) && !/Контакты/.test(r9.stdout), `snapshot → pairs --md: пары, новое число помечено, неизменённое не печатается`);
     const r10 = node(['lint', path.join(FIXTURES, 'pairs-after.html'), '--run', runDirT, '--quiet']);
-    say(r10.status === 1 && /FAIL/.test(r10.stdout) && /5 000 ₽|copy-unverified/.test(r10.stdout) && /сайт «до»/.test(r10.stdout), 'lint --run: снимок «до» и facts.json из папки прогона подхватываются сами; новая цена без источника — FAIL');
+    say(r10.status === 0 && /Итог: WARN/.test(r10.stdout) && /copy-unverified/.test(r10.stdout) && /придумано 1/.test(r10.stdout) && /сайт «до»/.test(r10.stdout) && /список для владельца пишется с --out/.test(r10.stdout), `lint --run: снимок «до» и facts.json из папки прогона подхватываются сами; новая цена без источника — WARN «придумано», код 0 (${clip((r10.stdout.match(/Итог:.*/) || [''])[0], 110)})`);
     const r11 = node(['fix', '--typograph', '-'], 'Приходи в 10:00-19:00, скидка 20 %');
     say(r11.status === 0 && r11.stdout === 'Приходи в\u00a010:00–19:00, скидка 20\u00a0%', `fix --typograph - (stdin) → «${showNb(r11.stdout)}»`);
   }
@@ -1093,9 +1179,9 @@ async function selftest(opt) {
     const r13 = node(['lint', path.join(FIXTURES, 'nobase', 'after'), '--run', nbRun, '--json', path.join(tmp, 'nobase.json')]);
     let nj = null; try { nj = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase.json'), 'utf8')); } catch { /* нет */ }
     const nbw = nj ? nj.findings.filter((x) => x.rule === 'copy-unchecked') : [];
-    say(r12.status === 0 && r13.status === 1 && nbw.length === 1 && nbw[0].page === 'booking.html' && nbw[0].sev === 'WARN' && /нет снимка «до» для booking\.html — FAIL по её заявлениям может быть ложным/.test(r13.stdout) && /--pages "index\.html,menu\.html,booking\.html"/.test(r13.stdout) && /Итог: FAIL .*без снимка «до»: booking\.html \(FAIL copy-unverified там 1 — может быть ложным\)/.test(r13.stdout) && JSON.stringify(nj.totals.pagesNoBase) === '["booking.html"]' && nj.totals.failNoBase === 1,
-      `lint: страницы нет в снимке «до» — WARN copy-unchecked «нет снимка «до» для booking.html — FAIL по её заявлениям может быть ложным», команда снять снимок и строка итога (${nbw.map((x) => `${x.page} ${x.sev}`).join(', ') || 'нет'}); index.html и menu.html — без него`);
-    /* второй круг 29.09: по одной странице с каждой стороны (снимок с главной, lint одной booking.html) — было FAIL без
+    say(r12.status === 0 && r13.status === 0 && nbw.length === 1 && nbw[0].page === 'booking.html' && nbw[0].sev === 'WARN' && /нет снимка «до» для booking\.html — в список придуманного могли попасть факты с сайта «до»/.test(r13.stdout) && /--pages "index\.html,menu\.html,booking\.html"/.test(r13.stdout) && /Итог: WARN .*без снимка «до»: booking\.html \(придумано там 1 — может быть с сайта «до»\)/.test(r13.stdout) && JSON.stringify(nj.totals.pagesNoBase) === '["booking.html"]' && nj.totals.inventedNoBase === 1,
+      `lint: страницы нет в снимке «до» — WARN copy-unchecked «нет снимка «до» для booking.html — в список придуманного могли попасть факты с сайта «до»», команда снять снимок и строка итога, код 0 (${nbw.map((x) => `${x.page} ${x.sev}`).join(', ') || 'нет'}; код ${r13.status}); index.html и menu.html — без него`);
+    /* второй круг 29.09: по одной странице с каждой стороны (снимок с главной, lint одной booking.html) — было без
        объяснения; та же страница под тем же именем (index.html ↔ index.html) — без WARN */
     const one = path.join(tmp, 'nobase1');
     const r15 = node(['snapshot', path.join(FIXTURES, 'nobase', 'before', 'index.html'), '--out', one]);
@@ -1103,7 +1189,7 @@ async function selftest(opt) {
     const r17 = node(['lint', path.join(FIXTURES, 'nobase', 'after', 'index.html'), '--run', one, '--json', path.join(tmp, 'nobase1-same.json')]);
     let j16 = null, j17 = null; try { j16 = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase1.json'), 'utf8')); j17 = JSON.parse(fs.readFileSync(path.join(tmp, 'nobase1-same.json'), 'utf8')); } catch { /* нет */ }
     const w16 = j16 ? j16.findings.filter((x) => x.rule === 'copy-unchecked') : [];
-    say(r15.status === 0 && r16.status === 1 && w16.length === 1 && w16[0].sev === 'WARN' && /снят с одной страницы — index\.html: если это она же под другим именем, FAIL настоящий/.test(w16[0].suggest) && r17.status === 0 && j17 && !j17.findings.some((x) => x.rule === 'copy-unchecked'),
+    say(r15.status === 0 && r16.status === 0 && w16.length === 1 && w16[0].sev === 'WARN' && /снят с одной страницы — index\.html: если это она же под другим именем, список придуманного верный/.test(w16[0].suggest) && r17.status === 0 && j17 && !j17.findings.some((x) => x.rule === 'copy-unchecked'),
       `lint одной страницы при снимке «до» с другой (index.html → booking.html): WARN copy-unchecked и «если это она же под другим именем…» (${w16.map((x) => x.sev).join(', ') || 'нет'}, код ${r16.status}); index.html ↔ index.html — без WARN (код ${r17.status})`);
     const r14 = node(['http://localhost:9/', '--pages', '/,/menu']);
     say(r14.status === 1 && /нужна команда: lint\|/.test(r14.stderr) && /node copy\.mjs lint http:\/\/localhost:9\/ --pages \/,\/menu/.test(r14.stderr), `без команды: ${clip(r14.stderr.trim(), 110)}`);

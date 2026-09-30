@@ -29,9 +29,10 @@
  *
  * Правила (reference/engines.md → «Картинки и видео»):
  * - --yes — только после согласия пользователя на трату (сумма печатается без --yes, код выхода 2);
- * - --for обязателен: иконки, иллюстрации, паттерны, фоны, фактура, декор — да; photo, mockup и background —
- *   не выдают себя за реальность: промпт о «наших работах, команде, зале, гостях, блюдах, клиентах»
- *   на сайте клиента — отказ (выдумывать нельзя); демо-сайт студии — --demo;
+ * - --for обязателен: иконки, иллюстрации, паттерны, фоны, фактура, декор — да; photo, mockup и background с
+ *   промптом о «наших работах, команде, зале, гостях, блюдах, клиентах» выдают себя за реальность — можно, но
+ *   в список для владельца: WARN, поле invented в черновике и в credits.json (take), в отчёте — раздел
+ *   «Придумано — проверить владельцу»; демо-сайт студии — --demo (без пометки);
  * - текста на картинке нет (controls.no_text), текст — вёрсткой; --text — осознанно (кириллицу
  *   генераторы коверкают — смотреть глазами);
  * - палитра — из дизайн-системы сайта (--colors, --bg), промпт — по-английски, языком дизайна донора;
@@ -41,7 +42,7 @@
  * - фон, векторизация, увеличение чужого кадра — права как у исходника (take --license-from).
  *
  * Код выхода: 0 — сделано; 1 — ошибка (сеть, API, аргументы); 2 — не сделано по правилу (нет --yes,
- * нет ключа, запрещённое назначение, не прошли ворота take).
+ * нет ключа, нет или неизвестное назначение --for, не прошли ворота take).
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -84,7 +85,7 @@ const FOR = {
   mockup: { model: 'recraftv4_1_utility', size: '4:3', note: 'макет товара, упаковки, вывески' },
   photo: { model: 'recraftv4_1', size: '3:2', note: 'атмосферный кадр' },
 };
-/* то, что на сайте клиента выдаёт себя за реальность: «наши работы», люди, блюда, место */
+/* то, что на сайте клиента выдаёт себя за реальность: «наши работы», люди, блюда, место — можно, но в список для владельца */
 const REALITY = /\b(our|we|team|staff|client|customer|guest|portfolio|interior of (the|our)|dish|food|meal|plate of|chef|barber at work|real)\b|наш|(?<![а-яё])мы(?![а-яё])|команд|сотрудник|клиент|гост|портфолио|работ[аы]? мастер|(?<![а-яё])зал(?![а-яё])|интерьер|блюд|(?<![а-яё])еда(?![а-яё])|кухн|повар|отзыв/i;   /* \b в JS — только для латиницы */
 
 const die = (m, code = 1) => { console.error(m); process.exit(code); };
@@ -194,11 +195,12 @@ if (cmd === 'take') {
   const TERMS = { license: 'Recraft Developer Terms: права у владельца ключа API, коммерческое использование можно; метаданные и метки Recraft не удалять', license_url: 'https://www.recraft.ai/legal/developer-terms' };
   const rec = meta.op === 'generate'
     ? { name, seen: String(opt.seen).trim(), caption: String(opt.caption).trim(), source: 'recraft', generated: true, author: 'сгенерировано Recraft (API)', ...TERMS, page_url: null, attribution_required: false,
-      changes: `сгенерировано: ${meta.model}, ${meta.date}; промпт: «${String(meta.prompt || '').slice(0, 120)}»`, model: meta.model, prompt: meta.prompt || null, image_id: meta.image_id || null, cost_units: meta.cost_units }
+      changes: `сгенерировано: ${meta.model}, ${meta.date}; промпт: «${String(meta.prompt || '').slice(0, 120)}»`, model: meta.model, prompt: meta.prompt || null, image_id: meta.image_id || null, cost_units: meta.cost_units, ...(meta.invented ? { invented: meta.invented } : {}) }
     : base ? { ...base, name, seen: String(opt.seen).trim(), caption: String(opt.caption).trim(), changes: [base.changes, `Recraft: ${meta.op}, ${meta.date}`].filter(Boolean).join('; '), processed_by: 'recraft', cost_units: meta.cost_units }
       : { name, seen: String(opt.seen).trim(), caption: String(opt.caption).trim(), source: 'владелец сайта', author: 'материал владельца', license: 'материал владельца сайта', license_url: null, page_url: null, attribution_required: false, changes: `Recraft: ${meta.op}, ${meta.date}`, processed_by: 'recraft', cost_units: meta.cost_units };
   saveCredit(dest, rec);
   console.log(`OK: ${path.join(dest, name)} · credits.json: ${readCredits(dest).length} записей · CREDITS.md — node media.mjs credits ${dest} --md <сайт>/CREDITS.md`);
+  if (rec.invented) console.log(`WARN: придумано — в список для владельца (раздел отчёта «Придумано — проверить владельцу»): ${name} — ${rec.invented}`);
   if (!/\.svg$/i.test(src)) console.log('Пережимать и нарезать — с сохранением метаданных (sharp: .keepMetadata()): метки Recraft удалять нельзя (Developer Terms, п. 6.4).');
   process.exit(0);
 }
@@ -207,7 +209,10 @@ if (cmd === 'gen' || cmd === 'price') {
   const prompt = pos.join(' ').trim(); if (!prompt) die('Нужен промпт: node recraft.mjs gen "<описание по-английски>" --for icon … (подробно: --help)');
   const role = opt.for && opt.for !== true ? String(opt.for) : null;
   if (!role || !FOR[role]) die(`--for обязателен: ${Object.keys(FOR).join(' | ')} — для чего картинка на сайте`, 2);
-  if ((role === 'photo' || role === 'mockup' || role === 'background') && REALITY.test(`${prompt} ${opt.caption || ''}`) && !opt.demo) die(`ОТКАЗ: «${prompt.slice(0, 80)}» — сгенерированная картинка выдаёт себя за реальность (наши работы, люди, блюда, место). На сайте клиента так нельзя: «ничего не выдумывать». Своё фото владельца, законный сток (media.mjs) или иллюстрация; демо-сайт студии — --demo.`, 2);
+  /* «как настоящее» (наши работы, люди, блюда, место) — можно, но это придуманное: пометка до сайта и в отчёт */
+  const invented = (role === 'photo' || role === 'mockup' || role === 'background') && REALITY.test(`${prompt} ${opt.caption || ''}`) && !opt.demo
+    ? `сгенерировано «как настоящее» (${role}): «${prompt.slice(0, 80)}» — проверить владельцу до показа клиентам` : null;
+  if (invented) console.log(`WARN: «${prompt.slice(0, 80)}» — сгенерированная картинка выдаёт себя за реальность (наши работы, люди, блюда, место). Можно, но в список для владельца: take запишет invented в credits.json, в отчёте — раздел «Придумано — проверить владельцу». Своё фото владельца и законный сток (media.mjs) главнее; демо-сайт студии — --demo.`);
   const model = opt.model && opt.model !== true ? String(opt.model) : FOR[role].model;
   if (!(model in PRICES)) die(`Модель «${model}» не знаю: ${Object.keys(PRICES).join(', ')}`);
   const n = opt.n && opt.n !== true ? Number(opt.n) : 1; if (!(n >= 1 && n <= 6)) die('--n: от 1 до 6');
@@ -237,7 +242,7 @@ if (cmd === 'gen' || cmd === 'price') {
   const files = [];
   for (let i = 0; i < (res.data || []).length; i++) {
     const img = res.data[i]; const s = await saveImage(img, path.join(dir, String(i + 1).padStart(2, '0')), isVector(model));
-    sidecar(s.file, { tool: 'recraft.mjs', op: 'generate', for: role, model, prompt, size: body.size || null, controls: body.controls || null, style: body.style || null, style_id: body.style_id || res.style_id || null, seed: body.random_seed ?? null, image_id: img.image_id || null, revised_prompt: img.revised_prompt || null, cost_units: Math.round((res.credits ?? cost) / Math.max(1, res.data.length)), date });
+    sidecar(s.file, { tool: 'recraft.mjs', op: 'generate', for: role, model, prompt, size: body.size || null, controls: body.controls || null, style: body.style || null, style_id: body.style_id || res.style_id || null, seed: body.random_seed ?? null, image_id: img.image_id || null, revised_prompt: img.revised_prompt || null, cost_units: Math.round((res.credits ?? cost) / Math.max(1, res.data.length)), date, ...(invented ? { invented } : {}) });
     files.push(s);
   }
   console.log(`OK: ${files.length} за ${((Date.now() - t0) / 1000).toFixed(1)} с · списано ${res.credits ?? '?'} единиц${res.credits != null ? ` (${dollars(res.credits)})` : ''}`);
@@ -301,11 +306,16 @@ async function selftest() {
   let r = await run(['gen', 'flat icon of a printer nozzle', '--for', 'icon', '--run', tmp]);
   check('без --yes не тратит (код 2, сумма напечатана)', r.code === 2 && /\$0\.08/.test(r.out) && !seen.some((x) => x.url === '/v1/images/generations'), r.out.split('\n')[0]);
   r = await run(['gen', 'photo of our team in the workshop', '--for', 'photo', '--yes', '--run', tmp]);
-  check('фото «нашей команды» — отказ (код 2)', r.code === 2 && /ОТКАЗ/.test(r.out));
+  const teamFile = (r.out.match(/(\S+\.(?:png|webp|jpg))/) || [])[1];
+  const teamMeta = teamFile && fs.existsSync(teamFile.replace(/\.[^.]+$/, '.json')) ? JSON.parse(fs.readFileSync(teamFile.replace(/\.[^.]+$/, '.json'), 'utf8')) : {};
+  check('фото «нашей команды» — не отказ: WARN «в список для владельца», в черновике invented', r.code === 0 && /WARN: .*в список для владельца/.test(r.out) && /проверить владельцу/.test(teamMeta.invented || ''), teamMeta.invented || r.out.split('\n')[0]);
+  r = await run(['take', teamFile || 'x', '--dest', path.join(tmp, 'site-team', 'img'), '--seen', 'люди за верстаком в мастерской, тёплый свет', '--caption', 'Мастерская']);
+  const crTeam = readCredits(path.join(tmp, 'site-team', 'img'));
+  check('take «как настоящего» кадра: invented в credits.json и строка «в список для владельца»', r.code === 0 && crTeam.length === 1 && /проверить владельцу/.test(crTeam[0].invented || '') && /придумано — в список для владельца/.test(r.out), crTeam[0] ? crTeam[0].invented : r.out.slice(0, 120));
   r = await run(['gen', 'icon', '--yes', '--run', tmp]);
   check('без --for — отказ (код 2)', r.code === 2);
   r = await run(['gen', 'flat icon of a printer nozzle', '--for', 'icon', '--colors', '#6A4EE1,#111111', '--bg', '#FFFFFF', '--yes', '--run', tmp]);
-  const g = seen.find((x) => x.url === '/v1/images/generations');
+  const g = seen.filter((x) => x.url === '/v1/images/generations').pop();
   check('генерация: модель, палитра, без текста, b64', r.code === 0 && g && g.body.model === 'recraftv4_1_vector' && g.body.controls.colors[0].rgb.join() === '106,78,225' && g.body.controls.background_color.rgb.join() === '255,255,255' && g.body.controls.no_text === true && g.body.response_format === 'b64_json', g ? JSON.stringify(g.body).slice(0, 160) : 'запроса нет');
   const svgFile = (r.out.match(/(\S+\.svg)/) || [])[1];
   const svgText = svgFile && fs.existsSync(svgFile) ? fs.readFileSync(svgFile, 'utf8') : '';
