@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — фокус в открытом слое</title>
+<!--
+  Стенд runtime.mjs --click, открывший слой на весь экран (node runtime.mjs --selftest, случай focus; строка 531
+  SKILL-ISSUES: Tab из открытого меню уходил на страницу под ним, а протокол писал OK).
+    #open-leaky    слой #leaky без ловушки, стоит в конце страницы: первый же Tab уходит на кнопку #open-trap в шапке
+                   под слоем → WARN «фокус уходит из открытого слоя на страницу под ним: button#open-trap»
+    #open-trap     слой #trap с ловушкой (перехват Tab: фокус ходит по кругу внутри) → OK «фокус не уходит»
+    #open-closing  слой #closing сразу за шапкой, закрывается сам, когда фокус уходит из него (focusout) → OK «слой
+                   закрылся на 3-м нажатии Tab» — ловушка не нужна
+  Слои закрываются кнопками #leaky-close и #trap-close — отдельными шагами --click.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { display: flex; gap: 16px; padding: 16px 24px; background: #fff; border-bottom: 1px solid #ddd; }
+  main { padding: 32px 24px; }
+  .layer { position: fixed; inset: 0; z-index: 20; display: none; flex-direction: column; gap: 16px; padding: 96px 32px; background: #1b1b1b; color: #fff; }
+  .layer.is-open { display: flex; }
+  .layer a { color: #fff; font-size: 28px; }
+  .layer button { align-self: flex-start; }
+  .tall { height: 1400px; }
+</style>
+</head>
+<body>
+<header>
+  <button id="open-leaky" type="button" aria-expanded="false">Меню без ловушки</button>
+  <button id="open-trap" type="button" aria-expanded="false">Меню с ловушкой</button>
+  <button id="open-closing" type="button" aria-expanded="false">Меню, которое закрывается само</button>
+</header>
+<div id="closing" class="layer" role="dialog" aria-label="Закрывается само"><a href="#c1">Пункт первый</a><a href="#c2">Пункт второй</a></div>
+<main>
+  <h1>Фокус в открытом слое</h1>
+  <p><a href="#p1">Ссылка страницы</a> и <a href="#p2">ещё одна</a>.</p>
+  <div class="tall"></div>
+</main>
+<div id="leaky" class="layer" role="dialog" aria-label="Без ловушки"><button id="leaky-close" type="button">Закрыть</button><a href="#l1">Пункт меню</a></div>
+<div id="trap" class="layer" role="dialog" aria-label="С ловушкой"><button id="trap-close" type="button">Закрыть</button><a href="#t1">Пункт первый</a><a href="#t2">Пункт второй</a></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const pair = (btn, layer, close) => {
+    $(btn).addEventListener('click', () => { $(layer).classList.add('is-open'); $(btn).setAttribute('aria-expanded', 'true'); });
+    if (close) $(close).addEventListener('click', () => { $(layer).classList.remove('is-open'); $(btn).setAttribute('aria-expanded', 'false'); });
+  };
+  pair('open-leaky', 'leaky', 'leaky-close');
+  pair('open-trap', 'trap', 'trap-close');
+  pair('open-closing', 'closing', null);
+  /* ловушка: пока #trap открыт, Tab и Shift+Tab ходят по кругу внутри него */
+  document.addEventListener('keydown', (e) => {
+    const t = $('trap'); if (e.key !== 'Tab' || !t.classList.contains('is-open')) return;
+    const f = [...t.querySelectorAll('a, button')]; const i = f.indexOf(document.activeElement);
+    e.preventDefault();
+    f[e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i + 1) % f.length].focus();
+  });
+  /* закрывается сам, когда фокус уходит из него */
+  $('closing').addEventListener('focusout', (e) => { if (!$('closing').contains(e.relatedTarget)) { $('closing').classList.remove('is-open'); $('open-closing').setAttribute('aria-expanded', 'false'); } });
+</script>
+</body>
+</html>

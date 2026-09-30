@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — якоря под закреплённой лентой</title>
+<!--
+  Стенд runtime.mjs --click по якорю (node runtime.mjs --selftest, случай anchor). Закреплённая лента 64 px,
+  у разделов scroll-margin-top: 88px (лента + 24). Ссылки — в ленте, прокрутка к ним не нужна.
+    #own      страница прокручивает сама (preventDefault, отступ = лента + 12): цель на 76 px — видна и не перекрыта,
+              но не у scroll-margin → WARN «цель не у scroll-margin» (раньше FAIL «ЦЕЛЬ НЕ У ВЕРХА ОКНА»; строка 448)
+    #native   браузер сам ведёт по якорю: цель на 88 px = scroll-margin → OK
+    #covered  своя прокрутка с отступом 20 px: заголовок цели под лентой → FAIL «ЦЕЛЬ ПОД ЗАКРЕПЛЁННЫМ СЛОЕМ»
+    #far      preventDefault без прокрутки: цель далеко ниже окна → FAIL «ЦЕЛЬ ВНЕ ОКНА»
+    #padded   у раздела поле сверху 80 px, scroll-margin нет, своя прокрутка ставит верх раздела к верху окна: лента
+              закрывает только поле, заголовок ниже виден → OK (не «перекрыта»: перекрытие — по первой строке текста)
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  .ribbon { position: fixed; top: 0; left: 0; right: 0; z-index: 10; height: 64px; display: flex; gap: 24px; align-items: center; padding: 0 24px; background: #1b1b1b; }
+  .ribbon a { color: #fff; }
+  .intro { height: 900px; padding: 96px 24px 0; }
+  section { min-height: 1000px; padding: 0 24px; scroll-margin-top: 88px; border-top: 1px solid #ddd; }
+  section h2 { margin: 0; padding-top: 4px; font-size: 32px; }
+  #sec-padded { scroll-margin-top: 0; padding-top: 80px; }
+  .end { height: 1600px; }
+</style>
+</head>
+<body>
+<nav class="ribbon" aria-label="Разделы">
+  <a id="own" href="#sec-own">Своя прокрутка</a>
+  <a id="native" href="#sec-native">Браузер</a>
+  <a id="covered" href="#sec-covered">Под лентой</a>
+  <a id="far" href="#sec-far">Никуда</a>
+  <a id="padded" href="#sec-padded">С полем сверху</a>
+</nav>
+<main>
+  <div class="intro"><h1>Якоря под закреплённой лентой</h1><p>Лента сверху — 64 px.</p></div>
+  <section id="sec-own"><h2>Раздел со своей прокруткой</h2><p>Страница ставит его на ленту + 12 px.</p></section>
+  <section id="sec-native"><h2>Раздел по якорю браузера</h2><p>Браузер ставит его на scroll-margin.</p></section>
+  <section id="sec-covered"><h2>Раздел под лентой</h2><p>Своя прокрутка с отступом 20 px.</p></section>
+  <section id="sec-padded"><h2>Раздел с полем сверху</h2><p>Лента закрывает только поле.</p></section>
+  <section id="sec-far"><h2>Раздел, до которого не доехали</h2><p>Обработчик не прокручивает.</p></section>
+  <div class="end"></div>
+</main>
+<script>
+  const go = (id, off) => (e) => { e.preventDefault(); const t = document.getElementById(id); window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - off, behavior: 'instant' }); };
+  document.getElementById('own').addEventListener('click', go('sec-own', 64 + 12));
+  document.getElementById('covered').addEventListener('click', go('sec-covered', 20));
+  document.getElementById('padded').addEventListener('click', go('sec-padded', 0));
+  document.getElementById('far').addEventListener('click', (e) => e.preventDefault());
+</script>
+</body>
+</html>

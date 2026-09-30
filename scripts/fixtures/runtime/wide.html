@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — блок шире своей колонки</title>
+<!--
+  Стенд runtime.mjs --viewport mobile-s --scroll (node runtime.mjs --selftest, случай wide). Колонка .col — 320 px с
+  полями по 16 px, её содержимое — 288 px. Строка 507 SKILL-ISSUES: h2 шире колонки на 16,8 px из-за неразрывного
+  пробела, scrollWidth документа 321 при окне 320 — было «OK» (допуск lib — 1 px, текст в своём h2 влезает).
+  Находки (WARN «блок шире своей колонки», CSS px):
+    h2.wide        304,8 px в колонке 288 — на 16,8 px (как h2 во флекс-колонке, растянутый неразрывной строкой);
+                   его правый край 320,8 — страница шире окна на 1 px: «страница шире окна на 1 px … h2.wide»
+    div.card2      карточка в гриде (1fr = minmax(auto, 1fr)) растянута заголовком шириной 294 px (с рамкой
+                   карточка 296) — на 8 px; сам заголовок в карточке влезает — находка у карточки, не у него
+  Не находки:
+    .x-bleed       отрицательные поля (margin: 0 -16px) — на всю ширину по замыслу
+    .x-ribbon      лента с прокруткой (overflow-x: auto) — пилюли .x-pill шире неё по замыслу
+    .x-cut         обрезка у родителя (overflow: hidden, многоточие) — вложенный блок 400 px не виден за краем
+    .x-deco        слово-фон aria-hidden="true" 300 px
+    .x-pres        role="presentation" у самого блока 300 px
+    .x-badge       метка position: absolute, right: -10px
+    .x-shift       сдвиг transform: translateX(12px)
+    .x-tiny        шире колонки на 0,5 px — меньше 1 px
+    .x-fixed       закреплённая полоса у низа окна (fixed, во всю ширину) — стоит в колонке, но её место — окно
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  .col { padding: 0 16px; }
+  .col > * { margin: 0 0 16px; }
+  .flex { display: flex; flex-direction: column; }
+  h2.wide { width: 304.8px; font-size: 22px; background: #efe7da; }
+  .grid2 { display: grid; grid-template-columns: 1fr; }
+  .card2 { background: #fff; border: 1px solid #ddd; }
+  .card2__title { display: block; width: 294px; font-weight: 600; }
+  .x-bleed { margin: 0 -16px 16px; padding: 8px 16px; background: #1b1b1b; color: #fff; }
+  .x-ribbon { overflow-x: auto; white-space: nowrap; }
+  .x-pill { display: inline-block; width: 110px; padding: 4px 8px; border: 1px solid #1b1b1b; border-radius: 999px; }
+  .x-cut { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .x-cut__in { display: inline-block; width: 400px; }
+  .x-deco { width: 300px; font-size: 40px; line-height: 1; color: #e8e2d6; }
+  .x-pres { width: 300px; }
+  .x-card { position: relative; padding: 8px; background: #fff; }
+  .x-badge { position: absolute; right: -10px; top: -8px; padding: 0 6px; background: #d30052; color: #fff; }
+  .x-shift { transform: translateX(12px); }
+  .x-tiny { width: 288.5px; background: #fff; }
+  .x-fixed { position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: 8px 16px; background: #1b1b1b; color: #fff; }
+</style>
+</head>
+<body>
+<main class="col flex">
+  <h1>Блок шире колонки</h1>
+  <h2 class="wide">Мосты над рекой</h2>
+  <div class="grid2"><div class="card2"><span class="card2__title">Карточка в гриде</span><p>Растянута заголовком.</p></div></div>
+  <p class="x-bleed">На всю ширину по замыслу</p>
+  <div class="x-ribbon"><span class="x-pill">Завтраки</span> <span class="x-pill">Обеды</span> <span class="x-pill">Ужины</span> <span class="x-pill">Бар</span></div>
+  <div class="x-cut"><span class="x-cut__in">Обрезано нарочно</span></div>
+  <div class="x-deco" aria-hidden="true">ФОН</div>
+  <div class="x-pres" role="presentation">Раскладка</div>
+  <div class="x-card"><span class="x-badge">new</span>Карточка с меткой</div>
+  <p class="x-shift">Сдвинуто transform</p>
+  <p class="x-tiny">Полпикселя</p>
+  <p class="x-fixed">Записаться на ужин</p>
+</main>
+</body>
+</html>

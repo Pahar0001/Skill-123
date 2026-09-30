@@ -5,7 +5,7 @@
  * меню, анимации, видео, выброшенный браузером CSS, переполнение по ширине.
  *
  *   node runtime.mjs <url> [--viewport mobile] [--out папка] [--tag имя] [--browser firefox]
- *        [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"]
+ *        [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent]
  *   node runtime.mjs [шаги и настройки] -- <url>      «--» — конец флагов, дальше только адрес
  *
  *   --viewport  desktop | laptop | tablet | mobile | mobile-s (320×568@2) | android (360×800@3)
@@ -40,6 +40,15 @@
  *        --scroll              прокрутить до конца: появления, закреплённые, переполнение
  *                              по элементам (FAIL — торчит за край или можно уехать вбок;
  *                              WARN — страница шире окна, текст шире коробки, обрезан панелью).
+ *                              Блок шире своей колонки — WARN «блок шире своей колонки: h2.title на 16.8 px (CSS px;
+ *                              за правый край колонки div.col …)»: коробка блока с видимым текстом (или его предка)
+ *                              вылезла за контентную коробку колонки — ближайшего предка-блока — от 1 CSS px, и вылезшее
+ *                              видно (h2 с неразрывным пробелом в грид- или флекс-колонке: текст в h2 влезает, а h2 — нет).
+ *                              Не в счёт: колонка обрезает или прокручивает (лента с прокруткой, обрезка с многоточием),
+ *                              блок вне потока (absolute, fixed), сдвинут transform или relative, вынесен отрицательным
+ *                              полем (на всю ширину по замыслу), декор (aria-hidden, role presentation/none у самого).
+ *                              Страница шире окна на 1 px (scrollWidth 321 при окне 320; допуск lib — 1 px) — тоже WARN,
+ *                              с именем элемента правее окна.
  *                              «Ждали появления» — прозрачное или сдвинутое ниже первого экрана;
  *                              «не появились» (WARN) — не стало видно ни на одном шаге прохода.
  *                              Поля формы (input, select, textarea, option) и прозрачное, у которого
@@ -81,7 +90,19 @@
  *        --click "sel"         кликнуть: эффект — изменения DOM (MutationObserver), адрес,
  *                              запросы, фокус на другом элементе, диалоги. Своя прокрутка и
  *                              фокус на нажатом — не эффект. Кнопка без эффекта — FAIL.
- *                              Якорь «#id»: дождаться остановки прокрутки и сверить верх цели
+ *                              Якорь «#id»: дождаться остановки прокрутки и сверить верх цели с ожидаемым местом —
+ *                              scroll-margin-top цели + scroll-padding-top страницы, ±8 px: совпал — OK; без
+ *                              scroll-margin цель у верха окна или сразу под закреплённой шапкой — OK; низ страницы
+ *                              (дальше не прокрутить) — OK. Цель видна и не перекрыта, но не там (страница прокручивает
+ *                              своим обработчиком: отступ = лента + 12) — WARN «цель не у scroll-margin». FAIL — только
+ *                              начало цели (первая строка текста) под закреплённым слоем (шапка, лента — по
+ *                              elementFromPoint) или вне окна.
+ *                              Клик открыл слой на весь экран (меню, диалог: fixed или :modal, видим, от 80% окна; до
+ *                              клика его не было) — до 15 нажатий Tab: фокус ушёл на элемент вне слоя и под ним
+ *                              (elementFromPoint в центре — слой; или вне окна) — WARN «фокус уходит из открытого слоя на
+ *                              страницу под ним: <первый такой>»; остался в слое (или над ним: кнопка меню поверх) — OK;
+ *                              слой закрылся, когда фокус ушёл, — OK с пометкой, что дальше он закрыт. После проверки
+ *                              фокус и прокрутка — как были, слой не закрывается
  *        --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…);
  *                              делится по первому «=» вне [ ], ( ) и кавычек:
  *                              --type "input[name=phone]=89001234567".
@@ -158,14 +179,27 @@
  *                              «Failed to load resource: … 404» этого документа — не ошибка страницы;
  *                              не совпал — FAIL. Без флага ответ документа 4xx/5xx в Chrome — FAIL
  *                              «ошибки в консоли», как раньше (с подсказкой про этот флаг)
+ *        --keep-consent        не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18») —
+ *                              чтобы проверить само окно; строка INFO «оставлено (--keep-consent)». По умолчанию
+ *                              runtime закрывает их после загрузки, до шагов (как discover и cliche): кнопкой «Принять»
+ *                              / «Accept» / «Согласен» / «OK», если её нет — «Отклонить», затем крестиком. Иначе окно
+ *                              давало ложные тревоги: клик по кнопке под ним уходил в окно («КНОПКА БЕЗ ЭФФЕКТА»), замеры
+ *                              шли под ним. Итог — строкой INFO «окно cookie» (или «ворота-заставка»): не появлялось /
+ *                              закрыто кнопкой «…» (где, размер); не закрылось — WARN; в JSON — consent. Нажатие
+ *                              перезагрузило страницу — дождаться; увело — нужная страница открывается заново.
+ *                              SITE_REWORK_DISMISS нажимается и с --keep-consent (переменную задали явно), а окно
+ *                              согласия его второй раз не жмёт
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
  *        --selftest            прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка,
  *                              подсказки против сломанного появления, страница в закреплённой обёртке
  *                              и закрытое меню на весь экран, вертикальное письмо, меню на весь экран,
  *                              со сломанными якорями и с якорями <a name>, первый экран на position:
- *                              fixed) и свои серверы (страница 404 с --expect-status и без, сторонний
- *                              iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
+ *                              fixed, якоря при своей прокрутке страницы под закреплённой лентой, блок шире
+ *                              своей колонки на 320 и то, что им не считается, фокус в открытом слое — без
+ *                              ловушки, с ловушкой и слой, который закрывается сам, окно cookie поверх кнопки —
+ *                              закрыто и оставлено с --keep-consent, предупреждения консоли) и свои серверы
+ *                              (страница 404 с --expect-status и без, сторонний iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
  *                              же и другого сайта), окна при загрузке (стенды fixtures/lib: окно — WARN;
  *                              SITE_REWORK_DISMISS увёл на шумную главную — нужная страница открыта
  *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
@@ -179,6 +213,9 @@
  * запросы сторонних iframe (реклама и счётчики внутри карты Яндекса, видео) — отдельной строкой INFO:
  * сайт их не чинит. Документ самого iframe (битая ссылка на виджет: ответ 404, отказ соединения) — запрос
  * страницы, которая его вставила: WARN «упавшие запросы», а его строка консоли — ошибка страницы.
+ *
+ * Предупреждения консоли (console.warn страницы) — в конце строкой INFO: сколько их и тексты первых десяти, по
+ * 160 знаков; в JSON — console.warnings (число) и console.warningTexts (первые 10 целиком, до 300 знаков).
  *
  * Выход: <папка>/runtime/<tag>.json, снимки рядом и протокол с вердиктами
  * OK / WARN / FAIL (INFO — сведения, на вердикт не влияют). У шага вердикт — поле status, текст —
@@ -218,13 +255,14 @@ import {
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
   collectWarnings, takeWarnings, collectNotes, takeNotes, warningLabel, onPageLogReset, findBrowser,
+  closeConsent, consentNote, resetPageLog,
 } from './lib.mjs';
 
 /* ---------- аргументы: шаги в порядке записи ---------- */
 const argv = process.argv.slice(2);
 const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', 'edit', 'key', 'select', 'resize', 'canvas', 'motion', 'video', 'nav', 'css', 'eval', 'expect', 'assert', 'shot', 'fullpage']);
 /* без значения: шаги-флаги и настройки-флаги */
-const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'selftest', 'help', 'h']);
+const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'keep-consent', 'selftest', 'help', 'h']);
 /* настройки со значением */
 const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status']);
 /* справочник флагов (flags-doc.mjs, RW_FLAGS_DUMP=1): списки выше и выход с кодом 0 — до справки и разбора */
@@ -455,6 +493,34 @@ console.log(`браузер ${bInfo.label}${bHint ? ` · ${bHint}` : ''}`);
 report.browser = { ...bInfo, default: defBrowser, hint: bHint || null };
 const NOT_IN = `не поддерживается в ${bInfo.name || 'Firefox'}`;
 let page, navRes = null, cpuSkipped = false;
+/* окно согласия cookie и ворота-заставка (closeConsent): закрываются после загрузки, --keep-consent — только найти */
+const keepConsent = !!opt['keep-consent'];
+let consent = { found: false };
+/* найти и закрыть окно согласия (lib.closeConsent: сначала SITE_REWORK_DISMISS — он уже нажат в waitForOverlay и второй раз
+   не жмётся, потом окно cookie и ворота). Нажатие перезагрузило документ (менеджеры согласия так делают) — дождаться
+   готовности; увело на другой адрес — открыть нужный заново, журнал вкладки — только его (resetPageLog) */
+async function consentStep() {
+  const before = await page.evaluate(() => { window.__rwConsentDoc = 1; return location.href; }).catch(() => null);
+  const c = await closeConsent(page, { click: !keepConsent }).catch((e) => ({ found: false, error: String((e && e.message) || e).slice(0, 120) }));
+  if (!keepConsent && before && c.found && c.kind !== 'dismiss' && c.pick) {
+    const same = await page.evaluate(() => window.__rwConsentDoc === 1).catch(() => false);
+    if (!same) {
+      await page.waitForFunction(() => document.readyState === 'complete', { timeout: 15000 }).catch(() => {});
+      const bare = (u) => String(u || '').replace(/#.*$/, '').replace(/\/+$/, '');
+      if (bare(page.url()) === bare(before)) c.reloaded = true;
+      else {
+        c.movedTo = page.url();
+        resetPageLog(page);
+        navRes = await gotoRetry(page, url);
+        await page.evaluate(() => document.fonts.ready).catch(() => {});
+        const again = await closeConsent(page).catch(() => null);
+        if (again && again.found && again.kind !== 'dismiss') c.again = again.closed ? 'окно снова появилось — закрыто' : 'окно снова появилось и не закрылось';
+        if (bare(page.url()) !== bare(navRes ? navRes.url() : url)) c.wrongPage = page.url();
+      }
+    }
+  }
+  return c;
+}
 const reqLog = [];
 const conLoc = []; const reqFrame = new Map();
 /* источник кадра: ближайший адрес http(s) от кадра к главному (about:blank и srcdoc наследуют источник родителя) */
@@ -493,7 +559,17 @@ try {
   if (opt.init) await page.evaluateOnNewDocument(String(opt.init));
   navRes = await gotoRetry(page, url);
   await page.evaluate(() => document.fonts.ready).catch(() => {});
-  page.overlay = await waitForOverlay(page, 5000);
+  /* окна при загрузке, как у cliche и discover: заставка и SITE_REWORK_DISMISS — waitForOverlay (modalCheck: false),
+     окно согласия cookie и ворота — closeConsent, открытое окно без слов про cookie — после них (ворота «ENTER», которые
+     closeConsent закроет, — не WARN «окно»). Окно cookie поверх страницы давало ложные тревоги: клик по кнопке под ним
+     уходил в окно («КНОПКА БЕЗ ЭФФЕКТА»), замеры шли под ним. --keep-consent — только найти */
+  page.overlay = await waitForOverlay(page, 5000, { modalCheck: false });
+  consent = await consentStep();
+  /* заставка стояла, а окно согласия закрылось — может быть, заставкой было оно: проверить заново */
+  if (consent.closed && consent.kind !== 'dismiss' && page.overlay.hadOverlay && !page.overlay.gone) page.overlay = { ...(await waitForOverlay(page, 1500, { dismiss: false, modalCheck: false })), afterConsent: true };
+  /* открытое окно без слов про cookie (выбор города) — WARN «окно» (lib); окно, которое страница откроет сама (признаки
+     при загрузке), ждётся до 2 с от начала документа — как раньше в waitForOverlay */
+  await waitForOverlay(page, 0, { dismiss: false, modalCheck: true }).catch(() => null);
   await sleep(500);
   /* слой на весь экран, который есть уже при загрузке (закреплённый фон, заставка), — не «открытое меню» у --scroll */
   await evaluateWith(page, openLayerInPage, { base: true }, DEPS).catch(() => null);
@@ -548,7 +624,23 @@ if (frameFailed.length) {
   const fl = foreignErrLines();
   line('INFO', `запросы сторонних iframe: не загрузилось ${frameFailed.length}`, `${[...byFrame.entries()].slice(0, 3).map(([h, l]) => `в iframe ${h}: ${l.length} (${uniqCount(l.map((f) => `${f.reason} ${hostOf(f.url)}`), 3)})`).join(' | ')} — реклама и счётчики внутри чужого виджета (карта, видео); сайт их не чинит, в «упавшие запросы» не входят${fl ? `; их строки в консоли (${fl}) — не ошибки страницы` : ''}`, { failed: frameFailed.map((f) => ({ ...f, frame: foreignFrame(f).frame })) });
 }
-if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? (page.overlay.closedByDismiss ? `сама не ушла за ${page.overlay.waitedMs} мс — закрыта нажатием SITE_REWORK_DISMISS` : `ушла через ${page.overlay.waitedMs} мс`) : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? (page.overlay.closedByDismiss ? `сама не ушла за ${page.overlay.waitedMs} мс — закрыта нажатием SITE_REWORK_DISMISS` : page.overlay.afterConsent ? 'ушла, когда закрыли окно согласия' : `ушла через ${page.overlay.waitedMs} мс`) : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+/* окно согласия cookie и ворота: что найдено и что нажато — INFO; не закрылось — WARN (клики и замеры идут под ним).
+   Нажатое по SITE_REWORK_DISMISS — строками SITE_REWORK_DISMISS ниже (drainLib), здесь не повторяется */
+{
+  const own = consent.found && consent.kind !== 'dismiss';
+  const what = own && consent.kind === 'ворота' ? 'ворота-заставка' : 'окно cookie';
+  const where = own ? `${consent.box}, ${consent.place}, ${consent.w}×${consent.h}${consent.frame ? `, во фрейме ${consent.frame}` : ''}` : '';
+  const note = own ? consentNote({ ...consent, dismiss: null }).replace(/\*\*/g, '') : consent.error ? `проверка не прошла: ${consent.error}` : 'не появлялось';
+  const after = consent.reloaded ? ' — нажатие перезагрузило страницу, дождались'
+    : consent.movedTo ? ` — нажатие увело на ${consent.movedTo}, нужная страница открыта заново${consent.again ? ` (${consent.again})` : ''}${consent.wrongPage ? `, но открылась ${consent.wrongPage} — ЗАМЕР НЕ ТОЙ СТРАНИЦЫ` : ''}` : '';
+  if (keepConsent) line('INFO', what, own ? `оставлено (--keep-consent): ${where}${consent.buttons && consent.buttons.length ? `; кнопки: ${consent.buttons.map((b) => `«${b}»`).join(', ')}` : ''} — клики и замеры идут с ним` : `${note} (--keep-consent)`, { consent: { ...consent, dismiss: undefined } });
+  else if (!own) line('INFO', what, note);
+  else if (consent.wrongPage) line('WARN', `${what}: нажатие увело со страницы`, `${note}${after}`, { consent: { ...consent, dismiss: undefined } });
+  else if (consent.closed) line('INFO', what, `${note}${after} — клики и замеры без него (--keep-consent — оставить окно)`, { consent: { ...consent, dismiss: undefined } });
+  else line('WARN', `${what} не закрылось`, `${note}${after} — клики и замеры идут под ним`, { consent: { ...consent, dismiss: undefined } });
+  report.consent = { keep: keepConsent, ...consent, dismiss: undefined, note: `${note}${after}` };
+}
 /* окна при загрузке (lib, waitForOverlay): итог SITE_REWORK_DISMISS — INFO (нажато; увело — нужная страница открыта
    заново) или WARN (не найдено, скрыто, осталось, окно вернулось, замер не той страницы), открытое окно — WARN «окно».
    Раньше WARN lib печатался мимо вердикта и JSON, а уводящее нажатие мерило чужую страницу с OK (mamuka.rest, 29.09) */
@@ -690,14 +782,147 @@ function verticalTextInPage(arg) {
   }
   return out;
 }
-/* findOverflow и поправка на вертикальное письмо: из «текст шире коробки» уходит вертикальный текст, который
+/* findOverflow, затем две поправки runtime: блок шире своей колонки и страница шире окна на 1 px (blockFix — ниже) и
+   вертикальное письмо (verticalFix): из «текст шире коробки» уходит вертикальный текст, который
    в коробке и по высоте, и сбоку (с краем глифа). Вердикт пересчитывается от вердикта lib: FAIL остаётся FAIL,
    WARN остаётся, пока есть любая другая находка — docWider или любое поле …Count, кроме textWiderCount
    (panelCut, covered, clipCut, fieldCut и то, что lib добавит потом). Из summary вырезается только кусок
    «текст шире коробки: …» — остальные куски («текст обрезан», «текст не влез в поле», …) остаются */
 async function overflowOf() {
   const ov = await findOverflow(page);
-  if (!ov || !ov.textWiderCount) return ov;
+  if (!ov) return ov;
+  if (ov.textWiderCount) await verticalFix(ov);
+  await blockFix(ov);
+  return ov;
+}
+/* блок шире своей колонки — дополняет lib.findOverflow (lib не трогаем: его зовут shots, a11y, perf, typeset): коробка блока
+   с видимым текстом или его предка вылезла за контентную коробку своей колонки — ближайшего предка-блока (не inline и не
+   contents; рамка и поля колонки — не место для содержимого) — хотя бы на 1 CSS px, и вылезшее видно. h2 с неразрывным
+   пробелом в грид- или флекс-колонке растягивается по самой длинной неразрывной цепочке: текст в своём h2 влезает
+   (textWider молчит), а h2 торчит из колонки на 16,8 px, документ шире окна на 1 px — в допуске lib (tol=1), и было «OK»
+   (/venue/mosty на 320, 30.09). Не в счёт: колонка обрезает или прокручивает (overflow ≠ visible: лента с прокруткой,
+   обрезка с многоточием — разрезанный текст ловит clipCut в lib), блок вне потока (absolute, fixed) и закреплённое за краем,
+   сдвиг transform / translate / scale / rotate и position: relative со смещением, отрицательное поле с той стороны, куда
+   вылезло (margin: 0 -16px — «на всю ширину» по замыслу, .row у Bootstrap), декор — как в lib: текст внутри
+   aria-hidden="true" (если рядом нет подписи того же текста для читалки) или role presentation/none у самого, прозрачное,
+   целиком за краем окна. Вылезшее считается до края ближайшего обрезающего предка (html и body не в счёт — как clipOf в lib).
+   arg.doc — ещё и документ шире окна на 1 px (lib молчит до 2 px): docPx и причины — самые внешние не закреплённые
+   элементы правее окна, не обрезанные предком. → { list, count, docPx, causes, vw } */
+function blockWiderInPage(arg) {
+  const de = document.documentElement; const vw = de.clientWidth;
+  const csMemo = new Map(); const cs = (e) => { let s = csMemo.get(e); if (!s) { s = getComputedStyle(e); csMemo.set(e, s); } return s; };
+  const parentOf = (e) => { if (e.parentElement) return e.parentElement; const r = e.getRootNode && e.getRootNode(); return r && r !== document && r.host ? r.host : null; };
+  /* ближайшая коробка-блок: сам элемент или предок не inline и не contents */
+  const upBox = (e) => { let p = e; while (p && p !== de && /^(inline|contents)$/.test(cs(p).display)) p = parentOf(p); return p && p !== de ? p : null; };
+  const fixedCB = (s) => s.transform !== 'none' || s.perspective !== 'none' || s.filter !== 'none' || (s.backdropFilter && s.backdropFilter !== 'none') || /paint|layout|strict|content/.test(s.contain) || /transform|perspective|filter/.test(s.willChange) || (s.containerType && s.containerType !== 'normal');
+  const absCB = (s) => s.position !== 'static' || fixedCB(s);
+  const clips = (s) => s.overflowX !== 'visible' || /paint|strict|content/.test(s.contain);
+  const clipOf = (el) => {
+    let mode = cs(el).position;
+    for (let p = parentOf(el); p && p !== document.body && p !== de; p = parentOf(p)) {
+      const s = cs(p);
+      const isCB = mode === 'fixed' ? fixedCB(s) : mode === 'absolute' ? absCB(s) : true;
+      if (!isCB) continue;
+      if (clips(s)) return p;
+      mode = s.position === 'fixed' || s.position === 'absolute' ? s.position : 'flow';
+    }
+    return null;
+  };
+  /* декор — как в lib (overflowInPage): внешний aria-hidden="true" без подписи того же текста рядом, role у самого */
+  const flat = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  const flatText = (e) => flat(e.textContent);
+  const tinyBox = (e) => { const r = e.getBoundingClientRect(); const s = cs(e); return r.width <= 2 || r.height <= 2 || (s.clip && s.clip !== 'auto') || /inset\(\s*50%|circle\(\s*0/.test(s.clipPath || ''); };
+  const hiddenTop = (e) => { let h = null; for (let x = e; x && x !== de; x = parentOf(x)) if (x.nodeType === 1 && x.getAttribute('aria-hidden') === 'true') h = x; return h; };
+  const spokenNearby = (h) => {
+    const t = flatText(h); if (!t) return false;
+    for (let a = parentOf(h), k = 0; a && a !== document.body && a !== de && k < 3; a = parentOf(a), k++) {
+      const lab = a.getAttribute('aria-label'); if (lab == null) continue;
+      if (flat(lab) === flatText(a)) return true;
+      break;
+    }
+    const p = parentOf(h);
+    return !!p && [...p.children].some((x) => x !== h && x.getAttribute('aria-hidden') !== 'true' && flatText(x) === t && tinyBox(x));
+  };
+  const decorMemo = new Map();
+  const decor = (e) => {
+    if (!e || e.nodeType !== 1) return false;
+    if (decorMemo.has(e)) return decorMemo.get(e);
+    let v = false;
+    try { if (/^(presentation|none)$/i.test(e.getAttribute('role') || '')) v = true; else { const h = hiddenTop(e); v = !!h && !spokenNearby(h); } } catch (x) { v = false; }
+    decorMemo.set(e, v); return v;
+  };
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const r1 = (x) => Math.round(x * 10) / 10;
+  const moved = (s) => (s.transform && s.transform !== 'none') || (s.translate && s.translate !== 'none') || (s.scale && s.scale !== 'none') || (s.rotate && s.rotate !== 'none')
+    || (s.position === 'relative' && (Math.abs(parseFloat(s.left) || 0) >= 0.5 || Math.abs(parseFloat(s.right) || 0) >= 0.5));
+  const SKIP = /^(script|style|template|noscript|br|wbr|head|link|meta|textarea|option|optgroup|select)$/i;
+  /* e вылез из колонки col? → находка или null */
+  const check = (e, col) => {
+    if (e instanceof SVGElement) return null;
+    const s = cs(e);
+    if (s.position === 'absolute' || s.position === 'fixed' || moved(s)) return null;
+    const r = e.getBoundingClientRect(); if (r.width < 1 || r.height < 1 || r.right <= 0 || r.left >= vw) return null;
+    const c = cs(col); if (clips(c)) return null;
+    if (s.visibility === 'hidden' || eff(e) <= 0.05 || decor(e)) return null;
+    const cr = col.getBoundingClientRect(); const k = col.offsetWidth ? cr.width / col.offsetWidth : 1;
+    const inL = cr.left + ((parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.paddingLeft) || 0)) * k;
+    const inR = cr.right - ((parseFloat(c.borderRightWidth) || 0) + (parseFloat(c.paddingRight) || 0)) * k;
+    if (!(inR > inL)) return null;
+    let L = r.left, R = r.right;
+    const clip = clipOf(e); if (clip) { const q = clip.getBoundingClientRect(); L = Math.max(L, q.left); R = Math.min(R, q.right); }
+    const overR = (parseFloat(s.marginRight) || 0) < -0.5 ? 0 : R - inR;
+    const overL = (parseFloat(s.marginLeft) || 0) < -0.5 ? 0 : inL - L;
+    const over = Math.max(overR, overL);
+    if (!(over >= 0.995)) return null;
+    return { sig: sig(e), column: sig(col), px: r1(over), side: overR >= overL ? 'справа' : 'слева', width: r1(r.width), columnWidth: r1(inR - inL), text: clean(e.innerText || e.textContent) };
+  };
+  /* от блоков с видимым не декоративным текстом — вверх по колонкам до body: вылезти может и сам блок (h2), и его предок
+     (карточка в гриде, растянутая неразрывной строкой заголовка) */
+  const starts = new Set();
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (!n.textContent.trim()) continue;
+    const par = n.parentElement; if (!par || SKIP.test(par.tagName) || par instanceof SVGElement || decor(par)) continue;
+    const b = upBox(par); if (b && b !== document.body) starts.add(b);
+  }
+  const seen = new Set(); const list = [];
+  for (const s0 of starts) {
+    for (let e = s0; e && e !== document.body && e !== de && !seen.has(e);) {
+      seen.add(e);
+      const col = upBox(parentOf(e)); if (!col) break;
+      const f = check(e, col); if (f) list.push(f);
+      e = col;
+    }
+  }
+  let docPx = 0; let causes = [];
+  if (arg && arg.doc) {
+    docPx = de.scrollWidth - vw;
+    if (docPx >= 1) {
+      const fixedIn = (el) => { for (let x = el; x && x !== de; x = parentOf(x)) if (cs(x).position === 'fixed') return true; return false; };
+      const wide = [];
+      for (const el of document.body.querySelectorAll('*')) {
+        if (SKIP.test(el.tagName) || (el instanceof SVGElement && el.tagName.toLowerCase() !== 'svg')) continue;
+        const r = el.getBoundingClientRect(); if ((r.width < 1 && r.height < 1) || r.right <= vw + 0.01) continue;
+        if (clipOf(el) || fixedIn(el)) continue;
+        wide.push({ el, sig: sig(el), right: r1(r.right), opacity: eff(el), text: clean(el.innerText || el.textContent) });
+      }
+      causes = wide.filter((o) => !wide.some((p) => p.el !== o.el && p.el.contains(o.el))).sort((a, b) => b.right - a.right).slice(0, 5).map(({ el, ...rest }) => rest);
+    }
+  }
+  return { list: list.sort((a, b) => b.px - a.px).slice(0, (arg && arg.limit) || 20), count: list.length, docPx, causes, vw };
+}
+/* находки blockWiderInPage — в вердикт и summary переполнения (OK → WARN) и в поля blockWider, blockWiderCount, docWiderSmall */
+async function blockFix(ov) {
+  const b = await evaluateWith(page, blockWiderInPage, { doc: !ov.docWider, limit: 20 }, DEPS).catch(() => null);
+  if (!b) return;
+  ov.blockWider = b.list; ov.blockWiderCount = b.count;
+  ov.docWiderSmall = !ov.docWider && b.docPx >= 1 ? { px: b.docPx, causes: b.causes } : null;
+  if (ov.verdict === 'OK' && (b.count || ov.docWiderSmall)) ov.verdict = 'WARN';
+  if (b.count) ov.summary += ` · блок шире своей колонки: ${b.list.slice(0, 3).map((t) => `${t.sig} на ${t.px} px (CSS px; за ${t.side === 'справа' ? 'правый' : 'левый'} край колонки ${t.column}: колонка ${t.columnWidth}, блок ${t.width}${t.text ? `; «${t.text}»` : ''})`).join(' | ')}${b.count > 3 ? ` и ещё ${b.count - 3}` : ''}`;
+  if (ov.docWiderSmall) ov.summary += ` · страница шире окна на ${b.docPx} px (CSS px; scrollWidth документа ${ov.docScrollWidth} при окне ${ov.vw}): ${b.causes.slice(0, 3).map((o) => `${o.sig} до ${o.right} px${o.opacity <= 0.05 ? ' [невидимый]' : ''}${o.text ? ` «${o.text}»` : ''}`).join(' | ') || 'причина не найдена'}`;
+}
+/* поправка на вертикальное письмо (verticalTextInPage) — в ov на месте */
+async function verticalFix(ov) {
   const vert = await evaluateWith(page, verticalTextInPage, { tol: 2 }, DEPS).catch(() => ({}));
   const skipped = []; const kept = [];
   for (const t of ov.textWider) {
@@ -746,7 +971,7 @@ async function autoCheck(after) {
   }
   const ov = await overflowOf().catch(() => null);
   if (ov) {
-    const key = `${ov.verdict}|${ov.vw}|${(ov.outer || []).map((o) => o.sig).join(',')}`;
+    const key = `${ov.verdict}|${ov.vw}|${(ov.outer || []).map((o) => o.sig).join(',')}|${(ov.blockWider || []).map((o) => `${o.sig}:${o.px}`).join(',')}|${ov.docWiderSmall ? ov.docWiderSmall.px : ''}`;
     if (key !== lastAuto.overflow && (ov.verdict !== 'OK' || (lastAuto.overflow && !lastAuto.overflow.startsWith('OK')))) line(ov.verdict, `переполнение ${after} на ${ov.vw}px`, ov.summary);
     lastAuto.overflow = key; lastAuto.overflowAt = after;
   }
@@ -779,7 +1004,73 @@ function openLayerInPage(arg) {
   if (!found) return null;
   if (arg && arg.base) { found.el.setAttribute('data-rw-base-layer', ''); return { sig: sig(found.el), share: found.share }; }
   if (found.el.hasAttribute('data-rw-base-layer')) return null;
+  /* arg.mark — пометить слой для проверки фокуса (focusTrapCheck снимает метку сам) */
+  if (arg && arg.mark) found.el.setAttribute('data-rw-open-layer', '');
   return { sig: sig(found.el), share: found.share, kind: found.kind };
+}
+/* в странице, после нажатия Tab: где фокус относительно помеченного слоя (data-rw-open-layer). → { closed } — слой больше
+   не открыт (скрыт, прозрачен, убран, закрывает меньше половины окна); { where: 'body' } — фокус ни на чём; 'in' — в слое;
+   'under' — вне слоя, а в центре элемента сверху слой (страница под ним); 'off' — вне слоя и вне окна (страница под замком
+   не доезжает до него — тоже не видно); 'above' — вне слоя, но сверху он сам (кнопка меню поверх слоя) */
+function focusProbeInPage() {
+  const L = document.querySelector('[data-rw-open-layer]');
+  const a = document.activeElement;
+  const name = (e) => { const t = String(e.innerText || e.getAttribute('aria-label') || e.textContent || '').replace(/\s+/g, ' ').trim(); return `${sig(e)}${t ? ` «${t.slice(0, 30)}»` : ''}`; };
+  const open = (() => {
+    if (!L || !L.isConnected) return false;
+    const s = getComputedStyle(L); if (s.display === 'none' || s.visibility === 'hidden' || eff(L) <= 0.05) return false;
+    const q = L.getBoundingClientRect();
+    const share = Math.max(0, Math.min(q.right, innerWidth) - Math.max(q.left, 0)) * Math.max(0, Math.min(q.bottom, innerHeight) - Math.max(q.top, 0)) / (innerWidth * innerHeight);
+    return share >= 0.5;
+  })();
+  if (!open) return { closed: true, active: a && a !== document.body ? name(a) : 'body' };
+  if (!a || a === document.body || a === document.documentElement) return { where: 'body', active: 'body' };
+  if (a === L || L.contains(a)) return { where: 'in', active: name(a) };
+  const r = a.getBoundingClientRect(); const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  if (cx < 0 || cy < 0 || cx >= innerWidth || cy >= innerHeight) return { where: 'off', active: name(a) };
+  const hit = document.elementFromPoint(cx, cy);
+  return { where: hit && (hit === L || L.contains(hit)) ? 'under' : 'above', active: name(a) };
+}
+/* фокус в открытом слое (строка 531 SKILL-ISSUES, 30.09): после --click, открывшего слой на весь экран (openLayerInPage:
+   fixed или :modal, видим, от 80% окна; до клика его не было), — до 15 нажатий Tab. Фокус ушёл на элемент вне слоя и под
+   ним (или вне окна) — WARN «фокус уходит из открытого слоя на страницу под ним» с первым таким элементом: человек с
+   клавиатурой листает невидимую страницу под меню (утечку «Эпицентра» — логотип и телефон под меню, потом содержимое —
+   нашёл только свой обход). Остался в слое или над ним — OK; слой закрылся, когда фокус ушёл, — OK (ловушка не нужна) с
+   пометкой, что дальше шаги идут с закрытым слоем. После проверки фокус и прокрутка возвращаются как были (метка снимается),
+   слой не закрывается */
+async function focusTrapCheck(v, before) {
+  const layer = await evaluateWith(page, openLayerInPage, { mark: true }, DEPS).catch(() => null);
+  const unmark = () => page.evaluate(() => { for (const e of document.querySelectorAll('[data-rw-open-layer]')) e.removeAttribute('data-rw-open-layer'); }).catch(() => {});
+  if (!layer || layer.share < 80 || (before && before.sig === layer.sig)) { await unmark(); return; }
+  const saved = await page.evaluate(() => { window.__rwFocusBack = document.activeElement; const L = document.querySelector('[data-rw-open-layer]'); return { x: scrollX, y: scrollY, ly: L ? L.scrollTop : 0 }; }).catch(() => null);
+  const path = []; let leak = null, closed = null, above = 0, inside = 0, n = 0;
+  try {
+    for (n = 1; n <= 15; n++) {
+      await page.keyboard.press('Tab'); await sleep(120);
+      let r = await evaluateWith(page, focusProbeInPage, null, DEPS).catch(() => null);
+      if (!r) break;
+      /* похоже на утечку — дождаться переходов (слой мог уезжать, закрываясь) и посмотреть ещё раз */
+      if (r.where === 'under' || r.where === 'off') { await settleAnimations(page, 1500); r = await evaluateWith(page, focusProbeInPage, null, DEPS).catch(() => r); }
+      path.push(r.closed ? `(слой закрылся) ${r.active}` : `${r.active} [${{ in: 'в слое', under: 'под слоем', off: 'вне окна', above: 'над слоем', body: 'ни на чём' }[r.where]}]`);
+      if (r.closed) { closed = { at: n, active: r.active }; break; }
+      if (r.where === 'under' || r.where === 'off') { leak = { at: n, active: r.active, where: r.where }; break; }
+      if (r.where === 'above') above++;
+      if (r.where === 'in') inside++;
+    }
+  } finally {
+    await page.evaluate((s) => {
+      const b = window.__rwFocusBack; window.__rwFocusBack = null;
+      if (b && b !== document.body && b.isConnected && typeof b.focus === 'function') b.focus({ preventScroll: true });
+      else if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+      if (s) { window.scrollTo({ left: s.x, top: s.y, behavior: 'instant' }); const L = document.querySelector('[data-rw-open-layer]'); if (L) L.scrollTop = s.ly; }
+    }, saved).catch(() => {});
+    await unmark();
+  }
+  const title = `фокус в открытом слое ${layer.sig} после --click ${v}`;
+  const data = { layer, tabs: Math.min(n, 15), path, leak, closed };
+  if (leak) line('WARN', `фокус уходит из открытого слоя на страницу под ним: ${leak.active}`, `на ${leak.at}-м нажатии Tab фокус ушёл из слоя ${layer.sig} (${layer.kind}, ${layer.share}% окна) на ${leak.active} — ${leak.where === 'off' ? 'он вне слоя и за краем окна' : 'он под слоем (в его центре сверху слой)'}: человек с клавиатурой листает невидимую страницу. Удерживайте фокус в открытом меню (inert у страницы, <dialog> через showModal() или перехват Tab) · путь: ${path.join(' → ')}`, data);
+  else if (closed) line('OK', title, `слой закрылся на ${closed.at}-м нажатии Tab, когда фокус ушёл из него (${closed.active}) — ловушка не нужна; дальше шаги идут с закрытым слоем · путь: ${path.join(' → ')}`, data);
+  else line('OK', title, `${Math.min(n, 15)} нажатий Tab: фокус не уходит на страницу под слоем (в слое ${inside}${above ? `, над слоем ${above}` : ''}) · путь: ${path.slice(0, 6).join(' → ')}${path.length > 6 ? ' → …' : ''}`, data);
 }
 let lastClick = null; /* селектор последнего --click: после него слой на весь экран часто остаётся открытым */
 
@@ -968,7 +1259,7 @@ async function scrollStep() {
   const hoverNote = (after.hoverOnly.length ? ` · показываются при наведении (проверено наведением на триггер правила :hover — не появление при прокрутке): ${after.hoverOnly.length} (${list4(after.hoverOnly)})` : '')
     + (hvGroups.length > HV_MAX ? ` · наведением проверены первые ${HV_MAX} триггеров из ${hvGroups.length}, остальные кандидаты — в «не появились»` : '');
   const revealTxt = `ждали появления: ${after.waitedCount}${after.waitedCount ? ` (${list4(after.waited)}${after.waitedCount > after.waited.length ? `, всего ${after.waitedCount}` : ''})` : ''} — не появились: ${after.still.length}${after.still.length ? ` (${list4(after.stillNamed)})` : ''}`;
-  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount } });
+  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount, blockWider: ov.blockWider || [], blockWiderCount: ov.blockWiderCount || 0, docWiderSmall: ov.docWiderSmall || null, docScrollWidth: ov.docScrollWidth, vw: ov.vw } });
   /* «текст перекрыт» — всегда своей строкой: по строке прокрутки не видно, шла ли проверка. Её WARN уже
      посчитан строкой прокрутки (переполнение WARN), поэтому здесь не считается второй раз */
   if (ov.coveredCount === undefined) line('INFO', 'текст перекрыт картинкой', 'не проверялось: lib.findOverflow без поля covered', null, { count: false });
@@ -1103,6 +1394,8 @@ async function clickStep(v) {
   /* фон: что меняется само по себе (бегущая строка, таймеры) — это не эффект клика */
   await startWatch(); await sleep(500); const noise = new Set((await takeWatch()).map(mutKey));
   const before = await snapshot();
+  /* слой на весь экран до клика: проверка фокуса — только у слоя, который открыл этот клик */
+  const layerBefore = await evaluateWith(page, openLayerInPage, null, DEPS).catch(() => null);
   await startWatch();
   const reqFrom = reqLog.length;
   const nav = page.waitForNavigation({ timeout: 4000 }).catch(() => null);
@@ -1119,32 +1412,75 @@ async function clickStep(v) {
   if (after && after.dialogs !== before.dialogs) changes.push(`диалогов ${before.dialogs} → ${after.dialogs}`);
   if (after && after.expanded !== before.expanded) changes.push(`раскрытых ${before.expanded} → ${after.expanded}`);
   if (after && after.active !== before.active && after.active !== selfSig && after.active) changes.push(`фокус → ${after.active}`);
-  /* якорь: дождаться, пока прокрутка встанет (3 кадра подряд, до 3 с), и сверить верх цели (C13) */
+  /* якорь: дождаться, пока прокрутка встанет (3 кадра подряд, до 3 с), и сверить верх цели (C13). Ждём верх цели там, куда
+     её ставит браузер: scroll-margin-top цели + scroll-padding-top страницы. Перекрыта ли — по началу её содержимого (первая
+     строка текста; пустой якорь — его место): elementFromPoint на 8 px ниже него даёт закреплённый слой (fixed или sticky, не
+     предок цели) — это шапка или лента поверх. Поля секции под шапкой — не перекрытие: заголовок ниже виден */
   let anchor = null;
   if (!navigated && info.href && /^#[^#]/.test(info.href)) {
-    anchor = await page.evaluate(async (id) => {
-      const t = document.getElementById(decodeURIComponent(id)); if (!t) return { missing: true };
+    anchor = await evaluateWith(page, async (id) => {
+      let t = null; try { t = document.getElementById(decodeURIComponent(id)); } catch { t = document.getElementById(id); }
+      if (!t) return { missing: true };
       const frame = () => new Promise((r) => requestAnimationFrame(r)); let last = -1, same = 0; const t0 = performance.now();
       while (performance.now() - t0 < 3000 && same < 3) { await frame(); const y = Math.round(scrollY); if (y === last) same++; else { same = 0; last = y; } }
-      const top = t.getBoundingClientRect().top; const margin = parseFloat(getComputedStyle(t).scrollMarginTop) || 0;
+      const box = t.getBoundingClientRect(); const top = box.top; const margin = parseFloat(getComputedStyle(t).scrollMarginTop) || 0;
+      const se = document.scrollingElement || document.documentElement;
+      const padding = parseFloat(getComputedStyle(se).scrollPaddingTop) || 0;
       const maxY = document.documentElement.scrollHeight - innerHeight; const atBottom = scrollY >= maxY - 2;
       let header = 0; for (const el of document.body.querySelectorAll('*')) { const s = getComputedStyle(el); if (s.position !== 'fixed' && s.position !== 'sticky') continue; const r = el.getBoundingClientRect(); if (r.top <= 1 && r.bottom > 0 && r.height < innerHeight * 0.4 && r.width > innerWidth * 0.5) header = Math.max(header, r.bottom); }
-      return { top: Math.round(top), margin, header: Math.round(header), atBottom, waited: Math.round(performance.now() - t0), scrollY: Math.round(scrollY) };
-    }, info.href.slice(1)).catch(() => null);
+      /* начало содержимого цели: первая видимая строка текста внутри, иначе верх самой цели */
+      let first = null; const range = document.createRange();
+      const w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (!n.textContent.trim()) continue;
+        range.selectNodeContents(n); const q = [...range.getClientRects()].find((x) => x.width >= 1 && x.height >= 1);
+        if (q) { first = q; break; }
+      }
+      const vw = document.documentElement.clientWidth, vh = innerHeight;
+      const cTop = first ? first.top : top;
+      const y = cTop + Math.min(8, first ? first.height / 2 : 8);
+      let cover = null;
+      if (y >= 0 && y < vh) {
+        const src = first || box;
+        for (const f of [0.5, 0.15, 0.85]) {
+          const x = Math.min(vw - 1, Math.max(1, src.left + src.width * f));
+          const hit = document.elementFromPoint(x, y); if (!hit || hit === t || t.contains(hit) || hit.contains(t)) continue;
+          let layer = null; for (let e = hit; e && e !== document.documentElement; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') layer = e; }
+          if (layer && !layer.contains(t)) { cover = sig(layer); break; }
+        }
+      }
+      return { top: Math.round(top), bottom: Math.round(box.bottom), contentTop: Math.round(cTop), margin, padding, want: Math.round(margin + padding), header: Math.round(header), atBottom, vh, cover, waited: Math.round(performance.now() - t0), scrollY: Math.round(scrollY) };
+    }, info.href.slice(1), DEPS).catch(() => null);
   }
   const file = await shot('click'); const newErr = errCount() - errBefore;
   let st, det;
   if (anchor && !anchor.missing) {
-    const okTop = Math.abs(anchor.top - anchor.margin) <= 8 || (anchor.top >= -8 && anchor.top <= anchor.header + 8) || (anchor.atBottom && anchor.top >= -8 && anchor.top < cur.height);
-    st = newErr ? 'FAIL' : okTop ? 'OK' : 'FAIL';
-    det = `якорь ${info.href}: прокрутка встала через ${anchor.waited} мс, верх цели ${anchor.top}px от верха окна (scroll-margin ${anchor.margin}${anchor.header ? `, закреплённая шапка до ${anchor.header}px` : ''}${anchor.atBottom ? ', низ страницы' : ''})${okTop ? '' : ' — ЦЕЛЬ НЕ У ВЕРХА ОКНА'}`;
+    /* FAIL — только когда цель не видна: начало содержимого выше окна или ниже его, или под закреплённым слоем. Видна и не
+       перекрыта: у ожидаемого места (±8 px) — OK; без scroll-margin и scroll-padding — у верха окна или сразу под шапкой —
+       OK; низ страницы (дальше не прокрутить) — OK; иначе WARN «цель не у scroll-margin» (страница прокручивает своим
+       обработчиком: отступ = лента + 12 при scroll-margin 88 — цель на 76 px, видна; раньше FAIL «ЦЕЛЬ НЕ У ВЕРХА ОКНА») */
+    const vh = anchor.vh || cur.height;
+    const out = anchor.contentTop < -8 || anchor.contentTop >= vh || anchor.bottom <= 0;
+    const covered = !out && !!anchor.cover;
+    const atWant = Math.abs(anchor.top - anchor.want) <= 8;
+    const plain = anchor.want <= 8 && anchor.top >= -8 && anchor.top <= anchor.header + 8;
+    const where = out || covered ? 'FAIL' : atWant || plain || anchor.atBottom ? 'OK' : 'WARN';
+    st = newErr ? 'FAIL' : where;
+    const wantTxt = `scroll-margin ${anchor.margin}${anchor.padding ? ` + scroll-padding страницы ${anchor.padding}` : ''}`;
+    const tail = out ? ` — ЦЕЛЬ ВНЕ ОКНА: начало её содержимого ${anchor.contentTop < -8 ? `выше окна (${anchor.contentTop}px)` : `на ${anchor.contentTop}px при окне ${vh}px`}`
+      : covered ? ` — ЦЕЛЬ ПОД ЗАКРЕПЛЁННЫМ СЛОЕМ ${anchor.cover}: начало её содержимого на ${anchor.contentTop}px закрыто${anchor.header ? ` (слой до ${anchor.header}px)` : ''} — отступ прокрутки меньше высоты слоя`
+        : where === 'WARN' ? ` — цель не у scroll-margin: верх ${anchor.top}px, ждали ${anchor.want}px (${wantTxt}), разница ${anchor.top - anchor.want} px; цель видна и не перекрыта — страница прокручивает сама? сведите её отступ и scroll-margin-top в одно число` : '';
+    det = `якорь ${info.href}: прокрутка встала через ${anchor.waited} мс, верх цели ${anchor.top}px от верха окна (${wantTxt}${anchor.header ? `, закреплённая шапка до ${anchor.header}px` : ''}${anchor.atBottom ? ', низ страницы' : ''})${tail}`;
   } else {
     const buttonish = info.tag === 'button' || info.role === 'button' || info.type === 'submit' || info.type === 'button' || (info.tag === 'a' && (!info.href || info.href === '#'));
     st = newErr ? 'FAIL' : changes.length ? 'OK' : buttonish ? 'FAIL' : 'WARN';
     det = changes.join('; ') || (anchor && anchor.missing ? `якорь ${info.href}: цели с таким id нет` : `ничего не изменилось${buttonish ? ' — КНОПКА БЕЗ ЭФФЕКТА' : ''}`);
   }
   line(st, `клик ${v}`, `${det}${newErr ? ` · НОВЫХ ОШИБОК ${newErr}: ${[...realConsole().map((c) => c.text), ...page.log.errors].slice(-newErr).map((t) => short(t, 100)).join(' | ')}` : ''} · ${file}`, { mutations: effect.slice(0, 40), requests: reqs.slice(0, 10), anchor });
-  if (!navigated) await autoCheck(`после клика ${v}`);
+  if (!navigated) {
+    await autoCheck(`после клика ${v}`);
+    await focusTrapCheck(v, layerBefore).catch((e) => line('INFO', `фокус в открытом слое после --click ${v}`, `не проверялось: ${short(e.message || e, 120)}`));
+  }
   return 'checked-errors';
 }
 
@@ -1633,8 +1969,19 @@ for (const { k, v, expect } of steps) {
   if (newErr && handled !== 'checked-errors') line('FAIL', `новые ошибки после шага ${k}: ${newErr}`, uniqCount([...realConsole(), ...page.log.errors.map((t) => ({ text: t }))].slice(-newErr).map((c) => short(c.text, 120))));
 }
 
+/* предупреждения консоли (console.warn): число — как раньше, тексты первых 10 — в JSON (warningTexts) и строкой INFO, по
+   160 знаков. Раньше сохранялось только число, и подсказки страницы («[decor-kit] …») в протоколе не были видны (30.09) */
+const conWarn = page.log.console.filter((c) => c.type === 'warning' || c.type === 'warn').map((c) => c.text);
+curKind = 'console';
+if (conWarn.length) {
+  const first = conWarn.slice(0, 10);
+  const byText = new Map(); for (const t of first) byText.set(t, (byText.get(t) || 0) + 1);
+  const rows = [...byText.entries()].map(([t, k]) => `«${short(t, 160)}${String(t).replace(/\s+/g, ' ').length > 160 ? '…' : ''}»${k > 1 ? ` ×${k}` : ''}`);
+  line('INFO', `предупреждения консоли: ${conWarn.length}`, `${rows.join(' | ')}${conWarn.length > 10 ? ` · показаны первые 10 из ${conWarn.length}` : ''}`, { warnings: first },
+    { con: `предупреждения консоли: ${conWarn.length}${conWarn.length > 10 ? ` (первые 10; целиком — console.warningTexts в JSON)` : ''}${rows.map((r) => `\n       ${r}`).join('')}` });
+}
 /* failedRequests — все, как раньше; failedThirdParty — из них запросы сторонних iframe (INFO, не WARN) */
-report.console = { errors: realConsole().map((c) => c.text), pageErrors: page.log.errors, warnings: page.log.console.filter((c) => c.type === 'warning').length, failedRequests: page.log.failed, failedThirdParty: page.log.failed.filter((f) => foreignFrame(f)).map((f) => ({ ...f, frame: foreignFrame(f).frame })), document: { status: docStatus, expected: expectStatus } };
+report.console = { errors: realConsole().map((c) => c.text), pageErrors: page.log.errors, warnings: conWarn.length, warningTexts: conWarn.slice(0, 10), failedRequests: page.log.failed, failedThirdParty: page.log.failed.filter((f) => foreignFrame(f)).map((f) => ({ ...f, frame: foreignFrame(f).frame })), document: { status: docStatus, expected: expectStatus } };
 drainLib(); /* WARN lib, пришедшие по ходу шагов (свой стиль не вставился) */
 report.verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 await browser.close();
@@ -1760,6 +2107,39 @@ async function selftest() {
       want: [['INFO', /^SITE_REWORK_DISMISS$/, /увело на .*dismiss-home\.html\?noisy=1 — нужная страница открыта заново/], ['OK', /^eval /, /совпало/], ['OK', /^загрузка /, /ошибок в консоли нет/]], not: [['WARN', /^упавшие запросы$/]] }] : []),
     { name: 'dismiss-wrong', url: `${LIBU('dismiss-nav.html')}?bounce=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'WARN', args: [],
       want: [['WARN', /^SITE_REWORK_DISMISS$/, /замер не той страницы/]] },
+    /* якорь при своей прокрутке страницы (строка 448): цель видна ниже ленты, но не у scroll-margin — WARN, не FAIL; FAIL —
+       только цель под лентой или вне окна; поле секции под лентой — не перекрытие */
+    { name: 'anchor', file: 'anchor.html', code: 1, verdict: 'FAIL', args: ['--click', '#own', '--click', '#native', '--click', '#covered', '--click', '#padded', '--click', '#far'],
+      want: [['WARN', /^клик #own$/, /верх цели 76px .*— цель не у scroll-margin: верх 76px, ждали 88px \(scroll-margin 88\), разница -12 px/], ['OK', /^клик #native$/, /верх цели 88px/],
+        ['FAIL', /^клик #covered$/, /ЦЕЛЬ ПОД ЗАКРЕПЛЁННЫМ СЛОЕМ nav\.ribbon/], ['OK', /^клик #padded$/, /верх цели 0px/], ['FAIL', /^клик #far$/, /ЦЕЛЬ ВНЕ ОКНА/]],
+      not: [[null, /^клик/, /ЦЕЛЬ НЕ У ВЕРХА ОКНА/], ['FAIL', /^клик #(own|native|padded)$/]] },
+    /* блок шире своей колонки (строка 507): h2 на 16,8 px и карточка в гриде — WARN с именем и CSS px; документ шире окна на
+       1 px — WARN с именем элемента; отрицательные поля, лента с прокруткой, обрезка, декор, absolute, transform, 0,5 px — нет */
+    { name: 'wide', file: 'wide.html', code: 0, verdict: 'WARN', args: ['--viewport', 'mobile-s', '--scroll'],
+      want: [['WARN', /^прокрутка/, /блок шире своей колонки: h2\.wide на 16\.8 px \(CSS px; за правый край колонки main\.col\.flex: колонка 288, блок 304\.8; «Мосты над рекой»\)/],
+        ['WARN', /^прокрутка/, /div\.card2 на 8 px \(CSS px; за правый край колонки div\.grid2/], ['WARN', /^прокрутка/, /страница шире окна на 1 px \(CSS px; scrollWidth документа 321 при окне 320\): h2\.wide до 320\.8 px/]],
+      not: [[null, /^прокрутка/, /блок шире своей колонки:[^·]*(x-(bleed|ribbon|pill|cut|deco|pres|badge|shift|tiny|fixed)|card2__title на)/], [null, /^прокрутка/, /страница шире окна[^·]*x-/]],
+      checks: [(j) => { const s = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); const o = s && s.data && s.data.overflow; return o && o.blockWiderCount === 2 && o.docWiderSmall && o.docWiderSmall.px === 1 ? null : `в JSON overflow.blockWiderCount ${o && o.blockWiderCount}, docWiderSmall ${JSON.stringify(o && o.docWiderSmall)} — ждали 2 и { px: 1 }`; }] },
+    /* фокус в открытом слое (строка 531): без ловушки — WARN с первым элементом под слоем; с ловушкой — OK; слой, который
+       закрывается сам, — OK с пометкой. Клики закрытия идут дальше как обычно — слой проверка не закрывает */
+    { name: 'focus', file: 'focus.html', code: 0, verdict: 'WARN', args: ['--click', '#open-leaky', '--click', '#leaky-close', '--click', '#open-trap', '--click', '#trap-close', '--click', '#open-closing', '--eval', "document.activeElement && document.activeElement.id", '--expect', 'open-closing'],
+      want: [['WARN', /^фокус уходит из открытого слоя на страницу под ним: button#open-trap «Меню с ловушкой»$/, /на 1-м нажатии Tab фокус ушёл из слоя div#leaky\.layer\.is-open \(диалог, 100% окна\)/], ['OK', /^клик #leaky-close$/],
+        ['OK', /^фокус в открытом слое div#trap\.layer\.is-open после --click #open-trap$/, /^15 нажатий Tab: фокус не уходит на страницу под слоем \(в слое 15\)/],
+        ['OK', /^фокус в открытом слое div#closing\.layer\.is-open после --click #open-closing$/, /слой закрылся на 3-м нажатии Tab/], ['OK', /^eval .* = open-closing$/]],
+      not: [['WARN', /^фокус уходит/, /div#(trap|closing)/]] },
+    /* окно cookie (строка 422): по умолчанию закрыто до шагов — клик по кнопке под ним и «текст перекрыт» без ложных тревог;
+       предупреждения консоли — тексты первых 10 в JSON и строкой INFO */
+    { name: 'consent', file: 'consent.html', code: 0, verdict: 'OK', args: ['--click', '#act', '--eval', "document.body.dataset.consent || 'нет'", '--expect', 'yes', '--scroll'],
+      want: [['INFO', /^окно cookie$/, /^закрыто кнопкой «Принять» \(div#cookie\.cookie, снизу во всю ширину, \d+×200\) — клики и замеры без него/], ['OK', /^клик #act$/, /DOM/], ['OK', /^eval .* = yes$/],
+        ['OK', /^текст перекрыт картинкой$/, /^нет/], ['INFO', /^предупреждения консоли: 12$/, /^«\[decor-kit\] подсказка 1: зерно поверх фото.{60,}…» \| .* · показаны первые 10 из 12$/]],
+      not: [['FAIL', /./], ['WARN', /./]],
+      checks: [(j) => (j && j.consent && j.consent.found && j.consent.closed && !j.consent.keep && j.console && j.console.warnings === 12 && Array.isArray(j.console.warningTexts) && j.console.warningTexts.length === 10 && j.console.warningTexts[9].startsWith('[decor-kit] подсказка 10:') ? null : `в JSON consent ${JSON.stringify(j && j.consent && { found: j.consent.found, closed: j.consent.closed, keep: j.consent.keep })}, console.warnings ${j && j.console && j.console.warnings}, warningTexts ${j && j.console && (j.console.warningTexts || []).length} — ждали закрыто, 12 и 10`)] },
+    /* --keep-consent: окно на месте — и те самые ложные тревоги (клик уходит в окно, значок окна поверх текста) */
+    { name: 'consent-keep', file: 'consent.html', code: 1, args: ['--keep-consent', '--eval', "getComputedStyle(document.getElementById('cookie')).display", '--expect', 'flex', '--click', '#act', '--scroll'],
+      want: [['INFO', /^окно cookie$/, /^оставлено \(--keep-consent\): div#cookie\.cookie, снизу во всю ширину, \d+×200; кнопки: «Отклонить», «Принять» — клики и замеры идут с ним$/], ['OK', /^eval .* = flex$/],
+        ['FAIL', /^клик #act$/, /КНОПКА БЕЗ ЭФФЕКТА/], ['WARN', /^текст перекрыт картинкой$/, /p\.under .* под svg/]],
+      not: [[null, /^окно cookie$/, /закрыто кнопкой/]],
+      checks: [(j) => (j && j.consent && j.consent.keep && j.consent.found && !j.consent.closed ? null : `в JSON consent ${JSON.stringify(j && j.consent && { keep: j.consent.keep, found: j.consent.found, closed: j.consent.closed })} — ждали keep, found, не закрыто`)] },
   ];
   if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
   let bad = 0;
@@ -1774,6 +2154,8 @@ async function selftest() {
       if (c.warns != null && !new RegExp(` ${c.warns} предупреждени`).test(r.text)) miss.push(`предупреждений не ${c.warns}: ${short((r.text.match(/\d+ провалов, \d+ предупреждений/) || [''])[0], 60)}`);
       for (const w of c.want || []) if (!has(r.j, w)) miss.push(`нет строки ${w[0] || '*'} ${w[1]}${w[2] ? ` — ${w[2]}` : ''}`);
       for (const w of c.not || []) if (has(r.j, w)) miss.push(`лишняя строка ${w[0] || '*'} ${w[1]}${w[2] ? ` — ${w[2]}` : ''}`);
+      /* проверки полей протокола (не строк): функция → null или текст расхождения */
+      for (const f of c.checks || []) { let m = null; try { m = f(r.j); } catch (e) { m = `проверка протокола упала: ${short(e.message || e, 100)}`; } if (m) miss.push(m); }
       if (miss.length) bad++;
       console.log(`${miss.length ? 'FAIL' : 'OK  '} ${c.name}${miss.length ? ` — ${miss.join('; ')}` : ''}`);
       if (miss.length) console.log(r.text.split('\n').filter((l) => /^(OK|WARN|FAIL|INFO) /.test(l)).map((l) => `       ${short(l, 220)}`).join('\n'));

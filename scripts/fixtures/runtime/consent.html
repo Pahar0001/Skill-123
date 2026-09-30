@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — окно cookie поверх страницы</title>
+<!--
+  Стенд runtime.mjs: окно согласия cookie (node runtime.mjs --selftest, случаи consent и consent-keep; строка 422
+  SKILL-ISSUES — runtime окна не закрывал и мерил страницу под ним). Страница ровно в окно, без прокрутки.
+  Окно .cookie (position: absolute у низа, класс cookie) лежит поверх строки с кнопкой #act и абзацем p.under,
+  его значок svg 56×56 — поверх текста абзаца.
+    без флага        окно закрыто кнопкой «Принять» до шагов: INFO «окно cookie — закрыто кнопкой «Принять»»,
+                     --click #act — OK, --scroll — «текст перекрыт картинкой: нет», document.body.dataset.consent = yes
+    --keep-consent   окно на месте (INFO «оставлено»): клик по #act уходит в окно — FAIL «КНОПКА БЕЗ ЭФФЕКТА», значок
+                     окна поверх абзаца — WARN «текст перекрыт картинкой». Это и есть ложные тревоги, ради которых
+                     runtime закрывает окно по умолчанию
+  Ещё 12 предупреждений консоли (console.warn) по ~250 знаков — строка INFO «предупреждения консоли: 12», в JSON
+  console.warningTexts — первые 10.
+-->
+<style>
+  html, body { height: 100%; }
+  body { margin: 0; position: relative; overflow: hidden; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { padding: 32px; }
+  .row { position: absolute; left: 32px; right: 32px; bottom: 60px; display: flex; align-items: center; gap: 24px; }
+  .under { margin: 0; font-size: 22px; }
+  .cookie { position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; height: 200px; display: flex; align-items: center; gap: 16px; padding: 0 32px; background: #222; color: #fff; }
+  .cookie svg { flex: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Окно cookie поверх страницы</h1>
+  <p id="state">Кнопку не нажимали.</p>
+</main>
+<div class="row"><p class="under">Текст под окном согласия</p><button id="act" type="button">Записаться</button></div>
+<div id="cookie" class="cookie"><svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="26" fill="#c8a063"/></svg><span>Мы используем cookie, чтобы сайт работал.</span><button id="no" type="button">Отклонить</button><button id="ok" type="button">Принять</button></div>
+<script>
+  document.getElementById('act').addEventListener('click', () => { document.getElementById('state').textContent = 'Записались.'; });
+  document.getElementById('ok').addEventListener('click', () => { document.getElementById('cookie').style.display = 'none'; document.body.dataset.consent = 'yes'; });
+  document.getElementById('no').addEventListener('click', () => { document.getElementById('cookie').style.display = 'none'; document.body.dataset.consent = 'no'; });
+  for (let i = 1; i <= 12; i++) console.warn(`[decor-kit] подсказка ${i}: ` + 'зерно поверх фото гасит контраст подписи, поднимите подложку; '.repeat(4));
+</script>
+</body>
+</html>
