@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — вертикальное письмо и другие находки переполнения</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --scroll и автопроверки после --click (node runtime.mjs --selftest). Вертикальное письмо
+  отсеивается из «текст шире коробки», но остальные находки lib.findOverflow остаются. Вердикт — WARN:
+    .tab span     закреплённая вкладка, writing-mode: vertical-rl, line-height: 1 — глифы шире строки на край
+                  глифа: не находка («вертикальное письмо сверено по высоте и сбоку … в коробке»)
+    .side         vertical-lr, кегль 40px в коробке шириной 12px — вылезает сбоку на ~35px: «текст шире
+                  коробки: div.side «Бронь» … (вертикальное письмо: сбоку вылезло …)». Раньше — OK
+    .btn          подпись в коробке с overflow: hidden — «текст обрезан: span.btn …»
+    #f            значение длиннее поля — «текст не влез в поле: input#f …»
+  Раньше, если на странице был вертикальный текст, отсеянный по высоте, вердикт переполнения пересчитывался
+  без «текст обрезан» и «текст не влез в поле», и оба куска пропадали из строки: OK.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 96px; }
+  .tab { position: fixed; right: 0; top: 40%; display: flex; align-items: center; padding: 12px 6px; background: #1b1b1b; color: #fff; text-decoration: none; }
+  .tab span { writing-mode: vertical-rl; white-space: nowrap; line-height: 1; font: 600 20px/1 "Segoe UI", system-ui, sans-serif; }
+  .side { writing-mode: vertical-lr; width: 12px; font: 700 40px/1 system-ui, sans-serif; background: #ddd; margin: 20px 0; }
+  .fld { width: 90px; font: 16px system-ui; padding: 4px 8px; }
+  .btn { display: inline-block; width: 70px; overflow: hidden; white-space: nowrap; padding: 6px; background: #eee; }
+</style>
+</head>
+<body>
+<a class="tab" href="#book"><span>Забронировать</span></a>
+<main>
+  <h1>Поле, кнопка и вертикальные метки</h1>
+  <div class="side">Бронь</div>
+  <input class="fld" id="f" value="Очень длинное значение поля, которое не влезает">
+  <p><span class="btn">Забронировать столик сейчас</span></p>
+</main>
+</body>
+</html>

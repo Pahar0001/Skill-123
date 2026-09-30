@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — наведение</title>
+<!--
+  Стенд runtime.mjs --hover и --hover-all (node runtime.mjs --selftest):
+    .nav__link   линия под пунктом нарисована фоном: наведение меняет только background-size —
+                 --hover «.nav__link» OK (background-size), а не WARN «ничего не изменилось»
+    .clip        наведение меняет только clip-path — --hover OK
+    .card        правило .card:hover .card__tip, а .card__tip в разметке нет — --hover-all:
+                 «мёртвый селектор: элемента нет в DOM», не «перебито другим правилом»
+    .btn         .btn:hover { color } перебит .btn { color … !important } — «перебито», как раньше
+    .ok          .ok:hover { color } — меняет объявленное
+    .box         правило .box:hover .box__tip, подсказка только у четвёртой .box, а наведение пробуется на
+                 первых трёх видимых — не «элемента нет в DOM» (он есть), а отдельно «цели правила нет у
+                 наведённых элементов»
+-->
+<style>
+  body { margin: 0; padding: 32px; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  nav { display: flex; gap: 24px; margin-bottom: 32px; }
+  .nav__link { color: #1b1b1b; text-decoration: none; padding: 4px 0;
+    background: linear-gradient(#d30052, #d30052) 0 100% / 0% 2px no-repeat; transition: background-size 150ms ease-in; }
+  .nav__link:hover { background: linear-gradient(#d30052, #d30052) 0 100% / 100% 2px no-repeat; }
+  .clip { display: inline-block; padding: 12px 20px; background: #1b1b1b; color: #fff; clip-path: inset(0 0 0 0 round 0); transition: clip-path 150ms; }
+  .clip:hover { clip-path: inset(0 0 0 0 round 12px); }
+  .card { width: 240px; padding: 16px; margin: 24px 0; background: #fff; border: 1px solid #ddd; }
+  .card:hover .card__tip { opacity: 1; }
+  .btn { display: inline-block; padding: 10px 16px; border: 1px solid #1b1b1b; color: #1b1b1b !important; }
+  .btn:hover { color: #d30052; }
+  .ok { display: inline-block; padding: 10px 16px; margin-left: 16px; color: #1b1b1b; }
+  .ok:hover { color: #d30052; }
+  .boxes { display: flex; gap: 12px; margin-top: 24px; }
+  .box { position: relative; padding: 12px; background: #fff; border: 1px solid #ddd; }
+  .box__tip { position: absolute; left: 0; top: 100%; padding: 4px 8px; background: #1b1b1b; color: #fff; opacity: 0; }
+  .box:hover .box__tip { opacity: 1; }
+</style>
+</head>
+<body>
+<nav><a class="nav__link" href="#a">Меню</a><a class="nav__link" href="#b">Афиша</a><a class="nav__link" href="#c">Контакты</a></nav>
+<p><span class="clip">Скруглится</span></p>
+<div class="card">Карточка без подсказки</div>
+<div class="boxes"><span class="box">Раз</span><span class="box">Два</span><span class="box">Три</span><span class="box">Четыре<span class="box__tip">Подсказка</span></span></div>
+<p><span class="btn">Кнопка</span><span class="ok">Ссылка</span></p>
+</body>
+</html>

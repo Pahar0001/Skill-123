@@ -25,7 +25,9 @@
  *               декоративный (aria-hidden) текст и логотип, подписи над фото и градиентами (и подписи в
  *               разных местах одного фона), закреплённая лента с пилюлями, светлый слой поверх подложки
  *               шапки и пилюль после прокрутки, плашка активной пилюли отдельным слоем (и лента, накрытая
- *               окном cookie). Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
+ *               окном cookie), окно при загрузке (стенд fixtures/lib: одна строка «окно», не «свой стиль на
+ *               странице»), нажатие SITE_REWORK_DISMISS, которое увело на главную (страница открыта заново —
+ *               строка INFO). Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
  *               временной папке или в --out; код 1, если хоть одно ожидание не сошлось.
  *   --help, -h  эта справка.
  * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict,
@@ -246,6 +248,7 @@ import {
   launch, openPage, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir, loadSharp,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, VIEWPORTS,
   SIG_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN, HEX_FN, addStyleSafe, removeStyleSafe, collectWarnings, takeWarnings,
+  collectNotes, takeNotes, warningLabel,
 } from './lib.mjs';
 import { findTextureLayers } from './texture.mjs';
 
@@ -254,8 +257,9 @@ const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
-/* WARN lib (свой стиль не вставился) — строкой вердикта и в json, а не посреди вывода */
-collectWarnings();
+/* WARN lib (свой стиль не вставился, окно при загрузке, SITE_REWORK_DISMISS) и INFO (нажато) — строкой вердикта и в
+   json, а не посреди вывода */
+collectWarnings(); collectNotes();
 for (const k of ['viewport', 'viewports', 'out', 'tag', 'ignore']) if (opt[k] === true) die(`--${k}: нужно значение (подробно: --help)`);
 if (opt.selftest) process.exit(await selftest());
 if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]  (подробно: --help)');
@@ -1268,6 +1272,18 @@ async function selftest() {
     { page: 'plate-layer.html', viewport: 'mobile-s', expect: [
       { line: /^контраст закреплённого текста/, status: 'OK', has: ['по своей подложке', 'перекрыт'], not: ['#FFFFFF на #FFFFFF'], why: 'видимая активная пилюля — по снимку; под накрытой окном активной лежит плашка-span — не «белое на белом» по цвету ленты; подчёркивание ::after 2px подложку не отменяет' },
     ] },
+    /* окно при загрузке (стенд lib): WARN с подписью «окно», одной строкой — страница открывается дважды (обход и фокус),
+       и 29.09 окно шло двумя строками «свой стиль на странице» */
+    { page: 'modal-city.html', dir: 'lib', viewport: 'desktop', expect: [
+      { line: /^окно$/, status: 'WARN', count: 1, has: ['на странице открыто окно', 'SITE_REWORK_DISMISS=".fancybox-container li.style-listing-items__item"'] },
+      { line: /^свой стиль на странице$/, absent: true },
+    ] },
+    /* SITE_REWORK_DISMISS увёл на главную (mamuka.rest /menu/, 29.09: a11y мерил главную с OK) — нужная страница
+       открыта заново, итог — строкой INFO одной на обе вкладки; «не той страницы» нет */
+    { page: 'dismiss-nav.html', dir: 'lib', env: '.city li.city__item', viewport: 'desktop', expect: [
+      { line: /^SITE_REWORK_DISMISS$/, status: 'INFO', count: 1, has: ['увело на', 'dismiss-home.html — нужная страница открыта заново'] },
+      { line: /^окно$/, absent: true },
+    ] },
   ];
   const here = path.dirname(fileURLToPath(import.meta.url));
   const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'a11y-selftest-'));
@@ -1276,13 +1292,17 @@ async function selftest() {
     const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'a11y', `${tag}.json`);
     try { fs.rmSync(jf, { force: true }); } catch { /* нет */ }
     const t0 = Date.now();
-    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), pathToFileURL(path.join(here, 'fixtures', 'a11y', c.page)).href, '--viewport', c.viewport, '--out', out, '--tag', tag, ...(c.args || [])], { encoding: 'utf8', timeout: 300000 });
+    /* SITE_REWORK_DISMISS из окружения не должна менять ожидания: у стенда — своя (env) или пустая */
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), pathToFileURL(path.join(here, 'fixtures', c.dir || 'a11y', c.page)).href, '--viewport', c.viewport, '--out', out, '--tag', tag, ...(c.args || [])], { encoding: 'utf8', timeout: 300000, env: { ...process.env, SITE_REWORK_DISMISS: c.env || '' } });
     let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch { /* нет итога */ }
     if (!j) { bad++; n++; console.log(`FAIL ${c.page}: нет итога (код ${r.status}) — ${String(r.stderr || r.stdout || '').trim().slice(-300)}`); continue; }
     for (const e of c.expect) {
       n++;
-      const ln = j.lines.find((l) => e.line.test(l.what)); const txt = ln ? `${ln.what} — ${ln.details || ''}` : '';
-      const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
+      /* absent — такой строки быть не должно; count — сколько строк с такой подписью */
+      const all = j.lines.filter((l) => e.line.test(l.what));
+      if (e.absent) { if (all.length) { bad++; console.log(`FAIL ${c.page} ${c.viewport} ${e.line.source}: лишняя строка — ${`${all[0].what} — ${all[0].details || ''}`.slice(0, 300)}`); } else console.log(`OK   ${c.page} ${c.viewport} ${e.line.source} — нет`); continue; }
+      const ln = all[0]; const txt = ln ? `${ln.what} — ${ln.details || ''}` : '';
+      const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.count != null && all.length !== e.count ? [`строк ${all.length}, ждали ${e.count}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
       if (miss.length) { bad++; console.log(`FAIL ${c.page} ${c.viewport} ${e.line.source}: ${miss.join('; ')}${e.why ? ` (${e.why})` : ''}\n     ${txt.slice(0, 400)}`); }
       else console.log(`OK   ${c.page} ${c.viewport} ${e.line.source} — ${ln.status}`);
     }
@@ -1550,9 +1570,13 @@ L(dom.reducedMotionRule ? 'OK' : 'WARN', 'prefers-reduced-motion', dom.reducedMo
 L(dom.autoplayVideo ? 'FAIL' : 'OK', `видео с автоплеем и звуком: ${dom.autoplayVideo}`);
 L(dom.landmarks.main ? 'OK' : 'WARN', `ориентиры: main ${dom.landmarks.main}, nav ${dom.landmarks.nav}, header ${dom.landmarks.header}, footer ${dom.landmarks.footer}`, dom.landmarks.main ? '' : 'нет <main> — читалка не найдёт начало содержимого');
 if (dom.iframesNoTitle) L('WARN', `iframe без title: ${dom.iframesNoTitle}`);
-/* WARN lib (свой стиль не вставился: CSP запретил и <style>, и таблицы) — отдельной строкой вердикта */
+/* WARN lib — отдельной строкой вердикта с подписью по виду: «окно» (открыто при загрузке), «SITE_REWORK_DISMISS» (итог
+   нажатия: не найдено, скрыто, замер не той страницы), «свой стиль на странице» (CSP запретил и <style>, и таблицы).
+   Страница открывается дважды (обход и фокус) — одинаковое предупреждение одной строкой: окно шло двумя строками под
+   подписью «свой стиль на странице» (29.09). INFO lib (нажато; увело — нужная страница открыта заново) — строкой INFO */
+for (const n of [...new Set(takeNotes())]) L('INFO', 'SITE_REWORK_DISMISS', n.replace(/^SITE_REWORK_DISMISS /, ''));
 const libW = takeWarnings();
-for (const w of libW) L('WARN', 'свой стиль на странице', w);
+for (const w of libW) L('WARN', warningLabel(w), w.replace(/^SITE_REWORK_DISMISS /, ''));
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 const file = path.join(outDir, `${tag}.json`);

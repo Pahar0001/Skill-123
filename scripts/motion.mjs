@@ -25,9 +25,13 @@
  *   reveal          появление при прокрутке: прозрачность, сдвиг, масштаб, размытие, шторка (clip-path);
  *                   у закреплённого — «при прокрутке вверх» (кнопка «Наверх»: видна, когда листают вверх);
  *                   где срабатывает (верх блока на N% экрана), длительность, по очереди (+N мс), чем
- *                   запускается (класс «in» от IntersectionObserver, Framer, AOS…)
+ *                   запускается (класс «in» от IntersectionObserver, Framer, AOS…); WOW.js и animate.css
+ *                   (visibility: hidden → visible и animation-name при входе в экран) — числа из @keyframes:
+ *                   прозрачность, сдвиг (в % — от своего размера), длительность и задержка (data-wow-*);
+ *                   блоки .wow без строки — заметкой с причиной (0×0 на этом экране, без класса анимации)
  *   scroll-linked   свойство привязано к прокрутке: из → в на отрезке «верх блока на A% → B% экрана»
- *                   (масштаб, прозрачность, поворот, размытие; CSS animation-timeline тоже)
+ *                   (масштаб, прозрачность, поворот, размытие; CSS animation-timeline тоже); «лента вбок» —
+ *                   сдвиг X transform (Swiper) или прокрутка своего контейнера (scrollLeft, overflow-x)
  *   parallax        сдвиг на долю прокрутки (коэффициент у каждого слоя)
  *   pinned          закреплённый раздел (sticky / pin) и лента внутри него, которая едет вбок
  *   header          шапка при прокрутке: плотнеет, прячется вниз, возвращается вверх
@@ -49,7 +53,10 @@
  *                   из display:none; значок (поворот шеврона, бургер в крестик); кнопка (фон, цвет); старая
  *                   панель вкладок; длительность и кривая (события, element.animate, последняя смена style,
  *                   снимки через 80/200/400/700 мс; пружина Framer — linear() целиком в json); блокируется ли
- *                   прокрутка; закрывается ли — повторным кликом, прежней вкладкой или Escape.
+ *                   прокрутка; закрывается ли — повторным кликом, прежней вкладкой или Escape. Клик, который
+ *                   уводит со страницы (location.href, форма, перезагрузка, новая вкладка), — переход
+ *                   останавливается, клик пропущен с пометкой «клик увёл со страницы», клики идут дальше;
+ *                   смена адреса без перехода (history.replaceState у фильтра) — та же страница, клик в счёт.
  * Плюс библиотеки движения (GSAP/ScrollTrigger, Lenis, Framer, AOS, Swiper, Lottie, Webflow, Tilda…),
  * CSS scroll-driven, плавная прокрутка и правило «меньше движения».
  *
@@ -61,9 +68,13 @@
  * экрана (шапка) → движение мыши по первому экрану → наведение на образцы кнопок, карточек, ссылок →
  * клики (до --clicks штук, до 60 с; навести, снимок всех элементов, клик, снимки, разбор, вырезка
  * открытого cNN.png, закрыть) → вырезки элементов. Отличие: прокрутка скриптом ≠ колесо — сглаживание
- * Lenis/пружины Framer догоняют; скрипт ждёт до 0.9 с на шаг.
+ * Lenis/пружины Framer догоняют; скрипт ждёт до 0.9 с на шаг. Окно из SITE_REWORK_DISMISS, которое увело на
+ * другую страницу (выбор города → главная), — снимаемая страница открывается заново, заметка «увело на …».
+ * Окна при загрузке — в протоколе (windows: dismiss, modal, wrongPage, notes, warnings): открытое окно, неудачное
+ * нажатие (не найдено, скрыто, не та страница) и свой стиль, который не вставился, — WARN в вердикте инвентаря и
+ * сверки (снимок снят под окном).
  *
- * Выход: <out>/motion/<tag>.json (протокол: items[], libs, clicks, verdict) и <tag>.md (таблица для
+ * Выход: <out>/motion/<tag>.json (протокол: items[], libs, clicks, phases — что снималось, verdict) и <tag>.md (таблица для
  * analysis.md), вырезки <out>/motion/<tag>/mNN.png и cNN.png (открытое кликом). По умолчанию <out> —
  * папка прогона по первому адресу (runs/<slug>). --debug — ещё <tag>.series.json: все шаги и ряды
  * значений менявшихся элементов, а в json — разбор каждого клика (clicks.tried[].diff).
@@ -71,7 +82,11 @@
  * compare: для каждого движения донора ищется такое же у нас (тот же вид, похожие числа):
  *   OK — есть и совпадает; ОТЛИЧАЕТСЯ — вид тот же, числа другие (какие); НЕТ — не найдено.
  *   По клику пара — тот же подвид (меню, аккордеон, вкладки, раскрытие); высота панели не сравнивается
- *   (она от содержимого), свойства донора, которых у нас нет, — разница.
+ *   (она от содержимого), свойства донора, которых у нас нет, — разница. Наведение на элемент другого вида
+ *   (у донора логотип, у нас ссылка) — пара, если переход тот же: каждое свойство с теми же «от → до» и
+ *   длительность ±25%. Лента вбок: путь ленты не сравнивается (он от числа разделов), только куда едет.
+ *   НЕ ПРОВЕРЯЛОСЬ — у нас этот вид не снимался (--no-clicks, --no-hover, --no-mouse, --no-scroll; протокол
+ *   без phases и без clicks): строка INFO, в вердикт не входит.
  *   Решение «почему нет / чем заменено» — в <out>/motion-decisions.json:
  *     { "m04": "у нас другой первый экран (вариант B), стопки картинок нет", "reveal:div.card": "…" }
  *   Петли одинаковых соседей (стопка картинок Framer, у каждой свой период) — одна строка ×N с parent
@@ -83,7 +98,10 @@
  *   доказательством для state.mjs (визуал/runtime движения). Несколько пар подряд — протоколы
  *   compare-<тип донора>, итог — худший вердикт.
  * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден или найден вид
- * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля).
+ * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля). Плюс сверка без браузера
+ * (fixtures/motion/compare-*.json: лента scrollLeft ↔ transform, наведение на элементе другого вида, --no-clicks).
+ * Плюс окно выбора, которое уводит со страницы (fixtures/motion/dismiss.html): страница открыта заново, итог нажатия —
+ * в windows, вердикт OK; окно при загрузке без переменной (fixtures/lib/modal-city.html) — WARN в вердикте и windows.
  * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает. Плюс Tilda-донор
  * (fixtures/motion/tilda.html): петля SBS — loop, задержки 0/300/600, лента 0.68, на телефоне — только data-animate-mobile=y.
  *
@@ -103,7 +121,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
   scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
-  tildaInfo, IS_TILDA_SERVICE_FN,
+  tildaInfo, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings, collectNotes, takeNotes,
 } from './lib.mjs';
 import { findClickTargets, SCREEN_POINT_FN } from './clicks.mjs';
 import { tildaSnapshot } from './tilda.mjs';
@@ -117,6 +135,9 @@ const { pos, opt } = parseArgs(process.argv.slice(2), {
 });
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (m) => { console.error(m); process.exit(1); };
+/* WARN и INFO из lib (окно при загрузке, SITE_REWORK_DISMISS, свой стиль не вставился) — в протокол (windows) и вердикт
+   инвентаря, а не строкой мимо протокола */
+collectWarnings(); collectNotes();
 
 /* =====================================================================
    Код внутри страницы
@@ -246,6 +267,20 @@ function libsInPage() {
   return { libs, scrollDriven, reducedRule, keyframes, unreadable, smoothCss: smooth };
 }
 
+/* Блоки WOW.js (.wow) после прохода прокруткой: размер, класс animate.css (fadeInUp, slideInLeft, animate__…),
+   animation-name (style — его ставит WOW при показе — или вычисленный), индекс под наблюдением. Для заметки, почему
+   блок не стал строкой появления: 0×0 на этом экране или без класса анимации (WOW только показывает) —
+   mamuka.rest/about: 2 блока .wow, discover пишет «появляются при прокрутке: 2», а движения у них нет */
+function wowInPage() {
+  const els = window.__moEls || [];
+  const AN = /^(animate__)?(bounce|flash|pulse|rubberBand|shake|headShake|swing|tada|wobble|jello|heartBeat|hinge|jackInTheBox)$|^(animate__)?(back|bounce|fade|flip|lightSpeed|rotate|roll|zoom|slide)(In|Out)[A-Za-z]*$/;
+  return [...document.querySelectorAll('.wow')].slice(0, 80).map((el) => {
+    const s = getComputedStyle(el); const r = el.getBoundingClientRect();
+    return { i: els.indexOf(el), sig: sig(el), w: Math.round(r.width), h: Math.round(r.height), cls: [...el.classList].find((c) => AN.test(c)) || '',
+      name: el.style.animationName || s.animationName, display: s.display };
+  });
+}
+
 /* Ключевые кадры CSS-анимации по имени: первый и последний кадр (для «из → в»). */
 function keyframesInPage(names) {
   const out = {};
@@ -297,7 +332,8 @@ function collectInPage(maxN) {
 }
 
 /* Снимок состояния: у каждого элемента — строка, только если что-то изменилось с прошлой
-   (положение в документе, размер, transform, прозрачность, фильтр, шторка, видимость, фон, текст листа). */
+   (положение в документе, размер, transform, прозрачность, фильтр, шторка, видимость, фон, текст листа,
+   верх родителя, прокрутка вбок своего содержимого — scrollLeft: лента разделов с overflow-x едет так, а не transform). */
 function sampleInPage(tag) {
   const S = window.__moS; const els = window.__moEls || [];
   const sy = Math.round(window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller.scrollTop : scrollY);
@@ -310,7 +346,8 @@ function sampleInPage(tag) {
     const v = [Math.round(r.top + sy), Math.round(r.left), Math.round(r.width), Math.round(r.height),
       s.transform === 'none' ? '' : s.transform, Math.round(parseFloat(s.opacity) * 1000) / 1000,
       s.filter === 'none' ? '' : s.filter, s.clipPath === 'none' ? '' : s.clipPath,
-      s.visibility === 'hidden' ? 1 : 0, s.backgroundColor, leaf, el.parentElement ? Math.round(el.parentElement.getBoundingClientRect().top + sy) : Math.round(r.top + sy)];
+      s.visibility === 'hidden' ? 1 : 0, s.backgroundColor, leaf, el.parentElement ? Math.round(el.parentElement.getBoundingClientRect().top + sy) : Math.round(r.top + sy),
+      Math.round(el.scrollLeft)];
     const h = S.series.get(i);
     if (!h) { S.series.set(i, { rows: [[step, v]] }); continue; }
     const last = h.rows[h.rows.length - 1][1];
@@ -379,6 +416,7 @@ function seriesOutInPage() {
       position: s.position, text: (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60),
       trans: { dur: s.transitionDuration, delay: s.transitionDelay, ease: s.transitionTimingFunction, prop: s.transitionProperty },
       anim: { name: s.animationName, dur: s.animationDuration, delay: s.animationDelay, ease: s.animationTimingFunction, iter: s.animationIterationCount, timeline: s.animationTimeline || '' },
+      ...(el.classList.contains('wow') ? { wow: { offset: el.getAttribute('data-wow-offset') || '', duration: el.getAttribute('data-wow-duration') || '', delay: el.getAttribute('data-wow-delay') || '' } } : {}),
       expect: el.closest('[data-expect]') ? { kind: el.closest('[data-expect]').dataset.expect, self: el.hasAttribute('data-expect') } : null,
       expectInside: [...el.querySelectorAll('[data-expect]')].map((x) => x.dataset.expect).slice(0, 4),
       rows: h.rows,
@@ -414,7 +452,18 @@ function eventsInPage() {
   const idx = (el) => els.indexOf(el);
   const styleHot = [];
   for (const [el, s] of mo.style) if (s.n >= 5) styleHot.push({ i: idx(el), sig: sig(el), n: s.n, first: s.first, last: s.last });
+  /* элементы с событиями — подпись, текст, data-expect, переход и анимация: вход при загрузке, закончившийся до окна
+     «время» (страница открылась позже конца входа — окно-заставку lib ждёт до 2 с), в рядах замеров не виден */
+  const who = new Map();
+  for (const e of [...mo.ev, ...mo.waapi]) {
+    const el = e.el; if (!el || el.nodeType !== 1 || who.has(el) || who.size >= 300) continue;
+    const i = idx(el); if (i < 0) continue; const s = getComputedStyle(el); const ex = el.closest('[data-expect]');
+    who.set(el, { i, sig: sig(el), text: (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60), expect: ex ? { kind: ex.dataset.expect, self: el.hasAttribute('data-expect') } : null,
+      trans: { dur: s.transitionDuration, delay: s.transitionDelay, ease: s.transitionTimingFunction, prop: s.transitionProperty },
+      anim: { name: s.animationName, dur: s.animationDuration, delay: s.animationDelay, ease: s.animationTimingFunction, iter: s.animationIterationCount, timeline: s.animationTimeline || '' } });
+  }
   return {
+    who: [...who.values()],
     ev: mo.ev.map((e) => ({ t: e.t, type: e.type, i: idx(e.el), sig: e.el && e.el.nodeType === 1 ? sig(e.el) : '', name: e.name || '', prop: e.prop || '', dur: e.dur || 0, pseudo: e.pseudo || '' })),
     waapi: mo.waapi.map((w) => ({ ...w, el: undefined, i: idx(w.el), sig: w.el && w.el.nodeType === 1 ? sig(w.el) : '' })),
     cls: mo.cls.map((c) => ({ t: c.t, i: idx(c.el), sig: c.el && c.el.nodeType === 1 ? sig(c.el) : '', added: c.added, removed: c.removed })),
@@ -656,9 +705,9 @@ function unroll(rows, nSteps) {
 function propsOf(v) {
   if (!v) return null;
   const d = decompose(v[4]);
-  return { docTop: v[0], left: v[1], w: v[2], h: v[3], tx: d.tx, ty: d.ty, sc: (d.sx + d.sy) / 2, rot: d.rot, rx: d.rx, ry: d.ry, op: v[5], blur: blurOf(v[6]), clip: clipShare(v[7], v[2], v[3]), hid: v[8], bg: v[9], text: v[10], ptop: v[11], moved: !!v[4] };
+  return { docTop: v[0], left: v[1], w: v[2], h: v[3], tx: d.tx, ty: d.ty, sc: (d.sx + d.sy) / 2, rot: d.rot, rx: d.rx, ry: d.ry, op: v[5], blur: blurOf(v[6]), clip: clipShare(v[7], v[2], v[3]), hid: v[8], bg: v[9], text: v[10], ptop: v[11], sl: v[12] || 0, moved: !!v[4] };
 }
-const EPS = { tx: 0.6, ty: 0.6, sc: 0.012, rot: 0.6, rx: 0.8, ry: 0.8, op: 0.02, blur: 0.4, clip: 0.02 };
+const EPS = { tx: 0.6, ty: 0.6, sc: 0.012, rot: 0.6, rx: 0.8, ry: 0.8, op: 0.02, blur: 0.4, clip: 0.02, sl: 2 };
 const NAMES = { tx: 'сдвиг X', ty: 'сдвиг Y', sc: 'масштаб', rot: 'поворот', rx: 'наклон X', ry: 'наклон Y', op: 'прозрачность', blur: 'размытие', clip: 'шторка (видно)' };
 const UNIT = { tx: ' px', ty: ' px', rot: '°', rx: '°', ry: '°', blur: ' px', sc: '', op: '', clip: '' };
 const fmtV = (k, v) => (k === 'clip' ? pct(v) : k === 'sc' || k === 'op' ? String(round(v, 2)) : `${round(v, 1)}${UNIT[k]}`);
@@ -891,7 +940,10 @@ function analyzeTime(el, steps, timeIdx, anims, finite, watch) {
     else if (c.status === 'carousel') {
       /* шаг — разница соседних площадок; до первого прыжка — стоит */
       const dif = c.plats.slice(1).map((v, q) => Math.abs(v - c.plats[q])).sort((a, b) => a - b); const stepPx = dif[Math.floor(dif.length / 2)];
-      items.push({ kind: 'carousel', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, c.plats[0]), to: fmtV(k, c.plats[c.plats.length - 1]) }], timing: { note: `шаг ≈${stepPx} px, листает сам` }, source: 'js' });
+      /* «из → в» — первый слайд и следующий, а не первый и последний: за окно 14 с карусель из трёх слайдов проходит круг,
+         последняя площадка равна первой, и строка «сдвиг X −420 → −420» уходила как «без изменения» */
+      const next = c.plats.find((v) => v !== c.plats[0]) ?? c.plats[c.plats.length - 1];
+      items.push({ kind: 'carousel', trigger: 'time', props: [{ prop: NAMES[k], from: fmtV(k, c.plats[0]), to: fmtV(k, next) }], timing: { note: `шаг ≈${stepPx} px, листает сам` }, source: 'js' });
     }
   }
   return { items, cls };
@@ -983,6 +1035,22 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
       return items;
     }
   }
+  /* появление из @keyframes (WOW.js, animate.css): до входа в экран блок скрыт visibility: hidden (WOW держит его так
+     с animation-name: none в style), при входе — visible и animation-name (slideInLeft, fadeInUp) из style или класса.
+     Анимация проходит между замерами, прозрачность и transform в замере стоят как были — у mamuka.rest/about строки
+     появления не было вовсе. Числа — из ключевых кадров (разбор появлений ниже). Только у самого анимированного:
+     дети наследуют visibility, своей анимации у них нет */
+  const kfName = (el.anim && el.anim.name && el.anim.name !== 'none' ? String(el.anim.name).split(',')[0].trim() : '') || (ctx.animOf && ctx.animOf.get(el.i)) || '';
+  const hs = P.map((x) => x.p.hid); const on = hs.findIndex((h, q) => q > 0 && hs[q - 1] === 1 && h === 0);
+  if (kfName && !fixedLike && on > 0 && hs.slice(on).every((h) => h === 0)) {
+    /* верх — по замеру до входа (скрыт, animation-name: none — transform ещё свой): на шаге входа блок уже в анимации
+       (translate, а у сдвинутого btop берёт верх родителя) — mamuka.rest/about давал «между 101% и −20%» */
+    const d0 = P[on - 1].p.docTop; const tPrev = (d0 - P[on - 1].sy) / vh, tNow = (d0 - P[on].sy) / vh; const cl = (x) => Math.max(-0.2, Math.min(1.2, x));
+    const seen = (q) => { const t = top(P[q]); return t < vh && t + P[q].p.h > 0; };
+    items.push({ kind: 'reveal', trigger: 'scroll', prop: 'vis', from: 0, to: 1, props: [], kfName, step: P[on].s, visAtStart: seen(0),
+      scroll: { at: `верх блока между ${pct(cl(tPrev))} и ${pct(cl(tNow))} высоты экрана`, atPct: Math.round(((tPrev + tNow) / 2) * 100) } });
+    return items;
+  }
   /* свойства: прыжок (появление) или привязка к прокрутке */
   for (const k of ['op', 'ty', 'tx', 'sc', 'rot', 'blur', 'clip']) {
     const ys = P.map((x) => x.p[k]);
@@ -1042,6 +1110,21 @@ function analyzeScroll(el, steps, scrollIdx, vh, ctx) {
         scroll: { from: `верх блока на ${pct(t0)} экрана`, to: `на ${pct(t1)}`, rangePx: round(sy[sy.length - 1] - sy[0]), coefficient: coef, startPct: Math.round(t0 * 100), endPct: Math.round(t1 * 100) } });
     } else if (ch.length >= 2) {
       items.push({ kind: 'scroll-linked', trigger: 'scroll', prop: k, from, to, props: [{ prop: NAMES[k], from: fmtV(k, from), to: fmtV(k, to) }], scroll: { note: `меняется на ${ch.length} шагах, не по прямой` }, confidence: 'средняя' });
+    }
+  }
+  /* лента вбок прокруткой своего контейнера (overflow-x), а не transform: при прокрутке страницы скрипт сдвигает
+     scrollLeft ленты за активным разделом (Эпицентр /menu: .mm-rib__track) — едет содержимое ленты, сам блок стоит.
+     Лента, что прокручивается сама во времени (карусель на scroll-snap), — не от прокрутки страницы (timeChanged) */
+  if (!ctx.timeChanged.has('sl')) {
+    const sl = P.map((x) => x.p.sl || 0); const span = Math.max(...sl) - Math.min(...sl);
+    const moves = sl.slice(1).filter((v, q) => Math.abs(v - sl[q]) > EPS.sl).length;
+    if (span >= 20 && moves >= 2) {
+      const far = sl.reduce((b, v, q) => (Math.abs(v - sl[0]) > Math.abs(sl[b] - sl[0]) ? q : b), 0);
+      const f = fit(P.map((x) => x.sy), sl.map((v) => -v));
+      items.push({ kind: 'scroll-linked', sub: 'лента вбок', trigger: 'scroll', prop: 'sl', from: -sl[0], to: -sl[far],
+        props: [{ prop: NAMES.tx, from: fmtV('tx', -sl[0]), to: fmtV('tx', -sl[far]) }], timing: {}, source: 'scrollLeft контейнера (overflow-x)',
+        scroll: { note: `лента прокручивается вбок (scrollLeft ${sl[0]} → ${sl[far]} px) за прокруткой страницы: сдвигалась на ${moves} шагах из ${P.length - 1}${f.r2 > 0.9 ? ', почти по прямой' : ', ступеньками — за активным пунктом'}`,
+          rangePx: round(P[P.length - 1].sy - P[0].sy), coefficient: round(f.b, 3) } });
     }
   }
   /* счётчик после входа в экран */
@@ -1156,17 +1239,49 @@ function summarizeClick(t, pt, diff, kf = {}) {
     el: { sig: pt.sig, text: pt.text, expect: t.expect ? { kind: t.expect } : pt.expect ? { kind: pt.expect } : null }, box: panel ? { x: panel.end[1], y: panel.end[2], w: panel.end[3], h: panel.end[4] } : null };
 }
 
+/* Переходы со страницы на время кликов: запрос документа главного кадра останавливается (CDP Fetch, только тип
+   Document — остальные запросы идут как шли, кадры iframe грузятся), документ остаётся — с ним окно замеров и
+   window.__moEls. blocked — адреса остановленных переходов; release() — снять (до page.goto обязательно). */
+async function holdNavigation(page) {
+  const blocked = []; let cdp = null; let on = false;
+  const release = async () => { if (!on) return; on = false; try { await cdp.send('Fetch.disable'); } catch (e) { /* вкладка закрыта */ } try { await cdp.detach(); } catch (e) { /* уже */ } };
+  try {
+    cdp = await page.createCDPSession();
+    const { frameTree } = await cdp.send('Page.getFrameTree'); const main = frameTree.frame.id;
+    cdp.on('Fetch.requestPaused', (e) => {
+      if (e.frameId === main) { blocked.push(e.request.url); cdp.send('Fetch.failRequest', { requestId: e.requestId, errorReason: 'Aborted' }).catch(() => {}); }
+      else cdp.send('Fetch.continueRequest', { requestId: e.requestId }).catch(() => {});
+    });
+    await cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] }); on = true;
+  } catch (e) { if (cdp) await cdp.detach().catch(() => {}); return { ok: false, blocked, release, err: String(e.message || e).slice(0, 100) }; }
+  return { ok: true, blocked, release };
+}
+
 /**
  * Нажать на всё, что раскрывается по клику (clicks.mjs: меню, аккордеоны — до 2 групп, вкладки,
  * [aria-expanded]), до maxN штук и не дольше 60 с: навести (наведение — до снимка «до»), снимок всех
  * элементов, клик, снимки через 80/200/400/700 мс и через 1.5 с, разбор; вырезка открытого; закрыть
  * (повторный клик, для вкладок — клик по прежней, иначе Escape) и записать, закрылось ли.
+ * Клик, который уводит со страницы (кнопка с location.href, отправка формы, перезагрузка, новая вкладка), — пропуск
+ * «клик увёл со страницы»: переход остановлен (holdNavigation), вкладка закрыта, клики идут дальше. Смена адреса без
+ * перехода (history.replaceState у фильтра: /menu?venue=mosty) — та же страница, разбор как обычно; раньше это
+ * считалось уходом, и goBack() уводил на about:blank. Документ всё же сменился — страница открывается заново (home),
+ * остальные клики не проверяются, replaced: true (вырезки движений по индексам уже не снять).
  */
-async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = null, debug = false } = {}) {
+async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = null, debug = false, home = null } = {}) {
   const items = [], notes = [], tried = [];
   await scrollToY(page, 0); await page.mouse.move(1, 1).catch(() => {}); await sleep(300);
   let found;
   try { found = await findClickTargets(page, { want: ['accordions', 'toggles', 'tabs', 'disclosures', 'hooks'] }); } catch (e) { notes.push(`поиск нажимаемого: ${String(e.message || e).slice(0, 120)}`); return { items, notes, tried }; }
+  const hold = await holdNavigation(page);
+  if (!hold.ok) notes.push(`переходы на время кликов не остановлены (CDP Fetch: ${hold.err}) — клик, который уводит со страницы, прервёт клики`);
+  const popups = []; const onPopup = (p) => { popups.push(p ? p.url() || 'about:blank' : '?'); if (p) p.close().catch(() => {}); };
+  const onDialog = (d) => { d.dismiss().catch(() => {}); };             /* beforeunload и alert на клике — не ждать человека */
+  page.on('popup', onPopup); page.on('dialog', onDialog);
+  const docTok = await page.evaluate(() => (window.__moDoc = window.__moDoc || String(Math.random()).slice(2))).catch(() => null);
+  const sameDoc = async () => docTok !== null && (await page.evaluate(() => window.__moDoc || null).catch(() => null)) === docTok;
+  let replaced = false;
+  try {
   for (const e of found.errors || []) notes.push(`поиск нажимаемого: ${e}`);
   const targets = [];
   for (const x of found.toggles) targets.push({ type: 'toggle', sel: `[data-rw-ctog="${x.i}"]`, how: x.how, expect: x.expect });
@@ -1182,7 +1297,7 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
     const sub = CLICK_SUB[t.type];
     const pt = await evaluateWith(page, ckPointInPage, t.sel, deps).catch(() => null);
     if (!pt || pt.skip) { tried.push({ ...t, skip: pt ? pt.skip : 'не найден' }); notes.push(`клик (${sub}) ${t.sel}: ${pt ? pt.skip : 'не найден'}`); continue; }
-    const url0 = page.url();
+    const url0 = page.url(); const nb = hold.blocked.length, np = popups.length;
     try {
       await page.mouse.move(pt.x, pt.y, { steps: 3 }); await sleep(450);
       const b = await snap('base'); await sleep(300); await snap('pre');   /* второй снимок до клика: что меняется само */
@@ -1194,7 +1309,14 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
       for (let q = 0; q < MIDS.length; q++) { const w = MIDS[q] - (Date.now() - tc); if (w > 0) await sleep(w); await snap('m' + q); }
       await sleep(Math.max(0, 1500 - (Date.now() - tc)));
       await snap('end');
-      if (page.url().split('#')[0] !== url0.split('#')[0]) { notes.push(`клик по «${pt.text || pt.sig}» (${sub}) увёл на ${page.url()} — вернулся, клики остановлены`); await page.goBack({ waitUntil: 'load' }).catch(() => {}); break; }
+      /* увёл со страницы: переход остановлен или открылась новая вкладка — документ тот же, клик не в счёт */
+      if (hold.blocked.length > nb || popups.length > np) {
+        const how = hold.blocked.length > nb ? `переход на ${hold.blocked[nb]} остановлен` : `открыл новую вкладку (${popups[np]}) — закрыта`;
+        tried.push({ ...t, text: pt.text, skip: `клик увёл со страницы: ${how}` }); notes.push(`клик по «${pt.text || pt.sig}» (${sub}) увёл со страницы: ${how}; клик пропущен`);
+        await page.mouse.move(1, 1).catch(() => {}); continue;
+      }
+      if (!(await sameDoc())) throw Object.assign(new Error('документ сменился'), { replacedDoc: true });
+      if (page.url().split('#')[0] !== url0.split('#')[0]) notes.push(`клик по «${pt.text || pt.sig}» (${sub}) сменил адрес на ${page.url()} без перехода (history API) — та же страница`);
       let diff = await evaluateWith(page, ckDiffInPage, { t0: tIn, mids: ['m0', 'm1', 'm2', 'm3'], trg: '[data-rw-ck-hit]' }, deps);
       const kfNames = diff ? [...new Set(diff.changed.filter((c) => c.anim).map((c) => String(c.anim.name).split(',')[0].trim()))].slice(0, 20) : [];
       const kf = kfNames.length ? await evaluateWith(page, keyframesInPage, kfNames, deps).catch(() => ({})) : {};
@@ -1229,11 +1351,23 @@ async function probeClicks(page, vp, deps, { maxN = 6, cropDir = null, out = nul
       }
       it.timing.note = [it.timing.note, closedBy ? `закрывается: ${closedBy}` : 'не закрылся ни повторным кликом, ни Escape'].filter(Boolean).join(', ');
       items.push(it);
-    } catch (e) { notes.push(`клик (${sub}) ${t.sel}: ${String(e.message || e).slice(0, 100)}`); }
+    } catch (e) {
+      /* документ сменился (переход не остановлен, history.back() скриптом страницы): страница — заново, клики — всё */
+      if (e.replacedDoc || !(await sameDoc())) {
+        replaced = true; const at = page.url();
+        tried.push({ ...t, text: pt.text, skip: 'клик увёл со страницы: документ сменился' });
+        notes.push(`клик по «${pt.text || pt.sig}» (${sub}) увёл со страницы (документ сменился${at !== url0 ? `, адрес ${at}` : ''}) — страница открыта заново, остальные клики не проверялись`);
+        await hold.release();
+        try { await gotoRetry(page, home || url0, { waitUntil: 'load', timeout: 60000 }); await closeConsent(page).catch(() => {}); } catch (e2) { notes.push(`страница после ухода не открылась: ${String(e2.message || e2).slice(0, 100)}`); }
+        break;
+      }
+      notes.push(`клик (${sub}) ${t.sel}: ${String(e.message || e).slice(0, 100)}`);
+    }
     await page.mouse.move(1, 1).catch(() => {});
   }
   if (!targets.length) notes.push('по клику раскрываться нечему: меню-бургера, аккордеонов, вкладок и [aria-expanded] не найдено');
-  return { items, notes, tried, found: { toggles: found.toggles.length, accordions: found.accordions.groups.length, tabs: found.tabs.length, disclosures: found.disclosures.length, ...(found.hooks && found.hooks.length ? { tildaHooks: found.hooks.length } : {}) } };
+  } finally { await hold.release(); page.off('popup', onPopup); page.off('dialog', onDialog); }
+  return { items, notes, tried, replaced, found: { toggles: found.toggles.length, accordions: found.accordions.groups.length, tabs: found.tabs.length, disclosures: found.disclosures.length, ...(found.hooks && found.hooks.length ? { tildaHooks: found.hooks.length } : {}) } };
 }
 
 /* ---------- Tilda: пункты из атрибутов точнее замера ----------
@@ -1336,7 +1470,8 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
   const [vpName, vp] = rv;
   const browser = shared || await launch();
   const t0 = Date.now();
-  const result = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, takenAt: new Date().toISOString(), items: [], libs: {}, notes: [] };
+  /* phases — что снималось: compare по выключенному у нас (--no-clicks, --no-hover …) пишет «не проверялось», а не «нет» */
+  const result = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, takenAt: new Date().toISOString(), phases: { scroll: !!doScroll, hover: !!doHover, mouse: !!doMouse, clicks: !!doClicks }, items: [], libs: {}, notes: [] };
   try {
     const page = await preparePage(browser, vp, {});
     await page.evaluateOnNewDocument(instrument);
@@ -1346,6 +1481,26 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     await waitForOverlay(page, 4000).catch(() => null);
     /* окно cookie закрыть до замеров: оно перекрывает первый экран на вырезках и ловит наведение */
     result.consent = consentNote(await closeConsent(page).catch((e) => ({ found: false, error: String(e.message || e).slice(0, 100) })));
+    /* окно выбора из SITE_REWORK_DISMISS увело на другую страницу (город у mamuka.rest: нажали «Ярославль» — перешли
+       на главную) — выбор запомнен, снимаемая страница открывается заново; иначе под адресом /about/ снималась главная */
+    const pathOf = (u) => { try { const x = new URL(u); return `${x.origin}${x.pathname.replace(/\/+$/, '')}`; } catch (e) { return String(u); } };
+    if (page.rwDismiss && page.rwDismiss.navTo && pathOf(page.url()) !== pathOf(url)) {
+      const at = page.url();
+      await gotoRetry(page, url, { waitUntil: 'load', timeout: 60000 });
+      await page.evaluate(() => document.fonts.ready).catch(() => {});
+      await waitForOverlay(page, 4000).catch(() => null);
+      await closeConsent(page).catch(() => null);
+      result.notes.push(`окно SITE_REWORK_DISMISS увело на ${at} — ${pathOf(page.url()) === pathOf(url) ? 'страница открыта заново' : `открыта заново, но снова ушла на ${page.url()} — снимается не та страница`}`);
+      say(`окно SITE_REWORK_DISMISS увело на ${at} — ${url} открыта заново`);
+    }
+    /* окна при загрузке (lib): увело на другой адрес — lib уже открыл нужную страницу заново (заметка — как раньше);
+       итог нажатия и открытое окно — в протокол (windows) и вердикт: WARN — окно открыто (замеры под ним), не найдено,
+       скрыто, окно вернулось, снимается не та страница */
+    const dl = (page.rwDismiss && page.rwDismiss.list) || [];
+    if (!result.notes.some((x) => /^окно SITE_REWORK_DISMISS увело на/.test(x))) for (const d of dl) if (d.nav) result.notes.push(`окно SITE_REWORK_DISMISS ${d.reload ? 'перезагрузило страницу' : `увело на ${d.nav}`} — ${d.wrongPage ? `открыта заново, но снова ушла на ${d.back} — снимается не та страница` : d.again ? 'страница открыта заново, но окно снова на экране — сайт не запомнил выбор' : 'страница открыта заново'}`);
+    result.windows = { dismiss: dl.length ? dl : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null, notes: takeNotes(), warnings: takeWarnings() };
+    for (const x of result.windows.notes) say(`INFO ${x}`);
+    for (const x of result.windows.warnings) say(`WARN ${x}`);
     const deps = { sig: SIG_FN, screenPt: SCREEN_POINT_FN, svc: IS_TILDA_SERVICE_FN };
     result.libs = await evaluateWith(page, libsInPage, null, deps);
     let n = await evaluateWith(page, collectInPage, 5000, deps);
@@ -1435,20 +1590,23 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
       await scrollToY(page, 0); await sleep(300);
     }
 
-    /* 5. клики — после наведения: меню, аккордеоны, вкладки, [aria-expanded] (раскрывают и закрывают обратно) */
+    /* замеры со страницы — до кликов: клик может заменить документ (переход, перезагрузка), и с ним пропали бы
+       window.__moS и журнал событий — «Cannot read properties of undefined (reading 'series')» на /menu Эпицентра */
     const tClick0 = await page.evaluate(() => performance.now());
-    let clicks = null;
-    if (doClicks) {
-      const cropDir = crops ? ensureDir(path.join(out, 'motion', tag)) : null;
-      clicks = await probeClicks(page, vp, deps, { maxN: clickN, cropDir, out, debug }).catch((e) => ({ items: [], notes: [`клики: ${String(e.message || e).slice(0, 120)}`], tried: [] }));
-      await scrollToY(page, 0); await sleep(300);
-    }
-
     const animsEnd = await evaluateWith(page, animationsInPage, null, deps);
+    const wows = result.libs.libs.some((x) => /^WOW\.js/.test(x)) ? await evaluateWith(page, wowInPage, null, deps).catch(() => []) : [];
     const ev = await evaluateWith(page, eventsInPage, null, deps);
     const data = await evaluateWith(page, seriesOutInPage, null, deps);
     const kfNames = [...new Set([...animsTop, ...animsEnd].filter((a) => a.kind === 'CSSAnimation').map((a) => a.name).concat(ev.ev.filter((e) => e.type === 'anim').map((e) => e.name)))].slice(0, 80);
     const kf = await evaluateWith(page, keyframesInPage, kfNames, deps);
+
+    /* 5. клики — после наведения: меню, аккордеоны, вкладки, [aria-expanded] (раскрывают и закрывают обратно) */
+    let clicks = null;
+    if (doClicks) {
+      const cropDir = crops ? ensureDir(path.join(out, 'motion', tag)) : null;
+      clicks = await probeClicks(page, vp, deps, { maxN: clickN, cropDir, out, debug, home: url }).catch((e) => ({ items: [], notes: [`клики: ${String(e.message || e).slice(0, 120)}`], tried: [] }));
+      await scrollToY(page, 0).catch(() => {}); await sleep(300);
+    }
 
     if (debug) writeJson(path.join(out, "motion", `${tag}.series.json`), { steps: data.steps, series: data.series.map((x) => ({ ...x, u: undefined })), timeIdx: timeSteps, scrollIdx: scrollSteps, upIdx: upSteps, anims: animsTop, textWatch, textLog, textLogSize });
     /* ---------- разбор ---------- */
@@ -1459,9 +1617,17 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     const byI = new Map(data.series.map((s) => [s.i, s]));
     for (const el of data.series) el.u = unroll(el.rows, nSteps);
     const loopTargets = new Set(animsTop.filter((a) => a.iterations === 'infinite' && !a.timeline).map((a) => a.i));
+    /* имя CSS-анимации, начавшейся у элемента (последней): появление из @keyframes, если класс или style потом сняли */
+    const animOf = new Map(); for (const e of ev.ev) if (e.type === 'anim' && e.i >= 0 && !e.pseudo && !loopTargets.has(e.i)) animOf.set(e.i, e.name);
     /* конечные анимации и переходы, начавшиеся в первые 1.5 с окна «время» без нашего участия, — вход при загрузке */
     const tTime0 = steps[timeIdx[0]] ? steps[timeIdx[0]].t : 0;
-    const finiteEls = new Set([...ev.ev.filter((e) => (e.type === 'anim-end' || e.type === 'trans-end') && e.t <= tTime0 + 1500).map((e) => e.i), ...ev.waapi.filter((w) => w.t <= tTime0 + 1500 && w.iterations !== 'infinite').map((w) => w.i)].filter((i) => i >= 0 && !loopTargets.has(i)));
+    /* …кроме того же перехода, что кончается в окне ещё раз (карусель листает раз в 2 с: страница открылась позже —
+       lib ждёт окно-заставку до 2 с, — и первый переход попал в первые 1.5 с; карусель пропадала, став входом) */
+    const tWin1 = steps[timeIdx[timeIdx.length - 1]] ? steps[timeIdx[timeIdx.length - 1]].t : Infinity;
+    const endN = new Map(); for (const e of ev.ev) if ((e.type === 'anim-end' || e.type === 'trans-end') && e.i >= 0 && e.t <= tWin1) { const k = `${e.i}|${e.name || e.prop}`; endN.set(k, (endN.get(k) || 0) + 1); }
+    const repeats = new Set([...endN].filter(([, c]) => c >= 2).map(([k]) => Number(k.split('|')[0])));
+    const finiteEls = new Set([...ev.ev.filter((e) => (e.type === 'anim-end' || e.type === 'trans-end') && e.t <= tTime0 + 1500).map((e) => e.i), ...ev.waapi.filter((w) => w.t <= tTime0 + 1500 && w.iterations !== 'infinite').map((w) => w.i)].filter((i) => i >= 0 && !loopTargets.has(i) && !repeats.has(i)));
+    const evEl = new Map((ev.who || []).map((w) => [w.i, { ...w, rows: [], u: [] }]));
     /* окно «время»: сначала все элементы (петли — группами соседей по родителю), потом прокрутка */
     const timeOf = new Map(); const perEl = [];
     for (const el of data.series) {
@@ -1477,14 +1643,14 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
          медленный поворот стопки во второй половину окна не попадал и утекал в параллакс */
       const tv = timeIdx.slice(Math.floor(timeIdx.length / 2)).map((s) => propsOf(el.u[s])).filter(Boolean);
       const timeChanged = new Set();
-      for (const k of ['tx', 'ty', 'sc', 'rot', 'op', 'blur', 'clip']) { const ys = tv.map((v) => v[k]); if (ys.length > 2 && Math.max(...ys) - Math.min(...ys) > EPS[k] * 2) timeChanged.add(k); }
+      for (const k of ['tx', 'ty', 'sc', 'rot', 'op', 'blur', 'clip', 'sl']) { const ys = tv.map((v) => v[k]); if (ys.length > 2 && Math.max(...ys) - Math.min(...ys) > EPS[k] * 2) timeChanged.add(k); }
       if (tv.length > 2 && new Set(tv.map((v) => v.text)).size > 2) timeChanged.add('text');
       const r = timeOf.get(el.i);
       for (const c of r.cls) if (inLoop.has(`${el.i}|${c.k}`) || c.status === 'undetermined' || slowStart(c)) timeChanged.add(c.k);
       for (const it of r.items) items.push({ ...it, i: el.i, el });
       for (const it of loopAt.get(el.i) || []) items.push(it);
       if (loopTargets.has(el.i)) { for (const k of ['tx', 'ty', 'sc', 'rot', 'op']) timeChanged.add(k); }
-      for (const it of analyzeScroll(el, steps, scrollIdx, vh, { vw, upIdx: upSteps, timeChanged })) items.push({ ...it, i: el.i, el });
+      for (const it of analyzeScroll(el, steps, scrollIdx, vh, { vw, upIdx: upSteps, timeChanged, animOf })) items.push({ ...it, i: el.i, el });
     }
     /* печать с загрузки (журнал смен текста), которую окна «время» и частое наблюдение не поймали */
     for (const lg of textLog) {
@@ -1533,13 +1699,13 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     const tTimeEnd = Math.min(steps[timeIdx[timeIdx.length - 1]] ? steps[timeIdx[timeIdx.length - 1]].t : Infinity, tTime0 + timeMs);
     const entrance = new Map();
     for (const e of ev.ev.filter((x) => (x.type === 'anim-end' || x.type === 'trans-end') && x.t <= tTimeEnd + 200)) {
-      const el = byI.get(e.i); const key = `${pattern(e.sig)}|${e.name || e.prop}`;
+      const el = byI.get(e.i) || evEl.get(e.i); const key = `${pattern(e.sig)}|${e.name || e.prop}`;
       if (loopTargets.has(e.i)) continue;
       const g = entrance.get(key) || { sig: e.sig, name: e.name, prop: e.prop, durs: [], starts: [], n: 0, i: e.i, el };
       g.durs.push(e.dur); g.n++; entrance.set(key, g);
     }
     for (const w of ev.waapi.filter((x) => x.t <= tTimeEnd && x.iterations !== 'infinite')) {
-      const key = `${pattern(w.sig)}|waapi`; const g = entrance.get(key) || { sig: w.sig, name: 'element.animate', prop: w.props.join(', '), durs: [], n: 0, i: w.i, el: byI.get(w.i), waapi: w }; g.durs.push(w.duration || 0); g.n++; entrance.set(key, g);
+      const key = `${pattern(w.sig)}|waapi`; const g = entrance.get(key) || { sig: w.sig, name: 'element.animate', prop: w.props.join(', '), durs: [], n: 0, i: w.i, el: byI.get(w.i) || evEl.get(w.i), waapi: w }; g.durs.push(w.duration || 0); g.n++; entrance.set(key, g);
     }
     for (const g of entrance.values()) {
       const el = g.el; const p0 = el ? propsOf(el.u.find(Boolean)) : null; const p1 = el ? propsOf(el.u[timeIdx[timeIdx.length - 1]] || el.u.find(Boolean)) : null;
@@ -1564,6 +1730,30 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
       if (!ends.length && wa.length) { it.timing.duration = wa[wa.length - 1].duration || undefined; it.timing.easing = wa[wa.length - 1].easing || it.timing.easing; it.timing.delay = wa[wa.length - 1].delay || it.timing.delay; it.source = 'element.animate'; }
       else if (!ends.length && !dur) it.timing.note = 'без CSS-перехода — рисует скрипт (длительность по кадрам не видна)';
       if (ev.styleHot.some((s) => s.i === it.i)) it.source = 'скрипт (style меняется покадрово)';
+      /* появление из @keyframes (WOW.js, animate.css): анимация идёт между замерами — «из» и «в» берутся из первого и
+         последнего кадра; сдвиг в % — от своего размера (fadeInUp: translate3d(0, 100%, 0) — на высоту блока) */
+      const endAnim = ends.filter((e) => e.type === 'anim-end').pop();
+      const an = it.kfName || (endAnim ? endAnim.name : '');
+      const fr = an && kf[an];
+      if (fr && fr.length) {
+        const lastV = el.rows && el.rows.length ? propsOf(el.rows[el.rows.length - 1][1]) : null; const w = lastV ? lastV.w : 0, h = lastV ? lastV.h : 0;
+        const a = cssProps(fr[0].css, w, h), z = fr.length > 1 ? cssProps(fr[fr.length - 1].css, w, h) : {};
+        const kp = [];
+        if (a.op !== undefined && Math.abs(a.op - (z.op ?? 1)) > 0.02) kp.push({ prop: NAMES.op, from: fmtV('op', a.op), to: fmtV('op', z.op ?? 1) });
+        for (const k of ['tx', 'ty']) if (a[k] !== undefined && Math.abs(a[k] - (z[k] ?? 0)) > 0.5) kp.push({ prop: NAMES[k], from: fmtV(k, a[k]), to: fmtV(k, z[k] ?? 0) });
+        if (a.sc !== undefined && Math.abs(a.sc - (z.sc ?? 1)) > 0.01) kp.push({ prop: NAMES.sc, from: fmtV('sc', a.sc), to: fmtV('sc', z.sc ?? 1) });
+        it.props = [...kp, ...it.props.filter((p) => !kp.some((q) => q.prop === p.prop))];
+        const pc = /translate(?:3d|X|Y)?\(([^)]*%[^)]*)\)/.exec(fr[0].css);
+        if (pc) it.timing.note = [it.timing.note, `сдвиг — translate(${pc[1].replace(/\s+/g, ' ')}) от своего размера (${w}×${h} px)`].filter(Boolean).join('; ');
+        it.source = `css @keyframes ${an}`;
+      }
+      if (it.prop === 'vis') {
+        const wow = el.wow ? [el.wow.offset && `offset ${el.wow.offset} px`, el.wow.duration && `data-wow-duration ${el.wow.duration}`, el.wow.delay && `data-wow-delay ${el.wow.delay}`].filter(Boolean).join(', ') : '';
+        it.cause = el.wow ? `WOW.js: при входе в экран visibility: visible и animation-name: ${an || '?'}${cls.length ? `, класс «${cls[0].added.slice(0, 2).join(' ')}»` : ''}${wow ? ` (${wow})` : ''}`
+          : `при входе в экран visibility: hidden → visible и animation-name: ${an || '?'}${cls.length ? ` (класс «${cls[0].added.slice(0, 2).join(' ')}»)` : ''}`;
+        if (!it.props.length) it.props.push({ prop: 'видимость', from: 'скрыт', to: 'виден' });
+        it.timing.easing = easeName(el.anim.ease) || it.timing.easing;
+      }
     }
     /* наведение */
     for (const hv of hovers) {
@@ -1622,7 +1812,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
       items.push({ kind: 'canvas', trigger: 'time', props: [{ prop: `холст ${c.ctx}`, from: '', to: `${c.w}×${c.h}${animated === null ? `, движется ли — не проверено${c.err ? ' (' + c.err + ')' : ''}` : ', рисует движение'}` }], timing: {}, el: { sig: c.sig, expect: c.expect ? { kind: c.expect } : null } });
     }
 
-    if (clicks) { for (const it of clicks.items) items.push(it); result.clicks = { found: clicks.found || null, tried: clicks.tried.map((x) => ({ type: x.type, sel: x.sel, text: x.text, skip: x.skip, changed: x.changed, item: x.item, ...(x.diff ? { diff: x.diff } : {}) })) }; result.notes.push(...clicks.notes); }
+    if (clicks) { for (const it of clicks.items) items.push(it); result.clicks = { found: clicks.found || null, tried: clicks.tried.map((x) => ({ type: x.type, sel: x.sel, text: x.text, skip: x.skip, changed: x.changed, item: x.item, ...(x.diff ? { diff: x.diff } : {}) })) }; result.notes.push(...clicks.notes); if (clicks.replaced) { result.clicks.replaced = true; result.notes.push('клик заменил документ — страница открыта заново: вырезки движений (mNN.png) не сняты, разбор — по замерам до кликов'); } }
     /* по очереди: появления у соседей с растущей задержкой */
     const reveals = items.filter((x) => x.kind === 'reveal');
     const groups = new Map();
@@ -1671,7 +1861,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     for (const it of final) {
       k++; it.id = `m${String(k).padStart(2, '0')}`; it.recipe = it.tilda && it.recipe ? it.recipe : it.kind === 'click' ? CLICK_RECIPE[it.sub] || 'click' : RECIPE[it.kind] || it.kind;
       it.target = it.el.sig; it.text = it.el.text || ''; it.expect = it.el.expect ? it.el.expect.kind : (it.el.expectInside && it.el.expectInside[0]) || '';
-      if (crops && (it.i !== undefined || it.hover !== undefined || (it.cropSel && tildaCrops++ < 24))) {
+      if (crops && !(clicks && clicks.replaced) && (it.i !== undefined || it.hover !== undefined || (it.cropSel && tildaCrops++ < 24))) {
         try {
           const box = await page.evaluate((ref) => {
             const el = ref.sel ? document.querySelector(ref.sel) : ref.hover !== undefined ? window.__moHover[ref.hover] : window.__moEls[ref.i]; if (!el || !el.isConnected) return null;
@@ -1684,15 +1874,30 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
         } catch (e) { /* без вырезки */ }
       }
       if (it.el.expectNot) it.expectNot = it.el.expectNot;
-      delete it.el; delete it._key; delete it.is; delete it.mk; delete it.cropI; delete it.cropSel; delete it.tilda; if (!it.coefs || !it.coefs.length) delete it.coefs;
+      delete it.el; delete it._key; delete it.kfName; delete it.is; delete it.mk; delete it.cropI; delete it.cropSel; delete it.tilda; if (!it.coefs || !it.coefs.length) delete it.coefs;
     }
     result.items = final;
+    /* блоки WOW.js, которые не стали строкой (появление, вход): почему — чтобы «WOW.js есть, а появлений нет» не
+       читалось как пропуск замера. С анимацией и видимый, но без строки — это и есть пропуск: переснять с --debug */
+    if (wows.length) {
+      const hit = (w) => final.some((it) => (w.i >= 0 && it.i === w.i) || it.target === w.sig);
+      const why = (w) => (w.display === 'none' || w.w * w.h === 0 ? '0×0 на этом экране — не виден'
+        : !w.cls && (!w.name || w.name === 'none') ? 'без класса анимации (animation-name: none) — WOW только показывает, движения нет'
+          : `с анимацией ${w.cls || w.name}, но строки нет — не пойман замером, переснять с --debug`);
+      const miss = wows.filter((w) => !hit(w)); const by = new Map();
+      for (const w of miss) by.set(why(w), [...(by.get(why(w)) || []), w.sig]);
+      if (miss.length) result.notes.push(`WOW.js: блоков .wow ${wows.length}, строкой не стали ${miss.length}: ${[...by].map(([k, s]) => `${s.length} — ${k} (${[...new Set(s)].slice(0, 2).map((x) => `\`${x}\``).join(', ')})`).join('; ')}`);
+    }
     result.stats = { steps: { time: timeIdx.length, scroll: scrollIdx.length, up: upSteps.length, timeMs: timeObs, timeBaseMs: timeMs, peeks }, slowUnresolved: perEl.filter((x) => unresolved(x.cls)).length || undefined, observed: n, inDom: all, changed: data.series.length, events: ev.ev.length, waapi: ev.waapi.length, classChanges: ev.cls.length, capped: ev.capped, seconds: round((Date.now() - t0) / 1000, 1) };
     if (!result.libs.reducedRule) result.notes.push('правила prefers-reduced-motion в CSS нет — у нас обязательно (reference/motion.md)');
     if (ev.capped) result.notes.push('событий больше 8000 — часть не записана');
     await page.close();
   } finally { if (!shared) await browser.close(); }
-  result.verdict = 'OK';
+  /* WARN lib по ходу снятия (свой стиль не вставился) — туда же; вердикт инвентаря — WARN, если есть WARN lib */
+  if (!result.windows) result.windows = { dismiss: null, modal: null, wrongPage: null, notes: [], warnings: [] };
+  const late = takeWarnings(); takeNotes();
+  for (const x of late) { result.windows.warnings.push(x); say(`WARN ${x}`); }
+  result.verdict = result.windows.warnings.length ? 'WARN' : 'OK';
   return result;
 }
 
@@ -1735,11 +1940,28 @@ function nums(it) { const out = {}; for (const p of it.props || []) { const a = 
    Пара между ними — только когда у нас есть все свойства донора и числа близки. */
 const SCROLL_GROUP = new Set(['reveal:in', 'reveal:out', 'scroll-linked']);
 const kindRu = (it) => `${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''}`;
+const COMP_RU = { logo: 'логотип', card: 'карточка', nav: 'пункт меню', button: 'кнопка', link: 'ссылка' };
+/* Наведение с тем же переходом: каждое свойство донора у нас с теми же «от → до», длительность та же (±25%, у обоих
+   или ни у кого). Подпись и вид элемента не важны: у донора — «логотип» a.sidebar-logo, у нас — «ссылка» a.rail__item,
+   фон rgba(0, 0, 0, 0) → rgba(0, 0, 0, 0.3) за 300 мс у обоих. → «что за переход» или '' */
+const normV = (v) => String(v ?? '').replace(/\s+/g, '').toLowerCase();
+function sameHover(d, o) {
+  if (!(d.props || []).length) return '';
+  for (const p of d.props) { const q = (o.props || []).find((x) => x.prop === p.prop); if (!q || normV(q.from) !== normV(p.from) || normV(q.to) !== normV(p.to)) return ''; }
+  const a = (d.timing || {}).duration, b = (o.timing || {}).duration;
+  if (!!a !== !!b || (a && b && Math.max(a, b) / Math.min(a, b) > 1.25)) return '';
+  return `${d.props.map((p) => `${p.prop} ${p.from} → ${p.to}`).join('; ')}${a ? `, ${a} мс${b !== a ? ` / у нас ${b} мс` : ''}` : ''}`;
+}
 function similar(d, o) {
   const fd = FAMILY(d), fo = FAMILY(o);
   const cross = fd !== fo;
+  /* наведение на элемент другого вида — пара, только если переход тот же целиком; такая пара сильнее той же по виду, но с разницей */
+  if (cross && d.kind === 'hover' && o.kind === 'hover') { const same = sameHover(d, o); return same ? { score: 0.9, diffs: [], notes: [`у донора наведение на «${COMP_RU[d.component] || d.component || '?'}», у нас — на «${COMP_RU[o.component] || o.component || '?'}»: переход тот же (${same})`] } : { score: 0 }; }
   if (cross && !(SCROLL_GROUP.has(fd) && SCROLL_GROUP.has(fo))) return { score: 0 };
-  const diffs = []; let score = 1;
+  const diffs = [], notes = []; let score = 1;
+  /* лента вбок: путь (сколько px проехать) — от длины ленты, то есть от числа разделов; язык движения — что едет и куда */
+  const ribbon = d.sub === 'лента вбок' && o.sub === 'лента вбок';
+  if (ribbon) { const sl = (x) => /scrollLeft/.test(x.source || ''); if (sl(d) !== sl(o)) notes.push(`лента едет у донора ${sl(d) ? 'прокруткой контейнера (scrollLeft)' : 'сдвигом transform'}, у нас — ${sl(o) ? 'прокруткой контейнера (scrollLeft)' : 'сдвигом transform'}`); }
   if (d.kind === 'hover' && d.sub !== o.sub) { diffs.push(`наведение: у донора «${d.sub}», у нас «${o.sub}»`); score -= 0.3; }
   const nd = nums(d), no = nums(o);
   for (const [prop, [a, b]] of Object.entries(nd)) {
@@ -1751,6 +1973,12 @@ function similar(d, o) {
     }
     const [c, e] = no[prop];
     if (d.kind === 'click' && /высота/.test(prop)) continue;       /* высота панели — от содержимого, не язык движения */
+    if (ribbon && prop === NAMES.tx) {
+      const sd = Math.sign(b - a), so = Math.sign(e - c);
+      if (sd && so && sd !== so) { diffs.push(`лента едет в другую сторону: у донора ${a} → ${b} px, у нас ${c} → ${e} px`); score -= 0.15; }
+      else notes.push(`путь ленты у донора ${a} → ${b} px, у нас ${c} → ${e} px — от длины ленты, не сравнивается`);
+      continue;
+    }
     const bad = (x, y) => Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) > Math.max(0.05, Math.abs(x) * 0.25);
     if (bad(a, c) || bad(b, e)) { diffs.push(`${prop}: у донора ${a} → ${b}, у нас ${c} → ${e}`); score -= 0.15; }
   }
@@ -1761,8 +1989,19 @@ function similar(d, o) {
     if (!keys.length || diffs.length || !keys.every((k) => k in no)) return { score: 0 };
     return { score: 0.6, diffs: [], notes: [`у донора снято как «${kindRu(d)}», у нас — «${kindRu(o)}»: числа те же (вид зависит от того, уложился ли отрезок в проход прокрутки)`] };
   }
-  if (d.scroll && o.scroll && Number.isFinite(d.scroll.startPct) && Number.isFinite(o.scroll.startPct) && (Math.abs(d.scroll.startPct - o.scroll.startPct) > 20 || Math.abs(d.scroll.endPct - o.scroll.endPct) > 20)) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.startPct}% → ${d.scroll.endPct}%, у нас ${o.scroll.startPct}% → ${o.scroll.endPct}%`); score -= 0.1; }
-  return { score: Math.max(0.05, score), diffs, notes: [] };
+  if (!ribbon && d.scroll && o.scroll && Number.isFinite(d.scroll.startPct) && Number.isFinite(o.scroll.startPct) && (Math.abs(d.scroll.startPct - o.scroll.startPct) > 20 || Math.abs(d.scroll.endPct - o.scroll.endPct) > 20)) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.startPct}% → ${d.scroll.endPct}%, у нас ${o.scroll.startPct}% → ${o.scroll.endPct}%`); score -= 0.1; }
+  return { score: Math.max(0.05, score), diffs, notes };
+}
+/* Что у нас не снималось (--no-clicks, --no-hover, --no-mouse, --no-scroll): строка донора этого вида без пары —
+   «не проверялось», а не «нет» (FAIL был ложным). Протокол без phases (снят до 29.09): клики — по наличию clicks,
+   его пишет только прогон с кликами. → причина или '' */
+function uncheckedWhy(ours, d) {
+  const ph = ours.phases || { clicks: !!ours.clicks };
+  if (d.kind === 'click') return ph.clicks === false ? 'клики у нас не снимались (--no-clicks)' : '';
+  if (d.kind === 'hover') return ph.hover === false ? 'наведение у нас не снималось (--no-hover)' : '';
+  if (d.kind === 'mouse' || d.kind === 'cursor') return ph.mouse === false ? 'мышь у нас не снималась (--no-mouse)' : '';
+  if (['reveal', 'scroll-linked', 'parallax', 'pinned', 'header', 'progress'].includes(d.kind) || (d.kind === 'counter' && d.trigger === 'scroll')) return ph.scroll === false ? 'прокрутка у нас не снималась (--no-scroll)' : '';
+  return '';
 }
 /* Решение по строке донора: первый найденный ключ — номер, «вид:подпись», «вид:подпись» любого участника группы
    (старые решения на картинку стопки работают), «вид:<родитель> > *» — на всю группу детей, вид. Голый
@@ -1778,16 +2017,20 @@ function compare(donor, ours, decisions) {
     let best = null;
     for (const o of ours.items) { const s = similar(d, o); if (s.score > 0 && (!best || s.score > best.s.score || (s.score === best.s.score && !used.has(o.id) && used.has(best.o.id)))) best = { o, s }; }
     const hit = decisionFor(d, decisions); const dec = hit ? hit.text : ''; const key = hit ? hit.key : '';
+    const why = best || dec ? '' : uncheckedWhy(ours, d);
     if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, notes: best.s.notes || [], decision: dec, key }); }
-    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : 'НЕТ', diffs: [], notes: [], decision: dec, key });
+    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : why ? 'НЕ ПРОВЕРЯЛОСЬ' : 'НЕТ', diffs: [], notes: why ? [why] : [], decision: dec, key });
   }
   const extra = ours.items.filter((o) => !used.has(o.id));
   const miss = rows.filter((r) => r.status === 'НЕТ').length, diff = rows.filter((r) => r.status === 'ОТЛИЧАЕТСЯ' && !r.decision).length;
+  const unchecked = rows.filter((r) => r.status === 'НЕ ПРОВЕРЯЛОСЬ').length;
   const verdict = miss ? 'FAIL' : diff ? 'WARN' : 'OK';
-  return { rows, extra, verdict, miss, diff };
+  return { rows, extra, verdict, miss, diff, unchecked };
 }
+/* статус строки сверки для консоли и протокола: «не проверялось» — INFO (как у runtime), в вердикт не идёт */
+const rowLevel = (r) => (r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'INFO' : 'OK');
 function mdCompare(c, donor, ours) {
-  const L = [`# Сверка движения: донор → наш сайт`, '', `Донор: ${donor.url} (${donor.viewport}) · наш: ${ours.url} (${ours.viewport}) · вердикт **${c.verdict}** (нет без решения: ${c.miss}, отличается: ${c.diff})`, '',
+  const L = [`# Сверка движения: донор → наш сайт`, '', `Донор: ${donor.url} (${donor.viewport}) · наш: ${ours.url} (${ours.viewport}) · вердикт **${c.verdict}** (нет без решения: ${c.miss}, отличается: ${c.diff}${c.unchecked ? `, не проверялось: ${c.unchecked} — у нас не снималось, в вердикт не входит` : ''})`, '',
     '| донор | вид | у донора | у нас | статус | разница / решение | ключ решения |', '|---|---|---|---|---|---|---|'];
   for (const r of c.rows) {
     const d = r.d; const dWhat = `\`${d.target}\`${d.count > 1 ? ` ×${d.count}` : ''}: ${d.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 90)}`;
@@ -1816,6 +2059,29 @@ const vpList = (v) => String(v && v !== true ? v : 'desktop').split(',').map((x)
 for (const v of vpList(opt.viewport)) if (!resolveViewport(v)) die(`Неизвестный экран: ${v}`);
 
 if (cmd === 'selftest') {
+  /* сверка без браузера — fixtures/motion/compare-*.json (Эпицентр /menu ↔ mamuka.rest/menu, 29.09): лента вбок у донора
+     transform, у нас scrollLeft контейнера — пара, путь ленты не сравнивается, в другую сторону — ОТЛИЧАЕТСЯ; наведение
+     с тем же переходом на элементе другого вида (логотип ↔ ссылка) — пара, с другим «до» — нет; клики у нас не снимались
+     (--no-clicks) — «не проверялось» и в FAIL не идёт, снимались — НЕТ; протокол без phases и без clicks — «не проверялось» */
+  let cbad = 0, cn = 0;
+  {
+    const cd = readJson(path.join(HERE, 'fixtures', 'motion', 'compare-donor.json')), co = readJson(path.join(HERE, 'fixtures', 'motion', 'compare-ours.json'));
+    const C = (ok, what, got) => { cn++; if (!ok) cbad++; console.log(`${ok ? 'OK  ' : 'FAIL'} сверка: ${what}${ok ? '' : ` — получено: ${got}`}`); };
+    const st = (c, id) => { const r = c.rows.find((x) => x.d.id === id); return r ? `${r.status}${r.o ? ` ${r.o.id}` : ''}` : 'нет строки'; };
+    const c1 = compare(cd, co, {});
+    const r1 = c1.rows.find((x) => x.d.id === 'm01');
+    C(st(c1, 'm01') === 'OK m01' && r1.notes.some((n) => /не сравнивается/.test(n)), 'лента вбок: у донора transform, у нас scrollLeft контейнера — OK, путь ленты не сравнивается', `${st(c1, 'm01')} ${r1.diffs.join('; ')}`);
+    C(st(c1, 'm02') === 'OK m02', 'наведение: тот же переход на элементе другого вида (логотип ↔ ссылка) — пара', st(c1, 'm02'));
+    C(st(c1, 'm05') === 'НЕТ', 'наведение: другой переход на элементе другого вида — не пара', st(c1, 'm05'));
+    C(st(c1, 'm04') === 'OK m03', 'наведение того же вида — пара, как было', st(c1, 'm04'));
+    C(st(c1, 'm03') === 'НЕ ПРОВЕРЯЛОСЬ' && c1.miss === 1 && c1.unchecked === 1 && rowLevel(c1.rows.find((x) => x.d.id === 'm03')) === 'INFO', 'клики у нас не снимались (--no-clicks): по клику — «не проверялось» (INFO), в FAIL не идёт', `${st(c1, 'm03')}, нет ${c1.miss}, не проверялось ${c1.unchecked}`);
+    const c2 = compare(cd, { ...co, phases: { ...co.phases, clicks: true } }, {});
+    C(st(c2, 'm03') === 'НЕТ', 'клики у нас снимались — по клику без пары — НЕТ', st(c2, 'm03'));
+    const c3 = compare(cd, { ...co, phases: undefined }, {});
+    C(st(c3, 'm03') === 'НЕ ПРОВЕРЯЛОСЬ', 'протокол без phases и без clicks (снят до 29.09 или с --no-clicks) — «не проверялось»', st(c3, 'm03'));
+    const flip = JSON.parse(JSON.stringify(co)); flip.items[0].props[0].to = '1234 px';
+    C(/^ОТЛИЧАЕТСЯ/.test(st(compare(cd, flip, {}), 'm01')), 'лента вбок в другую сторону — ОТЛИЧАЕТСЯ', st(compare(cd, flip, {}), 'm01'));
+  }
   const url = pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'index.html')).href;
   const out = path.resolve(String(opt.out || path.join(process.env.TEMP || process.env.TMPDIR || '.', 'motion-selftest')));
   const res = await inventory(url, vpList(opt.viewport)[0], { out, tag: 'selftest', ...phases, crops: false });
@@ -1826,7 +2092,9 @@ if (cmd === 'selftest') {
   const CK = { 'меню': 'click-menu', 'аккордеон': 'click-accordion', 'вкладки': 'click-tabs', 'раскрытие': 'click-disclosure' };
   /* петли на JS (source js): группа соседей ×N — loop-group, одна — loop-js (колебание), pulse-js, blink-js, spin-js */
   const JSK = { 'колебание': 'loop-js', 'пульс': 'pulse-js', 'мигание': 'blink-js', 'вращение': 'spin-js' };
-  const key = (i) => (i.kind === 'loop' && i.source === 'js' ? (i.count > 1 ? 'loop-group' : JSK[i.sub] || 'loop-js') : i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind === 'click' ? (i.sub === 'аккордеон' && /details/.test(i.component || '') ? 'click-details' : CK[i.sub] || 'click') : i.kind);
+  /* ribbon-scroll — лента вбок прокруткой контейнера (scrollLeft), reveal-keyframes — появление из @keyframes (WOW.js) */
+  const key = (i) => (i.kind === 'loop' && i.source === 'js' ? (i.count > 1 ? 'loop-group' : JSK[i.sub] || 'loop-js') : i.kind === 'loop' ? ({ 'парение': 'float', 'вращение': 'spin', 'пульс': 'pulse', 'мигание': 'blink' }[i.sub] || 'loop') : i.kind === 'reveal' && i.sub === 'при прокрутке вверх' ? 'reveal-up' :
+    i.kind === 'scroll-linked' && /scrollLeft/.test(i.source || '') ? 'ribbon-scroll' : i.kind === 'reveal' && /@keyframes/.test(i.source || '') ? 'reveal-keyframes' : i.kind === 'typewriter' && i.trigger === 'load' ? 'typewriter-load' : i.kind === 'click' ? (i.sub === 'аккордеон' && /details/.test(i.component || '') ? 'click-details' : CK[i.sub] || 'click') : i.kind);
   const found = new Set(res.items.map(key));
   const byExpect = new Set(res.items.map((i) => i.expect).filter(Boolean));
   let bad = 0;
@@ -1838,6 +2106,58 @@ if (cmd === 'selftest') {
   for (const [, k, n] of html.matchAll(/data-expect="([\w-]+)"[^>]*?data-expect-n="(\d+)"/g)) {
     const rows = res.items.filter((i) => i.expect === k && key(i) === k); const ok = rows.length === 1 && rows[0].count === Number(n); if (!ok) wrong++;
     console.log(`${ok ? 'OK  ' : 'FAIL'} ${k} ×${n}${ok ? '' : ` — строк ${rows.length}${rows.length ? `, участников ${rows.map((i) => i.count).join('/')}` : ''}`}`);
+  }
+  /* числа появления WOW.js (0.8 с, задержка 0.2 с, fadeInUp: прозрачность 0 → 1, сдвиг Y на высоту блока 120 px);
+     клик, который уводит со страницы, — пропуск, следующий клик проверяется; вкладка с history.replaceState — та же страница */
+  {
+    const w = res.items.find((i) => i.expect === 'reveal-keyframes' && key(i) === 'reveal-keyframes');
+    const pv = (name) => (w ? w.props.find((p) => p.prop === name) : null); const op = pv('прозрачность'), ty = pv('сдвиг Y');
+    /* где срабатывает: IntersectionObserver без отступа — верх блока пересекает низ экрана (шаг прохода — четверть экрана):
+       «между ≥95% и 50–100%», а не верх родителя сдвинутого блока (было «между 101% и −20%» на mamuka.rest/about) */
+    const at = w && w.scroll ? /между (-?\d+)% и (-?\d+)%/.exec(w.scroll.at || '') : null;
+    const atOk = !!at && Number(at[1]) >= 95 && Number(at[2]) >= 50 && Number(at[2]) < 100;
+    const ok = !!w && w.timing.duration === 800 && w.timing.delay === 200 && !!op && op.from === '0' && op.to === '1' && !!ty && ty.from === '120 px' && ty.to === '0 px' && /WOW\.js/.test(w.cause || '') && atOk;
+    if (!ok) wrong++;
+    console.log(`${ok ? 'OK  ' : 'FAIL'} WOW.js числа: ${w ? `${w.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ')} · ${describeTiming(w)} · ${w.scroll ? w.scroll.at : 'где — нет'} · ${w.cause || 'без причины'}` : 'строки появления нет'}`);
+    /* .wow без класса анимации и пустой .wow 0×0 — строк нет, заметка называет обе причины */
+    const wn = res.notes.find((x) => /^WOW\.js: блоков/.test(x)) || '';
+    const okW = /блоков \.wow 3, строкой не стали 2/.test(wn) && /1 — 0×0 на этом экране/.test(wn) && /1 — без класса анимации/.test(wn); if (!okW) wrong++;
+    console.log(`${okW ? 'OK  ' : 'FAIL'} WOW.js без строки — заметка «почему»: ${wn || 'заметки нет'}`);
+    if (phases.doClicks) {
+      const tr = (res.clicks && res.clicks.tried) || []; const li = tr.findIndex((x) => /увёл со страницы/.test(x.skip || ''));
+      const after = li >= 0 && tr.slice(li + 1).some((x) => x.item);
+      const ok2 = li >= 0 && after && res.notes.some((n) => /увёл со страницы: переход на .*tilda\.html остановлен/.test(n)); if (!ok2) wrong++;
+      console.log(`${ok2 ? 'OK  ' : 'FAIL'} клик увёл со страницы — пропущен, клики дальше: ${li >= 0 ? `${tr[li].text || tr[li].sel}: ${tr[li].skip}; после него нажато ${tr.slice(li + 1).filter((x) => x.item).length}` : 'пропуска нет'}`);
+      const ok3 = found.has('click-tabs') && res.notes.some((n) => /сменил адрес на .*\?tab=t\d без перехода \(history API\)/.test(n)); if (!ok3) wrong++;
+      console.log(`${ok3 ? 'OK  ' : 'FAIL'} вкладка с history.replaceState — та же страница: ${res.notes.find((n) => /history API/.test(n)) || 'заметки нет'}`);
+    }
+  }
+  /* окно из SITE_REWORK_DISMISS уводит на другую страницу (город у mamuka.rest → главная): снимаемая страница
+     открывается заново, в заметке — куда увело (fixtures/motion/dismiss.html → tilda.html, выбор в sessionStorage) */
+  {
+    const was = process.env.SITE_REWORK_DISMISS; process.env.SITE_REWORK_DISMISS = '.city li.city__item';
+    let dres = null, derr = '';
+    try { dres = await inventory(pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'dismiss.html')).href, 'desktop', { out, tag: 'selftest-dismiss', timeMs: 1000, capMs: 1000, doHover: false, doMouse: false, doClicks: false, crops: false, quiet: true }); }
+    catch (e) { derr = String(e.message || e).slice(0, 120); }
+    finally { if (was === undefined) delete process.env.SITE_REWORK_DISMISS; else process.env.SITE_REWORK_DISMISS = was; }
+    const dn = dres ? dres.notes.find((x) => /SITE_REWORK_DISMISS увело на/.test(x)) || '' : '';
+    const okD = /увело на .*tilda\.html — страница открыта заново/.test(dn); if (!okD) wrong++;
+    console.log(`${okD ? 'OK  ' : 'FAIL'} окно SITE_REWORK_DISMISS увело со страницы — снимаемая открыта заново: ${dn || derr || 'заметки нет'}`);
+    /* итог нажатия — в протоколе (windows), а не только заметкой; удачное нажатие вердикт не портит */
+    const dw = dres && dres.windows; const d0 = dw && dw.dismiss && dw.dismiss[0];
+    const okW = !!(d0 && d0.nav && d0.reopened && dres.verdict === 'OK' && !(dw.warnings || []).length); if (!okW) wrong++;
+    console.log(`${okW ? 'OK  ' : 'FAIL'} итог нажатия в протоколе (windows.dismiss: увело, открыта заново), вердикт OK: ${JSON.stringify(d0 || null).slice(0, 200)} · ${dres ? dres.verdict : '—'}`);
+  }
+  /* окно при загрузке без SITE_REWORK_DISMISS (стенд lib modal-city.html): WARN — в вердикте и протоколе (windows), а не
+     строкой мимо протокола (29.09) */
+  {
+    const was = process.env.SITE_REWORK_DISMISS; delete process.env.SITE_REWORK_DISMISS;
+    let mres = null, merr = '';
+    try { mres = await inventory(pathToFileURL(path.join(HERE, 'fixtures', 'lib', 'modal-city.html')).href, 'desktop', { out, tag: 'selftest-modal', timeMs: 1000, capMs: 1000, doHover: false, doMouse: false, doClicks: false, doScroll: false, crops: false, quiet: true }); }
+    catch (e) { merr = String(e.message || e).slice(0, 120); }
+    finally { if (was !== undefined) process.env.SITE_REWORK_DISMISS = was; }
+    const okM = !!(mres && mres.verdict === 'WARN' && mres.windows && mres.windows.modal && mres.windows.warnings.some((x) => /на странице открыто окно/.test(x))); if (!okM) wrong++;
+    console.log(`${okM ? 'OK  ' : 'FAIL'} окно при загрузке — WARN в вердикте и протоколе (windows): ${mres ? `${mres.verdict}, ${(mres.windows && mres.windows.modal && mres.windows.modal.sig) || 'окна нет'}` : merr}`);
   }
   const st = res.stats.steps;
   console.log(`\n${mdTable(res)}`);
@@ -1887,8 +2207,8 @@ if (cmd === 'selftest') {
       await page.close();
     } finally { await br.close().catch(() => {}); }
   }
-  console.log(`${bad || wrong || wide || tbad ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad}; запретов и счётов ×N не выполнено ${wrong}; кликов ×1.25 мимо ${wide}; Tilda ${tn - tbad}/${tn} · окно «время» ${round(st.timeMs / 1000, 1)} с (базовое ${round(st.timeBaseMs / 1000, 1)}) · ${path.join(out, 'motion', 'selftest.json')}`);
-  bad += wrong + wide + tbad;
+  console.log(`${bad || wrong || wide || tbad || cbad ? 'FAIL' : 'OK'}: видов ${need.length}, не найдено ${bad}; запретов, счётов ×N и чисел не выполнено ${wrong}; кликов ×1.25 мимо ${wide}; Tilda ${tn - tbad}/${tn}; сверка ${cn - cbad}/${cn} · окно «время» ${round(st.timeMs / 1000, 1)} с (базовое ${round(st.timeBaseMs / 1000, 1)}) · ${path.join(out, 'motion', 'selftest.json')}`);
+  bad += wrong + wide + tbad + cbad;
   process.exit(bad ? 1 : 0);
 }
 
@@ -1950,15 +2270,19 @@ if (cmd === 'compare') {
       const c = compare(donor, ours, decisions);
       const dname = path.basename(donorFile, '.json').replace(/^donor-/, '');
       const tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
-      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, decisionsFile: fs.existsSync(decFile) ? decFile : null,
-        steps: c.rows.map((r) => ({ status: r.status === 'OK' || r.status === 'РЕШЕНО' ? 'OK' : r.status === 'ОТЛИЧАЕТСЯ' ? (r.decision ? 'OK' : 'WARN') : 'FAIL', what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
+      /* наш снимок снят под окном или с неудачным SITE_REWORK_DISMISS (windows.warnings) — сверка не лучше WARN */
+      const winW = (ours.windows && ours.windows.warnings) || [];
+      if (c.verdict === 'OK' && winW.length) c.verdict = 'WARN';
+      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, ...(ours.windows ? { windows: ours.windows } : {}), decisionsFile: fs.existsSync(decFile) ? decFile : null,
+        steps: c.rows.map((r) => ({ status: rowLevel(r), what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
         extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
       writeJson(path.join(out, 'motion', `${tag}.json`), proto);
       fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
       if (many) console.log(`\n== ${donorFile} → ${ourArg}`);
-      for (const r of c.rows) console.log(`${(r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : 'OK').padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? r.o.id : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
+      for (const r of c.rows) console.log(`${rowLevel(r).padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? r.o.id : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'не проверялось' : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
       console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
-      console.log(`${c.verdict}: сверка движения · ${path.join(out, 'motion', `${tag}.md`)}`);
+      if (winW.length) console.log(`WARN наш снимок — с предупреждениями окон и lib (${winW.length}): ${winW[0].slice(0, 160)}${winW.length > 1 ? ' …' : ''} — windows в json`);
+      console.log(`${c.verdict}: сверка движения${c.unchecked ? ` (не проверялось у нас: ${c.unchecked})` : ''} · ${path.join(out, 'motion', `${tag}.md`)}`);
       if (rank[c.verdict] > rank[worst]) worst = c.verdict;
     }
   } finally { if (browser) await browser.close().catch(() => {}); }
@@ -1982,12 +2306,13 @@ try {
     console.log(`Найдено движений: ${res.items.length} (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`);
     for (const it of res.items) console.log(`  ${it.id} ${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''} — ${it.target}${it.count > 1 ? ` ×${it.count}` : ''}: ${it.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 110)} · ${describeTiming(it).slice(0, 80)}`);
     if (res.notes.length) for (const n of res.notes) console.log(`WARN ${n}`);
-    console.log(`OK: инвентарь движения · ${path.join(out, 'motion', `${r.tag}.md`)}`);
-    summary.push({ ...r, items: res.items.length, byKind });
+    /* вердикт инвентаря: WARN — окно при загрузке, итог SITE_REWORK_DISMISS или свой стиль (строки выше и windows в json) */
+    console.log(`${res.verdict}: инвентарь движения${res.verdict !== 'OK' ? ` (окна и lib: ${res.windows.warnings.length} предупреждений — windows в json)` : ''} · ${path.join(out, 'motion', `${r.tag}.md`)}`);
+    summary.push({ ...r, items: res.items.length, byKind, verdict: res.verdict });
   }
 } finally { await browser.close().catch(() => {}); }
 if (runs.length > 1) {
   console.log(`\nСтраниц ${new Set(runs.map((r) => r.url)).size}, экранов ${new Set(runs.map((r) => r.vp)).size}, протоколов ${summary.filter((s) => !s.error).length} из ${runs.length}:`);
-  for (const s of summary) console.log(`  ${s.error ? 'FAIL' : 'OK  '} ${s.tag.padEnd(28)} ${s.error ? s.error : `${s.items} движений (${Object.entries(s.byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`}`);
+  for (const s of summary) console.log(`  ${s.error ? 'FAIL' : (s.verdict || 'OK').padEnd(4)} ${s.tag.padEnd(28)} ${s.error ? s.error : `${s.items} движений (${Object.entries(s.byKind).map(([k, n]) => `${k} ${n}`).join(', ') || 'нет'})`}`);
 }
 process.exit(summary.some((s) => s.error) ? 1 : 0);

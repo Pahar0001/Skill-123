@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — вся страница в закреплённой обёртке</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest): страница целиком в закреплённой обёртке, как у
+  GSAP ScrollSmoother (#smooth-wrapper position: fixed на всё окно, содержимое едет transform по прокрутке).
+  Обёртка — это страница, а не рельс или меню: её блоки появления проверяются как обычные. Вердикт — WARN:
+    .reveal ×2    появление сломано (класс .in никто не ставит) — «не появились: 2». Раньше всё внутри
+                  position: fixed не отмечалось, и было «ждали появления: 0 — не появились: 0», OK
+    .card__tip    подсказка при наведении внутри обёртки — «показываются при наведении: 1» (наведение сдвигает
+                  обёртку scrollIntoView, после проверки её прокрутка возвращается)
+  Не обёртка — #drawer: закрытое меню на весь экран (fixed, visibility: hidden), выше полутора окон, пункты
+  с opacity 0 выезжают по очереди при открытии. Пункты ниже первого экрана — не «не появились»: закрытое
+  меню страницей не считается.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  #smooth-wrapper { position: fixed; inset: 0; overflow: hidden; }
+  #smooth-content { will-change: transform; }
+  section { min-height: 1000px; padding: 40px; border-top: 1px solid #ddd; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .4s, transform .4s; padding: 40px; background: #fff; }
+  .reveal.in { opacity: 1; transform: none; }
+  .tipcard { position: relative; margin-top: 72px; padding: 24px; background: #fff; }
+  .card__tip { position: absolute; left: 24px; top: -44px; height: 40px; padding: 8px 12px; background: #1b1b1b; color: #fff; opacity: 0; transition: opacity .2s; }
+  .tipcard:hover .card__tip { opacity: 1; }
+  .dishes { columns: 2; }
+  #drawer { position: fixed; inset: 0; z-index: 30; overflow-y: auto; padding: 24px; background: #1b1b1b; visibility: hidden; opacity: 0; transition: opacity .3s, visibility .3s; }
+  #drawer.is-open { visibility: visible; opacity: 1; }
+  .drawer__link { display: block; height: 130px; color: #fff; font-size: 40px; opacity: 0; transform: translateY(20px); transition: opacity .3s, transform .3s; }
+  #drawer.is-open .drawer__link { opacity: 1; transform: none; }
+</style>
+</head>
+<body>
+<div id="smooth-wrapper"><div id="smooth-content">
+  <section><h1>Первый экран</h1></section>
+  <section><div class="reveal">Блок появления — скрипт сломан</div>
+    <div class="tipcard"><span class="card__tip">Подсказка при наведении</span>Карточка с подсказкой</div></section>
+  <section><div class="reveal">Второй блок появления</div></section>
+  <section><h2>Меню кухни</h2>
+    <ul class="dishes"><li>Борщ</li><li>Солянка</li><li>Уха</li><li>Пельмени</li><li>Вареники</li><li>Блины</li><li>Сырники</li><li>Котлеты</li><li>Жаркое</li><li>Плов</li><li>Шашлык</li><li>Окрошка</li><li>Винегрет</li><li>Оливье</li><li>Сельдь под шубой</li><li>Холодец</li><li>Кулебяка</li><li>Расстегай</li><li>Кисель</li><li>Морс</li></ul>
+    <p>Подвал</p></section>
+</div></div>
+<div id="drawer" aria-hidden="true">
+  <a class="drawer__link" href="/menu">Пункт меню 1</a><a class="drawer__link" href="/menu">Пункт меню 2</a><a class="drawer__link" href="/menu">Пункт меню 3</a>
+  <a class="drawer__link" href="/menu">Пункт меню 4</a><a class="drawer__link" href="/menu">Пункт меню 5</a><a class="drawer__link" href="/menu">Пункт меню 6</a>
+  <a class="drawer__link" href="/menu">Пункт меню 7</a><a class="drawer__link" href="/menu">Пункт меню 8</a><a class="drawer__link" href="/menu">Пункт меню 9</a>
+  <a class="drawer__link" href="/menu">Пункт меню 10</a><a class="drawer__link" href="/menu">Пункт меню 11</a><a class="drawer__link" href="/menu">Пункт меню 12</a>
+</div>
+<script>
+  const c = document.getElementById('smooth-content');
+  const fit = () => { document.body.style.height = c.scrollHeight + 'px'; };
+  fit(); addEventListener('resize', fit);
+  addEventListener('scroll', () => { c.style.transform = `translateY(${-scrollY}px)`; });
+</script>
+</body>
+</html>

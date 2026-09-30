@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — подсказки при наведении и сломанное появление</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest): что считать подсказкой при наведении, а что —
+  сломанным появлением. Вердикт шага — WARN, «не появились: 3»:
+    .grid .card.reveal  сетка с приёмом «приглушить соседей» (.grid:hover .card { opacity: .6 }) и сломанным
+                        появлением (.grid .card.reveal:not(.in) { opacity: 0 }, класс .in никто не ставит).
+                        Приглушение — не показ: карточки в «не появились». Раньше любая цель правила :hover
+                        с opacity уходила в «показываются при наведении», и WARN пропадал
+    .lose__tip          «.lose:hover .lose__tip { opacity: 1 }» проигрывает по специфичности
+                        «.lose .lose__tip.reveal:not(.in)» — наведение не показывает: «не появились»
+  Показываются при наведении (проверено наведением), без WARN — 2:
+    .card__tip          настоящая подсказка (.tipcard:hover .card__tip { opacity: 1 })
+    .sib__tip           подсказка соседом («.sib:hover + .sib__tip»)
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .tall { height: 1200px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 32px 0; }
+  .card { padding: 40px; background: #fff; border: 1px solid #ddd; transition: opacity .3s; }
+  .grid:hover .card { opacity: .6; }
+  .grid .card:hover { opacity: 1; }
+  .grid .card.reveal:not(.in) { opacity: 0; }
+  .lose { position: relative; margin: 72px 0 32px; padding: 24px; background: #fff; }
+  .lose__tip { position: absolute; left: 24px; top: -44px; height: 40px; padding: 8px 12px; background: #1b1b1b; color: #fff; opacity: 0; transition: opacity .2s; }
+  .lose:hover .lose__tip { opacity: 1; }
+  .lose .lose__tip.reveal:not(.in) { opacity: 0; }
+  .tipcard { position: relative; margin: 72px 0 32px; padding: 24px; background: #fff; }
+  .card__tip { position: absolute; left: 24px; top: -44px; height: 40px; padding: 8px 12px; background: #1b1b1b; color: #fff; opacity: 0; transition: opacity .2s; }
+  .tipcard:hover .card__tip { opacity: 1; }
+  .sib { display: inline-block; margin-top: 32px; padding: 12px 16px; background: #fff; }
+  .sib__tip { display: block; width: 220px; height: 40px; padding: 8px 12px; background: #1b1b1b; color: #fff; opacity: 0; transition: opacity .2s; }
+  .sib:hover + .sib__tip { opacity: 1; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Подсказки и появление</h1>
+  <div class="tall"></div>
+  <div class="grid">
+    <div class="card reveal">Первая карточка</div>
+    <div class="card reveal">Вторая карточка</div>
+  </div>
+  <div class="lose"><span class="lose__tip reveal">Проигравшая подсказка</span>Блок с проигравшей подсказкой</div>
+  <div class="tipcard"><span class="card__tip">Подсказка при наведении</span>Карточка с подсказкой</div>
+  <a class="sib" href="#s">Наведите</a><span class="sib__tip">Подсказка соседа</span>
+  <div class="tall"></div>
+</main>
+</body>
+</html>

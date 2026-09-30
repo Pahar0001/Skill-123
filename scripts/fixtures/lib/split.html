@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд lib: раскладка «пополам»</title>
+<!-- Стенд checkOpenModal (fixtures/lib/selftest.mjs, случай modal; стенд проверяющего 29.09): левая половина экрана
+     закреплена (логотип, меню, кнопка), правая прокручивается — частая раскладка гостиниц, ресторанов, портфолио.
+     Окна здесь нет — WARN «на странице открыто окно» был ложным (d5c4879). -->
+<style>
+  body { margin: 0; font: 17px/1.6 Georgia, serif; color: #222; }
+  .side { position: fixed; top: 0; left: 0; bottom: 0; width: 50%; background: #2c2420; color: #f3e9dc; display: flex; flex-direction: column; justify-content: center; padding: 48px; box-sizing: border-box; gap: 14px; }
+  .side a { color: #f3e9dc; }
+  .side .btn { align-self: flex-start; padding: 12px 24px; background: #c8553d; color: #fff; text-decoration: none; }
+  .main { margin-left: 50%; padding: 48px; }
+  .main section { min-height: 90vh; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<aside class="side">
+  <strong style="font-size:40px">Гостиница «Волга»</strong>
+  <a href="#rooms">Номера</a><a href="#food">Ресторан</a><a href="#contacts">Контакты</a>
+  <a class="btn" href="#book">Забронировать</a>
+</aside>
+<div class="main">
+  <section id="rooms"><h2>Номера</h2><p>Двенадцать номеров с видом на реку. Завтрак включён, парковка во дворе, поздний выезд по договорённости.</p></section>
+  <section id="food"><h2>Ресторан</h2><p>Завтраки с семи утра, обеды и ужины по меню. Летом открыта веранда над водой, зимой топим камин.</p></section>
+  <section id="contacts"><h2>Контакты</h2><p>Набережная, 12. Звоните с восьми до двадцати двух.</p></section>
+</div>
+</body>
+</html>

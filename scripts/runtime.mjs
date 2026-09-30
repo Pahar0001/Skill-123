@@ -46,22 +46,63 @@
  *                              прозрачность не менялась ни на одном шаге, без перехода, анимации и
  *                              признаков появления (классы и data-атрибуты reveal, fade, aos…), —
  *                              отдельно «невидимы по замыслу», без WARN (радиокнопка с opacity 0
- *                              поверх подписи — приём оформления, а не сломанное появление)
- *        --hover "sel"         навести и записать, что изменилось в стилях (и почему нет)
+ *                              поверх подписи — приём оформления, а не сломанное появление).
+ *                              Блоки появления названы селектором и началом текста. Подсказки при
+ *                              наведении — не появления при прокрутке: не появившееся за проход, что
+ *                              совпало с целью правила «показать при наведении» (цель — другой элемент,
+ *                              «.item:hover .tip», объявлено opacity от 0.9 или visibility: visible),
+ *                              проверяется настоящим наведением на триггер; показалось — отдельно
+ *                              «показываются при наведении», без WARN. Приглушение соседей
+ *                              («.grid:hover .card { opacity: .6 }») и правило, проигравшее по
+ *                              специфичности, — не показ: блок остаётся в «не появились» (WARN).
+ *                              Содержимое закреплённого (position: fixed у предка: рельс, шапка, меню)
+ *                              прокруткой не въезжает и не отмечается; обёртка на всю страницу, в
+ *                              которой едет содержимое (GSAP ScrollSmoother, #smooth-wrapper: видима,
+ *                              закрывает окно, содержимое выше полутора окон, от трети элементов
+ *                              страницы), — это страница: её блоки появления проверяются как обычные.
+ *                              Закрытое меню на весь экран обёрткой не считается.
+ *                              Отдельной строкой — «текст перекрыт картинкой»: OK или WARN с числом мест
+ *                              и селекторами (img, video, canvas, svg от 40px поверх чужого текста).
+ *                              Вертикальное письмо (writing-mode: vertical-*, sideways-*): вдоль строки
+ *                              (по высоте) — допуск 5% кегля, поперёк (по ширине) — ещё край глифа
+ *                              (половина разницы между высотой шрифта и line-height): вкладка с
+ *                              line-height: 1 не «текст шире коробки», а кегль 40px в коробке 12px —
+ *                              находка. Перед прокруткой открыт слой на весь экран
+ *                              (меню, диалог :modal — например, после --click "#burger") — WARN
+ *                              «прокрутка идёт при открытом меню/диалоге»: пишите --scroll до --click
+ *        --hover "sel"         навести и записать, что изменилось в стилях (и почему нет): цвет, фон
+ *                              (в том числе background-size, -image, -position), рамка, тень,
+ *                              transform, opacity, clip-path, фильтр
  *        --hover-all           каждое правило :hover из CSS: меняет ли объявленное; мёртвое —
- *                              FAIL с причиной (держит анимация fill both/forwards, перебито)
+ *                              FAIL с причиной (держит анимация fill both/forwards); перебитое
+ *                              другим правилом — WARN; «мёртвый селектор» (цели правила нет в DOM:
+ *                              «.item:hover .tip», а .tip нет) — WARN отдельной строкой: вернуть
+ *                              элемент или удалить правило, каскадом это не чинится
  *        --click "sel"         кликнуть: эффект — изменения DOM (MutationObserver), адрес,
  *                              запросы, фокус на другом элементе, диалоги. Своя прокрутка и
  *                              фокус на нажатом — не эффект. Кнопка без эффекта — FAIL.
  *                              Якорь «#id»: дождаться остановки прокрутки и сверить верх цели
  *        --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…);
  *                              делится по первому «=» вне [ ], ( ) и кавычек:
- *                              --type "input[name=phone]=89001234567"
+ *                              --type "input[name=phone]=89001234567".
+ *                              Поля date, time, datetime-local, month, week и значение в формате поля
+ *                              (2026-10-10, 20:30, 2026-10-10T20:30, 2026-10, 2026-W41) — значение
+ *                              ставится с событиями input и change, как выбор в календаре (набор
+ *                              клавишами идёт по локали браузера: «2026-10-10» в дд.мм.гггг дал бы
+ *                              «61010-02-20»); другое значение («10.10.2026») набирается клавишами.
+ *                              Сверка — с тем, что поле приняло до событий: «2026-10-10T20:30:00»
+ *                              браузер сам хранит как «2026-10-10T20:30» (OK с пометкой); поменялось
+ *                              после input/change — FAIL «обработчик страницы переписал значение»
  *        --edit "sel"          поле с маской: набор, Backspace до конца, правка в середине,
  *                              Delete, вставка «8 (900) …», Ctrl+A+Backspace
  *        --key Tab             нажать клавишу: где фокус, значение и курсор поля
  *        --select "sel=знач"   выбрать вариант списка (value или текст варианта); делится так же,
- *                              как --type: "select[name=work]=6", "#sel=a=b" → вариант «a=b»
+ *                              как --type: "select[name=work]=6", "#sel=a=b" → вариант «a=b».
+ *                              Значение не выбралось — FAIL; вариант или список disabled — FAIL
+ *                              до выбора (человек его не выберет, а программно он ставится).
+ *                              Список внутри формы, от которого страница не меняется, — OK со
+ *                              значением (поле формы); вне формы — WARN «после выбора ничего
+ *                              не изменилось»
  *        --resize 1152         сменить ширину окна (или ШxВ — 834x1112, 834X1112, 834×1112;
  *                              или rotate — повернуть); ширина и высота больше 0
  *        --canvas              холсты: рисует ли (снимок с холстом и без), меняется ли кадр,
@@ -78,10 +119,17 @@
  *        --video               видео: poster, muted/playsinline, играет ли, пауза вне экрана
  *                              и при «меньше движения»
  *        --nav                 меню: подсвеченный пункт ведёт на раздел, который на экране
- *                              (верх, каждый раздел, низ, снова верх)
+ *                              (верх, каждый раздел, низ, снова верх). Меню с тремя и более якорями
+ *                              на разделы нет (многостраничный сайт) — INFO «якорей нет», не WARN.
+ *                              Якоря меню без цели (ни id, ни <a name> на странице) от трёх — WARN
+ *                              «якоря меню ведут в никуда» со списком, один-два — поимённо в INFO
+ *                              («#top», «#/…», «#!…» и «#…:…» не в счёт); якоря на <a name> (Tilda) —
+ *                              INFO «не проверялось»
  *        --css                 объявления CSS, которые браузер выбросил: файл:строка
  *        --eval "js"           выполнить выражение (можно Promise) и записать результат;
- *                              сразу за ним --expect "значение" — FAIL, если не совпало
+ *                              сразу за ним --expect "значение" — FAIL, если не совпало.
+ *                              Результат целиком — в JSON (steps[].details); в консоли — начало
+ *                              результата (300 знаков) и сколько осталось, выражение — в конце строки
  *        --assert "js"         FAIL, если результат ложный или Promise отклонён
  *        --shot имя            снимок экрана
  *        --fullpage            снимок всей страницы
@@ -105,16 +153,39 @@
  *                              у --motion и --video — отдельный Firefox. Edge — движок Chrome, всё как в
  *                              Chrome (на машине, где Edge без окна не запускается, — понятная ошибка).
  *                              --browser есть у runtime.mjs и shots.mjs; остальные скрипты — только Chrome
+ *        --expect-status 404   ждать такой ответ самого документа (страница ошибки открыта нарочно):
+ *                              совпал — INFO «ответ документа 404, как ждали», и строка консоли
+ *                              «Failed to load resource: … 404» этого документа — не ошибка страницы;
+ *                              не совпал — FAIL. Без флага ответ документа 4xx/5xx в Chrome — FAIL
+ *                              «ошибки в консоли», как раньше (с подсказкой про этот флаг)
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
+ *        --selftest            прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка,
+ *                              подсказки против сломанного появления, страница в закреплённой обёртке
+ *                              и закрытое меню на весь экран, вертикальное письмо, меню на весь экран,
+ *                              со сломанными якорями и с якорями <a name>, первый экран на position:
+ *                              fixed) и свои серверы (страница 404 с --expect-status и без, сторонний
+ *                              iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
+ *                              же и другого сайта), окна при загрузке (стенды fixtures/lib: окно — WARN;
+ *                              SITE_REWORK_DISMISS увёл на шумную главную — нужная страница открыта
+ *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
+ *                              если он есть; страница снова уводит — «замер не той страницы») и сверить
+ *                              строки протокола с ожидаемыми; код 1 — что-то разошлось. Адрес не нужен,
+ *                              браузер — один за раз, около трёх минут
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
  *                              тоже справка. Ищется только до «--»: после него — адрес
  *
+ * Упавшие запросы: свои (главная страница и её iframe того же сайта) — WARN «упавшие запросы»;
+ * запросы сторонних iframe (реклама и счётчики внутри карты Яндекса, видео) — отдельной строкой INFO:
+ * сайт их не чинит. Документ самого iframe (битая ссылка на виджет: ответ 404, отказ соединения) — запрос
+ * страницы, которая его вставила: WARN «упавшие запросы», а его строка консоли — ошибка страницы.
+ *
  * Выход: <папка>/runtime/<tag>.json, снимки рядом и протокол с вердиктами
- * OK / WARN / FAIL. Коды выхода:
- *   0 — провалов нет (WARN код не меняет) или задан --no-fail; справка;
- *   1 — ошибки консоли или проваленные шаги; нет адреса (если адрес ушёл значением флага,
- *       сообщение это называет); неверный адрес; неизвестный экран; страница не открылась;
+ * OK / WARN / FAIL (INFO — сведения, на вердикт не влияют). У шага вердикт — поле status, текст —
+ * what и details; итог прогона — verdict верхнего уровня. Коды выхода:
+ *   0 — провалов нет (WARN код не меняет) или задан --no-fail; справка; --selftest сошёлся;
+ *   1 — ошибки консоли или проваленные шаги; --selftest разошёлся; нет адреса (если адрес ушёл
+ *       значением флага, сообщение это называет); неверный адрес; неизвестный экран; страница не открылась;
  *   2 — ошибка в аргументах, до папок и браузера:
  *       · нет значения: шаг или настройка — последнее слово, следующим идёт шаг, флаг
  *         или «--», пустое значение («--tag ""», «--shot=»);
@@ -125,6 +196,7 @@
  *       · --scheme — не light, dark или no-preference;
  *       · --cpu — не число больше 0;
  *       · --browser — не chrome, firefox или edge;
+ *       · --expect-status — не код ответа 100–599;
  *       · --viewport / --viewports: список экранов через запятую, пустое значение
  *         или разные экраны у --viewport и --viewports;
  *       · лишние слова после адреса — в том числе после «--».
@@ -140,20 +212,21 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   flagsDump, launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
+  collectWarnings, takeWarnings, collectNotes, takeNotes, warningLabel, onPageLogReset, findBrowser,
 } from './lib.mjs';
 
 /* ---------- аргументы: шаги в порядке записи ---------- */
 const argv = process.argv.slice(2);
 const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', 'edit', 'key', 'select', 'resize', 'canvas', 'motion', 'video', 'nav', 'css', 'eval', 'expect', 'assert', 'shot', 'fullpage']);
 /* без значения: шаги-флаги и настройки-флаги */
-const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'help', 'h']);
+const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'selftest', 'help', 'h']);
 /* настройки со значением */
-const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser']);
+const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status']);
 /* справочник флагов (flags-doc.mjs, RW_FLAGS_DUMP=1): списки выше и выход с кодом 0 — до справки и разбора */
 flagsDump({ steps: [...STEP], flags: [...FLAG].filter((f) => !STEP.has(f)), values: [...OPTS], optional: [], commands: [] });
 const usage = (msg) => { console.error(msg); process.exit(2); };
@@ -196,7 +269,7 @@ const FALSE_RE = /^(0|false|no|off|нет)$/i;
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
 /* posAt[k] — номер слова pos[k] в argv: «лишнее слово» сразу за неизвестным флагом называется вместе с ним */
 const posAt = [];
-const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser']);
+const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser', 'expect-status']);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
@@ -245,7 +318,7 @@ for (let i = 0; i < argv.length; i++) {
   if (STEP.has(k)) steps.push({ k, v });
   else {
     /* настройка дважды с разными значениями («--viewport mobile --viewport desktop») — раньше молча бралась последняя */
-    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один${k === 'browser' ? ' (runtime проверяет в одном браузере за запуск)' : ' (runtime проверяет один экран за запуск)'}`);
+    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один${k === 'browser' ? ' (runtime проверяет в одном браузере за запуск)' : k === 'expect-status' ? ' (у документа один ответ)' : ' (runtime проверяет один экран за запуск)'}`);
     opt[k] = v;
   }
 }
@@ -255,6 +328,11 @@ for (const u of unknown) console.error(`WARN неизвестный флаг ${u
 const typo = unknown.find((u) => u.guess);
 if (typo) usage(`${typo.shown} — флаг пишется с двумя дефисами: ${typo.guess}`);
 for (const a of off) console.error(`шаг ${a} выключен значением после «=» — не выполняется`);
+/* --selftest: стенды fixtures/runtime — адрес и шаги не нужны */
+if (opt.selftest) {
+  if (pos.length || steps.length) usage('--selftest идёт без адреса и шагов: node runtime.mjs --selftest');
+  process.exit(await selftest());
+}
 const url = pos[0];
 if (!url) {
   /* адрес ушёл значением флага: «--out http://… --css», «--foo localhost:4177» — назвать это прямо */
@@ -307,7 +385,10 @@ for (const s of steps) {
   }
   if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
 }
-for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
+for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
+/* --expect-status: код ответа документа, который ждём (страница 404 открыта нарочно) */
+const expectStatus = opt['expect-status'] === undefined ? null : Number(String(opt['expect-status']).trim());
+if (expectStatus !== null && !(/^\d{3}$/.test(String(opt['expect-status']).trim()) && expectStatus >= 100 && expectStatus <= 599)) usage(`--expect-status ${opt['expect-status']}: нужен код ответа 100–599 (--expect-status 404)`);
 if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light, dark или no-preference`);
 if (opt.cpu !== undefined && !(Number(opt.cpu) > 0)) usage(`--cpu ${opt.cpu}: нужно число — во сколько раз замедлить процессор (4)`);
 /* браузер прогона: chrome (по умолчанию), firefox, edge */
@@ -331,17 +412,30 @@ const tag = opt.tag || `${vpName}${opt['reduced-motion'] ? '-reduced' : ''}${bro
 const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN };
 const effOf = new Function('el', `return (${EFFECTIVE_OPACITY_FN})(el);`);
 
-const STATE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'boxShadow', 'transform', 'opacity', 'textDecorationLine', 'outlineStyle', 'outlineColor', 'filter', 'letterSpacing', 'scale', 'translate', 'rotate'];
+/* фон целиком (линия под пунктом рисуется background-size градиента) и clip-path — тоже состояние наведения */
+const STATE_PROPS = ['color', 'backgroundColor', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'borderTopColor', 'boxShadow', 'transform', 'opacity', 'textDecorationLine', 'outlineStyle', 'outlineColor', 'filter', 'clipPath', 'letterSpacing', 'scale', 'translate', 'rotate'];
 
-const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], browser: null, startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
+const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], expectStatus, browser: null, startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
 let fails = 0, warns = 0;
 /* вид текущего шага — в протокол: state.mjs отличает запись (eval без --expect, снимок) от проверки */
 let curKind = 'load';
-const line = (status, what, details, data) => {
-  if (status === 'FAIL') fails++; if (status === 'WARN') warns++;
-  console.log(`${status.padEnd(4)} ${what}${details ? ' — ' + details : ''}`);
+/* status: OK | WARN | FAIL | INFO (сведения — на вердикт не влияют).
+   o.con — что напечатать в консоли вместо «what — details» (в протокол идут what и details целиком);
+   o.count: false — строка-пояснение к уже посчитанной (её WARN уже учтён строкой выше) */
+const line = (status, what, details, data, o = {}) => {
+  if (o.count !== false) { if (status === 'FAIL') fails++; if (status === 'WARN') warns++; }
+  console.log(`${status.padEnd(4)} ${o.con != null ? o.con : `${what}${details ? ' — ' + details : ''}`}`);
   report.steps.push({ status, kind: curKind, what, details, ...(data ? { data } : {}) });
 };
+/* WARN и INFO из lib (окно при загрузке, SITE_REWORK_DISMISS, свой стиль не вставился) — строками вердикта и в JSON,
+   с подписью по виду (warningLabel), а не отдельной строкой «WARN …» мимо счёта */
+collectWarnings(); collectNotes();
+const drainLib = () => {
+  for (const n of takeNotes()) line('INFO', 'SITE_REWORK_DISMISS', n.replace(/^SITE_REWORK_DISMISS /, ''));
+  for (const w of takeWarnings()) line('WARN', warningLabel(w), w.replace(/^SITE_REWORK_DISMISS /, ''));
+};
+/* начало длинного результата — в консоль одной строкой; целиком он в протоколе */
+const headOf = (s, n = 300) => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}… (ещё ${t.length - n} знаков — целиком в JSON: steps[].details)` : t; };
 let shotN = 0;
 const shot = async (name) => { const file = path.join(outDir, `${tag}-${String(++shotN).padStart(2, '0')}-${name}.png`); await page.screenshot({ path: file }); return path.basename(file); };
 /* одинаковые строки — одной, со счётчиком: «Cannot read … ×20» */
@@ -362,10 +456,38 @@ report.browser = { ...bInfo, default: defBrowser, hint: bHint || null };
 const NOT_IN = `не поддерживается в ${bInfo.name || 'Firefox'}`;
 let page, navRes = null, cpuSkipped = false;
 const reqLog = [];
+const conLoc = []; const reqFrame = new Map();
+/* источник кадра: ближайший адрес http(s) от кадра к главному (about:blank и srcdoc наследуют источник родителя) */
+const originOf = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.origin : null; } catch { return null; } };
+const frameInfo = (f) => {
+  const main = f === page.mainFrame(); let origin = null, at = '';
+  for (let x = f; x && !origin; x = typeof x.parentFrame === 'function' ? x.parentFrame() : null) { const u = x.url(); origin = originOf(u); if (origin) at = u; }
+  return { main, origin, frame: main ? null : at.slice(0, 160) };
+};
 try {
   page = await preparePage(browser, vp, { scheme: opt.scheme || 'light', reducedMotion: !!opt['reduced-motion'] });
   /* resourceTypeOf: в Firefox resourceType() бросает прямо в обработчике */
   page.on('request', (r) => { if (reqLog.length < 5000) reqLog.push({ t: Date.now(), type: resourceTypeOf(r), url: r.url().slice(0, 160) }); });
+  /* адрес источника у ошибок консоли: «Failed to load resource» самого документа (--expect-status) узнаётся по нему */
+  page.on('console', (m) => { try { if (m.type() !== 'error' || conLoc.length > 2000) return; const loc = m.location ? m.location() : null; conLoc.push({ text: m.text().slice(0, 300), url: (loc && loc.url) || '' }); } catch { /* без адреса */ } });
+  /* кадр упавшего запроса: главная страница или iframe (реклама внутри карты Яндекса — сторонний iframe).
+     Запрос самого документа iframe (переход кадра) — запрос того, кто этот iframe вставил: у битой ссылки на
+     виджет (документ iframe ответил 404 или не соединился) кадр в момент ответа уже носит адрес виджета, и
+     по нему ошибка сайта уходила в «сторонние iframe» (INFO). Такой запрос приписывается родителю: у iframe
+     страницы — это сама страница (WARN «упавшие запросы»), у рекламы внутри карты — карта (INFO) */
+  const isNavReq = (r) => { try { return r.isNavigationRequest(); } catch { return resourceTypeOf(r) === 'document'; } };
+  const noteFrame = (r) => {
+    try {
+      let f = r.frame(); if (!f) return;
+      if (f !== page.mainFrame() && isNavReq(r)) { const p = typeof f.parentFrame === 'function' ? f.parentFrame() : null; if (p) f = p; }
+      reqFrame.set(r.url().slice(0, 200), frameInfo(f));
+    } catch { /* кадр ушёл */ }
+  };
+  page.on('requestfailed', noteFrame);
+  page.on('response', (res) => { try { if (res.status() >= 400) noteFrame(res.request()); } catch { /* нет запроса */ } });
+  /* нажатие SITE_REWORK_DISMISS увело, и lib открыл нужную страницу заново (resetPageLog): свои журналы — тоже только её.
+     Иначе /menu/ mamuka.rest получала строки консоли и кадры запросов промежуточной главной (30.09) */
+  onPageLogReset(page, () => { reqLog.length = 0; conLoc.length = 0; reqFrame.clear(); });
   /* замедление процессора — Chrome DevTools Protocol, у Firefox его нет: WARN ниже, прогон без замедления */
   if (Number(opt.cpu) > 1) { if (gecko) cpuSkipped = true; else { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(opt.cpu) }); } }
   if (opt.init) await page.evaluateOnNewDocument(String(opt.init));
@@ -373,20 +495,65 @@ try {
   await page.evaluate(() => document.fonts.ready).catch(() => {});
   page.overlay = await waitForOverlay(page, 5000);
   await sleep(500);
+  /* слой на весь экран, который есть уже при загрузке (закреплённый фон, заставка), — не «открытое меню» у --scroll */
+  await evaluateWith(page, openLayerInPage, { base: true }, DEPS).catch(() => null);
 } catch (e) { console.error(`FAIL открыть ${url}: ${e.message}`); await browser.close(); process.exit(1); }
 if (page.retries) line('WARN', 'соединение', `страница открылась с ${page.retries + 1}-й попытки${page.gotoInfo && page.gotoInfo.waitUntil === 'domcontentloaded' ? ', только DOMContentLoaded' : ''} — сервер или сеть отвечают нестабильно`);
 
 /* 404 на /favicon.ico браузер пишет в консоль как «Failed to load resource» без адреса —
    столько же таких строк не считаем ошибками страницы (C22) */
 const favFails = () => page.log.failed.filter((f) => /\/favicon\.ico(\?|#|$)/i.test(f.url)).length;
-const realConsole = () => { let fav = favFails(); return page.log.console.filter((c) => c.type === 'error').filter((c) => { if (fav > 0 && /Failed to load resource/i.test(c.text)) { fav--; return false; } return true; }); };
+/* ответ самого документа: 404 страницы ошибки, открытой нарочно (--expect-status 404), — не ошибка страницы.
+   Chrome пишет его в консоль «Failed to load resource: … 404» без адреса в тексте; адрес — в location */
+const docStatus = navRes ? navRes.status() : null;
+const noHash = (u) => String(u || '').split('#')[0];
+const docUrls = new Set([noHash(url), ...(navRes ? [noHash(navRes.url())] : [])]);
+const docExpected = expectStatus !== null && docStatus === expectStatus && docStatus >= 400;
+const docErrLines = () => conLoc.filter((c) => docUrls.has(noHash(c.url)) && /Failed to load resource/i.test(c.text)).length;
+/* упавший запрос стороннего iframe (реклама в карте Яндекса): его строка «Failed to load resource» — не ошибка
+   страницы (у iframe другого сайта Chrome обычно и не отдаёт её в консоль вкладки, у того же сайта с другим
+   портом — отдаёт) */
+const pageOrigin = originOf(navRes ? navRes.url() : url) || (() => { try { return new URL(url).origin; } catch { return null; } })();
+const foreignFrame = (f) => { const fr = reqFrame.get(String(f.url).slice(0, 200)); return fr && !fr.main && fr.origin && fr.origin !== pageOrigin ? fr : null; };
+const foreignErrLines = () => conLoc.filter((c) => /Failed to load resource/i.test(c.text) && c.url && foreignFrame({ url: c.url })).length;
+const realConsole = () => {
+  let fav = favFails(); let doc = docExpected ? docErrLines() : 0; let foreign = foreignErrLines();
+  return page.log.console.filter((c) => c.type === 'error').filter((c) => {
+    if (!/Failed to load resource/i.test(c.text)) return true;
+    if (doc > 0) { doc--; return false; }
+    if (foreign > 0) { foreign--; return false; }
+    if (fav > 0) { fav--; return false; }
+    return true;
+  });
+};
 const errCount = () => realConsole().length + page.log.errors.length;
 const loadErrors = errCount();
-line(loadErrors ? 'FAIL' : 'OK', `загрузка ${url} (${vpName} ${report.size}${opt['reduced-motion'] ? ', меньше движения' : ''})`, loadErrors ? `${loadErrors} ошибок в консоли: ${uniqCount([...realConsole().map((c) => c.text), ...page.log.errors].map((t) => short(t, 120)), 3)}` : `ошибок в консоли нет, ${page.log.requests.length} запросов`);
+/* без --expect-status документ 4xx/5xx — провал, как раньше, но с подсказкой, если так и задумано */
+const docHint = !docExpected && docStatus >= 400 && docErrLines() ? ` · из них ответ самого документа ${docStatus} — если страница ошибки открыта нарочно: --expect-status ${docStatus}` : '';
+line(loadErrors ? 'FAIL' : 'OK', `загрузка ${url} (${vpName} ${report.size}${opt['reduced-motion'] ? ', меньше движения' : ''})`, loadErrors ? `${loadErrors} ошибок в консоли: ${uniqCount([...realConsole().map((c) => c.text), ...page.log.errors].map((t) => short(t, 120)), 3)}${docHint}` : `ошибок в консоли нет, ${page.log.requests.length} запросов`);
+if (expectStatus !== null) {
+  if (docStatus === expectStatus) line('INFO', `ответ документа ${docStatus}, как ждали`, `--expect-status ${expectStatus}${docExpected && docErrLines() ? `; строка консоли «Failed to load resource: … ${docStatus}» — ответ самого документа, в ошибки страницы не считается` : ''}`);
+  else line('FAIL', `ответ документа ${docStatus === null ? 'неизвестен' : docStatus}`, `ждали ${expectStatus} (--expect-status)${docStatus === null ? ' — браузер не отдал ответ перехода (адрес с #, about: или data:)' : ''}`);
+}
 if (favFails()) line('WARN', 'нет favicon', '/favicon.ico отвечает 404 — вкладка без значка; в провал загрузки не считается');
-const otherFailed = page.log.failed.filter((f) => !/\/favicon\.ico(\?|#|$)/i.test(f.url));
-if (otherFailed.length) line('WARN', 'упавшие запросы', otherFailed.slice(0, 4).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 50)}`).join('; '));
-if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? `ушла через ${page.overlay.waitedMs} мс` : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+/* упавшие запросы: свои (главная страница, iframe того же сайта, кадр неизвестен) — WARN; сторонних iframe — INFO */
+const isDocFail = (f) => docExpected && docUrls.has(noHash(f.url)) && /^HTTP /.test(f.reason);
+const failedNow = page.log.failed.filter((f) => !/\/favicon\.ico(\?|#|$)/i.test(f.url) && !isDocFail(f));
+const otherFailed = failedNow.filter((f) => !foreignFrame(f));
+const frameFailed = failedNow.filter((f) => foreignFrame(f));
+const hostOf = (u) => { try { return new URL(u).host; } catch { return String(u).slice(0, 40); } };
+if (otherFailed.length) line('WARN', 'упавшие запросы', otherFailed.slice(0, 4).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 50)}`).join('; ') + (otherFailed.length > 4 ? ` и ещё ${otherFailed.length - 4}` : ''));
+if (frameFailed.length) {
+  const byFrame = new Map(); for (const f of frameFailed) { const h = hostOf(foreignFrame(f).frame); byFrame.set(h, [...(byFrame.get(h) || []), f]); }
+  const fl = foreignErrLines();
+  line('INFO', `запросы сторонних iframe: не загрузилось ${frameFailed.length}`, `${[...byFrame.entries()].slice(0, 3).map(([h, l]) => `в iframe ${h}: ${l.length} (${uniqCount(l.map((f) => `${f.reason} ${hostOf(f.url)}`), 3)})`).join(' | ')} — реклама и счётчики внутри чужого виджета (карта, видео); сайт их не чинит, в «упавшие запросы» не входят${fl ? `; их строки в консоли (${fl}) — не ошибки страницы` : ''}`, { failed: frameFailed.map((f) => ({ ...f, frame: foreignFrame(f).frame })) });
+}
+if (page.overlay.hadOverlay) line(page.overlay.gone ? 'OK' : 'WARN', `заставка ${page.overlay.overlay} при загрузке`, page.overlay.gone ? (page.overlay.closedByDismiss ? `сама не ушла за ${page.overlay.waitedMs} мс — закрыта нажатием SITE_REWORK_DISMISS` : `ушла через ${page.overlay.waitedMs} мс`) : `не ушла за ${page.overlay.waitedMs} мс — закрывает страницу`);
+/* окна при загрузке (lib, waitForOverlay): итог SITE_REWORK_DISMISS — INFO (нажато; увело — нужная страница открыта
+   заново) или WARN (не найдено, скрыто, осталось, окно вернулось, замер не той страницы), открытое окно — WARN «окно».
+   Раньше WARN lib печатался мимо вердикта и JSON, а уводящее нажатие мерило чужую страницу с OK (mamuka.rest, 29.09) */
+drainLib();
+report.windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null };
 /* чего нет в этом браузере (Firefox): честный WARN, а не падение */
 for (const l of page.rwLimits || []) line('WARN', NOT_IN, l);
 if (cpuSkipped) line('WARN', NOT_IN, `замедление процессора (--cpu ${opt.cpu}) — это протокол Chrome (DevTools); прогон идёт без замедления, замер под нагрузкой — в Chrome или Edge`);
@@ -488,6 +655,82 @@ const sharpness = (c) => {
 /* печатается только то, что изменилось с прошлой автопроверки: одна и та же размытость
    после каждого следующего клика — не новый провал */
 const lastAuto = { canvas: null, overflow: null, canvasAt: '', overflowAt: '' };
+
+/* вертикальное письмо (writing-mode: vertical-*, sideways-*): строка идёт сверху вниз, и поперёк неё —
+   по горизонтали — глифы законно выходят за строку при line-height меньше высоты шрифта (вкладка
+   «Забронировать» у края, line-height: 1: 1431>1428px, а на снимке всё влезает). Вдоль строки (по высоте)
+   допуск — как у findOverflow, 5% кегля (не меньше 2 px). Поперёк (по ширине) к нему прибавляется край глифа:
+   половина разницы между толщиной строки текста (высота шрифта, ширина прямоугольника строки у Range) и
+   line-height — то, на что шрифт законно шире строки. Вылез сбоку больше этого (кегль 40px в коробке 12px:
+   «Бронь» 407>372px) — находка, как у горизонтального текста. Ключ — как у findOverflow: коробка
+   (ближайший предок не inline/contents) и начало текста */
+function verticalTextInPage(arg) {
+  const tol = arg.tol; const out = {};
+  const cs = (e) => getComputedStyle(e);
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const range = document.createRange();
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (!n.textContent.trim()) continue;
+    const par = n.parentElement; if (!par || !/^(vertical|sideways)/.test(cs(par).writingMode)) continue;
+    let box = par; while (box && box !== document.body && /^(inline|contents)$/.test(cs(box).display)) box = box.parentElement;
+    if (!box || box === document.body) continue;
+    range.selectNodeContents(n); const tr = range.getBoundingClientRect(); const br = box.getBoundingClientRect();
+    const fs = parseFloat(cs(par).fontSize) || 16;
+    const t = Math.max(tol, fs * 0.05);
+    const lines = [...range.getClientRects()].filter((q) => q.width >= 1 && q.height >= 1);
+    const thick = lines.length ? Math.max(...lines.map((q) => q.width)) : tr.width;
+    const lh = parseFloat(cs(par).lineHeight); /* «normal» — NaN: строка не тоньше шрифта, края глифа нет */
+    const glyph = Number.isFinite(lh) ? Math.max(0, (thick - lh) / 2) : 0;
+    const side = Math.max(tr.right - br.right, br.left - tr.left);
+    out[`${sig(box)}|${clean(n.textContent)}`] = {
+      long: tr.bottom > br.bottom + t || tr.top < br.top - t, wide: side > t + glyph, side: Math.round(side), sideTol: Math.round((t + glyph) * 10) / 10, fontSize: fs,
+      textTop: Math.round(tr.top), textBottom: Math.round(tr.bottom), boxTop: Math.round(br.top), boxBottom: Math.round(br.bottom),
+    };
+  }
+  return out;
+}
+/* findOverflow и поправка на вертикальное письмо: из «текст шире коробки» уходит вертикальный текст, который
+   в коробке и по высоте, и сбоку (с краем глифа). Вердикт пересчитывается от вердикта lib: FAIL остаётся FAIL,
+   WARN остаётся, пока есть любая другая находка — docWider или любое поле …Count, кроме textWiderCount
+   (panelCut, covered, clipCut, fieldCut и то, что lib добавит потом). Из summary вырезается только кусок
+   «текст шире коробки: …» — остальные куски («текст обрезан», «текст не влез в поле», …) остаются */
+async function overflowOf() {
+  const ov = await findOverflow(page);
+  if (!ov || !ov.textWiderCount) return ov;
+  const vert = await evaluateWith(page, verticalTextInPage, { tol: 2 }, DEPS).catch(() => ({}));
+  const skipped = []; const kept = [];
+  for (const t of ov.textWider) {
+    const v = vert[`${t.sig}|${t.text}`];
+    if (!v) { kept.push(t); continue; }
+    if (v.long || v.wide) kept.push({ ...t, vertical: v });
+    else skipped.push({ ...t, vertical: v });
+  }
+  if (!skipped.length && !kept.some((t) => t.vertical)) return ov;
+  const oldList = ov.textWider;
+  ov.textWider = kept; ov.textWiderCount = Math.max(kept.length, ov.textWiderCount - skipped.length); ov.verticalSkipped = skipped;
+  const otherWarn = !!ov.docWider || Object.entries(ov).some(([k, n]) => /Count$/.test(k) && k !== 'textWiderCount' && Number(n) > 0);
+  if (ov.verdict !== 'FAIL') ov.verdict = ov.textWiderCount || otherWarn ? 'WARN' : 'OK';
+  /* кусок summary «текст шире коробки: …» — тот, что написал lib.findOverflow (по первым трём), заменить
+     на новый по оставшимся; не нашёлся дословно (lib сменил запись) — до следующего куска « · слово…: » */
+  const HEAD = ' · текст шире коробки: ';
+  const fmt = (t) => {
+    if (!t.vertical) return `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`;
+    const v = t.vertical;
+    return v.wide ? `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px (вертикальное письмо: сбоку вылезло на ${v.side}px, край глифа при кегле ${v.fontSize}px — до ${v.sideTol}px)`
+      : `${t.sig} «${t.text}» по высоте ${v.textTop}…${v.textBottom} при коробке ${v.boxTop}…${v.boxBottom}px (вертикальное письмо)`;
+  };
+  const oldSeg = `${HEAD}${oldList.slice(0, 3).map((t) => `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`).join(' | ')}`;
+  const seg = kept.length ? `${HEAD}${kept.slice(0, 3).map(fmt).join(' | ')}${ov.textWiderCount > 3 ? ` и ещё ${ov.textWiderCount - 3}` : ''}` : '';
+  let at = ov.summary.indexOf(oldSeg); let end = at >= 0 ? at + oldSeg.length : -1;
+  if (at < 0) {
+    at = ov.summary.indexOf(HEAD);
+    if (at >= 0) { const m = / · [a-zа-яё][^«»|:]*: /.exec(ov.summary.slice(at + HEAD.length)); end = m ? at + HEAD.length + m.index : ov.summary.length; }
+  }
+  if (at >= 0) ov.summary = ov.summary.slice(0, at) + seg + ov.summary.slice(end);
+  if (skipped.length) ov.summary += ` · вертикальное письмо сверено по высоте и сбоку (с краем глифа), в коробке: ${skipped.slice(0, 3).map((t) => `${t.sig} «${t.text}»`).join(', ')}`;
+  return ov;
+}
 async function autoCheck(after) {
   await sleep(150); const waited = await settleAnimations(page, 3000);
   const list = (await canvasList(page).catch(() => [])).filter((c) => c.clientWidth > 0 && c.clientHeight > 0 && c.opacity > 0.05 && c.ctx);
@@ -501,7 +744,7 @@ async function autoCheck(after) {
       lastAuto.canvas = key; lastAuto.canvasAt = after;
     }
   }
-  const ov = await findOverflow(page).catch(() => null);
+  const ov = await overflowOf().catch(() => null);
   if (ov) {
     const key = `${ov.verdict}|${ov.vw}|${(ov.outer || []).map((o) => o.sig).join(',')}`;
     if (key !== lastAuto.overflow && (ov.verdict !== 'OK' || (lastAuto.overflow && !lastAuto.overflow.startsWith('OK')))) line(ov.verdict, `переполнение ${after} на ${ov.vw}px`, ov.summary);
@@ -510,11 +753,86 @@ async function autoCheck(after) {
 }
 
 /* ---------- шаги ---------- */
+/* слой на весь экран поверх страницы (открытое меню, диалог): открытый модальный <dialog> (:modal) или самый
+   внешний position: fixed у верхнего элемента в 3 из 5 точек окна, видимый, от 60% окна. Такой слой, который
+   был уже при загрузке (закреплённый фон или первый экран на position: fixed, заставка), отмечается
+   data-rw-base-layer (arg.base) и потом не в счёт: под открытым меню «Эпицентра» elementsFromPoint не отдаёт
+   ничего, кроме body и html (страница под замком), поэтому «есть ли что-то под слоем» — не признак */
+function openLayerInPage(arg) {
+  const vw = innerWidth, vh = innerHeight; const de = document.documentElement;
+  const outerFixed = (el) => { let f = null; for (let e = el; e && e !== de; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') f = e; return f; };
+  let found = null;
+  try { const m = [...document.querySelectorAll('dialog')].find((d) => d.matches(':modal')); if (m) found = { el: m, share: 100, kind: 'диалог' }; } catch { /* нет :modal */ }
+  if (!found) {
+    const tally = new Map();
+    for (const [fx, fy] of [[0.5, 0.5], [0.25, 0.3], [0.75, 0.3], [0.25, 0.75], [0.75, 0.75]]) {
+      const list = document.elementsFromPoint(vw * fx, vh * fy); if (!list.length) continue;
+      const layer = outerFixed(list[0]); if (!layer || eff(layer) <= 0.05 || getComputedStyle(layer).visibility === 'hidden') continue;
+      const r = layer.getBoundingClientRect();
+      const share = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0)) / (vw * vh);
+      if (share < 0.6) continue;
+      const t = tally.get(layer) || { n: 0, share }; t.n++; tally.set(layer, t);
+    }
+    const best = [...tally.entries()].sort((a, b) => b[1].n - a[1].n)[0];
+    if (best && best[1].n >= 3) found = { el: best[0], share: Math.round(best[1].share * 100), kind: /dialog/i.test(best[0].getAttribute('role') || '') || best[0].getAttribute('aria-modal') === 'true' ? 'диалог' : 'меню или слой' };
+  }
+  if (!found) return null;
+  if (arg && arg.base) { found.el.setAttribute('data-rw-base-layer', ''); return { sig: sig(found.el), share: found.share }; }
+  if (found.el.hasAttribute('data-rw-base-layer')) return null;
+  return { sig: sig(found.el), share: found.share, kind: found.kind };
+}
+let lastClick = null; /* селектор последнего --click: после него слой на весь экран часто остаётся открытым */
+
 async function scrollStep() {
-  await evaluateWith(page, () => {
-    document.querySelectorAll('[data-rw-hidden]').forEach((e) => e.removeAttribute('data-rw-hidden'));
+  /* прокрутка при открытом меню меряет меню, а не страницу (закреплены: div#drawer.is-open) — сказать прямо */
+  const layer = await evaluateWith(page, openLayerInPage, null, DEPS).catch(() => null);
+  if (layer) line('WARN', 'прокрутка идёт при открытом меню/диалоге', `${layer.kind} ${layer.sig} закрывает ${layer.share}% окна${lastClick ? ` — открыт после --click ${lastClick}` : ''}; появления, закреплённые и переполнение ниже мерятся по нему, а не по странице — пишите --scroll до --click или закройте слой шагом (--click по крестику, --key Escape)`, { layer, lastClick });
+  /* правила :hover, которые ПОКАЗЫВАЮТ другой элемент: цель — не сам триггер («.item:hover .tip»), объявлено
+     opacity от 0.9 (или через var()) или visibility: visible. Приглушение соседей («.grid:hover .card
+     { opacity: .6 }») и наведение на сам элемент («a:hover { opacity: .8 }») — не показ: такой элемент
+     прозрачен из-за появления. Совпадение с целью правила — только кандидат: после прохода он проверяется
+     настоящим наведением на триггер (правило могло проиграть по специфичности, «.grid .card.reveal:not(.in)») */
+  const hoverRules = await evaluateWith(page, () => {
+    const { rules } = hov();
+    const shows = (r) => {
+      const d = r.decl || {}; const o = String(d.opacity || '').trim(); const v = String(d.visibility || '').trim();
+      if (/^visible/i.test(v)) return true;
+      if (!o) return false; if (/var\(/i.test(o)) return true;
+      const x = parseFloat(o); return Number.isFinite(x) && (/%/.test(o) ? x / 100 : x) >= 0.9;
+    };
+    const seen = new Set(); const out = [];
+    for (const r of rules) {
+      if (r.pseudo || !r.target || !r.trigger || r.target === r.trigger || !shows(r)) continue;
+      const k = `${r.trigger}|${r.target}`; if (seen.has(k)) continue; seen.add(k);
+      try { document.querySelector(r.target); document.querySelector(r.trigger); } catch { continue; }
+      out.push({ trigger: r.trigger, target: r.target });
+    }
+    return out;
+  }, null, { ...DEPS, hov: hoverRulesInPage.toString() }).catch(() => []);
+  await evaluateWith(page, (rules) => {
+    document.querySelectorAll('[data-rw-hidden], [data-rw-hover-shown], [data-rw-hvtrig]').forEach((e) => { e.removeAttribute('data-rw-hidden'); e.removeAttribute('data-rw-hover-shown'); e.removeAttribute('data-rw-hvtrig'); });
     const infinite = new Set(document.getAnimations().filter((a) => a.effect && a.effect.getTiming && a.effect.getTiming().iterations === Infinity && a.effect.target).map((a) => a.effect.target));
     const moving = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (infinite.has(e)) return true; return false; };
+    /* правила наведения, чья цель — этот элемент или его предок: кандидат в подсказки (проверка — после прохода) */
+    const hoverRulesOf = (el) => rules.filter((r) => { try { return !!el.closest(r.target); } catch { return false; } });
+    /* внутри закреплённого (position: fixed у предка) — прокруткой не въезжает: рельс слева, шапка, меню. Его место
+       в окне не зависит от прокрутки, и после --eval с прокруткой вниз «top + scrollY» выносил его «ниже первого
+       экрана». Исключение — обёртка на всю страницу, внутри которой содержимое едет transform (GSAP ScrollSmoother:
+       #smooth-wrapper fixed на всё окно, содержимое выше полутора окон): это и есть страница. Обёртка видима и
+       закрывает окно от 90% — закрытое меню на весь экран спрятано (visibility, opacity) или уехало за край
+       (transform), — и держит от трети элементов страницы (выезжающий каталог — малая их часть): иначе пункты
+       закрытого длинного меню с opacity 0 шли бы в «не появились» */
+    const wrapMemo = new Map(); const allEls = document.body.getElementsByTagName('*').length;
+    const pageWrap = (f) => {
+      if (wrapMemo.has(f)) return wrapMemo.get(f);
+      const r = f.getBoundingClientRect();
+      const onScreen = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / (innerWidth * innerHeight);
+      const tall = Math.max(f.scrollHeight, ...[...f.children].map((c) => c.getBoundingClientRect().height));
+      const yes = onScreen >= 0.9 && tall > innerHeight * 1.5 && eff(f) > 0.05 && getComputedStyle(f).visibility !== 'hidden'
+        && f.getElementsByTagName('*').length >= allEls / 3;
+      wrapMemo.set(f, yes); return yes;
+    };
+    const inFixed = (el) => { for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (getComputedStyle(e).position === 'fixed') return !pageWrap(e); return false; };
     /* поле формы — не блок появления: радиокнопка или флажок с opacity 0 поверх подписи — приём оформления;
        невидимые поля идут отдельно, в «невидимы по замыслу» */
     const FIELD = /^(INPUT|SELECT|TEXTAREA|OPTION|OPTGROUP|DATALIST)$/;
@@ -527,25 +845,82 @@ async function scrollStep() {
       if (!(parseFloat(s.opacity) < 0.95 || (s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)'))) continue;
       if (moving(el) || (el.parentElement && el.parentElement.closest('[data-rw-hidden]'))) continue;
       if (FIELD.test(el.tagName)) { if (fields.length < 40) fields.push(el); continue; }
+      if (inFixed(el)) continue;
       el.setAttribute('data-rw-hidden', String(i++));
+      const hr = hoverRulesOf(el); el.__rwHov = hr.length ? hr : null;
       /* прозрачность при отметке и самая большая за проход: появление «туда и обратно» (AOS с once: false
          прячет блок снова, когда он ушёл из окна) — тоже появление */
       el.__rwOp0 = eff(el); el.__rwOpMax = el.__rwOp0; el.__rwOpMoved = false;
+      el.__rwTf0 = s.transform; el.__rwTfMoved = false;
     }
     window.__rwFields = fields;
-  }, null, DEPS);
-  /* на каждом шаге прохода — что с отмеченными: стало ли видно, менялась ли прозрачность */
+  }, hoverRules, DEPS);
+  /* на каждом шаге прохода — что с отмеченными: стало ли видно, менялась ли прозрачность или сдвиг */
   const onStep = () => evaluateWith(page, () => {
     for (const el of document.querySelectorAll('[data-rw-hidden]')) {
       const o = eff(el);
       if (o > (el.__rwOpMax || 0)) el.__rwOpMax = o;
       if (Math.abs(o - (el.__rwOp0 || 0)) > 0.01) el.__rwOpMoved = true;
+      if (!el.__rwTfMoved && getComputedStyle(el).transform !== el.__rwTf0) el.__rwTfMoved = true;
     }
   }, null, DEPS).catch(() => {});
   const res = await scrollThrough(page, { shotsDir: outDir, tag: `${tag}-scroll`, maxShots: 6, onStep });
   scrolled = true;
+  /* подсказки при наведении: отмеченное, что не появилось за проход и совпало с целью правила «показать при
+     наведении», проверяется настоящим наведением на триггер (предок по селектору до :hover или сосед при «+»/«~»).
+     Показалось (итоговая прозрачность от 0.3) — «показываются при наведении», без WARN; не показалось, триггер
+     не найден или перекрыт — остаётся в «не появились». Один триггер — одно наведение на всех его кандидатов */
+  const hvGroups = await evaluateWith(page, () => {
+    const groups = new Map(); let n = 0;
+    for (const el of document.querySelectorAll('[data-rw-hidden]')) {
+      if (!el.__rwHov || eff(el) >= 0.05 || (el.__rwOpMax || 0) >= 0.05) continue;
+      let trig = null;
+      for (const r of el.__rwHov) {
+        try { trig = el.closest(r.trigger); } catch { trig = null; }
+        if (trig === el) trig = null;
+        if (!trig && el.parentElement) { try { trig = [...el.parentElement.children].find((x) => x !== el && x.matches(r.trigger)) || null; } catch { trig = null; } }
+        if (trig) break;
+      }
+      if (!trig) continue;
+      if (!trig.hasAttribute('data-rw-hvtrig')) trig.setAttribute('data-rw-hvtrig', String(n++));
+      const k = trig.getAttribute('data-rw-hvtrig'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(el.getAttribute('data-rw-hidden'));
+    }
+    return [...groups.entries()].map(([trig, ids]) => ({ trig, ids }));
+  }, null, DEPS).catch(() => []);
+  const HV_MAX = 20; let hvTried = 0, hvReached = 0;
+  for (const g of hvGroups.slice(0, HV_MAX)) {
+    hvTried++;
+    /* scrollIntoView прокручивает и предков с overflow hidden (обёртку ScrollSmoother, #smooth-wrapper) — их
+       прокрутка запоминается и после наведения возвращается, иначе страница осталась бы сдвинутой внутри обёртки */
+    await page.evaluate((n) => {
+      const t = document.querySelector(`[data-rw-hvtrig="${n}"]`); if (!t) return;
+      const keep = []; for (let e = t.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) if (e.scrollTop || e.scrollLeft || e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth) keep.push([e, e.scrollTop, e.scrollLeft]);
+      window.__rwHvKeep = keep;
+      t.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }, g.trig).catch(() => {});
+    await sleep(150); await settleAnimations(page, 1500);
+    const pt = await page.evaluate((n) => {
+      const t = document.querySelector(`[data-rw-hvtrig="${n}"]`); if (!t) return null;
+      const b = t.getBoundingClientRect();
+      for (const [fx, fy] of [[0.5, 0.5], [0.25, 0.25], [0.75, 0.75], [0.1, 0.5], [0.9, 0.5]]) {
+        const x = b.left + b.width * fx, y = b.top + b.height * fy;
+        if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+        const e = document.elementFromPoint(x, y); if (e && (e === t || t.contains(e))) return { x, y };
+      }
+      return null;
+    }, g.trig).catch(() => null);
+    if (pt) {
+      hvReached++;
+      await page.mouse.move(pt.x, pt.y); await sleep(150); await settleAnimations(page, 1500); await sleep(60);
+      await evaluateWith(page, (a) => { for (const id of a.ids) { const el = document.querySelector(`[data-rw-hidden="${id}"]`); if (el && eff(el) >= 0.3) el.setAttribute('data-rw-hover-shown', ''); } }, { ids: g.ids }, DEPS).catch(() => {});
+      await page.mouse.move(cur.width - 2, 2); await sleep(60);
+    }
+    await page.evaluate(() => { for (const [e, t, l] of window.__rwHvKeep || []) { e.scrollTop = t; e.scrollLeft = l; } window.__rwHvKeep = null; }).catch(() => {});
+  }
+  if (hvTried) { await scrollToY(page, 0); await sleep(250); }
   const after = await evaluateWith(page, () => {
-    const marked = [...document.querySelectorAll('[data-rw-hidden]')];
+    const marked = [...document.querySelectorAll('[data-rw-hidden]')].filter((el) => !el.hasAttribute('data-rw-hover-shown'));
+    const hoverShown = [...document.querySelectorAll('[data-rw-hidden][data-rw-hover-shown]')];
     /* кто прячет: сам элемент или ближайший предок с прозрачностью 0 или visibility:hidden */
     const hider = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const s = getComputedStyle(e); if (parseFloat(s.opacity) < 0.05 || s.visibility === 'hidden') return e; } return el; };
     /* может проявиться: переход прозрачности, видимости, сдвига или фильтра, анимация, признаки библиотек появления */
@@ -568,21 +943,39 @@ async function scrollStep() {
       }
       return false;
     };
-    const still = [], meant = [];
+    /* блок называется селектором и началом текста: «section.reveal «Ближайшие события»» */
+    const named = (el) => { const t = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); return `${sig(el)}${t ? ` «${t.length > 30 ? t.slice(0, 30) + '…' : t}»` : ''}`; };
+    const still = [], meant = [], stillNamed = [];
     for (const el of marked) {
       if (eff(el) >= 0.05 || (el.__rwOpMax || 0) >= 0.05) continue; /* видно сейчас или было видно на каком-то шаге */
       const h = hider(el);
       /* прозрачность ни разу не менялась, проявиться нечем и не похоже на появление — невидимо по замыслу */
-      (!el.__rwOpMoved && !canMove(h) && !(h !== el && canMove(el)) && !hinted(h) && !hinted(el) ? meant : still).push(sig(el));
+      if (!el.__rwOpMoved && !canMove(h) && !(h !== el && canMove(el)) && !hinted(h) && !hinted(el)) meant.push(sig(el));
+      else { still.push(sig(el)); stillNamed.push(named(el)); }
     }
     const fields = (window.__rwFields || []).filter((el) => el.isConnected && eff(el) < 0.05).map(sig);
+    const hoverOnly = hoverShown.map(named);
     const sticky = [...document.body.querySelectorAll('*')].filter((el) => ['sticky', 'fixed'].includes(getComputedStyle(el).position) && el.getBoundingClientRect().height > 20 && eff(el) > 0.05).slice(0, 5).map(sig);
-    return { marked: marked.length, still, meant: [...fields, ...meant], fields: fields.length, sticky };
+    /* в списке «ждали появления» — то, что было спрятано или двигалось за проход; полупрозрачное без движения
+       (подпись к фото с opacity .6, силуэт .32) видно и так — оно в счёт marked, но в список не идёт */
+    const waited = marked.filter((el) => (el.__rwOp0 || 0) < 0.05 || el.__rwOpMoved || el.__rwTfMoved);
+    return { marked: marked.length, waitedCount: waited.length, waited: waited.slice(0, 40).map(named), still, stillNamed, meant: [...fields, ...meant], fields: fields.length, hoverOnly, sticky };
   }, null, DEPS);
-  const ov = await findOverflow(page);
+  const ov = await overflowOf();
   const st = ov.verdict === 'FAIL' ? 'FAIL' : (after.still.length || ov.verdict === 'WARN' || res.stuck || !res.reachedBottom) ? 'WARN' : 'OK';
+  const list4 = (l) => `${l.slice(0, 4).join(', ')}${l.length > 4 ? ` и ещё ${l.length - 4}` : ''}`;
   const meantNote = after.meant.length ? ` · невидимы по замыслу (поля формы и прозрачное без перехода и анимации, прозрачность не менялась): ${after.meant.length} (${after.meant.slice(0, 4).join(', ')}${after.meant.length > 4 ? '…' : ''})` : '';
-  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${after.marked} блоков ждали появления, не появились: ${after.still.length}${after.still.length ? ` (${after.still.slice(0, 4).join(', ')})` : ''}${meantNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, still: after.still, meant: after.meant }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, panelCut: ov.panelCut, covered: ov.covered } });
+  const hoverNote = (after.hoverOnly.length ? ` · показываются при наведении (проверено наведением на триггер правила :hover — не появление при прокрутке): ${after.hoverOnly.length} (${list4(after.hoverOnly)})` : '')
+    + (hvGroups.length > HV_MAX ? ` · наведением проверены первые ${HV_MAX} триггеров из ${hvGroups.length}, остальные кандидаты — в «не появились»` : '');
+  const revealTxt = `ждали появления: ${after.waitedCount}${after.waitedCount ? ` (${list4(after.waited)}${after.waitedCount > after.waited.length ? `, всего ${after.waitedCount}` : ''})` : ''} — не появились: ${after.still.length}${after.still.length ? ` (${list4(after.stillNamed)})` : ''}`;
+  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount } });
+  /* «текст перекрыт» — всегда своей строкой: по строке прокрутки не видно, шла ли проверка. Её WARN уже
+     посчитан строкой прокрутки (переполнение WARN), поэтому здесь не считается второй раз */
+  if (ov.coveredCount === undefined) line('INFO', 'текст перекрыт картинкой', 'не проверялось: lib.findOverflow без поля covered', null, { count: false });
+  else {
+    const cov = ov.coveredCount;
+    line(cov ? 'WARN' : 'OK', 'текст перекрыт картинкой', cov ? `${cov} мест: ${ov.covered.slice(0, 5).map((t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y})`).join(' | ')}${cov > 5 ? ` и ещё ${cov - 5}` : ''} — картинка лежит поверх чужого текста (фон под текстом не в счёт)` : 'нет: img, video, canvas и svg от 40px не лежат поверх чужого текста', { covered: ov.covered, coveredCount: cov }, { count: false });
+  }
 }
 
 async function hoverStep(v) {
@@ -594,6 +987,11 @@ async function hoverStep(v) {
   const file = await shot('hover'); const d = diffState(base, hov);
   let why = '';
   if (!d.length) why = await h.evaluate((el) => { const hold = el.getAnimations().filter((a) => { const f = a.effect.getTiming().fill; return (f === 'both' || f === 'forwards') && a.playState === 'finished'; }); return hold.length ? ` — свойства держит анимация ${hold.map((a) => `${a.animationName || 'без имени'} (fill ${a.effect.getTiming().fill})`).join(', ')}` : ''; });
+  /* первым видимым часто оказывается активный пункт меню — у него «наведённый» вид уже стоит */
+  if (!d.length && !why) {
+    const act = await h.evaluate((el) => { const c = [...el.classList].find((x) => /(^|[-_])(active|current|selected)$/i.test(x)); const ac = el.getAttribute('aria-current'); return c ? `.${c}` : ac && ac !== 'false' ? `[aria-current=${ac}]` : null; }).catch(() => null);
+    if (act) why = ` — это активный пункт (${act}): вид при наведении у него уже стоит; наведите на другой: --hover "${v}:not(${act})"`;
+  }
   await page.mouse.move(cur.width - 2, 2);
   line(d.length ? 'OK' : 'WARN', `наведение ${v}`, d.length ? `${d.join('; ')} · ${file}` : `у самого элемента ничего не изменилось${why} (потомков проверяет --hover-all) · ${file}`);
 }
@@ -644,8 +1042,18 @@ async function hoverAllStep() {
     const after = await read(full);
     const changed = []; for (const a of after) { const b = before.find((x) => x.id === a.id); if (!b) continue; for (const p of r.props) if (a.v[p] !== b.v[p]) changed.push(`${p}: ${short(b.v[p], 30)} → ${short(a.v[p], 30)}`); }
     let why = '';
-    if (!after.length) why = 'селектор с :hover не совпал ни с чем после наведения';
-    else if (!changed.length) why = await page.evaluate((full, props) => { let el = null; try { el = document.querySelector(full); } catch { return ''; } if (!el) return ''; const camel = (p) => p.replace(/-([a-z])/g, (m, c) => c.toUpperCase()); const hold = el.getAnimations().filter((a) => { const f = a.effect.getTiming().fill; return (f === 'both' || f === 'forwards') && a.effect.getKeyframes().some((k) => props.some((p) => k[camel(p)] !== undefined || (p === 'transform' && (k.translate !== undefined || k.rotate !== undefined || k.scale !== undefined)))); }); return hold.length ? `держит анимация ${hold.map((a) => `${a.animationName || 'без имени'} (fill: ${a.effect.getTiming().fill}, ${a.playState})`).join(', ')} — :hover не может перебить анимированное свойство` : 'значения равны: правило перебито более сильным или совпадает с исходным'; }, full, r.props);
+    if (!after.length) {
+      await page.mouse.move(cur.width - 2, 2); await sleep(50);
+      /* цели правила нет ни у этого элемента, ни до наведения: «.rail__item:hover .rail__tip», а .rail__tip нет в DOM —
+         мёртвый селектор, а не «перебито»: чинится возвратом элемента или удалением правила, не каскадом */
+      if (!before.length) {
+        const inDom = await page.evaluate((t) => { try { return document.querySelectorAll(t).length; } catch { return -1; } }, r.target).catch(() => -1);
+        if (inDom === 0) return { status: 'nosel', changed, why: `элемента ${r.target} нет в DOM — правилу не к чему применяться`, none: true };
+        if (inDom > 0) return { status: 'nosel', changed, why: `у этого ${r.trigger} нет ${r.target.slice(r.trigger.length).trim() || r.target} (в DOM таких ${inDom} — у других)` };
+      }
+      return { status: 'covered', changed, why: 'селектор с :hover не совпал ни с чем после наведения — наведение не дошло до элемента' };
+    }
+    if (!changed.length) why = await page.evaluate((full, props) => { let el = null; try { el = document.querySelector(full); } catch { return ''; } if (!el) return ''; const camel = (p) => p.replace(/-([a-z])/g, (m, c) => c.toUpperCase()); const hold = el.getAnimations().filter((a) => { const f = a.effect.getTiming().fill; return (f === 'both' || f === 'forwards') && a.effect.getKeyframes().some((k) => props.some((p) => k[camel(p)] !== undefined || (p === 'transform' && (k.translate !== undefined || k.rotate !== undefined || k.scale !== undefined)))); }); return hold.length ? `держит анимация ${hold.map((a) => `${a.animationName || 'без имени'} (fill: ${a.effect.getTiming().fill}, ${a.playState})`).join(', ')} — :hover не может перебить анимированное свойство` : 'значения равны: правило перебито более сильным или совпадает с исходным'; }, full, r.props);
     await page.mouse.move(cur.width - 2, 2); await sleep(50);
     /* объявленное правилом равно тому, что и так стоит без наведения (генераторы вроде Tilda пишут
        :hover с исходным цветом) — правило пустое, а не мёртвое: сравнить через пробный элемент рядом */
@@ -666,17 +1074,25 @@ async function hoverAllStep() {
     const vis = []; for (const hh of list) { if (vis.length >= 3) break; if (await hh.evaluate(effOf).catch(() => 0) > 0.05 && await hh.evaluate((el) => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0; })) vis.push(hh); }
     if (!vis.length) { results.push({ ...r, status: 'skip', why: 'нет видимого элемента' }); continue; }
     let res = null; const tried = [];
-    for (const trig of vis) { res = await tryOne(r, trig); tried.push(res.status); if (res.status === 'ok') break; }
+    /* цели нет во всём DOM — другие элементы пробовать незачем */
+    for (const trig of vis) { res = await tryOne(r, trig); tried.push(res.status); if (res.status === 'ok' || res.none) break; }
     results.push({ ...r, ...res, tried });
   }
   const dead = results.filter((x) => x.status === 'dead'); const covered = results.filter((x) => x.status === 'covered'); const noop = results.filter((x) => x.status === 'noop');
   const over = results.filter((x) => x.status === 'overridden');
-  line(dead.length ? 'FAIL' : 'OK', `наведение: правил :hover ${rules.length}${rules.length > 80 ? ' (проверены первые 80)' : ''}, проверено ${results.filter((x) => /^(ok|dead|noop|overridden)$/.test(x.status)).length}, мёртвых ${dead.length}, перебитых ${over.length}${noop.length ? `, пустых ${noop.length}` : ''}${unreadable ? `, таблиц не прочитано ${unreadable}` : ''}`, dead.slice(0, 6).map((d) => `${d.sel} { ${d.props.join(', ')} } — ${d.why}`).join(' | ') + (dead.length > 6 ? ` и ещё ${dead.length - 6}` : '') || (over.length ? 'мёртвых нет; перебитые — строкой ниже' : '') || `все меняют то, что объявлено${noop.length ? ` (пустые — то же значение, что без наведения: ${noop.slice(0, 3).map((x) => x.sel).join(', ')})` : ''}`, { results });
+  /* цели нет во всём DOM — мёртвый селектор; цель есть, но не у первых видимых триггеров — другое: правило живо,
+     наведение просто пробовалось не на тех элементах (раньше обе — под заголовком «элемента нет в DOM») */
+  const nodom = results.filter((x) => x.status === 'nosel' && x.none); const elsewhere = results.filter((x) => x.status === 'nosel' && !x.none);
+  const below = [over.length ? 'перебитые' : '', nodom.length ? 'мёртвые селекторы' : '', elsewhere.length ? 'цель только у других элементов' : ''].filter(Boolean).join(', ');
+  line(dead.length ? 'FAIL' : 'OK', `наведение: правил :hover ${rules.length}${rules.length > 80 ? ' (проверены первые 80)' : ''}, проверено ${results.filter((x) => /^(ok|dead|noop|overridden|nosel)$/.test(x.status)).length}, мёртвых ${dead.length}, перебитых ${over.length}${nodom.length ? `, мёртвых селекторов ${nodom.length}` : ''}${elsewhere.length ? `, цель только у других ${elsewhere.length}` : ''}${noop.length ? `, пустых ${noop.length}` : ''}${unreadable ? `, таблиц не прочитано ${unreadable}` : ''}`, dead.slice(0, 6).map((d) => `${d.sel} { ${d.props.join(', ')} } — ${d.why}`).join(' | ') + (dead.length > 6 ? ` и ещё ${dead.length - 6}` : '') || (below ? `мёртвых нет; ${below} — строкой ниже` : '') || `все меняют то, что объявлено${noop.length ? ` (пустые — то же значение, что без наведения: ${noop.slice(0, 3).map((x) => x.sel).join(', ')})` : ''}`, { results });
   if (over.length) line('WARN', `наведение перебито другим правилом: ${over.length}`, over.slice(0, 5).map((d) => `${d.sel} { ${d.props.join(', ')} }`).join(' | ') + (over.length > 5 ? ` и ещё ${over.length - 5}` : '') + ' — :hover срабатывает, но значение задаёт более сильное правило; проверить, задумано ли');
-  if (covered.length) line('WARN', `наведение перекрыто: ${covered.length}`, covered.map((c) => c.sel).slice(0, 6).join(', '));
+  if (nodom.length) line('WARN', `наведение: мёртвый селектор, элемента нет в DOM: ${nodom.length}`, nodom.slice(0, 5).map((d) => `${d.sel} — ${d.why}`).join(' | ') + (nodom.length > 5 ? ` и ещё ${nodom.length - 5}` : '') + ' — это не каскад: вернуть элемент в разметку или удалить правило');
+  if (elsewhere.length) line('WARN', `наведение: цели правила нет у наведённых элементов: ${elsewhere.length}`, elsewhere.slice(0, 5).map((d) => `${d.sel} — ${d.why}`).join(' | ') + (elsewhere.length > 5 ? ` и ещё ${elsewhere.length - 5}` : '') + ' — наведение пробовалось на первых видимых; проверьте наведением на элемент с целью (--hover) или уберите правило, если цель там не нужна');
+  if (covered.length) line('WARN', `наведение перекрыто: ${covered.length}`, covered.slice(0, 6).map((c) => `${c.sel}${c.why && !/перекрыт другим/.test(c.why) ? ` (${c.why})` : ''}`).join(', '));
 }
 
 async function clickStep(v) {
+  lastClick = v;
   const h = await find(v);
   if (!h) return line('FAIL', `клик ${v}`, notFound());
   const errBefore = errCount();
@@ -732,14 +1148,50 @@ async function clickStep(v) {
   return 'checked-errors';
 }
 
+/* форматы value у полей даты и времени (HTML): такое значение --type ставит, а не набирает */
+const DATE_FORMATS = {
+  date: { re: /^\d{4}-\d{2}-\d{2}$/, hint: 'ГГГГ-ММ-ДД (2026-10-10)' },
+  time: { re: /^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, hint: 'ЧЧ:ММ (20:30)' },
+  'datetime-local': { re: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/, hint: 'ГГГГ-ММ-ДДTЧЧ:ММ (2026-10-10T20:30)' },
+  month: { re: /^\d{4}-\d{2}$/, hint: 'ГГГГ-ММ (2026-10)' },
+  week: { re: /^\d{4}-W\d{2}$/, hint: 'ГГГГ-Wнн (2026-W41)' },
+};
 async function typeStep(v) {
   const parts = splitSelEq(v); if (!parts) return line('FAIL', `ввод ${v}`, 'нужно «селектор=текст»');
   const [sel, text] = parts;
   const h = await find(sel);
   if (!h) return line('FAIL', `ввод в ${sel}`, notFound());
-  await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await h.focus(); await h.evaluate((el) => { try { el.select(); } catch { el.value = ''; } });
+  await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  /* дата и время: значение в формате поля ставится, как выбор в календаре (value + input и change). Набор
+     клавишами идёт по сегментам локали браузера (дд.мм.гггг): «2026-10-10» превращался в «61010-02-20» */
+  const kind0 = await h.evaluate((el) => (el.tagName === 'INPUT' ? (el.getAttribute('type') || '').toLowerCase() : ''));
+  const fmt = DATE_FORMATS[kind0];
+  if (fmt && fmt.re.test(text)) {
+    const set = await h.evaluate((el, t) => {
+      el.focus();
+      /* сеттер прототипа: обёртки фреймворков (React) следят за value через свой сеттер — иначе они не увидят ввод */
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, t);
+      const taken = el.value;
+      el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+      return taken;
+    }, text);
+    await sleep(150);
+    const now = await h.evaluate((el) => el.value);
+    /* сверка — с тем, что браузер записал сразу после установки, до событий (set), а не с набранным текстом:
+       datetime-local и time хранят значение в своей записи — «2026-10-10T20:30:00» браузер сам сокращает
+       до «2026-10-10T20:30», и это не вина обработчика страницы */
+    const ok = set !== '' && now === set;
+    const norm = ok && set !== text ? `; браузер записал «${text}» как «${set}» — так value этого поля хранит значение` : '';
+    return line(ok ? 'OK' : 'FAIL', `ввод в ${sel}`, ok ? `в поле «${now}» (type=${kind0}: значение поставлено с событиями input и change, как выбор в календаре${norm})`
+      : set === '' ? `поле type=${kind0} не приняло «${text}» — такого значения нет (${fmt.hint})`
+        : `поставили «${text}»${set !== text ? ` (браузер записал как «${set}»)` : ''}, после событий input/change в поле «${now}» — обработчик страницы переписал значение`, { set: text, accepted: set, value: now, how: 'value' });
+  }
+  await h.focus(); await h.evaluate((el) => { try { el.select(); } catch { el.value = ''; } });
   await h.type(text, { delay: 20 });
   const { val, kind } = await h.evaluate((el) => ({ val: el.value, kind: (el.getAttribute('type') || '').toLowerCase() }));
+  if (DATE_FORMATS[kind] && !(val === text || (val !== '' && val.replace(/\D/g, '').split('').sort().join('') === text.replace(/\D/g, '').split('').sort().join('')))) {
+    return line('FAIL', `ввод в ${sel}`, `ожидали «${text}», в поле «${val}» — у поля type=${kind} значение пишется как ${DATE_FORMATS[kind].hint}; другое runtime набирает клавишами по сегментам локали браузера`);
+  }
   const dig = (s) => s.replace(/\D/g, '');
   let want = dig(text); if (kind === 'tel' && want.length === 11 && want[0] === '8') want = '7' + want.slice(1); /* 8 (900)… и +7 (900)… — один номер */
   const got = dig(val);
@@ -814,16 +1266,27 @@ async function selectStep(v) {
   const [sel, want] = parts;
   const h = await find(sel);
   if (!h) return line('FAIL', `выбор ${sel}`, notFound());
-  const opts = await h.evaluate((el) => (el.options ? [...el.options].map((o) => ({ v: o.value, t: o.textContent.trim() })) : null));
-  if (!opts) return line('FAIL', `выбор ${sel}`, 'это не <select>');
+  /* недоступное (disabled у варианта, его optgroup, списка или fieldset вокруг) человек не выберет, а h.select()
+     ставит его программно — было бы OK там, где выбора нет */
+  const meta = await h.evaluate((el) => (el.options ? { off: el.matches(':disabled'), opts: [...el.options].map((o) => ({ v: o.value, t: o.textContent.trim(), d: o.matches(':disabled') })) } : null));
+  if (!meta) return line('FAIL', `выбор ${sel}`, 'это не <select>');
+  const opts = meta.opts;
   const hit = opts.find((o) => o.v === want) || opts.find((o) => o.t === want) || opts.find((o) => o.t.toLowerCase().includes(want.toLowerCase()));
   if (!hit) return line('FAIL', `выбор ${sel}=${want}`, `нет такого варианта; есть: ${opts.slice(0, 8).map((o) => o.v || o.t).join(', ')}`);
+  if (meta.off) return line('FAIL', `выбор ${sel} = «${hit.t || hit.v}»`, 'список недоступен (disabled) — человек в нём ничего не выберет');
+  if (hit.d) return line('FAIL', `выбор ${sel} = «${hit.t || hit.v}»`, `вариант недоступен (disabled) — человек его не выберет; доступные: ${opts.filter((o) => !o.d).slice(0, 8).map((o) => o.v || o.t).join(', ') || 'нет'}`);
   await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await sleep(300); await settleAnimations(page, 2000);
   await startWatch(); await sleep(400); const noise = new Set((await takeWatch()).map(mutKey));
   await startWatch();
   await h.select(hit.v); await sleep(500);
   const effect = (await takeWatch()).filter((m) => !noise.has(mutKey(m)));
-  line(effect.length ? 'OK' : 'WARN', `выбор ${sel} = «${hit.t || hit.v}»`, effect.length ? `DOM: ${describeMuts(effect)}` : 'после выбора на странице ничего не изменилось', { mutations: effect.slice(0, 40) });
+  /* выбралось ли значение; список внутри формы — поле, от выбора в нём страница и не должна меняться */
+  const got = await h.evaluate((el) => ({ value: el.value, inForm: !!(el.form || el.closest('form')) })).catch(() => ({ value: null, inForm: false }));
+  const title = `выбор ${sel} = «${hit.t || hit.v}»`;
+  if (got.value !== null && got.value !== hit.v) line('FAIL', title, `значение не выбралось: в поле «${got.value}», ждали «${hit.v}» — обработчик страницы вернул прежнее`, { mutations: effect.slice(0, 40), value: got.value });
+  else if (effect.length) line('OK', title, `DOM: ${describeMuts(effect)}`, { mutations: effect.slice(0, 40), value: got.value });
+  else if (got.inForm) line('OK', title, `в поле «${got.value}» — список формы: от выбора страница не меняется, значение уйдёт с отправкой`, { mutations: [], value: got.value, inForm: true });
+  else line('WARN', title, 'после выбора на странице ничего не изменилось', { mutations: [], value: got.value });
   await autoCheck(`после выбора ${sel}=${hit.v}`);
 }
 
@@ -1014,7 +1477,30 @@ async function videoStep() {
 /* меню: подсвеченный пункт против раздела на экране (верх, каждый раздел, низ, снова верх) */
 async function navStep() {
   const groups = await page.evaluate(() => [...document.querySelectorAll('nav, [role=navigation]')].map((n, i) => { const links = [...n.querySelectorAll('a[href^="#"]')].filter((a) => a.getAttribute('href').length > 1 && document.getElementById(a.getAttribute('href').slice(1))); const s = getComputedStyle(n); n.setAttribute('data-rw-nav', i); return { i, label: n.getAttribute('aria-label') || String(n.className).slice(0, 40) || n.tagName.toLowerCase(), links: links.length, shown: s.display !== 'none' && s.visibility !== 'hidden' && n.getBoundingClientRect().height > 0 }; }).filter((g) => g.links >= 3 && g.shown));
-  if (!groups.length) return line('WARN', 'активный пункт меню', 'нет меню с тремя и более якорями на разделы — проверять нечего');
+  if (!groups.length) {
+    /* многостраничный сайт: меню ведёт на страницы, а не на разделы — подсветку при прокрутке проверять не на чем (INFO, не WARN).
+       Якоря меню без цели («#about», а раздела с таким id нет — переименовали) — не многостраничность, а сломанные
+       ссылки: от трёх — WARN с их списком (раньше в INFO «якорей на разделы 4 (нужно от 3)»); один-два — в INFO
+       поимённо (так бывают сделаны и кнопки на JS: «#search»). Цель — id или <a name> (так ставит якоря Tilda:
+       браузер по ним ведёт, это не битая ссылка). Не в счёт: «#top» (браузер сам ведёт наверх), адреса роутера
+       «#/…», «#!…» и «#…:…» (всплывающие окна конструкторов) */
+    const nav = await page.evaluate(() => {
+      const ns = [...document.querySelectorAll('nav, [role=navigation]')];
+      const hrefs = ns.flatMap((n) => [...n.querySelectorAll('a[href^="#"]')].map((a) => a.getAttribute('href'))).filter((h) => h.length > 1 && !/^#(top$|\/|!)|:/i.test(h));
+      const idOf = (h) => { try { return decodeURIComponent(h.slice(1)); } catch { return h.slice(1); } };
+      const byId = (h) => !!document.getElementById(idOf(h));
+      const byName = (h) => [...document.getElementsByName(idOf(h))].some((e) => e.tagName === 'A');
+      const uniq = [...new Set(hrefs)];
+      const all = ns.flatMap((n) => [...n.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')));
+      return { menus: ns.length, links: all.length, pages: all.filter((h) => !h.startsWith('#')).length, live: uniq.filter(byId).length, named: uniq.filter((h) => !byId(h) && byName(h)), broken: uniq.filter((h) => !byId(h) && !byName(h)) };
+    }).catch(() => ({ menus: 0, links: 0, pages: 0, live: 0, named: [], broken: [] }));
+    const list6 = (l) => `${l.slice(0, 6).join(', ')}${l.length > 6 ? ` и ещё ${l.length - 6}` : ''}`;
+    if (nav.broken.length >= 3) return line('WARN', `активный пункт меню: якоря меню ведут в никуда — ${nav.broken.length}`, `${list6(nav.broken)} — на странице нет элементов с такими id (раздел переименовали, а меню нет?); якорей с целью ${nav.live + nav.named.length}. Клик по такому пункту никуда не ведёт — поправить href или id разделов`, { nav });
+    const byName = nav.named.length >= 3;
+    const tail = byName ? `меню ведёт на якоря <a name> (${list6(nav.named)}; так ставит их Tilda) — подсветку раздела по таким якорям runtime не проверяет`
+      : `меню ведёт на другие страницы (ссылок на страницы: ${nav.pages}) — подсветку раздела при прокрутке проверять не на чем`;
+    return line('INFO', `активный пункт меню: ${byName ? 'якоря на <a name> — не проверялось' : 'якорей нет'}`, nav.menus ? `меню ${nav.menus}, ссылок ${nav.links}, из них якорей с id на этой странице ${nav.live} (для проверки нужно от 3 в одном меню)${nav.named.length && !byName ? `, на <a name> ${nav.named.length}` : ''}${nav.broken.length ? `, без цели ${nav.broken.length}: ${nav.broken.join(', ')} — кнопка на JS или битая ссылка, проверить кликом` : ''} — ${tail}` : 'на странице нет меню (nav, role=navigation) — проверять нечего', { nav });
+  }
   const positions = await page.evaluate(() => { const ids = [...new Set([...document.querySelectorAll('nav a[href^="#"], [role=navigation] a[href^="#"]')].map((a) => a.getAttribute('href').slice(1)).filter((id) => id && document.getElementById(id)))]; const tops = ids.map((id) => ({ at: id, y: Math.round(document.getElementById(id).getBoundingClientRect().top + scrollY) })); return [{ at: 'верх', y: 0 }, ...tops, { at: 'низ', y: document.documentElement.scrollHeight }, { at: 'снова верх', y: 0 }]; });
   const bad = [];
   for (const p of positions) {
@@ -1101,7 +1587,9 @@ async function cssStep() {
   if (unread.length) line('WARN', `CSS: не прочитано таблиц ${unread.length}`, unread.slice(0, 4).map((s) => `${s.name} (${s.error || 'нет доступа'})`).join(', '));
 }
 
-const show = (r) => (r === undefined ? 'undefined' : typeof r === 'string' ? r : String(JSON.stringify(r) ?? r));
+/* результат eval/assert строкой; в протокол целиком — до 200 000 знаков (защита от мегабайтного JSON) */
+const SHOW_MAX = 200000;
+const show = (r) => { const s = r === undefined ? 'undefined' : typeof r === 'string' ? r : String(JSON.stringify(r) ?? r); return s.length > SHOW_MAX ? `${s.slice(0, SHOW_MAX)}… (обрезано на ${SHOW_MAX} знаков из ${s.length})` : s; };
 
 for (const { k, v, expect } of steps) {
   const errBefore = errCount(); let handled = null;
@@ -1123,13 +1611,18 @@ for (const { k, v, expect } of steps) {
     else if (k === 'nav') await navStep();
     else if (k === 'css') await cssStep();
     else if (k === 'eval') {
-      const r = await page.evaluate(String(v));
-      if (expect == null) line('OK', `eval ${short(v, 200)}`, show(r).slice(0, 300));
-      else { const got = show(r); const ok = got === String(expect) || String(r) === String(expect); line(ok ? 'OK' : 'FAIL', `eval ${short(v, 200)} = ${short(expect, 80)}`, ok ? `совпало: ${got.slice(0, 200)}` : `ожидали «${String(expect).slice(0, 80)}», получили «${got.slice(0, 200)}»`); }
+      /* результат целиком — в протокол (details); в консоль — его начало, выражение коротко в конце строки */
+      const r = await page.evaluate(String(v)); const got = show(r); const expr = ` · выражение «${short(v, 50)}${String(v).length > 50 ? '…' : ''}»`;
+      if (expect == null) line('OK', `eval ${short(v, 200)}`, got, { expr: String(v), length: got.length }, { con: `eval → ${headOf(got)}${expr}` });
+      else {
+        const ok = got === String(expect) || String(r) === String(expect);
+        line(ok ? 'OK' : 'FAIL', `eval ${short(v, 200)} = ${short(expect, 80)}`, ok ? `совпало: ${got}` : `ожидали «${String(expect)}», получили «${got}»`, { expr: String(v), expect: String(expect), length: got.length },
+          { con: ok ? `eval = ${short(expect, 80)} — совпало: ${headOf(got, 200)}${expr}` : `eval = ${short(expect, 80)} — ожидали «${headOf(expect, 120)}», получили «${headOf(got, 200)}»${expr}` });
+      }
     }
     else if (k === 'assert') {
-      const r = await page.evaluate(String(v));
-      line(r ? 'OK' : 'FAIL', `assert ${short(v, 200)}`, r ? show(r).slice(0, 200) : `ложно: ${show(r).slice(0, 200)}`);
+      const r = await page.evaluate(String(v)); const got = show(r);
+      line(r ? 'OK' : 'FAIL', `assert ${short(v, 200)}`, r ? got : `ложно: ${got}`, null, { con: `assert ${short(v, 200)} — ${r ? headOf(got, 200) : `ложно: ${headOf(got, 200)}`}` });
     }
     else if (k === 'shot') { const f = await shot(String(v)); line('OK', `снимок ${v}`, f); }
     else if (k === 'fullpage') { const file = path.join(outDir, `${tag}-full.png`); const how = await fullPageShot(page, file); line('OK', 'снимок всей страницы', `${path.basename(file)}${how !== 'full' ? ` (снято как ${how}: страница выше предела снимка браузера)` : ''}`); }
@@ -1140,9 +1633,154 @@ for (const { k, v, expect } of steps) {
   if (newErr && handled !== 'checked-errors') line('FAIL', `новые ошибки после шага ${k}: ${newErr}`, uniqCount([...realConsole(), ...page.log.errors.map((t) => ({ text: t }))].slice(-newErr).map((c) => short(c.text, 120))));
 }
 
-report.console = { errors: realConsole().map((c) => c.text), pageErrors: page.log.errors, warnings: page.log.console.filter((c) => c.type === 'warning').length, failedRequests: page.log.failed };
+/* failedRequests — все, как раньше; failedThirdParty — из них запросы сторонних iframe (INFO, не WARN) */
+report.console = { errors: realConsole().map((c) => c.text), pageErrors: page.log.errors, warnings: page.log.console.filter((c) => c.type === 'warning').length, failedRequests: page.log.failed, failedThirdParty: page.log.failed.filter((f) => foreignFrame(f)).map((f) => ({ ...f, frame: foreignFrame(f).frame })), document: { status: docStatus, expected: expectStatus } };
+drainLib(); /* WARN lib, пришедшие по ходу шагов (свой стиль не вставился) */
 report.verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 await browser.close();
 writeJson(path.join(outDir, `${tag}.json`), report);
 console.log(`\n${report.verdict}: ${fails} провалов, ${warns} предупреждений · ${path.join(outDir, `${tag}.json`)}`);
 if (fails && !opt['no-fail']) process.exit(1);
+
+/* ---------- --selftest: стенды fixtures/runtime и два своих сервера (404, сторонний iframe) ---------- */
+async function selftest() {
+  const { spawn } = await import('node:child_process');
+  const http = await import('node:http');
+  const os = await import('node:os');
+  const self = fileURLToPath(import.meta.url);
+  const dir = path.join(path.dirname(self), 'fixtures', 'runtime');
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'rw-runtime-selftest-'));
+  const U = (f) => pathToFileURL(path.join(dir, f)).href;
+  const LIBU = (f) => pathToFileURL(path.join(path.dirname(self), 'fixtures', 'lib', f)).href;
+  /* два источника: A — страница (и её 404), B — «чужой» iframe с упавшей картинкой (другой порт — другой источник) */
+  const serve = (handler) => new Promise((res) => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => res(s)); });
+  const B = await serve((req, res) => {
+    if (req.url === '/frame') { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет</p><img src="/pixel-missing.gif" alt="">'); return; }
+    res.statusCode = 404; res.end('нет');
+  });
+  const bUrl = `http://127.0.0.1:${B.address().port}`;
+  /* C — тот же «чужой» виджет на имени localhost: для страницы на 127.0.0.1 это другой сайт, Chrome выносит iframe
+     в свой процесс (как карту Яндекса), и его строки консоли во вкладку не приходят. localhost браузер может
+     открыть и по 127.0.0.1, и по ::1 — сервер слушает оба адреса на одном порту (только петлю, не сеть);
+     ::1 не открылся — случай пропускается */
+  const frameC = (req, rs) => { if (req.url === '/frame') { rs.setHeader('content-type', 'text/html; charset=utf-8'); rs.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет</p><img src="/pixel-missing.gif" alt="">'); return; } rs.statusCode = 404; rs.end('нет'); };
+  const C4 = await serve(frameC);
+  const C = await new Promise((res) => { const s = http.createServer(frameC); s.once('error', () => res(null)); s.listen(C4.address().port, '::1', () => res(s)); });
+  const cUrl = C ? `http://localhost:${C4.address().port}` : null;
+  const A = await serve((req, res) => {
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    if (req.url === '/') { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${bUrl}/frame" width="400" height="200"></iframe>`); return; }
+    if (req.url === '/xsite' && cUrl) { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${cUrl}/frame" width="400" height="200"></iframe>`); return; }
+    /* битая ссылка на чужой виджет: документ iframe отвечает 404 — это ошибка самой страницы, не «сторонних iframe» */
+    if (req.url === '/gone') { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${bUrl}/map-widget" width="400" height="200"></iframe>`); return; }
+    if (req.url === '/gone-xsite' && cUrl) { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${cUrl}/map-widget" width="400" height="200"></iframe><iframe src="${cUrl}/frame" width="400" height="200"></iframe>`); return; }
+    res.statusCode = 404; res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Нет страницы</title><h1>Такой страницы нет</h1>');
+  });
+  const aUrl = `http://127.0.0.1:${A.address().port}`;
+  /* SITE_REWORK_DISMISS — пустая у всех случаев, кроме тех, где задана своя (env): переменная из окружения не должна
+     менять ожидания */
+  const run = (tag, args, target, env = {}) => new Promise((res) => {
+    const p = spawn(process.execPath, [self, '--out', out, '--tag', tag, ...args, '--', target], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SITE_REWORK_DISMISS: '', ...env } });
+    let text = ''; p.stdout.on('data', (d) => { text += d; }); p.stderr.on('data', (d) => { text += d; });
+    const timer = setTimeout(() => p.kill(), 240000);
+    p.on('close', (code) => { clearTimeout(timer); let j = null; try { j = JSON.parse(fs.readFileSync(path.join(out, 'runtime', `${tag}.json`), 'utf8')); } catch { /* нет протокола */ } res({ code, text, j }); });
+  });
+  /* ожидание: [статус, what, details] — what и details регулярками; статус null — любой */
+  const has = (j, [st, w, d]) => ((j && j.steps) || []).some((s) => (st == null || s.status === st) && w.test(String(s.what)) && (!d || d.test(String(s.details || ''))));
+  const CASES = [
+    { name: 'form', file: 'form.html', code: 1, args: ['--type', '#name=Иван', '--type', '#d=2026-10-10', '--type', '#dbad=10.10.2026', '--type', '#dnone=завтра', '--type', '#t=20:30', '--type', '#dt=2026-10-10T20:30', '--type', '#dts=2026-10-10T20:30:00', '--type', '#drw=2026-10-10', '--type', '#m=2026-10', '--select', '#venue=oktava', '--select', '#loose=2', '--select', '#filter=bar', '--select', '#hall=banquet', '--select', '#hall=terrace', '--eval', 'document.body.dataset.date', '--expect', '2026-10-10'],
+      want: [['OK', /^ввод в #name$/, /Иван/], ['OK', /^ввод в #d$/, /«2026-10-10».*input и change/], ['OK', /^ввод в #dbad$/, /2026-10-10/], ['FAIL', /^ввод в #dnone$/, /ГГГГ-ММ-ДД/], ['OK', /^ввод в #t$/, /20:30/], ['OK', /^ввод в #dt$/, /2026-10-10T20:30/], ['OK', /^ввод в #m$/, /2026-10/],
+        ['OK', /^ввод в #dts$/, /«2026-10-10T20:30».*браузер записал «2026-10-10T20:30:00» как «2026-10-10T20:30»/], ['FAIL', /^ввод в #drw$/, /в поле «2026-01-01» — обработчик страницы переписал значение/],
+        ['OK', /^выбор #venue/, /список формы/], ['WARN', /^выбор #loose/, /ничего не изменилось/], ['OK', /^выбор #filter/, /^DOM/], ['OK', /^eval .* = 2026-10-10$/, /совпало/],
+        ['FAIL', /^выбор #hall = «Банкетный зал»$/, /^вариант недоступен \(disabled\) — человек его не выберет; доступные: main, terrace$/], ['OK', /^выбор #hall = «Веранда»$/, /в поле «terrace» — список формы/]],
+      not: [[null, /^ввод в/, /маска/], ['FAIL', /^ввод в #dts$/], ['OK', /^выбор #hall = «Банкетный зал»$/]] },
+    { name: 'hover', file: 'hover.html', code: 0, args: ['--hover', '.nav__link', '--hover', '.clip', '--hover', '.ok', '--hover-all'],
+      want: [['OK', /^наведение \.nav__link$/, /backgroundSize: 0% 2px → 100% 2px/], ['OK', /^наведение \.clip$/, /clipPath/], ['OK', /^наведение \.ok$/, /color/], ['WARN', /^наведение: мёртвый селектор, элемента нет в DOM: 1$/, /\.card:hover \.card__tip — элемента \.card \.card__tip нет в DOM/], ['WARN', /^наведение перебито другим правилом: 1$/, /\.btn:hover/],
+        ['WARN', /^наведение: цели правила нет у наведённых элементов: 1$/, /\.box:hover \.box__tip — у этого \.box нет \.box__tip \(в DOM таких 1 — у других\)/]],
+      not: [['WARN', /перебито/, /card__tip|box__tip/], ['WARN', /мёртвый селектор/, /box__tip/]] },
+    { name: 'scroll', file: 'scroll.html', code: 0, verdict: 'OK', args: ['--eval', "document.getElementById('end').scrollIntoView()", '--scroll'],
+      want: [['OK', /^прокрутка/, /ждали появления: 1 \(section\.reveal(\.in)? «Появляется при прокрутке»\) — не появились: 0/], ['OK', /^прокрутка/, /показываются при наведении \(проверено наведением.*\): 1 \(span\.card__tip/], ['OK', /^прокрутка/, /вертикальное письмо сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/], ['OK', /^текст перекрыт картинкой$/, /^нет/]],
+      not: [[null, /^прокрутка/, /rail__tip|текст шире коробки/]] },
+    /* подсказка — только то, что наведение действительно показывает: приглушение соседей и проигравшее правило — WARN */
+    { name: 'reveal-hover', file: 'reveal-hover.html', code: 0, verdict: 'WARN', args: ['--scroll'],
+      want: [['WARN', /^прокрутка/, /не появились: 3 \(div\.card\.reveal «Первая карточка», div\.card\.reveal «Вторая карточка», span\.lose__tip\.reveal «Проигравшая подсказка»\)/], ['WARN', /^прокрутка/, /показываются при наведении \(проверено наведением.*\): 2 \(span\.card__tip «Подсказка при наведении», span\.sib__tip «Подсказка соседа»\)/]] },
+    /* вся страница в закреплённой обёртке (ScrollSmoother) — её блоки появления проверяются; закрытое меню на весь
+       экран выше полутора окон — не обёртка, его пункты с opacity 0 не в «не появились» */
+    { name: 'smooth', file: 'smooth.html', code: 0, verdict: 'WARN', args: ['--scroll'],
+      want: [['WARN', /^прокрутка/, /не появились: 2 \(div\.reveal «Блок появления — скрипт сломан», div\.reveal «Второй блок появления»\)/], ['WARN', /^прокрутка/, /показываются при наведении .*: 1 \(span\.card__tip/]],
+      not: [['WARN', /открытом меню/], [null, /^прокрутка/, /drawer__link|Пункт меню/]] },
+    /* вертикальное письмо: в коробке — отсеяно, шире коробки сбоку — находка; «текст обрезан» и «не влез в поле» не теряются */
+    { name: 'vert', file: 'vert.html', code: 0, verdict: 'WARN', args: ['--scroll', '--click', '#f'],
+      want: [['WARN', /^прокрутка/, /текст шире коробки: div\.side «Бронь» \d+>\d+px \(вертикальное письмо: сбоку вылезло на \d+px/], ['WARN', /^прокрутка/, /текст обрезан: span\.btn/], ['WARN', /^прокрутка/, /текст не влез в поле: input#f/], ['WARN', /^прокрутка/, /сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/],
+        ['WARN', /^переполнение после клика #f/, /текст обрезан: span\.btn.*текст не влез в поле: input#f/]] },
+    { name: 'nav-broken', file: 'nav-broken.html', code: 0, verdict: 'WARN', args: ['--nav'],
+      want: [['WARN', /^активный пункт меню: якоря меню ведут в никуда — 4$/, /^#about, #menu, #events, #contacts — /]], not: [[null, /якорей нет/]] },
+    /* якоря на <a name> (Tilda) — не битые: INFO «не проверялось», не WARN */
+    { name: 'nav-named', file: 'nav-named.html', code: 0, verdict: 'OK', args: ['--nav'],
+      want: [['INFO', /^активный пункт меню: якоря на <a name> — не проверялось$/, /якоря <a name> \(#about, #menu, #events, #contacts; так ставит их Tilda\)/]], not: [['WARN', /якоря меню ведут в никуда/]] },
+    { name: 'warns', file: 'warns.html', code: 0, verdict: 'WARN', warns: 1, args: ['--scroll'],
+      want: [['WARN', /^прокрутка/, /не появились: 1 \(div\.never\.reveal «Так и не появился»\)/], ['WARN', /^прокрутка/, /текст шире коробки: div\.narrow «Неразрывнаядлиннаястрока»/], ['WARN', /^текст перекрыт картинкой$/, /^1 мест: p\.under .* под svg\.cover/]] },
+    { name: 'menu-burger', file: 'menu.html', code: 0, args: ['--viewport', 'mobile', '--click', '#burger', '--scroll'],
+      want: [['OK', /^клик #burger$/], ['WARN', /^прокрутка идёт при открытом меню\/диалоге$/, /div#drawer.*после --click #burger/]] },
+    { name: 'menu-closed', file: 'menu.html', code: 0, args: ['--viewport', 'mobile', '--click', '#burger', '--click', '#close', '--scroll'],
+      want: [['OK', /^клик #close$/], ['OK', /^прокрутка/]], not: [['WARN', /открытом меню/]] },
+    { name: 'fixed-hero', file: 'fixed-hero.html', code: 0, args: ['--scroll'],
+      want: [['OK', /^прокрутка/]], not: [['WARN', /открытом меню/]] },
+    { name: 'menu-more', file: 'menu.html', code: 0, args: ['--click', '#more', '--scroll', '--nav', '--eval', 'document.body.dataset.long'],
+      want: [['OK', /^клик #more$/], ['INFO', /^активный пункт меню: якорей нет$/, /меню ведёт на другие страницы/], ['OK', /^eval document\.body\.dataset\.long$/, /строка 60 \| КОНЕЦ$/]],
+      not: [['WARN', /открытом меню/], ['WARN', /активный пункт/]] },
+    { name: 'status-404', url: `${aUrl}/nope`, code: 0, args: ['--expect-status', '404'],
+      want: [['OK', /^загрузка/, /ошибок в консоли нет/], ['INFO', /^ответ документа 404, как ждали$/]], not: [['WARN', /упавшие запросы/]] },
+    { name: 'status-plain', url: `${aUrl}/nope`, code: 1, args: [],
+      want: [['FAIL', /^загрузка/, /Failed to load resource.*--expect-status 404/]] },
+    { name: 'status-mismatch', url: `${aUrl}/`, code: 1, args: ['--expect-status', '404'],
+      want: [['FAIL', /^ответ документа 200$/, /ждали 404/]] },
+    { name: 'iframe', url: `${aUrl}/`, code: 0, args: [],
+      want: [['OK', /^загрузка/, /ошибок в консоли нет/], ['INFO', /^запросы сторонних iframe: не загрузилось 1$/, /в iframe 127\.0\.0\.1:\d+: 1 \(HTTP 404 127\.0\.0\.1/]], not: [['WARN', /упавшие запросы/]] },
+    ...(C ? [{ name: 'iframe-xsite', url: `${aUrl}/xsite`, code: 0, args: [],
+      want: [['OK', /^загрузка/, /ошибок в консоли нет/], ['INFO', /^запросы сторонних iframe: не загрузилось 1$/, /в iframe localhost:\d+: 1 \(HTTP 404 localhost/]], not: [['WARN', /упавшие запросы/]] }] : []),
+    /* документ самого iframe ответил 404 — битая ссылка сайта: WARN «упавшие запросы» и строка консоли в ошибках */
+    { name: 'iframe-doc', url: `${aUrl}/gone`, code: 1, args: [],
+      want: [['FAIL', /^загрузка/, /404/], ['WARN', /^упавшие запросы$/, /HTTP 404 map-widget/]], not: [['INFO', /^запросы сторонних iframe/]] },
+    /* то же у виджета другого сайта (свой процесс, как карта Яндекса): документ 404 — WARN; картинка внутри живого
+       виджета того же сайта — INFO. Строка консоли iframe другого сайта во вкладку не приходит — загрузка OK */
+    ...(C ? [{ name: 'iframe-doc-xsite', url: `${aUrl}/gone-xsite`, code: 0, args: [],
+      want: [['WARN', /^упавшие запросы$/, /^HTTP 404 map-widget$/], ['INFO', /^запросы сторонних iframe: не загрузилось 1$/, /в iframe localhost:\d+: 1 \(HTTP 404 localhost/]], not: [['WARN', /упавшие запросы/, /pixel-missing/]] }] : []),
+    /* окна при загрузке (lib, стенды fixtures/lib): открытое окно — WARN «окно» в вердикте и JSON (раньше печаталось мимо
+       счёта); SITE_REWORK_DISMISS увёл на главную — нужная страница открыта заново (INFO) и мерится она (mamuka.rest /menu/,
+       29.09: мерилась главная с OK); страница снова уводит — WARN «замер не той страницы» */
+    { name: 'window', url: LIBU('modal-city.html'), code: 0, verdict: 'WARN', args: [],
+      want: [['WARN', /^окно$/, /на странице открыто окно .*SITE_REWORK_DISMISS="\.fancybox-container li\.style-listing-items__item"/]], not: [[null, /^свой стиль/]] },
+    /* главная шумит (ошибка в консоли, исключение, упавшая картинка): после повторного открытия они не в счёте — mamuka.rest
+       /menu/ получала запросы и консоль промежуточной главной (464 запроса вместо 184, «упавшее» видео главной, 30.09) */
+    { name: 'dismiss-nav', url: `${LIBU('dismiss-nav.html')}?noisy=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'OK', args: ['--eval', "document.getElementById('mark') ? 'нужная' : 'чужая'", '--expect', 'нужная'],
+      want: [['INFO', /^SITE_REWORK_DISMISS$/, /увело на .*dismiss-home\.html\?noisy=1 — нужная страница открыта заново.*запросы и консоль в счёте — только её/], ['OK', /^eval /, /совпало/], ['OK', /^загрузка /, /ошибок в консоли нет/]], not: [['WARN', /^окно$/], ['WARN', /^упавшие запросы$/]] },
+    /* то же в Firefox на file://: адрес вкладки после перехода скриптом отставал — переход не замечался, мерилась главная (30.09) */
+    ...(findBrowser('firefox') ? [{ name: 'dismiss-nav-ff', url: `${LIBU('dismiss-nav.html')}?noisy=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'OK', args: ['--browser', 'firefox', '--eval', "document.getElementById('mark') ? 'нужная' : 'чужая'", '--expect', 'нужная'],
+      want: [['INFO', /^SITE_REWORK_DISMISS$/, /увело на .*dismiss-home\.html\?noisy=1 — нужная страница открыта заново/], ['OK', /^eval /, /совпало/], ['OK', /^загрузка /, /ошибок в консоли нет/]], not: [['WARN', /^упавшие запросы$/]] }] : []),
+    { name: 'dismiss-wrong', url: `${LIBU('dismiss-nav.html')}?bounce=1`, env: { SITE_REWORK_DISMISS: '.city li.city__item' }, code: 0, verdict: 'WARN', args: [],
+      want: [['WARN', /^SITE_REWORK_DISMISS$/, /замер не той страницы/]] },
+  ];
+  if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
+  let bad = 0;
+  console.log(`runtime.mjs --selftest: ${CASES.length} прогонов, по одному браузеру · протоколы ${out}`);
+  try {
+    for (const c of CASES) {
+      const r = await run(c.name, c.args, c.url || U(c.file), c.env);
+      const miss = [];
+      if (!r.j) miss.push(`нет протокола: ${short(r.text.split('\n').filter(Boolean).slice(-2).join(' | '), 200)}`);
+      if (r.code !== c.code) miss.push(`код выхода ${r.code}, ждали ${c.code}`);
+      if (c.verdict && r.j && r.j.verdict !== c.verdict) miss.push(`вердикт ${r.j.verdict}, ждали ${c.verdict}`);
+      if (c.warns != null && !new RegExp(` ${c.warns} предупреждени`).test(r.text)) miss.push(`предупреждений не ${c.warns}: ${short((r.text.match(/\d+ провалов, \d+ предупреждений/) || [''])[0], 60)}`);
+      for (const w of c.want || []) if (!has(r.j, w)) miss.push(`нет строки ${w[0] || '*'} ${w[1]}${w[2] ? ` — ${w[2]}` : ''}`);
+      for (const w of c.not || []) if (has(r.j, w)) miss.push(`лишняя строка ${w[0] || '*'} ${w[1]}${w[2] ? ` — ${w[2]}` : ''}`);
+      if (miss.length) bad++;
+      console.log(`${miss.length ? 'FAIL' : 'OK  '} ${c.name}${miss.length ? ` — ${miss.join('; ')}` : ''}`);
+      if (miss.length) console.log(r.text.split('\n').filter((l) => /^(OK|WARN|FAIL|INFO) /.test(l)).map((l) => `       ${short(l, 220)}`).join('\n'));
+    }
+  } finally { A.close(); B.close(); C4.close(); if (C) C.close(); }
+  /* сошлось — временные протоколы и снимки не нужны; разошлось — остаются для разбора */
+  if (!bad) { try { fs.rmSync(out, { recursive: true, force: true }); } catch { /* занято — останется во временной папке */ } }
+  console.log(bad ? `\nFAIL: разошлось ${bad} из ${CASES.length} — протоколы в ${out}` : `\nOK: все ${CASES.length} прогонов сошлись`);
+  return bad ? 1 : 0;
+}

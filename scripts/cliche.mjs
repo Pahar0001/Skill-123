@@ -144,7 +144,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  launch, preparePage, gotoRetry, waitForOverlay, forceInstantScroll, scrollThrough, scrollToY, evaluateWith, hexColors,
+  launch, preparePage, gotoRetry, onPageLogReset, waitForOverlay, forceInstantScroll, scrollThrough, scrollToY, evaluateWith, hexColors,
   EFFECTIVE_OPACITY_FN, HEX_FN, parseArgs, pickViewports, parseViewport, runDir, writeJson, readJson, ensureDir, sleep, slugFromUrl,
   EFFECTIVE_ZOOM_FN, IS_TILDA_SERVICE_FN, collectWarnings, takeWarnings, closeConsent, pagesFrom,
 } from './lib.mjs';
@@ -1007,6 +1007,8 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
   const page = await preparePage(browser, vp, {});
   const cssTexts = [];
   page.on('response', async (r) => { try { if (r.request().resourceType() === 'stylesheet' && r.ok()) cssTexts.push(await r.text()); } catch { /* тело недоступно */ } });
+  /* нажатие SITE_REWORK_DISMISS увело на другой адрес и lib открыл нужную страницу заново — стили промежуточной не в счёт */
+  onPageLogReset(page, () => { cssTexts.length = 0; });
   try {
     await gotoRetry(page, url, { timeout: 90000 });
     /* адрес, куда пришли (с переадресацией сервера: /menu → /menu/), — до окон: SITE_REWORK_DISMISS жмёт уже
@@ -1022,7 +1024,11 @@ export async function measureViewport(browser, url, vpName, vp, { keepPage = fal
        главная — 3132 px вместо 18 976) — выбор запомнен, открыть нужный адрес ещё раз */
     const pressed = (consent && consent.found) || ((overlay && overlay.dismiss) || []).some((d) => d && d.found);
     const bare = (u) => String(u).replace(/#.*$/, '').replace(/\/+$/, '');
-    if (pressed && bare(page.url()) === bare(landed)) await page.waitForNavigation({ timeout: 2500, waitUntil: 'domcontentloaded' }).catch(() => {});
+    /* нажатие SITE_REWORK_DISMISS увело — lib (waitForOverlay → applyDismiss) уже открыл нужную страницу заново: куда
+       увело и чем кончилось — из его итога (ждать перехода здесь уже нечего) */
+    const libNav = ((overlay && overlay.dismiss) || []).find((d) => d && d.nav);
+    if (libNav) { consent.movedTo = libNav.nav; if (libNav.wrongPage) consent.again = `снова увело на ${libNav.back} — мерилась она`; else if (libNav.again) consent.again = 'окно вернулось — сайт не запомнил выбор'; }
+    if (pressed && !libNav && bare(page.url()) === bare(landed)) await page.waitForNavigation({ timeout: 2500, waitUntil: 'domcontentloaded' }).catch(() => {});
     if (bare(page.url()) !== bare(landed)) {
       consent.movedTo = page.url();
       await gotoRetry(page, url, { timeout: 90000 });

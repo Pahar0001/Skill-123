@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Окно выбора города</title>
+<!-- motion selftest: окно из SITE_REWORK_DISMISS уводит на другую страницу (как город у mamuka.rest: нажали
+     «Ярославль» — перешли на главную). Выбор запоминается на вкладку (sessionStorage), снимаемая страница должна
+     открыться заново, а не сниматься чужая под её адресом. -->
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1d1d24; background: #f4f4f8; }
+  .page { min-height: 220vh; padding: 40px 6vw; }
+  .city { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .6); }
+  .city ul { margin: 0; padding: 24px 40px; list-style: none; background: #fff; border-radius: 12px; }
+  .city li { padding: 6px 0; cursor: pointer; }
+</style>
+</head>
+<body>
+<main class="page"><h1>О ресторане</h1><p>Страница, которую снимаем.</p></main>
+<script>
+  let chosen = null;
+  try { chosen = sessionStorage.getItem('rw-city'); } catch (e) { /* хранилище недоступно — окно покажется */ }
+  if (!chosen) {
+    const d = document.createElement('div'); d.className = 'city';
+    d.innerHTML = '<ul><li class="city__item">Ярославль</li><li class="city__item">Рыбинск</li></ul>';
+    document.body.append(d);
+    for (const li of d.querySelectorAll('li')) li.addEventListener('click', () => {
+      try { sessionStorage.setItem('rw-city', li.textContent); } catch (e) { /* не запомнится */ }
+      location.href = 'tilda.html';
+    });
+  }
+</script>
+</body>
+</html>

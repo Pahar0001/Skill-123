@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд discover: главная</title>
+<!--
+  Стенд discover (как mamuka.rest, 29.09): шапка — div.header без <header> и <nav>, пункты меню a.header-menu__item
+  гарнитурой Courier New 24px; заголовки разделов на div (h1–h2 нет) гарнитурой Georgia 40px; текст — Arial.
+  Ссылки: список /dinners и две страницы события /dinners/1, /dinners/2 (шаблон /dinners/*).
+  Ждём от discover.mjs file:///…/site/index.html --pages-shots 2:
+    pages/dinners-item.png (шаблон /dinners/*) и pages/dinners.png (список) — два файла, а не один затёртый;
+    «шрифты: заголовки «Georgia» … навигация «Courier New» …» — по замеру, не «null»;
+    в паспорте «навигация (…): гарнитура Courier New».
+-->
+<style>
+  body { margin: 0; font: 16px/1.6 Arial, sans-serif; color: #222; }
+  .header { display: flex; gap: 32px; align-items: center; padding: 16px 32px; background: #f4f4f4; }
+  .header-menu__item { font: 500 24px 'Courier New', monospace; color: #222; text-decoration: none; }
+  .section { padding: 48px 32px; }
+  .section__title { font: 500 40px/1.2 Georgia, serif; margin-bottom: 16px; }
+  .card { display: block; padding: 16px; border: 1px solid #ddd; margin: 8px 0; color: #222; }
+</style>
+</head>
+<body>
+<div class="header">
+  <strong>Ресторан</strong>
+  <a class="header-menu__item" href="dinners/index.html">Ужины</a>
+  <a class="header-menu__item" href="#about">О ресторане</a>
+  <a class="header-menu__item" href="#contacts">Контакты</a>
+</div>
+<div class="section">
+  <div class="section__title">Гастрольные ужины</div>
+  <p>Каждый месяц к нам приезжает шеф из другого города и готовит ужин из пяти подач.</p>
+  <a class="card" href="dinners/1/index.html">Ужин с шефом из Тбилиси</a>
+  <a class="card" href="dinners/2/index.html">Ужин с шефом из Казани</a>
+</div>
+<div class="section" id="about">
+  <div class="section__title">О ресторане</div>
+  <p>Семейный ресторан у реки: грузинская кухня, своя пекарня и сыроварня, летняя веранда на сто мест.</p>
+</div>
+</body>
+</html>

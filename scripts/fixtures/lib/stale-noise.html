@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд shots: шум в фото</title>
+<!--
+  Стенд shots.mjs (fixtures/lib/selftest.mjs, случай shots): первый экран после прокрутки до низа и возврата.
+  Фото — мелкая яркая сетка (JPEG, собирается скриптом из холста, без файлов рядом), показано уменьшенным.
+  По умолчанию после прокрутки у фото включается will-change: transform — браузер перерисовывает картинку другим
+  способом, и на резких краях сетки меняются редкие пиксели (как шум пересэмплирования JPEG на афише и 404
+  «Эпицентра», 29.09). Ждём: OK с пометкой «шум пересэмплирования в фото img.ph», без WARN.
+  ?shift=1 — после прокрутки у фото сдвигается object-position: меняется почти каждый пиксель картинки, причины по
+  стилям shots не видит. Ждём: WARN «первый экран … отличается» (плотное отличие — не шум).
+-->
+<style>
+  body { margin: 0; font: 16px Arial, sans-serif; color: #222; }
+  .hero { padding: 40px; }
+  .ph { display: block; width: 333.3px; height: 222.7px; object-fit: cover; margin-left: 10.4px; }
+  .shift .ph { width: 222.3px; height: 222.3px; }
+  .tall { height: 3000px; }
+</style>
+</head>
+<body>
+<div class="hero"><h1>Шум в фото</h1><img class="ph" alt="сетка"></div>
+<div class="tall"></div>
+<script>
+  const shift = /[?&]shift=1/.test(location.search);
+  if (shift) document.body.classList.add('shift');
+  const c = document.createElement('canvas'); c.width = 600; c.height = 400;
+  const x2 = c.getContext('2d'); const img = x2.createImageData(600, 400);
+  let s = 12345; const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let y = 0; y < 400; y++) for (let x = 0; x < 600; x++) {
+    /* ?shift=1 — под сеткой плавный переход слева направо: сдвиг кадра меняет каждый пиксель, а не только края */
+    const i = (y * 600 + x) * 4; const v = Math.min(255, ((x % 7 === 0) || (y % 5 === 0) ? 230 : 30 + (shift ? x * 0.35 : 0)) + rnd() * 25);
+    img.data[i] = v; img.data[i + 1] = v * 0.8; img.data[i + 2] = v * 0.4; img.data[i + 3] = 255;
+  }
+  x2.putImageData(img, 0, 0);
+  document.querySelector('.ph').src = c.toDataURL('image/jpeg', 0.8);
+  addEventListener('scroll', () => {
+    if (scrollY < 800) return;
+    const p = document.querySelector('.ph');
+    if (shift) p.style.objectPosition = '0% 0%'; else p.style.willChange = 'transform';
+  }, { passive: true });
+</script>
+</body>
+</html>
