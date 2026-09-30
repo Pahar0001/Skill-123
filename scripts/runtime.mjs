@@ -251,7 +251,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  flagsDump, launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
+  flagsDump, closestFlag, launch, preparePage, gotoRetry, waitForOverlay, scrollThrough, fullPageShot, resolveViewport, runDir, writeJson, sleep, ensureDir, loadSharp,
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
   collectWarnings, takeWarnings, collectNotes, takeNotes, warningLabel, onPageLogReset, findBrowser,
@@ -276,7 +276,28 @@ const isKnown = (s) => { const n = nameOf(s); return n != null && (STEP.has(n) |
 /* справка — до всего остального: без адреса, папок и браузера. Смотрим только слова до «--»:
    после него идёт адрес, и «-- -h» — это адрес «-h», а не справка. --help=… — тоже справка */
 const endOfFlags = argv.indexOf('--');
-if ((endOfFlags < 0 ? argv : argv.slice(0, endOfFlags)).some((a) => a === '-h' || /^--(help|h)(=|$)/.test(String(a)))) {
+/* неизвестный флаг — ошибка, как у остальных скриптов: раньше был WARN в начале stderr, и проверка с опечаткой
+   («--scrol») молча не выполнялась, а протокол выходил зелёным (SKILL-ISSUES 450). До справки — чтобы «--x -h» тоже отказал */
+const HELP_RE = /^--(help|h)(=|$)/;
+const badFlags = [];
+{
+  /* по словам, как основной разбор ниже: известный флаг со значением без «=» забирает следующее слово, даже если оно
+     начинается с «-» (--eval "-1"), — такое слово не флаг. «-viewport» (один дефис у известного) — ниже, своя подсказка */
+  const words = (endOfFlags < 0 ? argv : argv.slice(0, endOfFlags)).map(String);
+  for (let i = 0; i < words.length; i++) {
+    const a = words[i];
+    if (!a.startsWith('-') || a === '-h' || HELP_RE.test(a)) continue;
+    if (isKnown(a)) { const n = nameOf(a); if (!FLAG.has(n) && !a.includes('=') && words[i + 1] !== undefined && words[i + 1] !== '--' && !isKnown(words[i + 1])) i++; continue; }
+    if (!a.startsWith('--') && isKnown(`-${a}`)) continue;
+    badFlags.push(a);
+  }
+}
+if (badFlags.length) {
+  const all = [...STEP, ...FLAG, ...OPTS];
+  for (const a of badFlags) { const k = nameOf(a) || a.replace(/^-+/, '').split('=')[0]; const g = closestFlag(k, all); console.error(`неизвестный флаг ${a.split('=')[0]}${g ? ` — может быть, --${g}?` : ''} (-h — список шагов и настроек)`); }
+  process.exit(1);
+}
+if ((endOfFlags < 0 ? argv : argv.slice(0, endOfFlags)).some((a) => a === '-h' || HELP_RE.test(String(a)))) {
   const src = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8');
   console.log(src.slice(src.indexOf('/**') + 3, src.indexOf('*/')).split('\n').map((l) => l.replace(/^ \* ?/, '')).join('\n').trim());
   process.exit(0);

@@ -18,7 +18,7 @@ Git Bash `~` раскрывается сам, в PowerShell 5.1 — нет, та
 код 1 при итоговом FAIL у `discover`, `shots`, `a11y`, `perf`, `texture`; у
 `runtime` и `cliche` FAIL и так даёт код 1 (у `runtime` `--no-fail` даёт 0).
 Неизвестный флаг (опечатка) у `discover`, `motion`, `cliche`, `tilda`, `a11y`, `perf`, `texture`, `media`,
-`grain-tile`, `recraft`, `copy`, `typeset` — ошибка с кодом 1 и подсказкой «может быть, --…?»; у остальных — `WARN неизвестный флаг
+`grain-tile`, `recraft`, `copy`, `typeset`, `runtime` — ошибка с кодом 1 и подсказкой «может быть, --…?»; у остальных — `WARN неизвестный флаг
 --x` в stderr: адрес, команду скрипта (`compare`, `init`…) и слово на «-» он значением не забирает;
 увидел такой WARN — поправить команду и перепрогнать, протокол мог сняться не с теми настройками.
 Все флаги всех скриптов — `reference/flags.md` (собирается из кода `flags-doc.mjs`, руками не
