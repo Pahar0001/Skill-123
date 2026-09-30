@@ -1451,7 +1451,7 @@ export async function freezeMotion(page) {
 /* ---------- снимки ---------- */
 
 /** Оговорка для сводок: чего не видно на снимке всей страницы. */
-export const FULLPAGE_NOTE = 'Снимок всей страницы одним кадром (способы full и dpr1) показывает закреплённые слои — зерно, шапку, нижнюю панель, боковую колонку — только в верхнем экране: ниже их нет. Склейка из снимков окна (способ segments): закреплённое на всю высоту окна (боковая колонка, половина экрана, зерно, вуаль) — в каждом окне, то есть на всей высоте склейки (пункты колонки повторяются через высоту окна); закреплённые полосы и мелкое (шапка, вкладка, «наверх») — по одному разу (прижатые к низу окна — в последнем окне, остальные — в первом окне, где видны); липкие (sticky) ниже высоты окна — на своём месте в потоке, а не на каждом шве. Как закреплённое видно при прокрутке — по снимкам окна (*-scroll-NN.png).';
+export const FULLPAGE_NOTE = 'Снимок всей страницы одним кадром (способы full и dpr1) показывает закреплённые слои — зерно, шапку, нижнюю панель, боковую колонку — только в верхнем экране: ниже их нет. Склейка из снимков окна (способ segments): закреплённое на всю высоту окна (боковая колонка, половина экрана, зерно, вуаль) — в каждом окне, то есть на всей высоте склейки (пункты колонки повторяются через высоту окна); закреплённые полосы и мелкое (шапка, вкладка, «наверх») — по одному разу (прижатые к низу окна — в последнем окне, остальные — в первом окне, где видны); липкие (sticky) ниже высоты окна — на своём месте в потоке, а не на каждом шве. Как закреплённое видно при прокрутке — по снимкам окна (*-scroll-NN.png). iframe (карта, видео, виджет) на снимке всей страницы бывает серым или обрезанным: виджет меряет себя, когда окно растягивают под снимок, — смотреть его на снимке окна (runtime --fullpage снимает окно с каждым iframe сам).';
 
 /* склейка, перед снимком каждого окна (fixed и sticky):
      на всю высоту окна (от 90%: боковая колонка — рельс «Эпицентра», колонка mamuka; половина «пополам»; слой на весь
@@ -1946,11 +1946,12 @@ export async function findOverflow(page, { tolerance = 1, limit = 20 } = {}) {
     ? `за краем экрана ${r.vw}px: ${r.outer.slice(0, 5).map(fmt).join(' | ')}${r.count > 5 ? ` и ещё ${r.count - 5}` : ''} (scrollWidth документа ${r.docScrollWidth})`
     : `за край экрана ${r.vw}px ничего не торчит (scrollWidth документа ${r.docScrollWidth})`;
   if (r.docWider) r.summary += ` · страница шире экрана на ${r.docScrollWidth - r.vw}px${r.sideScroll ? ', можно уехать вбок' : ' (полоса спрятана overflow-x)'}: ${r.wideCauses.slice(0, 3).map((o) => `${o.sig} до ${o.right}px${o.opacity <= 0.05 ? ' [невидимый]' : ''}`).join(' | ') || 'причина не найдена'}`;
-  if (r.textWiderCount) r.summary += ` · текст шире коробки: ${r.textWider.slice(0, 3).map((t) => `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`).join(' | ')}`;
-  if (r.panelCutCount) r.summary += ` · обрезано панелью: ${r.panelCut.slice(0, 3).map((t) => `${t.panel} «${t.text}» до ${t.textRight}px при краю ${t.panelRight}px`).join(' | ')}`;
+  /* пары чисел — правые края по x от левого края окна (CSS px), а не ширины: «312>294px» читали как ширины (SKILL-ISSUES 503) */
+  if (r.textWiderCount) r.summary += ` · текст шире коробки: ${r.textWider.slice(0, 3).map((t) => `${t.sig} «${t.text}» — правый край текста ${t.textRight} px при крае коробки ${t.boxRight} px`).join(' | ')} (края по x от левого края окна, CSS px)`;
+  if (r.panelCutCount) r.summary += ` · обрезано панелью: ${r.panelCut.slice(0, 3).map((t) => `${t.panel} «${t.text}» — правый край текста ${t.textRight} px при крае панели ${t.panelRight} px`).join(' | ')} (края по x, CSS px)`;
   if (r.coveredCount) r.summary += ` · текст перекрыт: ${r.covered.slice(0, 3).map((t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y})`).join(' | ')}${r.coveredCount > 3 ? ` и ещё ${r.coveredCount - 3}` : ''}`;
-  if (r.clipCutCount) r.summary += ` · текст обрезан: ${r.clipCut.slice(0, 3).map((t) => `${t.sig} «${t.text}»${t.nowrap ? ' (nowrap)' : ''} до ${t.textRight}px при краю ${t.how === 'коробка' ? 'своей коробки' : t.clip} ${t.clipRight}px`).join(' | ')}${r.clipCutCount > 3 ? ` и ещё ${r.clipCutCount - 3}` : ''}`;
-  if (r.fieldCutCount) r.summary += ` · текст не влез в поле: ${r.fieldCut.slice(0, 3).map((t) => `${t.sig} ${t.what} «${t.text}» ${t.textW}>${t.innerW}px`).join(' | ')}${r.fieldCutCount > 3 ? ` и ещё ${r.fieldCutCount - 3}` : ''}`;
+  if (r.clipCutCount) r.summary += ` · текст обрезан: ${r.clipCut.slice(0, 3).map((t) => `${t.sig} «${t.text}»${t.nowrap ? ' (nowrap)' : ''} — правый край текста ${t.textRight} px при крае ${t.how === 'коробка' ? 'своей коробки' : t.clip} ${t.clipRight} px`).join(' | ')}${r.clipCutCount > 3 ? ` и ещё ${r.clipCutCount - 3}` : ''} (края по x, CSS px)`;
+  if (r.fieldCutCount) r.summary += ` · текст не влез в поле: ${r.fieldCut.slice(0, 3).map((t) => `${t.sig} ${t.what} «${t.text}» — ширина текста ${t.textW} px при ширине поля ${t.innerW} px`).join(' | ')}${r.fieldCutCount > 3 ? ` и ещё ${r.fieldCutCount - 3}` : ''} (CSS px)`;
   return r;
 }
 

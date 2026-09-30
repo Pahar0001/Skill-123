@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Длинная страница</title>
+<!--
+  Стенд runtime --click и --fullpage (SKILL-ISSUES 445, 456, 460):
+    #near  — кнопка в первом экране: клик без прокрутки, в строке нет «прокручено»;
+    #far   — кнопка ниже первого экрана (около 2600 px): перед кликом страница прокручивается к ней —
+             строка «перед кликом прокручено к элементу на N px вниз (scrollY 0 → N)», в JSON data.preScroll;
+    iframe — встроенный виджет 300×200 (srcdoc): у снимка всей страницы пометка «бывают серыми или обрезанными»
+             и снимок окна с ним; iframe 1×1 (счётчик) — не в счёт;
+    высота около 4200 px — выше трёх окон телефона: снимок всей страницы ×1 (по умолчанию) и части по два окна.
+-->
+<style>
+  body { margin: 0; font: 16px/1.5 Arial, sans-serif; color: #222; }
+  section { min-height: 700px; padding: 24px; box-sizing: border-box; border-bottom: 1px solid #ccc; }
+  section:nth-child(odd) { background: #f3efe6; }
+  button { font: inherit; padding: 12px 20px; }
+  iframe { border: 0; display: block; }
+</style>
+</head>
+<body>
+  <section><h1>Первый экран</h1><button id="near" type="button">Ближняя кнопка</button><p id="near-out">—</p></section>
+  <section><h2>Второй раздел</h2><p>Текст раздела.</p></section>
+  <section><h2>Карта</h2><iframe width="300" height="200" title="виджет" srcdoc="<p style='font:16px Arial;margin:0;padding:80px 20px;background:#9bb'>Виджет на странице</p>"></iframe><iframe width="1" height="1" title="счётчик" srcdoc="<p>.</p>"></iframe></section>
+  <section><h2>Дальний раздел</h2><button id="far" type="button">Дальняя кнопка</button><p id="far-out">—</p></section>
+  <section><h2>Пятый раздел</h2><p>Текст.</p></section>
+  <section><h2>Подвал</h2><p>Конец страницы.</p></section>
+<script>
+  document.getElementById('near').addEventListener('click', () => { document.getElementById('near-out').textContent = 'нажата'; });
+  document.getElementById('far').addEventListener('click', () => { document.getElementById('far-out').textContent = 'нажата'; });
+</script>
+</body>
+</html>

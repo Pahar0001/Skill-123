@@ -20,8 +20,8 @@
  *   выключено, любое другое значение — включено. Настройка (--no-fail, --reduced-motion):
  *   --no-fail=0 — провалы снова дают код 1. Шаг (--scroll, --css, --canvas…): --scroll=0
  *   и --css=нет — шаг не выполняется (строка об этом в stderr).
- *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка) — предупреждение WARN
- *   в stderr, запуск продолжается. Известный флаг с одним дефисом («-viewport mobile») —
+ *   Неизвестный флаг — и --foo, и с одним дефисом (-v; -h — справка) — ошибка (код 1) с подсказкой
+ *   ближайшего («может быть, --scroll?»), до браузера. Известный флаг с одним дефисом («-viewport mobile») —
  *   ошибка (код 2) «флаг пишется с двумя дефисами»: иначе прогон молча шёл бы на desktop.
  *   Настройка дважды с разными значениями (--viewport, --out, --tag, --scheme, --cpu,
  *   --browser) — ошибка (код 2); --wait — не больше 600000 мс.
@@ -90,6 +90,9 @@
  *        --click "sel"         кликнуть: эффект — изменения DOM (MutationObserver), адрес,
  *                              запросы, фокус на другом элементе, диалоги. Своя прокрутка и
  *                              фокус на нажатом — не эффект. Кнопка без эффекта — FAIL.
+ *                              Элемент вне окна — перед кликом страница прокручивается к нему: в строке «перед кликом
+ *                              прокручено к элементу на N px вниз (scrollY a → b)» (или «прокрутился контейнер»), в JSON —
+ *                              data.preScroll { px, dir, fromY, toY, how }; снимок после клика — со сдвинутой страницей.
  *                              Якорь «#id»: дождаться остановки прокрутки и сверить верх цели с ожидаемым местом —
  *                              scroll-margin-top цели + scroll-padding-top страницы, ±8 px: совпал — OK; без
  *                              scroll-margin цель у верха окна или сразу под закреплённой шапкой — OK; низ страницы
@@ -153,7 +156,12 @@
  *                              результата (300 знаков) и сколько осталось, выражение — в конце строки
  *        --assert "js"         FAIL, если результат ложный или Promise отклонён
  *        --shot имя            снимок экрана
- *        --fullpage            снимок всей страницы
+ *        --fullpage            снимок всей страницы <tag>-full.png (второй — <tag>-full-2.png): масштаб — --full-scale,
+ *                              по умолчанию ×1 (пиксель снимка = CSS px; на телефоне ×2 выходило 780×14962 — не открыть
+ *                              глазами). В строке — размер файла и масштаб. Страница выше трёх окон — ещё части по два
+ *                              окна (<tag>-full-partN.png, не больше 12): их и открывать. iframe на странице (карта, видео,
+ *                              виджет, от 60×60) — пометка «на снимке всей страницы бывают серыми или обрезанными» и снимок
+ *                              окна с каждым (первые три, <tag>-NN-iframeN.png); в JSON — data.iframes, parts, scale
  *   после --click, --select и --resize холсты и переполнение перепроверяются сами
  *   (после конца переходов).
  *   не шаги, а настройки:
@@ -189,6 +197,8 @@
  *                              перезагрузило страницу — дождаться; увело — нужная страница открывается заново.
  *                              SITE_REWORK_DISMISS нажимается и с --keep-consent (переменную задали явно), а окно
  *                              согласия его второй раз не жмёт
+ *        --full-scale 1|2|3|4|dpr  масштаб снимка --fullpage (как у shots.mjs): 1 — по умолчанию, dpr — как у экрана;
+ *                              длиннее 120 млн пикселей — ×1 с пометкой в строке
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
  *        --selftest            прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка,
@@ -234,6 +244,7 @@
  *       · --cpu — не число больше 0;
  *       · --browser — не chrome, firefox или edge;
  *       · --expect-status — не код ответа 100–599;
+ *       · --full-scale — не 1–4 и не dpr;
  *       · --viewport / --viewports: список экранов через запятую, пустое значение
  *         или разные экраны у --viewport и --viewports;
  *       · лишние слова после адреса — в том числе после «--».
@@ -264,7 +275,7 @@ const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', '
 /* без значения: шаги-флаги и настройки-флаги */
 const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'keep-consent', 'selftest', 'help', 'h']);
 /* настройки со значением */
-const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status']);
+const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status', 'full-scale']);
 /* справочник флагов (flags-doc.mjs, RW_FLAGS_DUMP=1): списки выше и выход с кодом 0 — до справки и разбора */
 flagsDump({ steps: [...STEP], flags: [...FLAG].filter((f) => !STEP.has(f)), values: [...OPTS], optional: [], commands: [] });
 const usage = (msg) => { console.error(msg); process.exit(2); };
@@ -328,7 +339,7 @@ const FALSE_RE = /^(0|false|no|off|нет)$/i;
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
 /* posAt[k] — номер слова pos[k] в argv: «лишнее слово» сразу за неизвестным флагом называется вместе с ним */
 const posAt = [];
-const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser', 'expect-status']);
+const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser', 'expect-status', 'full-scale']);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
@@ -444,11 +455,15 @@ for (const s of steps) {
   }
   if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
 }
-for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
+for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status', 'full-scale']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
 /* --expect-status: код ответа документа, который ждём (страница 404 открыта нарочно) */
 const expectStatus = opt['expect-status'] === undefined ? null : Number(String(opt['expect-status']).trim());
 if (expectStatus !== null && !(/^\d{3}$/.test(String(opt['expect-status']).trim()) && expectStatus >= 100 && expectStatus <= 599)) usage(`--expect-status ${opt['expect-status']}: нужен код ответа 100–599 (--expect-status 404)`);
 if (opt.scheme !== undefined && !/^(light|dark|no-preference)$/.test(String(opt.scheme))) usage(`--scheme ${opt.scheme}: нужно light, dark или no-preference`);
+/* --full-scale: масштаб снимка всей страницы — 1 (по умолчанию), 2–4 или dpr (как у экрана), как у shots.mjs */
+const fullScaleOpt = String(opt['full-scale'] === undefined ? '1' : opt['full-scale']).trim().toLowerCase();
+if (!(fullScaleOpt === 'dpr' || (/^\d+(\.\d+)?$/.test(fullScaleOpt) && Number(fullScaleOpt) >= 1 && Number(fullScaleOpt) <= 4))) usage(`--full-scale ${opt['full-scale']}: нужно 1, 2, 3, 4 или dpr (как у экрана)`);
+const fullScaleOf = (v) => (fullScaleOpt === 'dpr' ? v.deviceScaleFactor || 1 : Number(fullScaleOpt));
 if (opt.cpu !== undefined && !(Number(opt.cpu) > 0)) usage(`--cpu ${opt.cpu}: нужно число — во сколько раз замедлить процессор (4)`);
 /* браузер прогона: chrome (по умолчанию), firefox, edge */
 const browserKind = opt.browser === undefined ? 'chrome' : parseBrowser(opt.browser);
@@ -960,14 +975,17 @@ async function verticalFix(ov) {
   /* кусок summary «текст шире коробки: …» — тот, что написал lib.findOverflow (по первым трём), заменить
      на новый по оставшимся; не нашёлся дословно (lib сменил запись) — до следующего куска « · слово…: » */
   const HEAD = ' · текст шире коробки: ';
+  /* пара — правые края по x (CSS px), а не ширины (SKILL-ISSUES 503); запись — как у lib.findOverflow */
+  const TAIL = ' (края по x от левого края окна, CSS px)';
+  const edge = (t) => `${t.sig} «${t.text}» — правый край текста ${t.textRight} px при крае коробки ${t.boxRight} px`;
   const fmt = (t) => {
-    if (!t.vertical) return `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`;
+    if (!t.vertical) return edge(t);
     const v = t.vertical;
-    return v.wide ? `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px (вертикальное письмо: сбоку вылезло на ${v.side}px, край глифа при кегле ${v.fontSize}px — до ${v.sideTol}px)`
+    return v.wide ? `${edge(t)} (вертикальное письмо: сбоку вылезло на ${v.side} px, край глифа при кегле ${v.fontSize}px — до ${v.sideTol} px)`
       : `${t.sig} «${t.text}» по высоте ${v.textTop}…${v.textBottom} при коробке ${v.boxTop}…${v.boxBottom}px (вертикальное письмо)`;
   };
-  const oldSeg = `${HEAD}${oldList.slice(0, 3).map((t) => `${t.sig} «${t.text}» ${t.textRight}>${t.boxRight}px`).join(' | ')}`;
-  const seg = kept.length ? `${HEAD}${kept.slice(0, 3).map(fmt).join(' | ')}${ov.textWiderCount > 3 ? ` и ещё ${ov.textWiderCount - 3}` : ''}` : '';
+  const oldSeg = `${HEAD}${oldList.slice(0, 3).map(edge).join(' | ')}${TAIL}`;
+  const seg = kept.length ? `${HEAD}${kept.slice(0, 3).map(fmt).join(' | ')}${ov.textWiderCount > 3 ? ` и ещё ${ov.textWiderCount - 3}` : ''}${TAIL}` : '';
   let at = ov.summary.indexOf(oldSeg); let end = at >= 0 ? at + oldSeg.length : -1;
   if (at < 0) {
     at = ov.summary.indexOf(HEAD);
@@ -1405,10 +1423,22 @@ async function hoverAllStep() {
 
 async function clickStep(v) {
   lastClick = v;
+  /* прокрутка к элементу перед кликом (SKILL-ISSUES 445): страница сдвигается молча, и снимок после клика читался как
+     «заголовок ушёл наверх». Окно — scrollY до find (find сам прокручивает к прозрачному) и после scrollIntoView;
+     прокрутился только контейнер (своя прокрутка страницы в обёртке) — по сдвигу самого элемента */
+  const y00 = await page.evaluate(() => Math.round(scrollY)).catch(() => null);
   const h = await find(v);
   if (!h) return line('FAIL', `клик ${v}`, notFound());
   const errBefore = errCount();
-  await h.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  const sc = await h.evaluate((el) => {
+    const t0 = el.getBoundingClientRect().top;
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    return { y1: Math.round(scrollY), dTop: Math.round(t0 - el.getBoundingClientRect().top) };
+  }).catch(() => null);
+  const winPx = sc && y00 != null ? sc.y1 - y00 : 0;
+  const preScroll = !sc ? null : Math.abs(winPx) >= 1 ? { px: Math.abs(winPx), dir: winPx > 0 ? 'вниз' : 'вверх', fromY: y00, toY: sc.y1, how: 'окно' }
+    : Math.abs(sc.dTop) >= 1 ? { px: Math.abs(sc.dTop), dir: sc.dTop > 0 ? 'вниз' : 'вверх', fromY: null, toY: null, how: 'контейнер' } : null;
+  const preTxt = preScroll ? ` · перед кликом прокручено к элементу на ${preScroll.px} px ${preScroll.dir}${preScroll.how === 'окно' ? ` (scrollY ${preScroll.fromY} → ${preScroll.toY})` : ' (прокрутился контейнер, окно на месте)'} — снимок после клика показывает сдвинутую страницу` : '';
   await sleep(350); await settleAnimations(page, 2500);
   const info = await h.evaluate((el) => ({ tag: el.tagName.toLowerCase(), href: el.getAttribute('href'), type: (el.getAttribute('type') || '').toLowerCase(), role: el.getAttribute('role'), expanded: el.getAttribute('aria-expanded') }));
   const selfSig = await evaluateWith(page, (s) => { const el = document.querySelector(s); return el ? sig(el) : null; }, v, DEPS).catch(() => null);
@@ -1497,7 +1527,7 @@ async function clickStep(v) {
     st = newErr ? 'FAIL' : changes.length ? 'OK' : buttonish ? 'FAIL' : 'WARN';
     det = changes.join('; ') || (anchor && anchor.missing ? `якорь ${info.href}: цели с таким id нет` : `ничего не изменилось${buttonish ? ' — КНОПКА БЕЗ ЭФФЕКТА' : ''}`);
   }
-  line(st, `клик ${v}`, `${det}${newErr ? ` · НОВЫХ ОШИБОК ${newErr}: ${[...realConsole().map((c) => c.text), ...page.log.errors].slice(-newErr).map((t) => short(t, 100)).join(' | ')}` : ''} · ${file}`, { mutations: effect.slice(0, 40), requests: reqs.slice(0, 10), anchor });
+  line(st, `клик ${v}`, `${det}${newErr ? ` · НОВЫХ ОШИБОК ${newErr}: ${[...realConsole().map((c) => c.text), ...page.log.errors].slice(-newErr).map((t) => short(t, 100)).join(' | ')}` : ''}${preTxt} · ${file}`, { mutations: effect.slice(0, 40), requests: reqs.slice(0, 10), anchor, preScroll });
   if (!navigated) {
     await autoCheck(`после клика ${v}`);
     await focusTrapCheck(v, layerBefore).catch((e) => line('INFO', `фокус в открытом слое после --click ${v}`, `не проверялось: ${short(e.message || e, 120)}`));
@@ -1944,6 +1974,66 @@ async function cssStep() {
   if (unread.length) line('WARN', `CSS: не прочитано таблиц ${unread.length}`, unread.slice(0, 4).map((s) => `${s.name} (${s.error || 'нет доступа'})`).join(', '));
 }
 
+/* снимок всей страницы (SKILL-ISSUES 460, 456). Масштаб — --full-scale, по умолчанию ×1: на телефоне ×2 выходило 780×14962,
+   и Read ужимал его до нечитаемого. Страница выше трёх окон — ещё части по два окна (не больше 12). iframe (карта, видео,
+   виджет) на снимке всей страницы бывает серым или обрезанным (виджет меряет себя, когда окно растягивают под снимок) —
+   пометка в строке и снимок окна с каждым (первые три), прокрутка потом — как была. Второй --fullpage — <tag>-full-2.png */
+let fullN = 0;
+async function fullpageStep() {
+  const base = `${tag}-full${++fullN > 1 ? `-${fullN}` : ''}`;
+  const file = path.join(outDir, `${base}.png`);
+  const want = fullScaleOf(cur);
+  const how = await fullPageShot(page, file, { scale: want });
+  const scale = page.rwFullScale || want;
+  const sharp = loadSharp();
+  let W = null, H = null;
+  if (sharp) { try { const m = await sharp(file).metadata(); W = m.width; H = m.height; } catch { /* без размера */ } }
+  const vh = cur.height; const cssH = H ? Math.round(H / scale) : null;
+  const parts = []; let partCss = null;
+  if (sharp && H && cssH > vh * 3) {
+    partCss = vh * 2; if (Math.ceil(cssH / partCss) > 12) partCss = Math.ceil(cssH / 12);
+    const ph = Math.max(1, Math.round(partCss * scale));
+    for (let top = 0, k = 1; top < H; top += ph, k++) {
+      const f = path.join(outDir, `${base}-part${k}.png`);
+      try { await sharp(file).extract({ left: 0, top, width: W, height: Math.min(ph, H - top) }).toFile(f); parts.push(path.basename(f)); } catch { break; }
+    }
+  }
+  const frames = await evaluateWith(page, () => {
+    const out = [];
+    for (const f of document.querySelectorAll('iframe')) {
+      const r = f.getBoundingClientRect(); const s = getComputedStyle(f);
+      if (r.width < 60 || r.height < 60 || s.display === 'none' || s.visibility === 'hidden' || eff(f) <= 0.05) continue;
+      const src = f.getAttribute('src') || ''; let host = '', pn = '';
+      try { const u = new URL(src, location.href); host = /^https?:$/.test(u.protocol) ? u.host : ''; pn = u.pathname; } catch { /* без адреса */ }
+      const all = `${host}${pn}`.toLowerCase();
+      const kind = /(^|\.)(api-)?maps?\.|map-widget|\/maps?(\/|$)|2gis|openstreetmap/.test(all) ? 'карта'
+        : /youtube|youtu\.be|vimeo|rutube|vk\.com\/video|vkvideo|dzen\.ru\/embed|player\./.test(all) ? 'видео' : 'виджет';
+      f.setAttribute('data-rw-iframe', String(out.length));
+      out.push({ i: out.length, sig: sig(f), kind, where: f.hasAttribute('srcdoc') ? 'встроенный (srcdoc)' : host || (src ? src.slice(0, 40) : 'без адреса'), w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top + scrollY), src: src.slice(0, 160) });
+    }
+    return out;
+  }, null, DEPS).catch(() => []);
+  if (frames.length) {
+    const y0 = await page.evaluate(() => Math.round(scrollY)).catch(() => 0);
+    for (const fr of frames.slice(0, 3)) {
+      await page.evaluate((i) => { const f = document.querySelector(`[data-rw-iframe="${i}"]`); if (f) f.scrollIntoView({ block: 'center', behavior: 'instant' }); }, fr.i).catch(() => {});
+      await sleep(1200); await settleAnimations(page, 1500);
+      fr.shot = await shot(`iframe${fr.i + 1}`).catch(() => null);
+    }
+    await page.evaluate(() => { for (const f of document.querySelectorAll('[data-rw-iframe]')) f.removeAttribute('data-rw-iframe'); }).catch(() => {});
+    await scrollToY(page, y0); await sleep(200);
+  }
+  const dpr = cur.deviceScaleFactor || 1;
+  const scaleTxt = `×${scale}${scale === 1 ? ': пиксель снимка = CSS px' : `: ${scale} пикселя снимка на CSS px`}`;
+  const scaleHint = scale !== want ? ` — снято ×${scale}, а не ×${want}: страница выше предела склейки (120 млн пикселей)`
+    : dpr > 1 && scale < dpr ? ` (экран ×${dpr}; как у экрана — --full-scale dpr)` : '';
+  const howTxt = how === 'segments' || how === 'dpr1-overflow' ? ` · снято как ${how}: страница выше предела снимка браузера (16000 px)` : '';
+  const nP = parts.length; const partWord = nP % 10 === 1 && nP % 100 !== 11 ? 'часть' : [2, 3, 4].includes(nP % 10) && ![12, 13, 14].includes(nP % 100) ? 'части' : 'частей';
+  const partsTxt = parts.length ? ` · страница ${cssH} CSS px — ещё ${nP} ${partWord} по ${partCss} CSS px (${Math.round(partCss / vh * 10) / 10} окна): ${parts[0]} … ${parts[parts.length - 1]} — глазами открывать их` : '';
+  const frameTxt = frames.length ? ` · на странице ${frames.length} iframe (${frames.slice(0, 4).map((f) => `${f.kind} ${f.where} ${f.w}×${f.h}`).join(', ')}${frames.length > 4 ? ` и ещё ${frames.length - 4}` : ''}): на снимке всей страницы они бывают серыми или обрезанными — смотреть их на снимках окна: ${frames.slice(0, 3).map((f) => f.shot).filter(Boolean).join(', ')}` : '';
+  line('OK', 'снимок всей страницы', `${path.basename(file)}${W ? ` ${W}×${H} px` : ''}, ${scaleTxt}${scaleHint}${howTxt}${partsTxt}${frameTxt}`, { file: path.basename(file), width: W, height: H, scale, scaleWanted: want, how, parts, partCss, iframes: frames });
+}
+
 /* результат eval/assert строкой; в протокол целиком — до 200 000 знаков (защита от мегабайтного JSON) */
 const SHOW_MAX = 200000;
 const show = (r) => { const s = r === undefined ? 'undefined' : typeof r === 'string' ? r : String(JSON.stringify(r) ?? r); return s.length > SHOW_MAX ? `${s.slice(0, SHOW_MAX)}… (обрезано на ${SHOW_MAX} знаков из ${s.length})` : s; };
@@ -1982,7 +2072,7 @@ for (const { k, v, expect } of steps) {
       line(r ? 'OK' : 'FAIL', `assert ${short(v, 200)}`, r ? got : `ложно: ${got}`, null, { con: `assert ${short(v, 200)} — ${r ? headOf(got, 200) : `ложно: ${headOf(got, 200)}`}` });
     }
     else if (k === 'shot') { const f = await shot(String(v)); line('OK', `снимок ${v}`, f); }
-    else if (k === 'fullpage') { const file = path.join(outDir, `${tag}-full.png`); const how = await fullPageShot(page, file); line('OK', 'снимок всей страницы', `${path.basename(file)}${how !== 'full' ? ` (снято как ${how}: страница выше предела снимка браузера)` : ''}`); }
+    else if (k === 'fullpage') await fullpageStep();
   } catch (e) {
     line('FAIL', `${k} ${v === true || v === undefined ? '' : v}`, short(e.message || e, 200));
   }
@@ -2079,7 +2169,7 @@ async function selftest() {
       not: [['WARN', /открытом меню/], [null, /^прокрутка/, /drawer__link|Пункт меню/]] },
     /* вертикальное письмо: в коробке — отсеяно, шире коробки сбоку — находка; «текст обрезан» и «не влез в поле» не теряются */
     { name: 'vert', file: 'vert.html', code: 0, verdict: 'WARN', args: ['--scroll', '--click', '#f'],
-      want: [['WARN', /^прокрутка/, /текст шире коробки: div\.side «Бронь» \d+>\d+px \(вертикальное письмо: сбоку вылезло на \d+px/], ['WARN', /^прокрутка/, /текст обрезан: span\.btn/], ['WARN', /^прокрутка/, /текст не влез в поле: input#f/], ['WARN', /^прокрутка/, /сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/],
+      want: [['WARN', /^прокрутка/, /текст шире коробки: div\.side «Бронь» — правый край текста \d+ px при крае коробки \d+ px \(вертикальное письмо: сбоку вылезло на \d+ px/], ['WARN', /^прокрутка/, /текст обрезан: span\.btn/], ['WARN', /^прокрутка/, /текст не влез в поле: input#f/], ['WARN', /^прокрутка/, /сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/],
         ['WARN', /^переполнение после клика #f/, /текст обрезан: span\.btn.*текст не влез в поле: input#f/]] },
     { name: 'nav-broken', file: 'nav-broken.html', code: 0, verdict: 'WARN', args: ['--nav'],
       want: [['WARN', /^активный пункт меню: якоря меню ведут в никуда — 4$/, /^#about, #menu, #events, #contacts — /]], not: [[null, /якорей нет/]] },
@@ -2087,7 +2177,7 @@ async function selftest() {
     { name: 'nav-named', file: 'nav-named.html', code: 0, verdict: 'OK', args: ['--nav'],
       want: [['INFO', /^активный пункт меню: якоря на <a name> — не проверялось$/, /якоря <a name> \(#about, #menu, #events, #contacts; так ставит их Tilda\)/]], not: [['WARN', /якоря меню ведут в никуда/]] },
     { name: 'warns', file: 'warns.html', code: 0, verdict: 'WARN', warns: 1, args: ['--scroll'],
-      want: [['WARN', /^прокрутка/, /не появились: 1 \(div\.never\.reveal «Так и не появился»\)/], ['WARN', /^прокрутка/, /текст шире коробки: div\.narrow «Неразрывнаядлиннаястрока»/], ['WARN', /^текст перекрыт картинкой$/, /^1 мест: p\.under .* под svg\.cover/]] },
+      want: [['WARN', /^прокрутка/, /не появились: 1 \(div\.never\.reveal «Так и не появился»\)/], ['WARN', /^прокрутка/, /текст шире коробки: div\.narrow «Неразрывнаядлиннаястрока» — правый край текста \d+ px при крае коробки \d+ px \(края по x от левого края окна, CSS px\)/], ['WARN', /^текст перекрыт картинкой$/, /^1 мест: p\.under .* под svg\.cover/]] },
     { name: 'menu-burger', file: 'menu.html', code: 0, args: ['--viewport', 'mobile', '--click', '#burger', '--scroll'],
       want: [['OK', /^клик #burger$/], ['WARN', /^прокрутка идёт при открытом меню\/диалоге$/, /div#drawer.*после --click #burger/]] },
     { name: 'menu-closed', file: 'menu.html', code: 0, args: ['--viewport', 'mobile', '--click', '#burger', '--click', '#close', '--scroll'],
@@ -2161,6 +2251,21 @@ async function selftest() {
         ['FAIL', /^клик #act$/, /КНОПКА БЕЗ ЭФФЕКТА/], ['WARN', /^текст перекрыт картинкой$/, /p\.under .* под svg/]],
       not: [[null, /^окно cookie$/, /закрыто кнопкой/]],
       checks: [(j) => (j && j.consent && j.consent.keep && j.consent.found && !j.consent.closed ? null : `в JSON consent ${JSON.stringify(j && j.consent && { keep: j.consent.keep, found: j.consent.found, closed: j.consent.closed })} — ждали keep, found, не закрыто`)] },
+    /* прокрутка перед кликом (445) и снимок всей страницы (460, 456): ×1 по умолчанию на телефоне ×2, размер и масштаб
+       в строке, части длинной страницы, пометка про iframe и снимок окна с ним; ближняя кнопка — без «прокручено» */
+    { name: 'fullpage', file: 'tall.html', code: 0, verdict: 'OK', args: ['--viewport', 'mobile', '--click', '#near', '--click', '#far', '--fullpage'],
+      want: [['OK', /^клик #far$/, /перед кликом прокручено к элементу на \d+ px вниз \(scrollY 0 → \d+\)/],
+        ['OK', /^снимок всей страницы$/, /^fullpage-full\.png 390×\d+ px, ×1: пиксель снимка = CSS px \(экран ×\d+; как у экрана — --full-scale dpr\)/],
+        ['OK', /^снимок всей страницы$/, /ещё \d+ част(ь|и|ей) по \d+ CSS px \(2 окна\): fullpage-full-part1\.png … fullpage-full-part\d+\.png/],
+        ['OK', /^снимок всей страницы$/, /на странице 1 iframe \(виджет встроенный \(srcdoc\) 300×200\): на снимке всей страницы они бывают серыми или обрезанными — смотреть их на снимках окна: fullpage-\d+-iframe1\.png/]],
+      not: [[null, /^клик #near$/, /прокручено/]],
+      checks: [(j) => {
+        const st = (j && j.steps) || []; const fp = st.find((x) => x.what === 'снимок всей страницы'); const far = st.find((x) => x.what === 'клик #far'); const near = st.find((x) => x.what === 'клик #near');
+        const d = fp && fp.data; const ok = d && d.scale === 1 && d.width === 390 && d.parts.length >= 2 && d.iframes.length === 1 && far && far.data.preScroll && far.data.preScroll.px > 0 && near && near.data.preScroll === null;
+        return ok ? null : `в JSON снимок ${JSON.stringify(d && { scale: d.scale, width: d.width, parts: d.parts && d.parts.length, iframes: d.iframes && d.iframes.length })}, preScroll #far ${JSON.stringify(far && far.data.preScroll)}, #near ${JSON.stringify(near && near.data.preScroll)} — ждали ×1, 390, частей от 2, iframe 1, прокрутка у #far и null у #near`;
+      }] },
+    { name: 'fullpage-x2', file: 'tall.html', code: 0, verdict: 'OK', args: ['--viewport', 'mobile', '--full-scale', '2', '--fullpage'],
+      want: [['OK', /^снимок всей страницы$/, /^fullpage-x2-full\.png 780×\d+ px, ×2: 2 пикселя снимка на CSS px/]] },
   ];
   /* проверки 30.09 — и в Firefox (браузер пользователя): якорь, блок шире колонки, фокус в слое, окно cookie */
   if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
