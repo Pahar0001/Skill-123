@@ -11,7 +11,7 @@
 ## a11y.mjs
 
 ```
-node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--strict]
+node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--keep-consent] [--strict]
 node a11y.mjs --selftest [--out папка]
 node a11y.mjs --help   (или -h)
 ```
@@ -20,6 +20,7 @@ node a11y.mjs --help   (или -h)
 
 | флаг | вид | из справки |
 |---|---|---|
+| `--keep-consent` | переключатель | не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18») — чтобы проверить |
 | `--no-grain` | переключатель | не учитывать слой зерна поверх текста в контрасте (см. ниже). |
 | `--selftest` | переключатель | стенды fixtures/a11y с ожиданиями: фокус на полях даты и времени, скрытый (кегль 0), |
 | `--strict` | переключатель | код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте. |
@@ -165,6 +166,73 @@ node discover.mjs <url> [--out <папка прогона>] [--viewports desktop
 Коды выхода: 0 — готово (без --strict — даже если в выводе есть FAIL); 1 — нет адреса или он не http(s):// и не file://, неизвестные экраны, флаг без значения, неверная --scheme,
 
 Переменные окружения: `DESIGN_REF_PROJECT`, `SITE_REWORK_DISMISS`.
+
+## firecrawl.mjs
+
+```
+node firecrawl.mjs map <url> [--run <папка>] [--limit 200] [--search слово]
+node firecrawl.mjs scrape <url> [--run <папка>] [--formats markdown,branding]
+node firecrawl.mjs search "<запрос>" --run <папка> [--lang ru] [--country RU] [--location "…"] [--limit 5]
+node firecrawl.mjs facts --run <папка> --about "<дело, город>" [--limit 5]
+node firecrawl.mjs status [--run <папка>]
+node firecrawl.mjs --selftest
+node firecrawl.mjs --help   (или -h)
+```
+
+Команды: `map`, `scrape`, `search`, `facts`, `status`, `selftest`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--fresh` | переключатель | не брать из кэша, спросить Firecrawl заново (ответ ляжет в кэш) |
+| `--selftest` | переключатель | подставной сервер на этой машине с ответами из fixtures/firecrawl: map, scrape, |
+| `--about` | значение необязательно | facts: о чём искать факты («барбершоп, Ярославль») |
+| `--budget` | значение необязательно | предел кредитов на папку прогона (50); учёт — <папка>/firecrawl/budget.json |
+| `--country` | значение необязательно | search, facts: страна выдачи, код ISO (RU) |
+| `--formats` | значение необязательно | scrape: markdown, branding или оба через запятую (по умолчанию оба, цена та же) |
+| `--lang` | значение необязательно | search, facts: язык выдачи (ru) |
+| `--limit` | значение необязательно | map: сколько адресов (200, до 5000; цена та же); search: сколько результатов |
+| `--location` | значение необязательно | search, facts: место для местной выдачи («Yaroslavl,Yaroslavl Oblast,Russia») |
+| `--out` | значение необязательно | то же, что --run (как у copy.mjs и security.mjs) |
+| `--run` | значение необязательно | папка прогона: путь (C:/…, ./x), адрес сайта (папка как у остальных скриптов — |
+| `--search` | значение необязательно | map: только адреса по теме, самые близкие первыми («меню», «доставка») |
+
+Коды выхода: 0 — сделано (OK, WARN) или пропуск без ключа (INFO); 1 — неверные аргументы, ошибка API или сети (ключ не принят, нет кредитов, предел запросов, нет ответа); 2 — отказ по правилу: адрес этой машины или частной сети, file://, x.com, PDF, бюджет прогона.
+
+Переменные окружения: `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`, `FIRECRAWL_TIMEOUT_MS`, `SITE_REWORK_RUNS`.
+
+## fonts.mjs
+
+```
+node fonts.mjs pick [--category serif|sans-serif|display|handwriting|monospace] [--like "<характер по-русски>"]
+node fonts.mjs pairs [слова по-английски: luxury, editorial, tech…]
+node fonts.mjs get "<Семейство>" --out <папка сайта> [--weights 400,700 | --weights 300..800] [--italic]
+node fonts.mjs --selftest
+node fonts.mjs --help   (или -h)
+```
+
+Команды: `pick`, `pairs`, `get`, `selftest`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--italic` | переключатель | pick: нужен курсив (с --weights — у каждого веса). get: курсив тех же весов. |
+| `--selftest` | переключатель | без сети: разбор CSV (кавычки, запятые и переводы строк в полях, BOM, CRLF), фильтры pick |
+| `--variable` | переключатель | pick: только переменные шрифты (есть оси). |
+| `--category` | значение необязательно | pick: serif, sans-serif (или sans), display, handwriting, monospace (или mono); несколько — |
+| `--like` | значение необязательно | pick: характер по-русски (или по-английски); «не …» и «без …» — исключить. Слова: |
+| `--n` | значение необязательно | pick: сколько строк, по умолчанию 10 (-n — то же). |
+| `--need` | значение необязательно | pick: какие знаки нужны; у каждого — подмножество Google: ₽ — latin-ext, № и Ё — |
+| `--out` | значение необязательно | get: папка сайта; файлы — в <папка>/fonts/. |
+| `--subsets` | значение необязательно | get: подмножества, по умолчанию cyrillic,latin,latin-ext: браузер качает файл, только когда |
+| `--text` | значение необязательно | get: подмножество ровно под знаки надписи (логотип, крупное слово; параметр text= API) — |
+| `--weights` | значение необязательно | pick: нужные веса (все). get: веса через запятую (400,700) или диапазон переменного |
+
+Коды выхода: 0 — сделано (OK или WARN); 1 — ошибка: аргументы, нет данных, сеть, ответ API, файл; 2 — не сделано по правилу: у шрифта нет кириллицы (в ответе или в файлах), в подмножестве надписи нет её знаков.
+
+Переменные окружения: `FONTS_API_BASE`, `FONTS_DATA_DIR`.
 
 ## grain-tile.mjs
 
@@ -521,8 +589,9 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--type` | шаг | --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…); |
 | `--video` | шаг | видео: poster, muted/playsinline, играет ли, пауза вне экрана |
 | `--wait` | шаг | --wait 800            подождать столько миллисекунд (число ≥ 0, «0» — не ждать; |
+| `--keep-consent` | переключатель | не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18») — |
 | `--no-fail` | переключатель | --no-fail=0 — провалы снова дают код 1. Шаг (--scroll, --css, --canvas…): --scroll=0 |
-| `--reduced-motion` | переключатель | [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] |
+| `--reduced-motion` | переключатель | [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent] |
 | `--selftest` | переключатель | прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка, |
 | `--browser` | со значением | --browser) — ошибка (код 2); --wait — не больше 600000 мс. |
 | `--cpu` | со значением | --cpu 4               процессор в N раз медленнее (только Chrome и Edge) |
@@ -606,6 +675,31 @@ node shots.mjs <url> [--out папка] [--tag before|after] [--viewports deskto
 Коды выхода: 0 — съёмка сделана (вердикт в выводе и в shots.json, поле verdict); 1 — нет адреса или он не http(s):// и не file:///, неверное значение флага (экран, --full-mode, --return, --scheme не light и не dark, --browser не chrome, firefox или edge, --segments не auto и не число от 0, --shot-pause не число от 0, --full-scale не 1–4 и не dpr, флаг без значения, неизвестный флаг — с подсказкой ближайшего),
 
 Переменные окружения: `SITE_REWORK_DISMISS`.
+
+## skill-audit.mjs
+
+```
+node skill-audit.mjs audit <папка | файл.zip | адрес GitHub> [--ref ветка|тег|коммит] [--skill имя] [--out файл.json|папка] [--max-mb 200] [--strict]
+node skill-audit.mjs install <источник> --skill <имя|путь> [--yes] [--target папка] [--exclude путь,путь] [--ref …] [--out …] [--max-mb …]
+node skill-audit.mjs --selftest [--out папка]
+node skill-audit.mjs --help   (или -h)
+```
+
+Команды: `audit`, `install`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--selftest` | переключатель | --selftest стенды fixtures/skill-audit без сети: чистый навык, опасный, широкий без лицензии, |
+| `--strict` | переключатель | код выхода 1 при вердикте FAIL (audit). |
+| `--yes` | переключатель | install: на самом деле скопировать; без него — только план. |
+| `--exclude` | значение необязательно | install: не брать эти пути внутри папки навыка (через запятую, * — любые знаки), |
+| `--max-mb` | значение необязательно | предел скачивания и распаковки, МБ (по умолчанию 200). |
+| `--out` | значение необязательно | протокол JSON: файл .json или папка (skill-audit-<источник>.json); по умолчанию |
+| `--ref` | значение необязательно | ветка, тег или коммит для адреса GitHub (по умолчанию из адреса, иначе HEAD). |
+| `--skill` | значение необязательно | имя навыка (name из frontmatter или имя папки) или путь его папки внутри источника; |
+| `--target` | значение необязательно | install: папка навыков (по умолчанию ~/.claude/skills; для проверок — временная). |
 
 ## state.mjs
 
