@@ -2,7 +2,7 @@
 /**
  * Доступность: то, что можно проверить в живом DOM без чтения экрана.
  *
- *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--strict]
+ *   node a11y.mjs <url> [--viewport desktop] [--out папка] [--tag имя] [--ignore селектор] [--no-grain] [--keep-consent] [--strict]
  *   node a11y.mjs --selftest [--out папка]
  *   node a11y.mjs --help   (или -h)
  *
@@ -20,6 +20,10 @@
  *               который ничего не нашёл, — WARN; неверный селектор — ошибка с кодом 1 (проверяется в
  *               браузере, после открытия страницы).
  *   --no-grain  не учитывать слой зерна поверх текста в контрасте (см. ниже).
+ *   --keep-consent  не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18») — чтобы проверить
+ *               само окно: его контраст, текст под его подложкой и обход Tab вместе с ним. Окно только ищется, в
+ *               выводе — строка INFO «окно согласия cookie» с пометкой --keep-consent (и «не появлялось», если
+ *               его нет). SITE_REWORK_DISMISS нажимается и с флагом — переменную задали явно. См. «Окно cookie».
  *   --strict    код выхода 1 при вердикте FAIL (для гейта); без флага — 0 при любом вердикте.
  *   --selftest  стенды fixtures/a11y с ожиданиями: фокус на полях даты и времени, скрытый (кегль 0),
  *               декоративный (aria-hidden) текст и логотип, подписи над фото и градиентами (и подписи в
@@ -27,8 +31,10 @@
  *               шапки и пилюль после прокрутки, плашка активной пилюли отдельным слоем (и лента, накрытая
  *               окном cookie), окно при загрузке (стенд fixtures/lib: одна строка «окно», не «свой стиль на
  *               странице»), нажатие SITE_REWORK_DISMISS, которое увело на главную (страница открыта заново —
- *               строка INFO). Каждый стенд — отдельный запуск a11y (по одному браузеру), протоколы — во
- *               временной папке или в --out; код 1, если хоть одно ожидание не сошлось.
+ *               строка INFO), подписи с многоточием над фото (фон — под видимой частью строки), окно cookie
+ *               поверх страницы (закрыто до замеров; с --keep-consent — мерится вместе с окном). Каждый стенд —
+ *               отдельный запуск a11y (по одному браузеру), протоколы — во временной папке или в --out; код 1,
+ *               если хоть одно ожидание не сошлось.
  *   --help, -h  эта справка.
  * Код выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict,
  * вердикт FAIL. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и запуска
@@ -56,6 +62,13 @@
  * Фон — пиксели под коробками строк своего текста (как у закреплённого текста на прокрутке), а не под всей
  * коробкой элемента: поля и скруглённые углы тёмной пилюли на белой ленте, значок рядом с подписью, фото
  * вдали от короткой подписи во всю ширину карточки давали худшие 10% «1:1». Строк нет — коробка элемента.
+ * Коробка строки тянется на всю длину текста, и за край блока с overflow ≠ visible (многоточие, подпись в одну
+ * строку на плашке) тоже: там букв нет, а на снимке под спрятанной частью — другой фон (светлое фото рядом с тёмной
+ * плашкой, белая страница за краем карточки), и белая подпись на тёмной плашке давала ложный FAIL «1:1». Поэтому
+ * коробки строк (и коробка элемента) пересекаются с видимой областью и с блоками, которые режут текст: сам элемент
+ * и предки с overflow ≠ visible или contain: paint (у absolute — только его содержащий блок и выше, у fixed — только
+ * предок с transform, filter, perspective или contain). Фон — только под видимой частью; у скольких подписей строку
+ * обрезали — в строке и в JSON (imgContrast.trimmed). Видимой части нет — «обрезан предком», в «не измерены».
  * Одинаковые — только подписи того же класса и цвета над тем же фоном (тот же файл картинки с тем же
  * object-fit и object-position, та же запись градиента или картинки фоном с тем же background-position и
  * background-size, или цвет подложки) и на том же месте этого фона: центр текста в той же клетке коробки
@@ -236,6 +249,20 @@
  * проверяется, Tab жмётся, пока фокус не вернётся в страницу (до 40 раз), в выводе — «внутри iframe
  * не проверялся». Не вернулся — WARN, не ложный FAIL «не видно фокуса на iframe» и не «ловушка».
  *
+ * Окно cookie. Окно согласия поверх страницы давало ложные замеры: ссылки шапки под его затемнённой подложкой
+ * мерились по снимку («#333333 на затемнённом» 2.2:1 — FAIL), закреплённый текст на прокрутке — тоже, а обход Tab
+ * уходил в окно («не видно фокуса на: button.cc__btn» у кнопок окна, ловушка). Поэтому, как discover и cliche, a11y
+ * закрывает его сразу после загрузки и до замеров — на странице замеров и на свежей вкладке обхода Tab
+ * (lib.closeConsent: «Принять» / «Accept», если нет — «Отклонить», затем крестик; ворота «ENTER», «Мне есть 18»
+ * тоже). Окно, которое появилось только после прокрутки, закрывается перед замерами. Открытое окно без слов про
+ * cookie (WARN «окно» с советом SITE_REWORK_DISMISS) ищется после этого, чтобы закрытые ворота в него не попали.
+ * Итог — строкой «окно согласия cookie» (lib.consentNote: что нашлось, где, какой кнопкой закрыто) и полем consent
+ * в JSON (page — страница замеров, focusPage — вкладка обхода): закрыто — INFO; нашлось, но не закрылось (нет
+ * кнопки, осталось на экране) — WARN «замеры сняты под окном, смотреть глазами». Не появлялось — строки нет. Кнопку
+ * окна closeConsent иногда жмёт мышью (часть окон не слушает click() из скрипта), и кнопка получает фокус: на
+ * вкладке обхода после закрытия начало обхода Tab ставится на начало страницы (временный невидимый элемент первым в
+ * body получает фокус и тут же убирается), иначе Tab пошёл бы от места окна. --keep-consent — не закрывать.
+ *
  * Не заменяет Lighthouse и не проверяет чтение экраном — это дополнение,
  * которое работает на любом адресе и даёт список конкретных элементов.
  */
@@ -248,12 +275,12 @@ import {
   launch, openPage, resolveViewport, parseArgs, runDir, writeJson, sleep, ensureDir, loadSharp,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, evaluateWith, VIEWPORTS,
   SIG_FN, EFFECTIVE_OPACITY_FN, VISIBLE_FN, HEX_FN, addStyleSafe, removeStyleSafe, collectWarnings, takeWarnings,
-  collectNotes, takeNotes, warningLabel,
+  collectNotes, takeNotes, warningLabel, closeConsent, consentNote, waitForOverlay,
 } from './lib.mjs';
 import { findTextureLayers } from './texture.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-grain', 'strict', 'selftest'], values: ['viewport', 'viewports', 'out', 'tag', 'ignore'], strict: true });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['help', 'h', 'no-grain', 'keep-consent', 'strict', 'selftest'], values: ['viewport', 'viewports', 'out', 'tag', 'ignore'], strict: true });
 /* короткий -h — как --help: и на месте адреса, и на месте значения флага; до любых папок и браузера */
 if (opt.help || opt.h || pos.includes('-h') || Object.values(opt).includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(msg); process.exit(1); };
@@ -266,6 +293,8 @@ if (!pos[0]) die('Нужен адрес: node a11y.mjs <url> [--viewport mobile]
 /* --ignore: CSS-селектор логотипа и знаков вне проверки контраста и кегля; правильность — в браузере */
 const IGNORE = opt.ignore === undefined ? null : String(opt.ignore).trim();
 if (IGNORE === '') die('--ignore: нужен CSS-селектор, например --ignore ".logo__sub, .brand-mark" (подробно: --help)');
+/* --keep-consent: окно согласия cookie не закрывать — проверка самого окна */
+const KEEP_CONSENT = !!opt['keep-consent'];
 const url = pos[0];
 {
   let ok = false; try { ok = /^(https?|file|data|about):$/i.test(new URL(url).protocol); } catch { /* не адрес */ }
@@ -1284,41 +1313,91 @@ async function selftest() {
       { line: /^SITE_REWORK_DISMISS$/, status: 'INFO', count: 1, has: ['увело на', 'dismiss-home.html — нужная страница открыта заново'] },
       { line: /^окно$/, absent: true },
     ] },
+    /* подпись в одну строку над фото, обрезанная блоком (многоточие; предок-плашка; карточка — содержащий блок
+       absolute-подписи): фон — только под видимой частью строки; настоящий низкий контраст видимой части — FAIL */
+    { page: 'caption-clip.html', viewport: 'desktop', expect: [
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 4 из 4', '1 ниже нормы', 'Нечитаемая', 'у 4 строка длиннее своего блока'], not: ['Уха', 'Пельмени', 'Шашлык', 'не измерены'], why: 'спрятанная часть строки над светлым фото или белой страницей — не фон видимого текста' },
+    ] },
+    /* окно cookie поверх страницы: по умолчанию закрыто до замеров (и на вкладке обхода Tab — кнопка нажата мышью,
+       обход с начала страницы); с --keep-consent — мерится вместе с окном */
+    { page: 'consent.html', viewport: 'desktop', expect: [
+      { line: /^окно согласия cookie$/, status: 'INFO', count: 1, has: ['закрыто кнопкой «Принять»', 'замеры сняты без него', 'на вкладке обхода Tab — тоже закрыто', 'обход начат с начала страницы'], not: ['сброс начала обхода не подтвердился'] },
+      { line: /^контраст по снимку фона/, absent: true },
+      { line: /^контраст закреплённого текста/, status: 'OK', not: ['div#cc'] },
+      { line: /^фокус:/, status: 'OK', has: ['фокус виден везде', 'первым — a.hdr__a'], not: ['cc__btn'], why: 'после закрытия окна обход идёт по странице с её начала (окно между шапкой и main: без сброса — «3 из 5»), а не по кнопкам окна' },
+    ] },
+    { page: 'consent.html', tag: 'consent-keep', viewport: 'desktop', args: ['--keep-consent'], expect: [
+      { line: /^окно согласия cookie$/, status: 'INFO', count: 1, has: ['не закрывалось (--keep-consent)', 'замеры сняты вместе с окном', 'на вкладке обхода Tab — тоже не закрывалось'] },
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['«Меню»', '#333333'] },
+      { line: /^фокус:/, status: 'FAIL', has: ['cc__btn'] },
+    ] },
   ];
   const here = path.dirname(fileURLToPath(import.meta.url));
   const out = opt.out ? path.resolve(String(opt.out)) : fs.mkdtempSync(path.join(os.tmpdir(), 'a11y-selftest-'));
   let bad = 0, n = 0;
   for (const c of CASES) {
-    const tag = c.page.replace(/\.html$/, ''); const jf = path.join(out, 'a11y', `${tag}.json`);
+    /* tag — своё имя итога, когда один стенд гоняется с разными флагами */
+    const tag = c.tag || c.page.replace(/\.html$/, ''); const jf = path.join(out, 'a11y', `${tag}.json`);
+    const nm = c.tag ? `${c.page} ${(c.args || []).join(' ')}` : c.page;
     try { fs.rmSync(jf, { force: true }); } catch { /* нет */ }
     const t0 = Date.now();
     /* SITE_REWORK_DISMISS из окружения не должна менять ожидания: у стенда — своя (env) или пустая */
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), pathToFileURL(path.join(here, 'fixtures', c.dir || 'a11y', c.page)).href, '--viewport', c.viewport, '--out', out, '--tag', tag, ...(c.args || [])], { encoding: 'utf8', timeout: 300000, env: { ...process.env, SITE_REWORK_DISMISS: c.env || '' } });
     let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch { /* нет итога */ }
-    if (!j) { bad++; n++; console.log(`FAIL ${c.page}: нет итога (код ${r.status}) — ${String(r.stderr || r.stdout || '').trim().slice(-300)}`); continue; }
+    if (!j) { bad++; n++; console.log(`FAIL ${nm}: нет итога (код ${r.status}) — ${String(r.stderr || r.stdout || '').trim().slice(-300)}`); continue; }
     for (const e of c.expect) {
       n++;
       /* absent — такой строки быть не должно; count — сколько строк с такой подписью */
       const all = j.lines.filter((l) => e.line.test(l.what));
-      if (e.absent) { if (all.length) { bad++; console.log(`FAIL ${c.page} ${c.viewport} ${e.line.source}: лишняя строка — ${`${all[0].what} — ${all[0].details || ''}`.slice(0, 300)}`); } else console.log(`OK   ${c.page} ${c.viewport} ${e.line.source} — нет`); continue; }
+      if (e.absent) { if (all.length) { bad++; console.log(`FAIL ${nm} ${c.viewport} ${e.line.source}: лишняя строка — ${`${all[0].what} — ${all[0].details || ''}`.slice(0, 300)}`); } else console.log(`OK   ${nm} ${c.viewport} ${e.line.source} — нет`); continue; }
       const ln = all[0]; const txt = ln ? `${ln.what} — ${ln.details || ''}` : '';
       const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.count != null && all.length !== e.count ? [`строк ${all.length}, ждали ${e.count}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
-      if (miss.length) { bad++; console.log(`FAIL ${c.page} ${c.viewport} ${e.line.source}: ${miss.join('; ')}${e.why ? ` (${e.why})` : ''}\n     ${txt.slice(0, 400)}`); }
-      else console.log(`OK   ${c.page} ${c.viewport} ${e.line.source} — ${ln.status}`);
+      if (miss.length) { bad++; console.log(`FAIL ${nm} ${c.viewport} ${e.line.source}: ${miss.join('; ')}${e.why ? ` (${e.why})` : ''}\n     ${txt.slice(0, 400)}`); }
+      else console.log(`OK   ${nm} ${c.viewport} ${e.line.source} — ${ln.status}`);
     }
-    console.log(`     ${c.page}: ${Math.round((Date.now() - t0) / 100) / 10} с, протокол ${jf}`);
+    console.log(`     ${nm}: ${Math.round((Date.now() - t0) / 100) / 10} с, протокол ${jf}`);
   }
   console.log(`\n${bad ? 'FAIL' : 'OK'}: ожиданий ${n}, не сошлось ${bad}`);
   return bad ? 1 : 0;
 }
 
+/* ---------- окно согласия cookie ---------- */
+/* Окно согласия поверх страницы давало ложные замеры: текст шапки под его затемнённой подложкой мерился по снимку
+   (FAIL 2.2:1), обход Tab уходил в окно. Как discover и cliche: страница открывается без проверки окна
+   (modalCheck: false), lib.closeConsent закрывает окно cookie и ворота (--keep-consent — только найти), затем
+   открытое окно без слов про cookie — waitForOverlay без нажатий (checkOpenModal с ожиданием окна по таймеру, как
+   при открытии: окно выбора города открывается через 1,5 с) и WARN «окно»: ворота, которые closeConsent закрыл, в
+   него не идут. → итог closeConsent */
+async function consentStep(page) {
+  const c = await closeConsent(page, { click: !KEEP_CONSENT }).catch((e) => ({ found: false, error: String((e && e.message) || e).slice(0, 120) }));
+  await waitForOverlay(page, 0, { dismiss: false, modalCheck: true }).catch(() => null);
+  return c;
+}
+/* окно согласия, а не только нажатое по SITE_REWORK_DISMISS (о нём — свои строки lib) */
+const realConsent = (c) => !!(c && c.found && c.kind !== 'dismiss');
+/* начало обхода Tab — снова начало страницы. closeConsent жмёт кнопку окна и мышью (часть окон не слушает click()
+   из скрипта) — кнопка получает фокус, точка начала последовательной навигации встаёт на неё и после удаления окна
+   остаётся на его месте (обычно конец страницы): Tab ушёл бы из страницы, «обход не состоялся». Временный невидимый
+   элемент первым в body получает фокус и тут же убирается — точка на начале body, фокус на body */
+function focusFromStartInPage() {
+  const t = document.createElement('span'); t.tabIndex = -1; t.setAttribute('aria-hidden', 'true');
+  for (const [k, v] of [['position', 'fixed'], ['left', '-9999px'], ['top', '0px'], ['width', '1px'], ['height', '1px'], ['overflow', 'hidden'], ['opacity', '0'], ['pointer-events', 'none']]) t.style.setProperty(k, v, 'important');
+  document.body.insertBefore(t, document.body.firstChild); t.focus({ preventScroll: true }); t.remove();
+  return !document.activeElement || document.activeElement === document.body;
+}
+
 /* ---------- прогон ---------- */
 const browser = await launch();
 let dom, focus, reveal, sc, grain = null, fx = null, badIgnore = null; const imgContrast = { measured: 0, skipped: 0, covered: 0, coveredList: [], failures: [] };
+/* окно согласия: consent — страница замеров, consentFocus — свежая вкладка обхода Tab (focusRestart — сброшено ли
+   начало обхода после закрытия) */
+let consent = null, consentFocus = null, focusRestart = null;
 try {
-  const page = await openPage(browser, url, vp);
+  const page = await openPage(browser, url, vp, { modalCheck: false });
   /* --ignore: неверный CSS-селектор — ошибка до замера (код 1), а не молча «ничего не исключено» */
   if (IGNORE) { const bad = await page.evaluate((s) => { try { document.querySelector(s); return null; } catch (e) { return String(e.message || e); } }, IGNORE); if (bad) { badIgnore = bad; throw new Error('--ignore'); } }
+  /* окно согласия cookie — после загрузки и до замеров (--keep-consent: только найти) */
+  consent = await consentStep(page);
   await forceInstantScroll(page);
   /* исходное положение видимой области — до всякой прокрутки: к нему, а не к началу страницы, её
      возвращает resetView (у dir=rtl шире экрана это scrollX −500; сдвиг видимой области при
@@ -1327,6 +1406,11 @@ try {
   await evaluateWith(page, markHiddenInPage, null, {}).catch(() => 0);
   sc = await scrollThrough(page, { pause: 250 });
   await scrollToY(page, 0); await settleAnimations(page, 3000); await sleep(300);
+  /* окно согласия, которое появилось только после прокрутки (по таймеру, при прокрутке), — закрыть до замеров */
+  if (!KEEP_CONSENT && !realConsent(consent) && !(consent && consent.error)) {
+    const late = await closeConsent(page).catch(() => null);
+    if (realConsent(late)) consent = { ...late, late: true };
+  }
   reveal = await evaluateWith(page, revealInPage, null, DEPS).catch(() => null);
   if (!opt['no-grain']) grain = await grainMap(page).catch((e) => ({ error: String(e.message || e).slice(0, 200) }));
   const map = grain && grain.map && !grain.identity ? grain.map : null;
@@ -1381,16 +1465,50 @@ try {
            своего текста, как у закреплённого текста на прокрутке, а не под всей коробкой элемента: поля и
            скруглённые углы пилюли (белая лента за тёмной пилюлей), значок рядом с подписью и фото вдали от
            короткой подписи во всю ширину карточки давали худшие 10% «1:1». Строк нет — коробка элемента */
+        /* Коробка строки тянется на всю длину текста, и за край блока с overflow ≠ visible (многоточие, подпись в одну
+           строку на плашке): под спрятанной частью на снимке другой фон — светлое фото рядом с тёмной плашкой давало
+           ложный FAIL «1:1». Коробки пересекаются с видимой областью и с блоками, которые режут текст (ov): сам элемент
+           и предки с overflow ≠ visible или contain: paint; у absolute режут только его содержащий блок и выше
+           (промежуточные static-предки — нет), у fixed — только предок с transform, filter, perspective, contain или
+           will-change (иначе содержащий блок — окно). trimmed — строку обрезал блок (а не край окна) */
         const g = await h.evaluate((el) => {
-          const r = el.getBoundingClientRect(); const vv = window.visualViewport; const rects = [];
+          const r = el.getBoundingClientRect(); const vv = window.visualViewport;
+          const VX = vv ? vv.offsetLeft : 0, VY = vv ? vv.offsetTop : 0, VW = vv ? vv.width : innerWidth, VH = vv ? vv.height : innerHeight;
+          const fixCB = (s) => [s.transform, s.perspective, s.filter, s.backdropFilter, s.translate, s.rotate, s.scale].some((v) => v && v !== 'none') || /layout|paint|strict|content/.test(s.contain || '') || /transform|perspective|filter/.test(s.willChange || '');
+          const ov = { l: -Infinity, t: -Infinity, r: Infinity, b: Infinity }; let need = null;
+          for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            const s = getComputedStyle(n);
+            if ((need === 'abs' && (s.position !== 'static' || fixCB(s))) || (need === 'fixed' && fixCB(s))) need = null;
+            if (!need && s.display !== 'inline' && s.display !== 'contents') {
+              const paint = /paint|strict|content/.test(s.contain || ''); const cx = paint || s.overflowX !== 'visible', cy = paint || s.overflowY !== 'visible';
+              if (cx || cy) {
+                const q = n.getBoundingClientRect();
+                if (cx) { ov.l = Math.max(ov.l, q.left); ov.r = Math.min(ov.r, q.right); }
+                if (cy) { ov.t = Math.max(ov.t, q.top); ov.b = Math.min(ov.b, q.bottom); }
+              }
+            }
+            if (s.position === 'fixed') need = 'fixed'; else if (s.position === 'absolute' && need !== 'fixed') need = 'abs';
+          }
+          const cb = { l: Math.max(ov.l, VX), t: Math.max(ov.t, VY), r: Math.min(ov.r, VX + VW), b: Math.min(ov.b, VY + VH) };
+          let trimmed = false;
+          const cut = (x0, y0, x1, y1) => {
+            if (x0 < ov.l - 0.5 || y0 < ov.t - 0.5 || x1 > ov.r + 0.5 || y1 > ov.b + 0.5) trimmed = true;
+            const a = Math.max(x0, cb.l), b = Math.max(y0, cb.t), c = Math.min(x1, cb.r), d = Math.min(y1, cb.b);
+            return c - a >= 1 && d - b >= 1 ? { x: a, y: b, w: c - a, h: d - b } : null;
+          };
+          const rects = []; let lines = 0;
           for (const n of el.childNodes) {
             if (n.nodeType !== 3 || !n.textContent.trim()) continue;
             const rg = document.createRange(); rg.selectNodeContents(n);
-            for (const q of rg.getClientRects()) if (q.width >= 1 && q.height >= 1) rects.push({ x: q.left, y: q.top, w: q.width, h: q.height });
+            for (const q of rg.getClientRects()) { if (q.width < 1 || q.height < 1) continue; lines++; const v = cut(q.left, q.top, q.right, q.bottom); if (v) rects.push(v); }
           }
-          return { x: r.left, y: r.top, w: r.width, h: r.height, rects: rects.length ? rects : [{ x: r.left, y: r.top, w: r.width, h: r.height }], lines: rects.length, VX: vv ? vv.offsetLeft : 0, VY: vv ? vv.offsetTop : 0, VW: vv ? vv.width : innerWidth, VH: vv ? vv.height : innerHeight };
+          const box = lines ? null : cut(r.left, r.top, r.right, r.bottom);
+          return { x: r.left, y: r.top, w: r.width, h: r.height, rects: lines ? rects : box ? [box] : [], lines, trimmed, VX, VY, VW, VH };
         });
         if (g.w < 4 || g.h < 4 || g.w * g.h > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
+        /* видимой части строк нет — всё обрезано блоком или за окном: не мерится, в «не измерены» (смотреть глазами) */
+        if (!g.rects.length) { await h.evaluate((el) => el.classList.remove('rw-hide-text')); imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'обрезан предком — видимой части строк нет', by: null }); continue; }
+        if (g.trimmed) imgContrast.trimmed = (imgContrast.trimmed || 0) + 1;
         /* снимок окна и выборка по координатам окна: снимок элемента у закреплённых (position: fixed)
            и прокрученных элементов брал не ту область */
         const buf = await page.screenshot({ type: 'png' });
@@ -1422,9 +1540,13 @@ try {
   await page.close();
 
   /* фокус — на свежей странице (отдельная вкладка): старт обхода не должен зависеть от прокруток выше */
-  const fp = await openPage(browser, url, vp);
+  const fp = await openPage(browser, url, vp, { modalCheck: false });
+  /* окно согласия и на свежей вкладке (согласие сайт мог не запомнить): закрыть до обхода, начало обхода — снова
+     начало страницы */
+  consentFocus = await consentStep(fp);
   await forceInstantScroll(fp);
   await fp.bringToFront();
+  if (!KEEP_CONSENT && realConsent(consentFocus)) focusRestart = await fp.evaluate(focusFromStartInPage).catch(() => null);
   focus = await focusWalk(fp);
   await fp.close();
 } catch (e) {
@@ -1455,8 +1577,10 @@ const rep = C.imgRepeat || { n: 0, ex: [] }, over = C.imgOverLimit || 0;
 imgContrast.total = C.unknown; imgContrast.repeat = rep.n; imgContrast.overLimit = over;
 const repTxt = rep.n ? `повтор того же фона у той же подписи ${rep.n} — не мерились (тот же фон, то же место текста на нём и тот же цвет, что у трёх измеренных): ${rep.ex.join(', ')}${rep.n > rep.ex.length ? ' …' : ''}` : '';
 const overTxt = over ? `упёрлись в предел ${C.imgLimit || 150} за запуск: не измерено ${over} — смотреть глазами` : '';
+/* строка длиннее блока, который её режет (многоточие, overflow hidden): фон — только под видимой частью */
+const trimTxt = imgContrast.trimmed ? `у ${imgContrast.trimmed} строка длиннее своего блока (многоточие, overflow ≠ visible) — фон взят только под видимой частью` : '';
 if (C.unknown && imgContrast.error) L('WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): не измерен — ${imgContrast.error}`, `${C.unknown} элементов на картинке, градиенте или чужой подложке не проверены — смотреть глазами`);
-else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg || over ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured} из ${C.unknown}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком или вне окна ${imgContrast.covered} (не мерился)` : ''}${rep.n ? `, повтор того же фона ${rep.n}` : ''}${over ? `, сверх предела ${over}` : ''}`, [imgContrast.failures.length ? `${imgContrast.failures.length} ниже нормы: ${imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ')}${imgContrast.failures.length > 6 ? ` | и ещё ${imgContrast.failures.length - 6}` : ''}` : imgContrast.measured ? 'измеренные — не ниже нормы (по худшим 10% фона)' : sharp ? '' : 'нет sharp — не измерено', covTxt, overTxt, repTxt, vrImg].filter(Boolean).join('; '));
+else if (C.unknown) L(imgContrast.failures.length ? 'FAIL' : imgContrast.covered || vrImg || over ? 'WARN' : imgContrast.measured ? 'OK' : 'WARN', `контраст по снимку фона за текстом (картинка, градиент, чужая подложка): измерено ${imgContrast.measured} из ${C.unknown}${imgContrast.skipped ? `, пропущено ${imgContrast.skipped}` : ''}${imgContrast.covered ? `, перекрыто другим блоком, вне окна или обрезано ${imgContrast.covered} (не мерился)` : ''}${rep.n ? `, повтор того же фона ${rep.n}` : ''}${over ? `, сверх предела ${over}` : ''}`, [imgContrast.failures.length ? `${imgContrast.failures.length} ниже нормы: ${imgContrast.failures.slice(0, 6).map((f) => `${f.sig} «${f.text}» ${f.fg}${f.alpha < 1 ? ` (прозрачность ${f.alpha})` : ''} ${f.size}px: худшие 10% фона дают ${f.p10}:1 при медиане ${f.median}:1 (нужно ${f.need}:1)`).join(' | ')}${imgContrast.failures.length > 6 ? ` | и ещё ${imgContrast.failures.length - 6}` : ''}` : imgContrast.measured ? 'измеренные — не ниже нормы (по худшим 10% фона)' : sharp ? '' : 'нет sharp — не измерено', trimTxt, covTxt, overTxt, repTxt, vrImg].filter(Boolean).join('; '));
 if (fx && !fx.none) {
   const T = 'контраст закреплённого текста на прокрутке';
   const sk = Object.entries(fx.skipped || {}).filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(', ');
@@ -1574,12 +1698,34 @@ if (dom.iframesNoTitle) L('WARN', `iframe без title: ${dom.iframesNoTitle}`);
    нажатия: не найдено, скрыто, замер не той страницы), «свой стиль на странице» (CSP запретил и <style>, и таблицы).
    Страница открывается дважды (обход и фокус) — одинаковое предупреждение одной строкой: окно шло двумя строками под
    подписью «свой стиль на странице» (29.09). INFO lib (нажато; увело — нужная страница открыта заново) — строкой INFO */
+/* окно согласия cookie: что нашёл и что нажал (lib.consentNote) — на странице замеров и на вкладке обхода Tab. Закрыто
+   или --keep-consent — INFO; нашлось, но не закрылось, или проверка не прошла — WARN (замеры под окном). Не появлялось —
+   строки нет (с --keep-consent — INFO «не появлялось»). Нажатое по SITE_REWORK_DISMISS — в своих строках ниже */
+const cNote = (c) => consentNote({ ...c, dismiss: null, late: false }).replace(/\*\*/g, '');
+{
+  const parts = []; let st = 'INFO';
+  const m = consent, f = consentFocus;
+  if (m && m.error) { st = 'WARN'; parts.push(`страница замеров: проверка не прошла — ${m.error}; окно, если оно есть, осталось — смотреть глазами`); }
+  else if (realConsent(m)) {
+    if (KEEP_CONSENT) parts.push(`${cNote(m)} — замеры сняты вместе с окном (проверка самого окна): контраст текста под его подложкой и обход Tab с ним`);
+    else if (m.closed) parts.push(`${cNote(m)}${m.late ? ' — появилось после прокрутки' : ''} — замеры сняты без него`);
+    else { st = 'WARN'; parts.push(`${cNote(m)} — замеры сняты под окном: контраст текста под ним и закреплённого текста могут быть ложными, смотреть глазами; закрыть — SITE_REWORK_DISMISS="селектор кнопки"`); }
+  }
+  if (f && f.error) { st = 'WARN'; parts.push(`вкладка обхода Tab: проверка не прошла — ${f.error}`); }
+  else if (realConsent(f)) {
+    if (KEEP_CONSENT) parts.push(realConsent(m) ? 'на вкладке обхода Tab — тоже не закрывалось' : `на вкладке обхода Tab: ${cNote(f)}`);
+    else if (f.closed) parts.push(`${realConsent(m) ? 'на вкладке обхода Tab — тоже закрыто,' : `на вкладке обхода Tab: ${cNote(f)} —`} обход начат с начала страницы${focusRestart === false ? ' (сброс начала обхода не подтвердился — фокус не на body)' : ''}`);
+    else { st = 'WARN'; parts.push(`на вкладке обхода Tab не закрылось — ${f.why || 'причина неизвестна'}: фокус может уходить в окно, смотреть глазами`); }
+  } else if (realConsent(m) && f) parts.push('на вкладке обхода Tab не появлялось (согласие запомнено в браузере)');
+  if (!parts.length && KEEP_CONSENT) parts.push('не появлялось (--keep-consent: закрывать было нечего)');
+  if (parts.length) L(st, 'окно согласия cookie', parts.join('; '));
+}
 for (const n of [...new Set(takeNotes())]) L('INFO', 'SITE_REWORK_DISMISS', n.replace(/^SITE_REWORK_DISMISS /, ''));
 const libW = takeWarnings();
 for (const w of libW) L('WARN', warningLabel(w), w.replace(/^SITE_REWORK_DISMISS /, ''));
 const verdict = fails ? 'FAIL' : warns ? 'WARN' : 'OK';
 console.log(`\n${verdict}: ${fails} провалов, ${warns} предупреждений`);
 const file = path.join(outDir, `${tag}.json`);
-writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, viewReset, focus, lines, ...(libW.length ? { warnings: libW } : {}), verdict });
+writeJson(file, { url, viewport: vpName, takenAt: new Date().toISOString(), scroll: { pageHeight: sc.pageHeight, screens: sc.screens, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck }, reveal, grain, dom: { ...dom, contrast: { ...dom.contrast, imgList: dom.contrast.imgList.map(({ fgRgb, fgGrain, ...rest }) => rest) } }, imgContrast, fixedScroll: fx, viewReset, focus, consent: { keep: KEEP_CONSENT, page: consent ? { ...consent, note: cNote(consent) } : null, focusPage: consentFocus ? { ...consentFocus, note: cNote(consentFocus), focusRestart } : null }, lines, ...(libW.length ? { warnings: libW } : {}), verdict });
 console.log(`Сохранено: ${file}`);
 if (opt.strict && verdict === 'FAIL') { console.log('Код выхода 1: вердикт FAIL (--strict)'); process.exitCode = 1; }

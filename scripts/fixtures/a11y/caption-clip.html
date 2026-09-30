@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: подпись с многоточием над фото</title>
+<!-- Стенд a11y.mjs --selftest (caption-clip, desktop). Четыре карточки «фото и подпись поверх», подписи длинные, в одну
+     строку, и режутся блоком с overflow hidden. Коробка строки (range.getClientRects) тянется на всю длину текста, вместе
+     со спрятанной частью, а под спрятанной частью на снимке лежит другой фон (светлое фото, белая страница). Раньше
+     фон брался под всей коробкой строки — худшие 10 % пикселей давали «1:1», ложный FAIL (epicentr-mamuka 29.09):
+       1) «Уха…» — белая подпись на тёмной плашке, режет сама подпись (overflow hidden, text-overflow ellipsis);
+          хвост строки — над светлым фото;
+       2) «Пельмени…» — то же, но режет предок-плашка, у самой подписи overflow visible;
+       3) «Шашлык…» — белая подпись над тёмным фото без своей плашки, absolute внутри карточки с overflow hidden
+          (карточка — её содержащий блок); хвост строки — за краем карточки, над белой страницей;
+       4) «Нечитаемая…» — как 1, но серый #555555 на плашке #1A1A1A: видимая часть действительно не читается.
+     Ждём: FAIL, измерено 4 из 4, 1 ниже нормы — только «Нечитаемая», без «Уха», «Пельмени», «Шашлык». -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+main { padding: 16px 32px 48px; }
+.list { display: flex; flex-direction: column; gap: 24px; margin: 0; padding: 0; list-style: none; }
+.card { position: relative; width: 360px; height: 200px; overflow: hidden; border-radius: 12px; }
+.card__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cap { position: absolute; left: 16px; bottom: 16px; width: 170px; box-sizing: border-box; margin: 0; padding: 8px 12px; background: #1a1a1a; color: #fff; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cap--dim { color: #555; }
+.plate { position: absolute; left: 16px; bottom: 16px; width: 170px; box-sizing: border-box; padding: 8px 12px; background: #1a1a1a; overflow: hidden; }
+.plate__t { margin: 0; color: #fff; font-size: 16px; white-space: nowrap; }
+.title { position: absolute; left: 16px; right: 16px; bottom: 16px; margin: 0; color: #fff; font-size: 16px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Меню дня</h1>
+  <ul class="list" id="list"></ul>
+</main>
+<script>
+/* кадры — однотонные SVG: светлое фото под плашками 1, 2 и 4, тёмное — под подписью 3 */
+const img = (fill) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="${fill}"/><circle cx="300" cy="80" r="60" fill="${fill === '#1d1d1d' ? '#262626' : '#e2e2e2'}"/></svg>`);
+const cards = [
+  ['#eeeeee', '<p class="cap">Уха по-ростовски с расстегаем и зеленью, подаётся в горшочке</p>'],
+  ['#eeeeee', '<div class="plate"><p class="plate__t">Пельмени ручной лепки со сметаной и укропом, двадцать штук</p></div>'],
+  ['#1d1d1d', '<p class="title">Шашлык из баранины на углях с луком и лавашем, триста грамм на порцию</p>'],
+  ['#eeeeee', '<p class="cap cap--dim">Нечитаемая подпись: серый на тёмной плашке, тоже с многоточием</p>'],
+];
+const ul = document.getElementById('list');
+for (const [fill, body] of cards) {
+  const li = document.createElement('li'); li.className = 'card';
+  li.innerHTML = `<img class="card__img" src="${img(fill)}" alt="">${body}`;
+  ul.appendChild(li);
+}
+</script>
+</body>
+</html>

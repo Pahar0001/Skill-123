@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: окно cookie поверх страницы</title>
+<!-- Стенд a11y.mjs --selftest (consent и consent-keep, desktop). Шапка header.hdr (fixed, фон #FFFFFF, ссылки #333333 —
+     12.6:1) и ссылки в тексте с рамкой по :focus-visible — сама страница проходит. Поверх неё при загрузке — окно
+     согласия div.cc (в разметке — между шапкой и main): подложка rgba(0,0,0,.6) на весь экран и диалог (aria-modal)
+     «Мы используем cookie…» с кнопками «Настроить» и «Принять» без видимого фокуса; окно держит Tab внутри себя.
+     «Принять» закрывает окно только настоящим нажатием (событие isTrusted — click() из скрипта окно не слушает, как у
+     части баннеров): closeConsent жмёт мышью, кнопка получает фокус, и без сброса начала обхода Tab на свежей вкладке
+     пошёл от места окна — по трём ссылкам текста и вон из страницы: WARN «обход не состоялся: 3 из 5» (проверено
+     30.09). Согласие не запоминается — окно есть и на вкладке обхода. Раньше a11y окно не закрывал: ссылки шапки
+     под подложкой мерились по снимку — «#333333 на затемнённом» 2.2:1, ложный FAIL (и на прокрутке), а обход Tab
+     уходил в окно — «не видно фокуса на: button.cc__btn».
+     Ждём по умолчанию: INFO «окно согласия cookie» — закрыто кнопкой «Принять» (и на вкладке обхода, обход с начала
+     страницы); строки «контраст по снимку фона» нет; фокус OK, первым — a.hdr__a, без cc__btn. С --keep-consent: INFO
+     с пометкой --keep-consent, FAIL «контраст по снимку фона» у ссылок шапки, FAIL фокуса на button.cc__btn —
+     проверка самого окна. -->
+<style>
+body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+.hdr { position: fixed; top: 0; left: 0; right: 0; z-index: 10; height: 56px; display: flex; align-items: center; gap: 24px; padding: 0 24px; background: #fff; border-bottom: 1px solid #ddd; }
+.hdr a, main a { color: #333; }
+.hdr a { text-decoration: none; }
+a:focus-visible { outline: 2px solid #0a58ca; outline-offset: 2px; }
+main { padding: 80px 24px 24px; }
+section { min-height: 700px; }
+.cc { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .6); }
+.cc__box { max-width: 560px; margin: 0 16px 24px; padding: 20px 24px; border-radius: 12px; background: #fff; color: #222; }
+.cc__box p { margin: 0 0 12px; }
+.cc__btn { margin-right: 8px; padding: 8px 16px; border: 0; border-radius: 8px; background: #222; color: #fff; font: inherit; outline: none; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+<header class="hdr"><a class="hdr__a" href="#menu">Меню</a><a class="hdr__a" href="#delivery">Доставка</a><a class="hdr__a" href="#contacts">Контакты</a></header>
+<div class="cc" id="cc">
+  <div class="cc__box" role="dialog" aria-modal="true" aria-label="Файлы cookie">
+    <p>Мы используем файлы cookie, чтобы сайт работал. Продолжая, вы соглашаетесь с политикой обработки данных.</p>
+    <button type="button" class="cc__btn">Настроить</button><button type="button" class="cc__btn" id="ccOk">Принять</button>
+  </div>
+</div>
+<main>
+  <h1>Кухня у дома</h1>
+  <section id="menu"><h2>Меню</h2><p>Обеды на каждый день. <a href="#order">Заказать обед</a> или посмотреть <a href="#week">меню на неделю</a>.</p></section>
+  <section id="delivery"><h2>Доставка</h2><p>Привезём за час по району. <a href="#reviews">Отзывы</a> гостей.</p></section>
+  <section id="contacts"><h2>Контакты</h2><p>Ярославль, улица Свободы, 1.</p></section>
+</main>
+
+<script>
+const cc = document.getElementById('cc');
+/* только настоящее нажатие: click() из скрипта окно не слушает */
+document.getElementById('ccOk').addEventListener('click', (e) => { if (e.isTrusted) cc.remove(); });
+/* пока окно открыто, Tab ходит только по его кнопкам */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || !cc.isConnected) return;
+  e.preventDefault();
+  const b = [...cc.querySelectorAll('button')]; const i = b.indexOf(document.activeElement);
+  b[(i + 1) % b.length].focus();
+});
+</script>
+</body>
+</html>
