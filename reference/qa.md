@@ -3,6 +3,91 @@
 Проверка — не этап в конце, а часть каждой задачи. Финальный проход
 повторяет всё разом и ищет регресс.
 
+## Профили проверки: команды и условия сдачи
+
+Перенесено из SKILL.md 30.09.2026 дословно; в SKILL.md — короткая версия со ссылкой сюда.
+
+**Два профиля.** Полная проверка идёт 40–60 минут и съедает лимит сессии (боевая «Эпицентр» 29.09:
+четыре полных круга — сутки и два упора в лимит), поэтому:
+
+- **быстрая — по умолчанию, после каждого круга правок** (10–15 минут): только изменённые страницы;
+  проверяет ведущий сам или ОДИН агент «глаза и клики» (задание 2 в «Скрипты меряют, агент смотрит»), не три линзы;
+- **полная — один раз перед сдачей или выкладкой**, либо когда пользователь просит «полную проверку»:
+  быстрая плюс список ниже.
+
+Кругов «исправить → проверить» — не больше двух; в круг идут только P0–P2, P3–P5 — списком в отчёт.
+
+Быстрая:
+```
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-320 --viewport mobile-s --scroll      # переполнение, перекрытый текст, консоль; то же для каждой изменённой страницы
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-desktop --scroll
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag q-mobile --viewport mobile-s                # главная и самая изменённая страница
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag q --viewports desktop,mobile             # только если менялись тексты или шрифты
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag q --viewport mobile --runs 1              # только если менялись первый экран, шрифты или картинки
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag q --pages <изменённые> --viewports desktop,mobile-s --segments 0 --return jump   # первые экраны — открыть глазами
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-calm --reduced-motion --assert "document.querySelectorAll('.dk-armed, .dk-set').length === 0" --fullpage   # детали для красоты: при «меньше движения» всё видно сразу
+```
+Плюс руками: кликнуть то, что правили (меню, формы, фильтры), и сверить фото с подписями на изменённых страницах.
+Детали и движение — короткий список `reference/craft.md` §4.
+
+Полная — к быстрой добавить:
+```
+node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag after --pages <те же> --with-320   # FAIL, если состояние после прокрутки не сбрасывается
+node ~/.claude/skills/site-rework/scripts/diff.mjs <папка>/before <папка>/after       # где изменилось — совпадает ли с планом
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag controls --scroll --canvas --motion --video --click "<кнопка>" --edit "<поле с маской>" --select "<список>=<вариант>"   # селекторы свои; и то же с --viewport mobile --tag controls-mobile
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag state --css --hover-all --nav
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-320 --viewport mobile-s --scroll
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag after-360 --viewport android --scroll   # самый массовый Android; правило «≤360» живёт и здесь
+node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag after --runs 3       # медиана трёх прогонов: perf/after.json против perf/base.json; --overlay — цена слоя зерна
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-mobile --viewport mobile
+node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --tag after-desktop --viewport desktop   # меню, телефон в шапке, подписи — на телефоне скрыты
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after --viewports desktop,mobile,mobile-s --baseline <папка>/typeset/donor-desktop.json   # без донора — без --baseline; открыть typeset/after-*/00-hero.png и вырезки
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after-wide --viewports 1920x1080@1,laptop,tablet,android   # правки кегля в vw и колонок: на 1440 три строки, на 1920 — снова четыре (Opara 28.09)
+node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag after-ff --viewports desktop,mobile,mobile-s --browser firefox   # браузер пользователя: переносы, text-wrap: pretty, строки первого экрана (Firefox ломает их иначе)
+node ~/.claude/skills/site-rework/scripts/copy.mjs lint <url> --out <папка> --tag after --pages <те же> --taste [--invent]   # тексты: FAIL — заполнитель или текст донора; придуманное — WARN (--invent при контенте «нет — сделай сам» — подсказка) и список copy/invented.json; протокол — доказательство задач content
+node ~/.claude/skills/site-rework/scripts/copy.mjs pairs <папка>/copy/before.json <папка>/copy/after.json --md   # «Тексты "было → стало"» в отчёт
+node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
+node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <url> [<папка>/motion/donor-<тип>.json <наша страница типа> …] --out <папка>   # движение донора: пара у нас или решение, все пары одним запуском
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag browser-user --browser firefox --wait 3000 --canvas   # браузер пользователя
+node ~/.claude/skills/site-rework/scripts/security.mjs <url> --out <папка> --admin /admin --repo <папка исходников>   # безопасность и утечки: /.env, /.git и служебное с сервера, админка без входа, формы, секреты, чужие скрипты, заголовки; исправления — reference/security.md; и перед каждой выкладкой
+```
+У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),
+и следующий запуск на том же экране его перезаписывает — у каждого набора
+шагов свой `--tag`.
+Режим донора — плюс `verify.mjs` и `texture.mjs compare` (`reference/donor-mode.md` §5).
+С реестром проверки собираются из критериев: `requirements.mjs <папка> checks --sh <папка>/checks.sh`,
+после прогона `checks --journal <папка>/journal.sh`; visual — руками после взгляда.
+Открыть глазами все `after/*` на desktop, tablet, mobile, вырезки 1:1
+изменённых компонентов и все `diff/*.png`: изменения только там, где
+планировались; что должно было сохраниться — сохранилось. Если высота страницы изменилась,
+`diff` окон прокрутки сравнивает разные места — смотреть first и full, а разделы — по снимкам глазами.
+Правило в `rework.css` против правила оригинала — сверить специфичность: `.a img` проигрывает
+`.a img:nth-child(1)` (Opara: снимки на 320 «уменьшены», а на деле прежние и наехали на метку).
+Текст из данных (база, API, json) перезаписывает HTML — правка файла до экрана не доходит;
+проверять набор по `typeset`, а не по файлу.
+Заставки и ворота («ENTER», 18+), которые скрипты не закрыли сами: `SITE_REWORK_DISMISS="селектор||text:Надпись"`;
+тяжёлая страница — `SITE_REWORK_PROTOCOL_TIMEOUT=<мс>` (по умолчанию 90000). Не больше 2–3 браузерных
+проверок одновременно — на этой машине кончались память и диск C.
+
+Условие выхода из круга быстрой проверки: P0–P2 исправлены, быстрые проверки без FAIL, изменённое
+открыто глазами и прокликано. Условие сдачи (полная проверка, один раз в конце): все P0–P2 VERIFIED
+по runtime, visual и mobile с доказательствами новее последней правки; автопроверки состояния без FAIL;
+320 без переполнения; `perf` не хуже базы; `a11y` без FAIL; `copy.mjs lint` без FAIL (заполнителей и
+текста донора нет); придуманное — в списке для владельца (`copy/invented.json`) и разделом «Придумано —
+проверить владельцу» в отчёте; `typeset.mjs` без FAIL в Chrome и Firefox, висячие предлоги
+и одинокие слова первого экрана (пометка «ПЕРВЫЙ ЭКРАН» в `hang` и `orphan`) исправлены неразрывным
+пробелом в исходнике или записаны в отчёт с причиной; с реестром — `requirements.mjs report`: у активных
+must нет «без доказательства», «устарело», «провалено», «нет задачи», «нет критерия», `check` без FAIL,
+`conflicts` пуст или каждый пункт — вопрос с ответом, допущение либо `ack`; в `cliche.mjs`
+нет правил веса 3 «НЕТ У ДОНОРА» без записи в `<папка>/authorship-decisions.json`, «размножено»
+не больше ×2, ни одного «ЗАПРЕЩЁН»; `motion.mjs compare` без FAIL; `security.mjs` без FAIL (иначе — задача
+P0 или решение владельца в отчёте); детали для красоты есть на всех типах страниц (раздел «Детали для красоты»
+закрыт по README decor-kit, «Что проверить после подключения»: без FAIL; в протоколе `console.warnings` = 0; после
+`--scroll` `.dk-armed` остаётся только у `data-dk-draw="scroll"`; при «меньше движения» assert true; 320 px без
+переполнения; в Firefox движение идёт; у разделов разные надписи и мотивы — открыто глазами); в браузере пользователя
+страницы открываются без ошибок и 3D/движение запускаются; иначе — ещё круг. Если круги
+закончились по времени — оставшееся честно в отчёт.
+
 ## Что означают вердикты скриптов
 
 `OK` — в браузере произошло ожидаемое. `WARN` — произошло что-то
@@ -13,7 +98,7 @@
 ## Runtime
 
 Во всех командах этого файла `--out <папка>` опущен для краткости — передавать
-его всегда (SKILL.md → «Папка прогона»), а `runtime.mjs` — ещё свой `--tag`
+его всегда (`reference/environment.md` → «Запуск скриптов, флаги, папка прогона»), а `runtime.mjs` — ещё свой `--tag`
 на каждый набор шагов: без него протокол называется по экрану и следующий
 запуск на том же экране его перезаписывает.
 
@@ -66,7 +151,7 @@ WARN (радиокнопка с `opacity: 0` поверх подписи — п�
 Что должно быть на выходе: ноль ошибок консоли и исключений (404 на
 `/favicon.ico` — отдельный WARN, не провал; не загрузился внешний шрифт
 или CDN — тоже FAIL: перепрогнать, а если повторилось — задача, см.
-SKILL.md → «Восстановление после сбоев»); все блоки появления
+`reference/environment.md` → «Восстановление после сбоев»); все блоки появления
 показались; переполнения по элементам нет ни на одном экране, включая
 320; меню открывается и закрывается; у каждого правила `:hover` есть
 видимый эффект; ввод и правка поля с маской проходят все сценарии;
@@ -450,7 +535,7 @@ node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --browser firefox --vi
 | план и протоколы | `state.mjs` не сверяет «чем проверяем» с шагами протокола (кроме критериев реестра с маркером `/*R-x.a*/`) | сверка выше |
 | тексты (`copy.mjs`) | без браузера не видит тексты из JS и базы; соседние строчные элементы делит на пункты по догадке (заглавная после тега), в режиме адреса — по вычисленному display; выдумку без чисел не видит; «гарантия», «бесплатно» сверяет по слову; «X, а не Y» ловит по шаблонам (зеркальные пары-афоризмы — нет) | свои тексты — по адресу; выдумку помечать `copy:stub`; смотреть глазами раздел «не проверяет» в `reference/copy.md` |
 | набор (`typeset.mjs`) | Chrome без окна не переносит слова — переносы и `pretty` только в Firefox; в Firefox нет CDP (шрифт знака — по unicode-range); теневой DOM и iframe не обходит; `near-align` не откалиброван | `--browser firefox`; вырезки глазами |
-| правка скриптов | протокол помнит версию самого скрипта, `lib.mjs` и подключаемых модулей (поле `generator`, `deps`); модуль, подключаемый по условию без `trackModule`, не учитывается. WARN `state.mjs` «другой версией скрипта» выходит и при незакоммиченных правках скрипта — перепрогон его не снимет | после правки подключаемого модуля перепрогнать зависящие проверки; SKILL.md → «Восстановление после сбоев» |
+| правка скриптов | протокол помнит версию самого скрипта, `lib.mjs` и подключаемых модулей (поле `generator`, `deps`); модуль, подключаемый по условию без `trackModule`, не учитывается. WARN `state.mjs` «другой версией скрипта» выходит и при незакоммиченных правках скрипта — перепрогон его не снимет | после правки подключаемого модуля перепрогнать зависящие проверки; `reference/environment.md` → «Восстановление после сбоев» |
 | сервер без сжатия | вес по передаче: на `serve.mjs --no-compress` или чужом сервере без gzip/br JS в 4–5 раз тяжелее, чем на бою | строка «Сжатие текста» и «со сжатием было бы ≈ …»; локально — `serve.mjs` (сжимает br/gzip) |
 | Firefox (`--browser firefox`) | нет CDP: `--cpu` и замедления сети, байты — только по content-length, тип запроса — по Sec-Fetch-Dest; телефон — без meta viewport и событий касания; тема и «меньше движения» задаются при запуске (вкладка «меньше движения» у `--motion`/`--video` — отдельный Firefox); у discover, a11y, perf, texture, cliche, motion флага `--browser` нет | вёрстку телефона и скорость — по Chrome; в Firefox — дымовая проверка: консоль, `--canvas`, `--assert` готовности 3D, shots |
 | движение | `motion.mjs` по клику видит только то, что раскрывается на месте (меню-бургер, аккордеоны, вкладки, aria-expanded), не видит окна по кнопкам, слайдеры по стрелкам, переходы страниц и то, что внутри холста; прокрутка скриптом — отрезки точны до ~5% экрана | окна и слайдеры — `runtime.mjs --click`; холст — `--canvas` и снимки; спорное — `motion.mjs --debug` (разбор каждого клика в json) |
