@@ -1,0 +1,6 @@
+Manrope — SIL Open Font License 1.1 (https://openfontlicense.org/open-font-license-official-text/).
+Источник: https://fonts.google.com/specimen/Manrope — Google Fonts, 30.09.2026.
+manrope-text.woff2 — Manrope 700, только знаки «Зёрна ₽» и пробел: css2 с параметром text (ответ — css2-text.css).
+css2-manrope.css, css2-text.css, css2-playfair-ital.css — ответы CSS2 API Google Fonts как есть (User-Agent Chrome).
+google-fonts.csv, typography.csv, google-font-licenses.json — выжимки данных ui-ux-pro-max v2.15.0 (MIT),
+PT Serif в google-fonts.csv и шрифты пар в typography.csv изменены под проверки разбора и отбора.

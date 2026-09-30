@@ -381,8 +381,11 @@ P4 движение · P5 полировка. Порядок: P0 → P5, вну�
   `copy:stub` lint с `--out` дописывает сам, имена, отзывы, адреса — руками), голос бизнеса,
   заголовки, кнопки, формы; `copy.mjs lint <url> --out <папка> --tag after`; типограф
   `copy.mjs fix --typograph <файл>` — сначала показ, дифф пользователю, `--write` после согласия;
-- типографика: `reference/typography.md`; неразрывные пробелы и неразрывные дефисы — в исходном
-  тексте и данных (`products.js`, json, база), не скриптом на странице; `typeset.mjs` только меряет;
+- типографика: `reference/typography.md`; шрифт — донора, иначе Google Fonts с кириллицей: подбор
+  `fonts.mjs pick --like "<характер>"` (пары — `fonts.mjs pairs`), к себе — `fonts.mjs get "<Семейство>" --weights 400,700
+  --out <папка сайта>` (свои woff2 и `fonts/fonts.css`, кириллица и ₽ проверены по файлам), надпись-логотип —
+  `--text "<надпись>"`; неразрывные пробелы и неразрывные дефисы — в исходном тексте и данных (`products.js`, json,
+  база), не скриптом на странице; `typeset.mjs` только меряет;
 - фото и видео: `reference/engines.md` → «Картинки и видео»: `media.mjs search` → лист-контакт
   глазами → `pick` с `--seen` и `--caption` → `credits`;
 - фактура: `reference/engines.md` → «Фактура»: своя плитка `grain-tile.mjs`, слой `templates/grain.css`;
@@ -637,9 +640,10 @@ scripts/mirror.mjs     зеркало чужой страницы как вер�
 scripts/flags-doc.mjs  справочник флагов из кода → reference/flags.md; --check — сверка кода, -h и документации (вручную перед коммитом скилла)
 scripts/serve.mjs      статический сервер (Range для видео, сжатие br/gzip как у хостинга, только эта машина); --proxy отдаёт остальное оригиналу
 scripts/firecrawl.mjs  сбор данных облаком Firecrawl: map (адреса по типам страниц), scrape (текст, фирменный стиль), search, facts (кандидаты фактов со ссылками), status; кэш и бюджет кредитов на прогон; без ключа — пропуск; selftest на подставном сервере
+scripts/fonts.mjs      шрифты Google с кириллицей: pick по характеру (--like по-русски), pairs из ui-ux-pro-max, get — свои woff2 и fonts.css (unicode-range, swap; переменный — диапазон веса из файла), --text — подмножество под надпись; знаки по таблице cmap; selftest на fixtures/fonts
 scripts/security.mjs   безопасность и утечки: служебные файлы с сервера (/.env, /.git, резервные копии), админка и API без входа, формы, секреты в коде и репозитории (--repo), чужие скрипты и счётчики, заголовки; selftest на fixtures/security
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
-scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
+scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, firecrawl (подставной сервер), fonts (выжимки ui-ux-pro-max, живые ответы CSS2, woff2 надписи), clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
 reference/tool-registry.md   что есть, когда чем пользоваться, чем заменять
 reference/flags.md           флаги всех скриптов обоих скиллов: вид, строка справки, коды выхода, env, strict (собирается flags-doc.mjs)

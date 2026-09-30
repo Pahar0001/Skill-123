@@ -1,0 +1,74 @@
+{
+ "schemaVersion": 1,
+ "note": "выжимка data/google-font-licenses.json ui-ux-pro-max для самопроверки fonts.mjs",
+ "families": [
+  {
+   "name": "Bebas Neue",
+   "license": "OFL"
+  },
+  {
+   "name": "Caveat",
+   "license": "OFL"
+  },
+  {
+   "name": "Comfortaa",
+   "license": "OFL"
+  },
+  {
+   "name": "Flow Rounded",
+   "license": "OFL"
+  },
+  {
+   "name": "Inter",
+   "license": "OFL"
+  },
+  {
+   "name": "JetBrains Mono",
+   "license": "OFL"
+  },
+  {
+   "name": "Manrope",
+   "license": "OFL"
+  },
+  {
+   "name": "Noto Sans JP",
+   "license": "OFL"
+  },
+  {
+   "name": "Oswald",
+   "license": "OFL"
+  },
+  {
+   "name": "Playfair Display",
+   "license": "OFL"
+  },
+  {
+   "name": "Prata",
+   "license": "OFL"
+  },
+  {
+   "name": "PT Serif",
+   "license": "OFL"
+  },
+  {
+   "name": "Roboto Condensed",
+   "license": "OFL"
+  },
+  {
+   "name": "Rubik Glitch",
+   "license": "OFL"
+  },
+  {
+   "name": "Russo One",
+   "license": "OFL"
+  },
+  {
+   "name": "Space Grotesk",
+   "license": "OFL"
+  },
+  {
+   "name": "Yeseva One",
+   "license": "OFL"
+  }
+ ]
+}
