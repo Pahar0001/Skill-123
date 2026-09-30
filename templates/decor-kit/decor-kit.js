@@ -531,6 +531,7 @@ function scatter(el) {
   }
   el.setAttribute('aria-hidden', 'true');
   el.insertAdjacentHTML('beforeend', html);
+  avoidText(el, R, full);
   const items = [...el.querySelectorAll(':scope > .dk-scatter__i')];
   items.forEach((svg) => { DONE.stroke.add(svg); DONE.draw.add(svg); autoStroke(svg); });
   if (el.dataset.dkScatterDraw === 'off' || !mayArm(el)) return;
@@ -542,6 +543,54 @@ function scatter(el) {
     items.forEach((svg) => svg.classList.add('dk-on'));
     later(done, (secs(cssVar(el, '--dk-draw-dur'), 1.6) + items.length * 0.12) * 1000 + 200);
   });
+}
+
+/* Россыпь не лежит на тексте (README): рисунок или крапинка на строке текста раздела — ещё до 6 мест в своей полосе,
+   не нашлось — скрыть. После загрузки шрифтов и при смене ширины — заново: легло на текст — скрыть, освободилось —
+   показать (без переезда, чтобы россыпь не прыгала). Декоративный текст (слои .dk-layer, aria-hidden) — не текст. */
+function textRects(host) {
+  const out = [];
+  const tw = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+    if (!n.nodeValue.trim()) continue;
+    const p = n.parentElement;
+    if (!p || p.closest('.dk-layer, script, style, svg, .dk-sr, [aria-hidden="true"]')) continue;
+    const rg = document.createRange(); rg.selectNodeContents(n);
+    for (const r of rg.getClientRects()) if (r.width > 0.5 && r.height > 0.5) out.push(r);
+  }
+  return out;
+}
+function avoidText(el, R, full) {
+  const host = el.closest('.dk-host') || el.parentElement;
+  if (!host) return;
+  /* видимая часть узла — внутри слоя (у слоя overflow: hidden) */
+  const onText = (node, lines, box) => {
+    const r = node.getBoundingClientRect();
+    const a = { l: Math.max(r.left, box.left), t: Math.max(r.top, box.top), r: Math.min(r.right, box.right), b: Math.min(r.bottom, box.bottom) };
+    if (a.r <= a.l || a.b <= a.t) return false;
+    return lines.some((L) => L.left < a.r && L.right > a.l && L.top < a.b && L.bottom > a.t);
+  };
+  const place = (move) => {
+    const lines = textRects(host); const box = el.getBoundingClientRect();
+    for (const node of el.querySelectorAll(':scope > .dk-scatter__i, :scope > .dk-speck')) {
+      node.style.visibility = '';
+      if (!onText(node, lines, box)) continue;
+      let ok = false;
+      const speck = node.classList.contains('dk-speck');
+      for (let k = 0; move && k < 6 && !ok; k++) {
+        const left = R() < 0.5;
+        const x = full ? 4 + R() * 90 : speck ? (left ? 2 + R() * 22 : 76 + R() * 22) : (left ? 4 + R() * 15 : 81 + R() * 15);
+        node.style.setProperty('--x', `${x.toFixed(1)}%`);
+        node.style.setProperty('--y', `${(4 + R() * 90).toFixed(1)}%`);
+        ok = !onText(node, lines, box);
+      }
+      if (!ok) node.style.visibility = 'hidden';
+    }
+  };
+  place(true);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => place(false));
+  let t = 0;
+  addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => place(false), 200); }, { passive: true });
 }
 
 /* ---------- мотив раздела ---------- */
