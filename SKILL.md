@@ -390,8 +390,11 @@ P4 движение · P5 полировка. Порядок: P0 → P5, вну�
   глазами → `pick` с `--seen` и `--caption` → `credits`;
 - фактура: `reference/engines.md` → «Фактура»: своя плитка `grain-tile.mjs`, слой `templates/grain.css`;
 - 3D: `reference/engines.md` → «3D»: сначала ответ «нужно ли», потом подход, потом обязательная проверка холста;
-- детали для красоты (правило 6): по разделу «Детали для красоты» плана; приёмы — `templates/decor-kit/`, свои
-  SVG-рисунки линией — по его README; у каждого раздела свой мотив;
+- детали для красоты (правило 6): по разделу «Детали для красоты» плана (`reference/analysis.md`). Механика —
+  `templates/decor-kit/`: скопировать `decor-kit.css` и `decor-kit.js` к сайту, две строки в `<head>`, README — приёмы,
+  переменные, мотивы. Вид — свой: шрифт и знак у каждого раздела (Google Fonts, кириллица — `cyrillic-check.mjs`),
+  свой спрайт рисунков линией из мира дела (README: `pathLength="1"` у каждого контура, без `vector-effect`,
+  currentColor, без заливок), свой мотив у каждого раздела; образец — `templates/decor-kit/demo.html`;
 - картинка заменена под тем же именем — метка версии в адресе (`photo.webp?v=<хэш содержимого>`): иначе кэш
   браузера до 7 дней показывает старый кадр («Эпицентр», 29.09);
 - фоновое видео — `reference/motion.md` → `video-bg` (лёгкое, без звука, постер, пауза вне экрана);
@@ -428,6 +431,7 @@ node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --ta
 node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag q --viewports desktop,mobile             # только если менялись тексты или шрифты
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag q --viewport mobile --runs 1              # только если менялись первый экран, шрифты или картинки
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag q --pages <изменённые> --viewports desktop,mobile-s --segments 0 --return jump   # первые экраны — открыть глазами
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-calm --reduced-motion --assert "document.querySelectorAll('.dk-armed, .dk-set').length === 0" --fullpage   # детали для красоты: при «меньше движения» всё видно сразу
 ```
 Плюс руками: кликнуть то, что правили (меню, формы, фильтры), и сверить фото с подписями на изменённых страницах.
 Детали и движение — короткий список `reference/craft.md` §4.
@@ -484,7 +488,9 @@ must нет «без доказательства», «устарело», «п�
 нет правил веса 3 «НЕТ У ДОНОРА» без записи в `<папка>/authorship-decisions.json`, «размножено»
 не больше ×2, ни одного «ЗАПРЕЩЁН»; `motion.mjs compare` без FAIL; `security.mjs` без FAIL (иначе — задача
 P0 или решение владельца в отчёте); детали для красоты есть на всех типах страниц (раздел «Детали для красоты»
-закрыт); в браузере пользователя
+закрыт по README decor-kit, «Что проверить после подключения»: без FAIL; в протоколе `console.warnings` = 0; после
+`--scroll` `.dk-armed` остаётся только у `data-dk-draw="scroll"`; при «меньше движения» assert true; 320 px без
+переполнения; в Firefox движение идёт; у разделов разные надписи и мотивы — открыто глазами); в браузере пользователя
 страницы открываются без ошибок и 3D/движение запускаются; иначе — ещё круг. Если круги
 закончились по времени — оставшееся честно в отчёт.
 
@@ -645,6 +651,7 @@ scripts/security.mjs   безопасность и утечки: служебн�
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
 scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, firecrawl (подставной сервер), fonts (выжимки ui-ux-pro-max, живые ответы CSS2, woff2 надписи), clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
+templates/decor-kit/   детали для красоты: decor-kit.css и decor-kit.js (ES-модуль без зависимостей) — строки из-под маски, рисунок линией, цитата по словам, шторка фото, заливка автосмены, табло цифр, бледные слова, россыпь, печать с фактами, надписи-логотипы, мотивы разделов; README (подключение, правила своих рисунков, что проверить), demo.html — образец
 reference/tool-registry.md   что есть, когда чем пользоваться, чем заменять
 reference/flags.md           флаги всех скриптов обоих скиллов: вид, строка справки, коды выхода, env, strict (собирается flags-doc.mjs)
 reference/discovery.md       визуальный разбор словами, паспорт, фактура, дизайн-система, референсы

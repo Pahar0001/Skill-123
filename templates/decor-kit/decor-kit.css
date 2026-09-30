@@ -1,0 +1,322 @@
+/* =====================================================================
+   decor-kit.css — детали для красоты: неподвижная часть и движение.
+
+   Работает только на классах dk-* и атрибутах data-dk-*: сам на странице
+   ничего не меняет. Скрипт — decor-kit.js (ES-модуль), инструкция —
+   README.md рядом, образец со всеми приёмами — demo.html.
+
+   Правила набора (их держит и скрипт):
+   · без скрипта и при «меньше движения» всё видно сразу и в конечном виде:
+     прячет до появления только скрипт (класс dk-armed) и только то, чего
+     нет на экране в момент разметки — первый экран анимаций не ждёт;
+   · движение — только transform, opacity, clip-path и штрих линии
+     (stroke-dashoffset): вёрстка не сдвигается;
+   · декор — aria-hidden, не ловит фокус и мышь, за край страницы не выходит
+     (слои обрезаны своим блоком).
+
+   Настройка под сайт — переменными (полный список — README, «Переменные»):
+   на :root — общее, на разделе — его шрифт, знак и цвет. Своё значение
+   ставится выше по каскаду или прямо в style="…" у элемента.
+   ===================================================================== */
+
+:root {
+  --dk-kit: 1;                                   /* метка «стили набора на месте» — её ждёт скрипт */
+
+  /* кривые: сайта, если заведены (--ease-out, --ease-in-out — reference/motion.md), иначе — правила Эмиля */
+  --dk-ease-out: var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));     /* вход: сильное замедление к концу */
+  --dk-ease-move: var(--ease-in-out, cubic-bezier(0.77, 0, 0.175, 1)); /* перемещение и перо по линии */
+
+  /* линия рисунков — одна толщина на экране у рисунка любого размера */
+  --dk-line: 1.5px;
+
+  /* длительности своего движения (витрина — дольше интерфейса, motion.md) */
+  --dk-lines-dur: 0.8s;      /* строка выезжает из-под маски */
+  --dk-lines-step: 70ms;     /* лесенка между строками: 30–80 мс */
+  --dk-draw-dur: 1.6s;       /* рисунок рисуется линией при входе */
+  --dk-curtain-dur: 1.1s;    /* шторка фото */
+  --dk-curtain-zoom: 1.12;   /* отъезд фото: с этого масштаба к 1 */
+  --dk-count-dur: 1.4s;      /* табло: лента цифры */
+  --dk-count-step: 90ms;     /* табло: разряды по очереди справа налево */
+  --dk-words-dim: 0.22;      /* цитата по словам: непрочитанные слова */
+  --dk-words-dur: 0.35s;
+}
+
+.dk-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Рисунки линией: <svg class="dk-draw"><use href="#id"/></svg>
+   Размер — --dk-s (число пикселей, по умолчанию 64) или классы --s/--l/--xl.
+   Толщина штриха = --dk-line на экране при любом размере: здесь — по --dk-s,
+   скрипт уточняет по настоящему размеру (ResizeObserver), если ширину задали
+   своим CSS. --dk-box — поле рисунка (viewBox), по умолчанию 64; скрипт
+   читает его сам у встроенного спрайта.
+   vector-effect не нужен и вреден: вместе с pathLength="1" он рвёт
+   прорисовку в Chrome и Firefox (README, «Правила своих рисунков»).
+   --------------------------------------------------------------------- */
+.dk-draw {
+  --dk-s: 64;
+  display: inline-block; flex: none; vertical-align: middle; overflow: visible;
+  width: calc(var(--dk-s) * 1px); height: calc(var(--dk-s) * 1px);
+  fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round;
+  stroke-width: calc(var(--dk-line) * var(--dk-box, 64) / var(--dk-s));
+  pointer-events: none;
+}
+.dk-draw--s  { --dk-s: 40; }
+.dk-draw--l  { --dk-s: 128; }
+.dk-draw--xl { --dk-s: 200; }
+
+/* ---------------------------------------------------------------------
+   Надписи-логотипы разделов: знак над названием (--row — слева).
+   Шрифт, начертание, регистр и разрядка — у каждого раздела свои:
+   --dk-logo-font, --dk-logo-weight, --dk-logo-style, --dk-logo-case,
+   --dk-logo-track, --dk-logo-scale, --dk-logo-stretch. Знак — свой SVG
+   (поле 24), растёт вместе с кеглем, как буква.
+   --------------------------------------------------------------------- */
+.dk-logo {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0.35em;
+  color: inherit; line-height: 1; text-decoration: none;
+}
+.dk-logo--row { flex-direction: row; gap: 0.5em; }
+.dk-logo__sign {
+  width: var(--dk-sign-size, 1.5em); height: var(--dk-sign-size, 1.5em); flex: none; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: var(--dk-sign-line, 1.35px);
+  stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+}
+.dk-logo__name {
+  white-space: nowrap;
+  font-family: var(--dk-logo-font);              /* не задан — шрифт блока */
+  font-weight: var(--dk-logo-weight, 400);
+  font-style: var(--dk-logo-style, normal);
+  font-stretch: var(--dk-logo-stretch, normal);
+  text-transform: var(--dk-logo-case, none);
+  font-size: calc(var(--dk-logo-scale, 1) * 1em);
+  line-height: var(--dk-logo-lh, 1);
+  letter-spacing: var(--dk-logo-track, 0em);
+  margin-right: calc(-1 * var(--dk-logo-track, 0em)); /* разрядка не сдвигает надпись с оси */
+}
+
+/* крупная надпись названия (первый экран, подвал); --stack — столбиком по слогам */
+.dk-wordmark {
+  font-family: var(--dk-word-font);
+  font-weight: var(--dk-word-weight, 800);
+  text-transform: var(--dk-word-case, none);
+  letter-spacing: var(--dk-word-track, -0.02em);
+  line-height: 0.9;
+}
+.dk-wordmark--stack > [aria-hidden] { display: grid; justify-items: start; line-height: 0.86; }
+
+/* игра шрифтов: слово внутри заголовка другим шрифтом (рукописным, курсивом) */
+.dk-alt {
+  font-family: var(--dk-alt-font);
+  font-style: var(--dk-alt-style, normal);
+  font-weight: var(--dk-alt-weight);
+  font-size: calc(var(--dk-alt-scale, 1) * 1em);
+  letter-spacing: var(--dk-alt-track, normal);
+  color: var(--dk-alt-color, inherit);
+}
+
+/* ---------------------------------------------------------------------
+   Фон с характером: блок .dk-host, первым в нём — слой .dk-layer.
+   Слой лежит под текстом (z-index −1), обрезан краем блока, мышь не ловит.
+   Осторожно: isolation делает блок отдельным слоем наложения — выпадающее
+   меню внутри не перекроет следующий блок.
+   --------------------------------------------------------------------- */
+.dk-host { position: relative; isolation: isolate; }
+.dk-layer {
+  position: absolute; inset: 0; z-index: -1; overflow: hidden;
+  pointer-events: none; user-select: none; contain: layout paint;
+}
+
+/* крупное бледное слово: цвет — текста блока; шрифт — раздела (как у его надписи-логотипа) */
+.dk-bgword {
+  position: absolute; left: var(--dk-x, -0.04em); top: var(--dk-y, 0); margin: 0;
+  font-family: var(--dk-bgword-font, var(--dk-logo-font));
+  font-weight: var(--dk-bgword-weight, 700);
+  font-style: var(--dk-bgword-style, normal);
+  text-transform: var(--dk-bgword-case, none);
+  letter-spacing: var(--dk-bgword-track, -0.02em);
+  font-size: var(--dk-fs, clamp(96px, 22vw, 360px));
+  line-height: 0.8; white-space: nowrap;
+  color: currentColor; opacity: var(--dk-alpha, 0.06);
+  transform: rotate(var(--dk-rot, 0deg));
+}
+.dk-bgword--strong { --dk-alpha: 0.1; }
+
+/* россыпь рисунков (data-dk-scatter): места, размер и поворот ставит скрипт */
+.dk-scatter__i {
+  position: absolute; left: var(--x); top: var(--y);
+  opacity: calc(var(--o, 1) * var(--dk-scatter-alpha, 0.14));
+  transform: translate(-50%, -50%) rotate(var(--r, 0deg));
+}
+.dk-speck {
+  position: absolute; left: var(--x); top: var(--y); width: var(--s, 5px); height: var(--s, 5px);
+  border-radius: 50%; background: currentColor;
+  opacity: calc(var(--o, 1) * var(--dk-speck-alpha, 0.16));
+}
+
+/* ---------------------------------------------------------------------
+   Круглая печать с текстом по кругу (data-dk-stamp): факты о деле.
+   Кольцо рисует скрипт (или оно уже в разметке — тогда видно и без JS).
+   --------------------------------------------------------------------- */
+.dk-stamp {
+  position: relative; display: inline-grid; place-items: center; flex: none;
+  width: var(--dk-stamp-size, 150px); aspect-ratio: 1; color: inherit;
+}
+.dk-stamp__ring {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
+  fill: currentColor; pointer-events: none;
+}
+.dk-stamp__ring path { fill: none; }
+.dk-stamp__ring text {
+  font-family: var(--dk-stamp-font);
+  font-weight: var(--dk-stamp-weight, 600);
+  text-transform: var(--dk-stamp-case, uppercase);
+}
+.dk-stamp > :not(.dk-stamp__ring) { position: relative; }
+
+/* ---------------------------------------------------------------------
+   Предмет за краем карточки: карточка .dk-pop-host, предмет .dk-pop
+   (рисунок .dk-draw или вырезка PNG/WebP с прозрачностью).
+   На узком экране за боковой край не выходит — только за верх и низ.
+   --------------------------------------------------------------------- */
+.dk-pop-host { position: relative; }
+.dk-pop {
+  position: absolute; margin: 0; pointer-events: none;
+  top: var(--dk-pop-top, auto); right: var(--dk-pop-right, 16px);
+  bottom: var(--dk-pop-bottom, auto); left: var(--dk-pop-left, auto);
+  transform: rotate(var(--dk-pop-rot, 0deg));
+}
+.dk-pop:not(.dk-draw) { width: var(--dk-pop-size, 160px); height: auto; }
+@media (max-width: 719.98px) {
+  /* --dk-pop-left не задан — var() без запасного делает объявление недействительным, и left остаётся auto */
+  .dk-pop { right: max(0px, var(--dk-pop-right, 16px)); left: max(0px, var(--dk-pop-left)); }
+}
+
+/* ---------------------------------------------------------------------
+   Табло цифр (data-dk-count): у каждой цифры лента 0…9 дважды, едет к своей.
+   Табличные цифры сразу — ширина не меняется, когда скрипт разложит число.
+   --------------------------------------------------------------------- */
+[data-dk-count] { font-variant-numeric: tabular-nums lining-nums; }
+.dk-count { display: inline-flex; vertical-align: top; white-space: nowrap; }
+.dk-digit { display: inline-block; height: 1lh; overflow: hidden; vertical-align: top; }
+.dk-digit__strip { display: flex; flex-direction: column; transform: translate3d(0, calc(var(--to, 0) * -1lh), 0); }
+.dk-digit__strip > span { display: block; height: 1lh; text-align: center; }
+
+/* ---------------------------------------------------------------------
+   Заливка автосмены (data-dk-autoplay): полоска активного слайда
+   заливается за срок показа — заливка и есть таймер смены.
+   .is-paused — пауза (наведение, фокус, вне экрана, скрытая вкладка,
+   кнопка); .is-stopped — без автосмены (выбрал человек, «меньше движения»).
+   --------------------------------------------------------------------- */
+.dk-dots { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-seg-gap, 6px); }
+.dk-dots__i {
+  position: relative; flex: none; width: var(--dk-seg, 32px); height: 24px;
+  margin: 0; padding: 0; border: 0; background: none; color: inherit; cursor: pointer;
+}
+.dk-dots__i::before,
+.dk-dots__i::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--dk-seg-h, 3px); margin-top: calc(var(--dk-seg-h, 3px) / -2); border-radius: 2px;
+}
+.dk-dots__i::before { background: currentColor; opacity: var(--dk-seg-track, 0.28); }
+.dk-dots__i::after { background: var(--dk-seg-fill, currentColor); transform: scaleX(0); transform-origin: left; }
+.dk-dots__i.is-active::after { animation: dk-fill var(--dk-dur, 5000ms) linear both; }
+.dk-dots.is-paused .dk-dots__i.is-active::after { animation-play-state: paused; }
+.dk-dots.is-stopped .dk-dots__i.is-active::after { animation: none; transform: none; }
+.dk-dots__i:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 4px; }
+@keyframes dk-fill { to { transform: none; } }
+
+.dk-dots__toggle {
+  margin: 0 0 0 6px; padding: 4px 10px; min-height: 24px; border: 1px solid currentColor; border-radius: 99px;
+  background: none; color: inherit; font: inherit; font-size: 0.8125em; line-height: 1.2; cursor: pointer;
+}
+.dk-dots__toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* слайды: без скрипта видны все (списком), со скриптом — активный */
+[data-dk-autoplay].dk-ready [data-dk-slide]:not(.is-active) { display: none; }
+[data-dk-autoplay].dk-ready [data-dk-slide].is-active { animation: dk-slide-in 0.5s var(--dk-ease-out) backwards; }
+@keyframes dk-slide-in { from { opacity: 0; } }
+
+/* ---------------------------------------------------------------------
+   Мотив раздела (data-dk-motif): место под него — сразу, вид — CSS сайта.
+   Скрипт ставит .dk-set (начало, без перехода) и .dk-play (переход к
+   обычному виду); обычный вид без классов — он же конечный и он же без JS.
+   .dk-off — мотив вне экрана: его анимации стоят.
+   --------------------------------------------------------------------- */
+[data-dk-motif] { display: block; }
+.dk-motif.dk-off,
+.dk-motif.dk-off * { animation-play-state: paused !important; }
+
+/* =====================================================================
+   ДВИЖЕНИЕ. Все «спрятанные» состояния — только под .dk-armed, которое
+   ставит скрипт. Нет скрипта — нет и прятанья.
+   ===================================================================== */
+
+/* строки из-под маски (data-dk-lines): слово — маска с тем же местом в строке */
+.dk-w {
+  display: inline-block; overflow: hidden; vertical-align: top;
+  padding: 0.14em 0.04em 0.2em; margin: -0.14em -0.04em -0.2em;
+}
+.dk-w__i { display: inline-block; }
+.dk-armed .dk-w__i { transform: translate3d(0, 110%, 0); }
+.dk-armed.dk-on .dk-w__i {
+  transform: none;
+  transition: transform var(--dk-lines-dur) var(--dk-ease-out) calc(var(--l, 0) * var(--dk-lines-step));
+}
+
+/* рисунок линией (data-dk-draw="in" | "scroll"): у контуров pathLength="1".
+   «1 1.01» и сдвиг 1.005, а не «1» и 1: иначе Chrome оставляет точку от круглого конца */
+.dk-draw.dk-armed { stroke-dasharray: 1 1.01; stroke-dashoffset: 1.005; }
+.dk-draw.dk-armed.dk-on {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--dk-draw-dur) var(--dk-ease-move) var(--dk-delay, 0s);
+}
+
+/* цитата по словам (data-dk-words): 22 % → 100 % в такт прокрутке */
+.dk-armed .dk-lw { opacity: var(--dk-words-dim); transition: opacity var(--dk-words-dur) ease; }
+.dk-armed .dk-lw.dk-lit { opacity: 1; }
+
+/* шторка фото (data-dk-curtain="from-left|from-right|from-bottom|from-top").
+   Шторка — у детей блока, не у самого блока: Chrome не видит входа в экран
+   у элемента, скрытого своим clip-path */
+.dk-armed[data-dk-curtain] { overflow: hidden; }
+.dk-armed[data-dk-curtain] > * { clip-path: inset(0 100% 0 0); }
+.dk-armed[data-dk-curtain="from-right"] > * { clip-path: inset(0 0 0 100%); }
+.dk-armed[data-dk-curtain="from-bottom"] > * { clip-path: inset(100% 0 0 0); }
+.dk-armed[data-dk-curtain="from-top"] > * { clip-path: inset(0 0 100% 0); }
+.dk-armed[data-dk-curtain] img,
+.dk-armed[data-dk-curtain] video { transform: scale(var(--dk-curtain-zoom)); }
+.dk-armed[data-dk-curtain].dk-on > * { clip-path: inset(0); transition: clip-path var(--dk-curtain-dur) var(--dk-ease-move); }
+/* у фото оба перехода сразу: правило для img точнее, чем «> *», и одно transform перебило бы
+   clip-path — шторка прыгала бы в конец (так было в исходнике «Эпицентра», найдено 30.09) */
+.dk-armed[data-dk-curtain].dk-on img,
+.dk-armed[data-dk-curtain].dk-on video {
+  transform: none;
+  transition: clip-path var(--dk-curtain-dur) var(--dk-ease-move), transform calc(var(--dk-curtain-dur) * 1.5) var(--dk-ease-out);
+}
+
+/* табло: лента стоит на нуле, пока число не вошло в экран */
+.dk-count.dk-armed .dk-digit__strip { transform: translate3d(0, calc(var(--from, 0) * -1lh), 0); }
+.dk-count.dk-armed.dk-on .dk-digit__strip {
+  transform: translate3d(0, calc(var(--to, 0) * -1lh), 0);
+  transition: transform var(--dk-count-dur) var(--dk-ease-out) calc(var(--k, 0) * var(--dk-count-step));
+}
+
+/* ---------- «меньше движения» ----------
+   Скрипт тогда ничего не прячет и не запускает; это — страховка на случай,
+   когда настройку включили, пока страница открыта (скрипт и сам всё
+   доводит до конца). */
+@media (prefers-reduced-motion: reduce) {
+  .dk-armed .dk-w__i,
+  .dk-armed[data-dk-curtain] img,
+  .dk-armed[data-dk-curtain] video { transform: none !important; transition: none !important; }
+  .dk-draw.dk-armed { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; transition: none !important; }
+  .dk-armed[data-dk-curtain] > * { clip-path: none !important; transition: none !important; }
+  .dk-armed .dk-lw { opacity: 1 !important; transition: none !important; }
+  .dk-count .dk-digit__strip { transform: translate3d(0, calc(var(--to, 0) * -1lh), 0) !important; transition: none !important; }
+  .dk-dots__i.is-active::after { animation: none !important; transform: none !important; }
+  [data-dk-autoplay].dk-ready [data-dk-slide].is-active { animation: none !important; }
+}

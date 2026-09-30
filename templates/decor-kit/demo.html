@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Детали для красоты — образец decor-kit</title>
+<meta name="description" content="Страница-образец набора decor-kit навыка site-rework: все приёмы на примере вымышленной пекарни.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- шрифты демо: у каждого раздела свой; кириллица всех проверена отрисовкой (cyrillic-check.mjs, 30.09.2026).
+     У Prata нет ₽, № и «…» — в тексте Prata их нет -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Golos+Text:wght@400;600&family=Oswald:wght@500&family=Prata&family=Unbounded:wght@700&family=Yeseva+One&display=swap">
+<!-- набор: две строки -->
+<link rel="stylesheet" href="decor-kit.css">
+<script type="module" src="decor-kit.js"></script>
+<style>
+  /* =================================================================
+     Вид демо-страницы — не часть набора. Из набора здесь только
+     переменные --dk-*: так сайт настраивает детали под себя.
+     ================================================================= */
+  :root {
+    --paper: #F3EADB; --ink: #2B1D14; --muted: #6A5344; --crust: #94491F;
+    --night: #1E1510; --cream: #F1E4CF; --honey: #E4A85A; --soft: #D9C9B2;
+    --serif: 'Prata', Georgia, serif; --sans: 'Golos Text', system-ui, sans-serif;
+  }
+  /* у каждого раздела свой голос: шрифт надписи-логотипа, он же у бледного слова раздела */
+  .t-bread  { --dk-logo-font: 'Prata', Georgia, serif; --dk-logo-case: uppercase; --dk-logo-track: .16em; --dk-logo-scale: .86; --dk-bgword-weight: 400; }
+  .t-pastry { --dk-logo-font: 'Caveat', 'Segoe Script', cursive; --dk-logo-weight: 600; --dk-logo-scale: 1.4; --dk-bgword-weight: 600; --dk-bgword-track: 0em; }
+  .t-coffee { --dk-logo-font: 'Oswald', 'Arial Narrow', sans-serif; --dk-logo-weight: 500; --dk-logo-case: uppercase; --dk-logo-track: .1em; --dk-bgword-weight: 500; --dk-bgword-case: uppercase; --dk-bgword-track: 0em; }
+  .t-cake   { --dk-logo-font: 'Yeseva One', Georgia, serif; --dk-logo-scale: 1.08; --dk-bgword-weight: 400; --dk-bgword-track: 0em; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.55 var(--sans); }
+  ::selection { background: var(--honey); color: var(--night); }
+  :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+  a { color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
+  .sec { padding: clamp(72px, 9vw, 128px) 0; }
+  .dark { background: var(--night); color: var(--cream); }
+  .note { font: 12.5px/1.5 ui-monospace, 'Cascadia Mono', Consolas, monospace; margin: 14px 0 0; opacity: .78; max-width: 62ch; overflow-wrap: anywhere; }
+  .h2 { font: 400 clamp(30px, 2.4vw + 18px, 50px)/1.14 var(--serif); margin: 0 0 20px; text-wrap: balance; }
+  .lead { font-size: clamp(17px, .4vw + 15.5px, 20px); line-height: 1.55; max-width: 40ch; margin: 0; color: var(--muted); }
+  .dark .lead { color: var(--soft); }
+  /* игра шрифтов: слово рукописным внутри заголовка */
+  .alt { --dk-alt-font: 'Caveat', 'Segoe Script', cursive; --dk-alt-weight: 600; --dk-alt-scale: 1.2; --dk-alt-color: var(--crust); }
+  .dark .alt { --dk-alt-color: var(--honey); }
+  .sec__logo { font-size: 26px; margin: 0 0 26px; }
+  .split { display: grid; gap: 48px; align-items: center; }
+  @media (min-width: 900px) { .split { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 64px; } }
+  .motif-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 36px; }
+  .motif-row .note { margin: 0; flex: 1 1 200px; }
+
+  /* ---- первый экран ---- */
+  .hero { min-height: min(100svh, 920px); display: grid; align-items: center; padding: 56px 0 64px; }
+  .hero__grid { display: grid; gap: 44px; align-items: center; }
+  @media (min-width: 900px) { .hero__grid { grid-template-columns: minmax(0, 1fr) auto; } }
+  .hero__kicker { margin: 0 0 22px; }
+  .hero .dk-wordmark { --dk-word-font: 'Unbounded', 'Arial Black', sans-serif; --dk-word-weight: 700; font-size: clamp(58px, 14.5vw, 184px); margin: 0 0 22px -.04em; }
+  .hero__tag { font: 400 clamp(22px, 1.4vw + 15px, 34px)/1.28 var(--serif); max-width: 21ch; margin: 0 0 12px; }
+  .hero__place { margin: 0 0 32px; color: var(--soft); }
+  .rail { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 0; list-style: none; font-size: 17px; }
+  .rail a { display: grid; place-items: center; min-width: 84px; min-height: 76px; padding: 10px 8px 12px; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .2s ease; }
+  @media (hover: hover) and (pointer: fine) { .rail a:hover { border-bottom-color: currentColor; } }
+  .hero__stamp { --dk-stamp-size: 168px; --dk-stamp-font: var(--sans); color: var(--honey); }
+  @media (min-width: 900px) { .hero__stamp { --dk-stamp-size: 212px; } }
+  .hero__stamp .dk-draw { color: var(--cream); }
+
+  /* ---- «Хлеб» ---- */
+  .bread-art { justify-self: center; color: var(--crust); --dk-s: 220; }
+  @media (min-width: 900px) { .bread-art { --dk-s: 340; } }
+  .flour { width: 160px; height: 64px; flex: none; color: var(--crust); }
+  .flour svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .flour__board { fill: none; stroke: currentColor; stroke-width: 1.5px; stroke-linecap: round; }
+  .flour__p { fill: currentColor; opacity: .6; }
+  .flour.dk-set .flour__p { transform: translateY(var(--dy)); opacity: 0; }
+  .flour.dk-play .flour__p { transition: transform 1.3s var(--dk-ease-out) var(--dl), opacity .5s ease var(--dl); }
+
+  /* ---- «Выпечка» ---- */
+  .photo { margin: 0; border-radius: 3px; overflow: hidden; aspect-ratio: 3 / 2; background: #3a261a; }
+  .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .quote { margin: 0; font: 400 clamp(24px, 1.1vw + 19px, 34px)/1.34 var(--serif); max-width: 24ch; }
+  .quote p { margin: 0; }
+  .m-layers { color: var(--honey); }
+  .m-layers.dk-set path { stroke-dasharray: 1 1.01; stroke-dashoffset: 1.005; }
+  .m-layers.dk-play path { stroke-dasharray: 1 1.01; stroke-dashoffset: 0; transition: stroke-dashoffset .8s var(--dk-ease-move) calc(var(--i) * 160ms); }
+
+  /* ---- «Кофе» ---- */
+  .nums { list-style: none; margin: 36px 0 0; padding: 0; display: grid; gap: 28px 32px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .nums li { display: grid; gap: 4px; align-content: start; }
+  .num { font: 500 clamp(52px, 4vw + 30px, 88px)/1.1 'Oswald', 'Arial Narrow', sans-serif; color: var(--crust); }
+  .nums li > span:last-child { color: var(--muted); max-width: 22ch; }
+  .m-steam { color: var(--crust); }
+  .m-steam .wisp { opacity: .9; }
+  .m-steam.dk-set .wisp { stroke-dasharray: 1 1.01; stroke-dashoffset: 1.005; opacity: 0; transform: translateY(5px); }
+  .m-steam.dk-play .wisp { stroke-dasharray: 1 1.01; stroke-dashoffset: 0; transition: stroke-dashoffset 2s var(--dk-ease-move) var(--dl), opacity .9s ease var(--dl), transform 2.6s var(--dk-ease-out) var(--dl); }
+
+  /* ---- «Торты» ---- */
+  .week__list { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 14px; font: 400 clamp(19px, .7vw + 15.5px, 24px)/1.35 var(--serif); }
+  .week__list b { display: block; font: 400 1.3em/1.2 'Yeseva One', Georgia, serif; color: var(--honey); }
+  .week .dk-dots { --dk-seg: 44px; color: var(--cream); }
+  .order { display: grid; gap: 10px; align-content: end; min-height: 230px; margin-top: 84px; padding: 28px 24px; border-radius: 4px; background: #34261C; color: var(--cream); }
+  .order__t { font: 400 clamp(26px, 1vw + 20px, 34px)/1.15 'Yeseva One', Georgia, serif; margin: 0; }
+  .order__p { margin: 0; color: var(--soft); max-width: 30ch; }
+  .order .dk-pop { color: var(--honey); }
+  .m-cherry { color: var(--cream); }
+  .m-cherry .cherry { transform-box: fill-box; transform-origin: 50% 100%; color: #E4786A; }
+  .m-cherry.dk-set .cherry { transform: translateY(-22px); opacity: 0; }
+  .m-cherry.dk-play .cherry { transition: transform .8s var(--dk-ease-out) .15s, opacity .25s ease .15s; }
+  .m-cherry.dk-set .splash { stroke-dasharray: 1 1.01; stroke-dashoffset: 1.005; }
+  .m-cherry.dk-play .splash { stroke-dasharray: 1 1.01; stroke-dashoffset: 0; transition: stroke-dashoffset .45s var(--dk-ease-out) .8s; }
+
+  /* ---- каталог рисунков ---- */
+  .cat { list-style: none; margin: 32px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 32px 12px; }
+  .cat li { display: grid; justify-items: center; gap: 10px; text-align: center; font-size: 14px; color: var(--muted); }
+  .cat code { display: block; font: 12.5px/1.4 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: var(--ink); }
+  .rules { margin: 24px 0 0; padding-left: 1.2em; max-width: 68ch; }
+  .rules li + li { margin-top: 6px; }
+
+  /* ---- подвал ---- */
+  .foot { padding: 64px 0 72px; }
+  .foot__grid { display: flex; flex-wrap: wrap; align-items: center; gap: 28px 40px; }
+  .badge { display: grid; place-items: center; width: 112px; aspect-ratio: 1; background: var(--honey); color: var(--night); }
+  .badge .dk-wordmark { --dk-word-font: 'Unbounded', 'Arial Black', sans-serif; --dk-word-weight: 700; font-size: 30px; }
+  .foot__stamp { --dk-stamp-size: 132px; --dk-stamp-font: var(--sans); color: var(--cream); }
+  .foot .note { flex: 1 1 260px; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- Спрайт своих рисунков: из мира этого дела, одна толщина линии, без заливок, у каждого
+     контура pathLength="1". Цвет и толщину задаёт набор (currentColor, --dk-line). Вписан в
+     страницу — работает и с file://; на сайте можно отдельным файлом (config.sprite). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="loaf" viewBox="0 0 64 64">
+    <path pathLength="1" d="M10 47h44a2.6 2.6 0 0 0 2.5-3.2C54 31.8 44.2 23 32 23S10 31.8 7.5 43.8A2.6 2.6 0 0 0 10 47z"/>
+    <path pathLength="1" d="M19 38.5c1.8-3.6 4.6-6.5 8.2-8.3M26.6 42.2c2.2-4.4 5.9-7.8 10.6-9.6M36.8 43.4c1.7-2.8 4-4.9 7-6.2"/>
+    <path pathLength="1" d="M8 53.5h48"/>
+  </symbol>
+  <symbol id="baguette" viewBox="0 0 64 64">
+    <path pathLength="1" d="M16 54.5L56 18.5A6 6 0 0 0 48 9.5L8 45.5A6 6 0 0 0 16 54.5z"/>
+    <path pathLength="1" d="M15.9 44.4c2.6-1.6 5.5-2.6 8.5-3M23.9 37.2c2.6-1.6 5.5-2.6 8.5-3M31.9 30c2.6-1.6 5.5-2.6 8.5-3M39.9 22.8c2.6-1.6 5.5-2.6 8.5-3"/>
+  </symbol>
+  <symbol id="croissant" viewBox="0 0 64 64">
+    <path pathLength="1" d="M8 46C10 31 20 21 32 21S54 31 56 46C50 42 44 40 32 40S14 42 8 46z"/>
+    <path pathLength="1" d="M21 24.1c1.2 5.2 1.8 10.7 1.7 16.4M43 24.1c-1.2 5.2-1.8 10.7-1.7 16.4"/>
+    <path pathLength="1" d="M13 32c1.3 3.2 1.8 6.7 1.6 10.5M51 32c-1.3 3.2-1.8 6.7-1.6 10.5"/>
+  </symbol>
+  <symbol id="wheat" viewBox="0 0 64 64">
+    <path pathLength="1" d="M32 60V18"/>
+    <path pathLength="1" d="M32 48c-5.2-.6-8.4-4-8.8-9.2 4.8.8 8.2 4 8.8 9.2zM32 40c-5.2-.6-8.4-4-8.8-9.2 4.8.8 8.2 4 8.8 9.2zM32 32c-5.2-.6-8.4-4-8.8-9.2 4.8.8 8.2 4 8.8 9.2z"/>
+    <path pathLength="1" d="M32 48c5.2-.6 8.4-4 8.8-9.2-4.8.8-8.2 4-8.8 9.2zM32 40c5.2-.6 8.4-4 8.8-9.2-4.8.8-8.2 4-8.8 9.2zM32 32c5.2-.6 8.4-4 8.8-9.2-4.8.8-8.2 4-8.8 9.2z"/>
+    <path pathLength="1" d="M32 23c-3-3-3.4-7.4 0-11 3.4 3.6 3 8 0 11z"/>
+    <path pathLength="1" d="M23.2 30.8l-4.6-8.2M40.8 30.8l4.6-8.2M23.2 22.8l-3.6-7.2M40.8 22.8l3.6-7.2M32 12V5"/>
+  </symbol>
+  <symbol id="pretzel" viewBox="0 0 64 64">
+    <path pathLength="1" d="M44 47C40 41 36 35 32 30C27 24 25 14 17.5 14C10 14 6.5 21 7.5 29C9 42 20 53 32 53S55 42 56.5 29C57.5 21 54 14 46.5 14C39 14 37 24 32 30C28 35 24 41 20 47"/>
+    <path pathLength="1" d="M20.5 22h.01M43.5 22h.01M25 45.5h.01M39 45.5h.01M13 35h.01M51 35h.01"/>
+  </symbol>
+  <symbol id="rolling-pin" viewBox="0 0 64 64">
+    <g transform="rotate(-32 32 32)">
+      <path pathLength="1" d="M21 25.5h22a6.5 6.5 0 0 1 0 13H21a6.5 6.5 0 0 1 0-13z"/>
+      <path pathLength="1" d="M11.5 32h3M49.5 32h3"/>
+      <path pathLength="1" d="M4 29.5h5a2.5 2.5 0 0 1 0 5H4a2.5 2.5 0 0 1 0-5zM55 29.5h5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 1 0-5z"/>
+    </g>
+    <path pathLength="1" d="M14 50h.01M20 54.5h.01M11 56h.01M46 12h.01"/>
+  </symbol>
+  <symbol id="whisk" viewBox="0 0 64 64">
+    <g transform="rotate(28 32 32)">
+      <path pathLength="1" d="M29 40h6v15a3 3 0 0 1-6 0z"/>
+      <path pathLength="1" d="M29 44h6"/>
+      <path pathLength="1" d="M32 40C21 31 22 9 32 6.5 42 9 43 31 32 40z"/>
+      <path pathLength="1" d="M32 40C26.5 31 27 10 32 7 37 10 37.5 31 32 40"/>
+      <path pathLength="1" d="M32 40V7"/>
+    </g>
+  </symbol>
+  <symbol id="cup" viewBox="0 0 64 64">
+    <path pathLength="1" d="M14 29h32v7c0 8.8-7.2 16-16 16s-16-7.2-16-16z"/>
+    <path pathLength="1" d="M46 32.5h3.5a5.5 5.5 0 0 1 0 11H44.6"/>
+    <path pathLength="1" d="M8 56.5h44"/>
+    <path pathLength="1" d="M23 24c-2.6-2.8 2.6-5 0-8s2.6-5 0-8M30.5 25c-2.8-3 2.8-5.4 0-8.6s2.8-5.4 0-8.6M38 24c-2.6-2.8 2.6-5 0-8s2.6-5 0-8"/>
+  </symbol>
+  <symbol id="cake" viewBox="0 0 64 64">
+    <path pathLength="1" d="M10 30c0-3.3 9.8-6 22-6s22 2.7 22 6-9.8 6-22 6-22-2.7-22-6z"/>
+    <path pathLength="1" d="M10 30v19c0 3.3 9.8 6 22 6s22-2.7 22-6V30"/>
+    <path pathLength="1" d="M10 40.5c0 3.3 9.8 6 22 6s22-2.7 22-6"/>
+    <path pathLength="1" d="M15.5 34.3v3.2a1.4 1.4 0 0 0 2.8 0v-2.2M26.5 35.8v4.4a1.4 1.4 0 0 0 2.8 0v-4.2M39.5 35.6v2.6a1.4 1.4 0 0 0 2.8 0v-3.3"/>
+    <path pathLength="1" d="M28.8 19a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0"/>
+    <path pathLength="1" d="M32 15.8c.4-2.6 1.8-4.6 4.2-5.8"/>
+    <path pathLength="1" d="M5 58.5h54"/>
+  </symbol>
+  <symbol id="bun" viewBox="0 0 64 64">
+    <path pathLength="1" d="M32 33a2 2 0 1 1 4 0a4 4 0 1 1-8 0a6 6 0 1 1 12 0a8 8 0 1 1-16 0a10 10 0 1 1 20 0a12 12 0 1 1-24 0a14 14 0 1 1 28 0a16 16 0 1 1-32 0"/>
+  </symbol>
+  <symbol id="jar" viewBox="0 0 64 64">
+    <path pathLength="1" d="M19 10h26a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H19a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"/>
+    <path pathLength="1" d="M20 18v4c-3 2-5 5-5 9v19a6 6 0 0 0 6 6h22a6 6 0 0 0 6-6V31c0-4-2-7-5-9v-4"/>
+    <path pathLength="1" d="M15 35.5c5.7 3 11.3 3 17 0s11.3-3 17 0"/>
+    <path pathLength="1" d="M25 45a2 2 0 1 0 4 0a2 2 0 1 0-4 0M35 42a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M31.4 50.5a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0-2.6 0M40.5 49a2.2 2.2 0 1 0 4.4 0a2.2 2.2 0 1 0-4.4 0"/>
+  </symbol>
+  <!-- знаки надписей-логотипов: поле 24, растут с кеглем, как буквы -->
+  <symbol id="sign-bread" viewBox="0 0 24 24">
+    <path pathLength="1" d="M3.5 18h17a1.2 1.2 0 0 0 1.2-1.4C21 11.5 17 8 12 8s-9 3.5-9.7 8.6A1.2 1.2 0 0 0 3.5 18z"/>
+    <path pathLength="1" d="M7 15.2l2.6-2.6M10.8 16.3l3.8-3.8M15.6 16.4l2.3-2.3"/>
+  </symbol>
+  <symbol id="sign-pastry" viewBox="0 0 24 24">
+    <path pathLength="1" d="M3 17.25C3.75 11.6 7.5 7.9 12 7.9S20.25 11.6 21 17.25C18.75 15.75 16.5 15 12 15S5.25 15.75 3 17.25z"/>
+    <path pathLength="1" d="M7.9 9c.45 1.95.68 4 .64 6.15M16.1 9c-.45 1.95-.68 4-.64 6.15"/>
+  </symbol>
+  <symbol id="sign-coffee" viewBox="0 0 24 24">
+    <path pathLength="1" d="M4.5 10.5h12v2.6a6 6 0 0 1-12 0z"/>
+    <path pathLength="1" d="M16.5 11.5h1.4a2.1 2.1 0 0 1 0 4.2h-2"/>
+    <path pathLength="1" d="M8.5 7.5c-1-1 1-1.9 0-3M12.5 7.5c-1-1 1-1.9 0-3"/>
+    <path pathLength="1" d="M3 21h15"/>
+  </symbol>
+  <symbol id="sign-cake" viewBox="0 0 24 24">
+    <path pathLength="1" d="M4 11c0-1.4 3.6-2.5 8-2.5s8 1.1 8 2.5-3.6 2.5-8 2.5S4 12.4 4 11z"/>
+    <path pathLength="1" d="M4 11v7.5c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V11"/>
+    <path pathLength="1" d="M10.8 5.3a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0"/>
+    <path pathLength="1" d="M12 4.1c.2-1 .8-1.7 1.7-2.1"/>
+  </symbol>
+</svg>
+
+<!-- 1. Первый экран: крупная надпись названия, игра шрифтов, надписи-логотипы разделов,
+     печать с фактами, бледное слово и россыпь. Всё видно сразу: на первом экране
+     набор ничего не прячет -->
+<header class="hero dark dk-host" id="top">
+  <div class="dk-layer" data-dk-scatter="wheat loaf croissant cup pretzel bun" data-dk-scatter-count="8" data-dk-scatter-seed="3" style="--dk-scatter-alpha: .16">
+    <span class="dk-bgword t-bread" style="--dk-y: 56%; --dk-x: 40%; --dk-bgword-case: uppercase; --dk-alpha: .05">Хлеб</span>
+  </div>
+  <div class="wrap hero__grid">
+    <div>
+      <p class="note hero__kicker">decor-kit · образец · пекарня вымышленная, тексты и числа — пример</p>
+      <h1 class="dk-wordmark">Опара</h1>
+      <p class="hero__tag">Хлеб на&nbsp;<span class="dk-alt alt">живой</span> закваске и&nbsp;выпечка к&nbsp;утреннему кофе</p>
+      <p class="hero__place">Садовая, 4 · каждый день с&nbsp;7:00</p>
+      <nav aria-label="Разделы">
+        <ul class="rail">
+          <li><a href="#bread" class="t-bread"><span class="dk-logo"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-bread"/></svg><span class="dk-logo__name">Хлеб</span></span></a></li>
+          <li><a href="#pastry" class="t-pastry"><span class="dk-logo"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-pastry"/></svg><span class="dk-logo__name">Выпечка</span></span></a></li>
+          <li><a href="#coffee" class="t-coffee"><span class="dk-logo"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-coffee"/></svg><span class="dk-logo__name">Кофе</span></span></a></li>
+          <li><a href="#cakes" class="t-cake"><span class="dk-logo"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-cake"/></svg><span class="dk-logo__name">Торты</span></span></a></li>
+        </ul>
+      </nav>
+    </div>
+    <!-- печать: кольцо вписано разметкой — видно и без JS; скрипт подгоняет разрядку и вращает прокруткой -->
+    <span class="dk-stamp hero__stamp" data-dk-stamp-turn aria-hidden="true">
+      <svg class="dk-stamp__ring" viewBox="0 0 100 100" focusable="false"><path id="hero-ring" d="M50 12a38 38 0 1 1 0 76a38 38 0 1 1 0-76"/><text font-size="8"><textPath href="#hero-ring">Печём с 2009 • Садовая, 4 • с 7:00 каждый день •</textPath></text></svg>
+      <svg class="dk-draw" style="--dk-s: 64" focusable="false"><use href="#wheat"/></svg>
+    </span>
+  </div>
+</header>
+
+<main>
+<!-- 2. «Хлеб»: заголовок строками из-под маски, рисунок вместе с прокруткой, бледное слово
+     с параллаксом, россыпь рисуется при входе, свой мотив — мука оседает на доску -->
+<section class="sec dk-host t-bread" id="bread">
+  <div class="dk-layer" data-dk-scatter="loaf baguette wheat pretzel rolling-pin jar" data-dk-scatter-count="8">
+    <span class="dk-bgword" data-dk-parallax="0.12" style="--dk-y: 5%; --dk-x: -2%; --dk-bgword-case: uppercase">Хлеб</span>
+  </div>
+  <div class="wrap split">
+    <div>
+      <p class="sec__logo"><span class="dk-logo dk-logo--row"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-bread"/></svg><span class="dk-logo__name">Хлеб</span></span></p>
+      <h2 class="h2" data-dk-lines>Тесто подходит всю ночь, а&nbsp;в&nbsp;семь утра хлеб уже остывает на&nbsp;полке</h2>
+      <p class="lead">Ржаной, пшеничный и&nbsp;цельнозерновой — на&nbsp;своей закваске. Замешиваем с&nbsp;вечера и&nbsp;печём до&nbsp;рассвета, поэтому утром его уже можно резать.</p>
+      <div class="motif-row dk-motif-host">
+        <span class="flour" data-dk-motif="flour"></span>
+        <p class="note">мотив раздела: data-dk-motif="flour" — его строит registerMotif (наведите мышь, чтобы повторить)</p>
+      </div>
+      <p class="note">data-dk-lines · data-dk-scatter · data-dk-parallax · большой каравай — data-dk-draw="scroll"</p>
+    </div>
+    <svg class="dk-draw bread-art" data-dk-draw="scroll" aria-hidden="true" focusable="false"><use href="#loaf"/></svg>
+  </div>
+</section>
+
+<!-- 3. «Выпечка»: фото шторкой, цитата по словам, рукописная надпись раздела, мотив — слои круассана -->
+<section class="sec dark dk-host t-pastry" id="pastry">
+  <div class="dk-layer" data-dk-scatter="croissant bun whisk rolling-pin" data-dk-scatter-count="6" data-dk-scatter-seed="5">
+    <span class="dk-bgword" style="--dk-y: auto; bottom: -.1em; --dk-x: 36%; --dk-rot: -4deg">выпечка</span>
+  </div>
+  <div class="wrap split">
+    <figure class="photo" data-dk-curtain="from-left">
+      <img src="demo-photo.svg" width="1200" height="800" alt="Рисунок вместо фото: каравай и багет на доске" loading="lazy" decoding="async">
+    </figure>
+    <div>
+      <p class="sec__logo"><span class="dk-logo dk-logo--row"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-pastry"/></svg><span class="dk-logo__name">Выпечка</span></span></p>
+      <blockquote class="quote"><p data-dk-words>Слоёное тесто складываем руками, поэтому круассан снаружи хрустит, а&nbsp;внутри остаётся мягким.</p></blockquote>
+      <div class="motif-row dk-motif-host">
+        <svg class="dk-draw m-layers" data-dk-motif viewBox="0 0 64 64" style="--dk-s: 124" aria-hidden="true" focusable="false">
+          <path pathLength="1" style="--i: 0" d="M8 46C10 31 20 21 32 21S54 31 56 46C50 42 44 40 32 40S14 42 8 46z"/>
+          <path pathLength="1" style="--i: 1" d="M13 32c1.3 3.2 1.8 6.7 1.6 10.5"/>
+          <path pathLength="1" style="--i: 2" d="M21 24.1c1.2 5.2 1.8 10.7 1.7 16.4"/>
+          <path pathLength="1" style="--i: 3" d="M43 24.1c-1.2 5.2-1.8 10.7-1.7 16.4"/>
+          <path pathLength="1" style="--i: 4" d="M51 32c-1.3 3.2-1.8 6.7-1.6 10.5"/>
+        </svg>
+        <p class="note">мотив раздела: слои круассана рисуются по очереди — только CSS на .dk-set и .dk-play</p>
+      </div>
+      <p class="note">data-dk-curtain="from-left" · data-dk-words · data-dk-scatter</p>
+    </div>
+  </div>
+</section>
+
+<!-- 4. «Кофе»: табло цифр, узкая надпись раздела, мотив — пар над чашкой -->
+<section class="sec dk-host t-coffee" id="coffee">
+  <div class="dk-layer">
+    <span class="dk-bgword" style="--dk-y: 8%; --dk-x: auto; right: -.04em">Кофе</span>
+  </div>
+  <div class="wrap">
+    <p class="sec__logo"><span class="dk-logo dk-logo--row"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-coffee"/></svg><span class="dk-logo__name">Кофе</span></span></p>
+    <h2 class="h2">К&nbsp;хлебу — <span class="dk-alt alt">кофе</span> из&nbsp;обжарки через дорогу</h2>
+    <ul class="nums">
+      <li><span class="num" data-dk-count="3">3</span><span>вида закваски: ржаная, пшеничная, на&nbsp;цельном зерне</span></li>
+      <li><span class="num" data-dk-count="12500">12&nbsp;500</span><span>чашек кофе за&nbsp;прошлый месяц</span></li>
+      <li><span class="num" data-dk-count="18">18</span><span>видов выпечки каждое утро</span></li>
+    </ul>
+    <div class="motif-row dk-motif-host">
+      <svg class="dk-draw m-steam" data-dk-motif viewBox="0 0 64 64" style="--dk-s: 112" aria-hidden="true" focusable="false">
+        <path pathLength="1" d="M14 29h32v7c0 8.8-7.2 16-16 16s-16-7.2-16-16z"/>
+        <path pathLength="1" d="M46 32.5h3.5a5.5 5.5 0 0 1 0 11H44.6"/>
+        <path pathLength="1" d="M8 56.5h44"/>
+        <path class="wisp" pathLength="1" style="--dl: 0s" d="M23 24c-2.6-2.8 2.6-5 0-8s2.6-5 0-8"/>
+        <path class="wisp" pathLength="1" style="--dl: .35s" d="M30.5 25c-2.8-3 2.8-5.4 0-8.6s2.8-5.4 0-8.6"/>
+        <path class="wisp" pathLength="1" style="--dl: .7s" d="M38 24c-2.6-2.8 2.6-5 0-8s2.6-5 0-8"/>
+      </svg>
+      <p class="note">мотив раздела: пар поднимается и рисуется снизу вверх, один раз — без петли</p>
+    </div>
+    <p class="note">data-dk-count="12500" → «12 500» (toLocaleString('ru-RU')); на сайте — только подтверждённые числа</p>
+  </div>
+</section>
+
+<!-- 5. «Торты»: автосмена с заливкой, предмет за краем карточки, бледное слово в карточке,
+     мотив — вишня падает на торт -->
+<section class="sec dark dk-host t-cake" id="cakes">
+  <div class="dk-layer" data-dk-scatter="cake whisk cup" data-dk-scatter-count="5" data-dk-scatter-seed="11">
+    <span class="dk-bgword" style="--dk-y: 4%; --dk-x: 44%">Торты</span>
+  </div>
+  <div class="wrap split">
+    <div>
+      <p class="sec__logo"><span class="dk-logo dk-logo--row"><svg class="dk-logo__sign" aria-hidden="true" focusable="false"><use href="#sign-cake"/></svg><span class="dk-logo__name">Торты</span></span></p>
+      <h2 class="h2">Торт недели</h2>
+      <div class="week" data-dk-autoplay="5000" role="group" aria-roledescription="карусель" aria-label="Торт недели">
+        <ul class="week__list">
+          <li data-dk-slide="Медовик"><b>Медовик</b> восемь коржей на&nbsp;гречишном мёде и&nbsp;сметанный крем</li>
+          <li data-dk-slide="Наполеон"><b>Наполеон</b> тонкие хрустящие коржи и&nbsp;заварной крем</li>
+          <li data-dk-slide="Морковный"><b>Морковный</b> с&nbsp;грецким орехом, корицей и&nbsp;сливочным сыром</li>
+        </ul>
+      </div>
+      <p class="note">data-dk-autoplay="5000": полоска заливается за&nbsp;срок показа; наведение, фокус, уход с&nbsp;экрана и&nbsp;«Пауза» её&nbsp;останавливают</p>
+    </div>
+    <div>
+      <div class="order dk-host dk-pop-host">
+        <span class="dk-layer"><span class="dk-bgword dk-bgword--strong" style="--dk-fs: 132px; --dk-y: auto; bottom: -.18em; --dk-x: 34%">торт</span></span>
+        <svg class="dk-draw dk-pop" style="--dk-s: 112; --dk-pop-top: -70px; --dk-pop-right: 18px; --dk-pop-rot: 7deg" aria-hidden="true" focusable="false"><use href="#cake"/></svg>
+        <h3 class="order__t">Торт на&nbsp;заказ</h3>
+        <p class="order__p">Надпись, ягоды и&nbsp;начинка — по&nbsp;вашему выбору. Заказ за&nbsp;два дня.</p>
+      </div>
+      <div class="motif-row dk-motif-host">
+        <svg class="dk-draw m-cherry" data-dk-motif viewBox="0 0 64 64" style="--dk-s: 112" aria-hidden="true" focusable="false">
+          <path pathLength="1" d="M10 30c0-3.3 9.8-6 22-6s22 2.7 22 6-9.8 6-22 6-22-2.7-22-6z"/>
+          <path pathLength="1" d="M10 30v19c0 3.3 9.8 6 22 6s22-2.7 22-6V30"/>
+          <path pathLength="1" d="M10 40.5c0 3.3 9.8 6 22 6s22-2.7 22-6"/>
+          <path pathLength="1" d="M15.5 34.3v3.2a1.4 1.4 0 0 0 2.8 0v-2.2M26.5 35.8v4.4a1.4 1.4 0 0 0 2.8 0v-4.2M39.5 35.6v2.6a1.4 1.4 0 0 0 2.8 0v-3.3"/>
+          <path pathLength="1" d="M5 58.5h54"/>
+          <g class="cherry"><path pathLength="1" d="M28.8 19a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0"/><path pathLength="1" d="M32 15.8c.4-2.6 1.8-4.6 4.2-5.8"/></g>
+          <path class="splash" pathLength="1" d="M26.2 21.6l-3.6-1.4M37.8 21.6l3.6-1.4M27.4 17.2l-2.8-2.2"/>
+        </svg>
+        <p class="note">мотив раздела: вишня падает на&nbsp;торт; предмет за&nbsp;краем карточки — .dk-pop</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Свои рисунки линией: рисуются при входе в экран -->
+<section class="sec" id="drawings">
+  <div class="wrap">
+    <h2 class="h2">Свои рисунки линией</h2>
+    <p class="lead">Из мира этого дела, а&nbsp;не донора: один вес линии, без заливок, простые контуры. Рисуются при входе в&nbsp;экран — data-dk-draw="in".</p>
+    <ul class="cat">
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84" aria-hidden="true" focusable="false"><use href="#loaf"/></svg><span><code>loaf</code>каравай</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .08s" aria-hidden="true" focusable="false"><use href="#baguette"/></svg><span><code>baguette</code>багет</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .16s" aria-hidden="true" focusable="false"><use href="#croissant"/></svg><span><code>croissant</code>круассан</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .24s" aria-hidden="true" focusable="false"><use href="#wheat"/></svg><span><code>wheat</code>колос</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .32s" aria-hidden="true" focusable="false"><use href="#pretzel"/></svg><span><code>pretzel</code>крендель</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .4s" aria-hidden="true" focusable="false"><use href="#rolling-pin"/></svg><span><code>rolling-pin</code>скалка</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84" aria-hidden="true" focusable="false"><use href="#whisk"/></svg><span><code>whisk</code>венчик</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .08s" aria-hidden="true" focusable="false"><use href="#cup"/></svg><span><code>cup</code>чашка</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .16s" aria-hidden="true" focusable="false"><use href="#cake"/></svg><span><code>cake</code>торт</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .24s" aria-hidden="true" focusable="false"><use href="#bun"/></svg><span><code>bun</code>улитка с&nbsp;корицей</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-delay: .32s" aria-hidden="true" focusable="false"><use href="#jar"/></svg><span><code>jar</code>закваска</span></li>
+      <li><svg class="dk-draw" data-dk-draw="in" style="--dk-s: 84; --dk-box: 24; --dk-delay: .4s" aria-hidden="true" focusable="false"><use href="#sign-bread"/></svg><span><code>sign-bread</code>знак раздела</span></li>
+    </ul>
+    <ul class="rules">
+      <li>Предметы и инструменты этого дела, по одному на рисунок; поле 64, знаки надписей — 24.</li>
+      <li>Контур без заливки, скруглённые концы и углы; цвет — currentColor, толщину держит набор.</li>
+      <li>У каждого контура pathLength="1" — рисунок умеет рисоваться линией; vector-effect не ставить.</li>
+    </ul>
+  </div>
+</section>
+</main>
+
+<!-- 7. Подвал: печать из data-dk-stamp (кольцо пишет скрипт), надпись столбиком -->
+<footer class="foot dark">
+  <div class="wrap foot__grid">
+    <span class="badge"><span class="dk-wordmark dk-wordmark--stack"><span aria-hidden="true"><span>Опа</span><span>ра</span></span><span class="dk-sr">Опара</span></span></span>
+    <span class="dk-stamp foot__stamp" data-dk-stamp="Опара • хлеб на закваске • Садовая, 4 •" data-dk-stamp-turn aria-hidden="true"><svg class="dk-draw" style="--dk-s: 40; --dk-box: 24" focusable="false"><use href="#sign-bread"/></svg></span>
+    <p class="note">Образец набора decor-kit навыка site-rework: подключение и правила — README.md рядом. Пекарня вымышленная; тексты, адрес и числа — пример.</p>
+  </div>
+</footer>
+
+<script type="module">
+  /* Мотив, который строит скрипт: мука оседает на доску. Пример — у каждого сайта мотивы свои. */
+  import { registerMotif } from './decor-kit.js';
+  registerMotif('flour', (el, { rng }) => {
+    const R = rng(9);
+    let dots = '';
+    for (let i = 0; i < 28; i++) {
+      const x = 8 + R() * 144;
+      const y = 47 + R() * 7;
+      const r = 0.9 + R() * 1.5;
+      const dy = -(20 + R() * 34);
+      dots += `<circle class="flour__p" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" style="--dy:${dy.toFixed(1)}px;--dl:${(R() * 0.9).toFixed(2)}s"/>`;
+    }
+    el.innerHTML = `<svg viewBox="0 0 160 64" aria-hidden="true" focusable="false"><path class="flour__board" d="M4 58h152"/>${dots}</svg>`;
+  });
+</script>
+</body>
+</html>
