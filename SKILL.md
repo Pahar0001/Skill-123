@@ -294,6 +294,13 @@ node ~/.claude/skills/site-rework/scripts/taste.mjs brief --run <папка> --b
 --browser firefox»): в нём — дымовая проверка перед сдачей. Записать ревизию инструментов в `<папка>/tools.md` по
 чек-листу `reference/tool-registry.md`.
 
+**Под задачу не хватает умения** (формат документа, библиотека, сервис, которых нет в реестре) — сначала готовый
+навык, а не свой: где искать и как выбрать — `reference/skills-search.md`; до установки —
+`node ~/.claude/skills/site-rework/scripts/skill-audit.mjs audit <папка | .zip | адрес GitHub>` (из навыка ничего
+не запускается; FAIL — не ставить). Ставить `skill-audit.mjs install <источник> --skill <имя> --yes` — только с
+согласия пользователя; навык про то же, что уже стоит, — оставить лучший, остальные выключить, не удалять
+(`install` печатает похожие; широкое описание — `skillOverrides` name-only или user-invocable-only).
+
 ### 1. Разведка — состояние ANALYZED
 
 ```
@@ -648,6 +655,7 @@ scripts/serve.mjs      статический сервер (Range для вид�
 scripts/firecrawl.mjs  сбор данных облаком Firecrawl: map (адреса по типам страниц), scrape (текст, фирменный стиль), search, facts (кандидаты фактов со ссылками), status; кэш и бюджет кредитов на прогон; без ключа — пропуск; selftest на подставном сервере
 scripts/fonts.mjs      шрифты Google с кириллицей: pick по характеру (--like по-русски), pairs из ui-ux-pro-max, get — свои woff2 и fonts.css (unicode-range, swap; переменный — диапазон веса из файла), --text — подмножество под надпись; знаки по таблице cmap; selftest на fixtures/fonts
 scripts/security.mjs   безопасность и утечки: служебные файлы с сервера (/.env, /.git, резервные копии), админка и API без входа, формы, секреты в коде и репозитории (--repo), чужие скрипты и счётчики, заголовки; selftest на fixtures/security
+scripts/skill-audit.mjs  чужой навык до установки: audit (папка, .zip, адрес GitHub — распаковка своим кодом, ничего не запускается; хуки, команды при загрузке, скачать-и-выполнить, отправка наружу, секреты, обфускация, невидимые знаки, широта описания, лицензия) и install одной папки с ORIGIN.txt и списком пересечений; selftest на fixtures/skill-audit
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
 scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, firecrawl (подставной сервер), fonts (выжимки ui-ux-pro-max, живые ответы CSS2, woff2 надписи), clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
@@ -668,6 +676,7 @@ reference/new-site.md        сайт с нуля: реестр требован
 reference/donor-tilda.md     донор на Tilda: чему верить, zoom, движение Tilda → наши рецепты, что не переносить
 reference/security.md        безопасность и утечки: что проверяет security.mjs и типовые исправления
 reference/firecrawl.md       когда брать Firecrawl и когда нет, стоимость команд, бюджет, остаток кредитов
+reference/skills-search.md   чужие навыки: где искать (Skillry, anthropics/skills, списки, проверенные авторы), как выбрать, проверка skill-audit, установка, видимость и пересечения
 templates/brief.md           форма запроса
 templates/report.md          форма отчёта
 ui/brief-form.html           форма в браузере, собирает текст брифа
