@@ -40,7 +40,8 @@
  *               сдвиг вёрстки после load (источник, на сколько и когда), сдвиг у края окна (обрезка краем — не
  *               «смена высоты»; настоящая смена высоты остаётся), автослайдер со сменой LCP (пометка
  *               и медиана по первому элементу), «сервер не сжимает» на локальном адресе (INFO, вердикт веса
- *               по gzip); окна в замерном прогоне (стенды fixtures/lib): SITE_REWORK_DISMISS увёл на главную —
+ *               по gzip); окно cookie снизу — не закрыто, оно же LCP, сдвиг самого окна (у стенда без окна — «окна
+ *               cookie нет»); окна в замерном прогоне (стенды fixtures/lib): SITE_REWORK_DISMISS увёл на главную —
  *               нажатие и итог в прогоне, страница открыта заново, WARN в итоге; окно без переменной — WARN
  *               «окно» один раз; без браузера — подписи источника сдвига у всех краёв окна (низ, верх, блок от x 0,
  *               коробка во всю высоту окна) и у старого протокола без размера окна. Протоколы — во временной
@@ -51,6 +52,7 @@
  * фаза), вес по типам ресурсов (как передано по сети) и сжат ли текст, самые тяжёлые файлы,
  * память JS, узлы DOM, кадры в секунду при прокрутке и в покое (важно для анимаций и WebGL),
  * картинки крупнее и мельче показанного, видео (вес и постер).
+ * Окно cookie не закрывается (замер как у первого посетителя): после замеров — «INFO окно cookie: есть (…)» или «окна cookie нет», JSON consent.
  *
  * По умолчанию мобильный экран, процессор в 4 раза медленнее, сеть fast3g —
  * так смотрит на сайт покупатель с телефона, а не разработчик с ноутбука.
@@ -193,7 +195,7 @@ import zlib from 'node:zlib';
 import {
   launch, preparePage, openPage, gotoRetry, resolveViewport, VIEWPORTS, parseArgs, runDir, writeJson, sleep, ensureDir,
   forceInstantScroll, scrollThrough, scrollToY, settleAnimations, waitForMedia, evaluateWith, EFFECTIVE_OPACITY_FN, SIG_FN, PH_URL,
-  collectWarnings, takeWarnings, collectNotes, takeNotes, warningKind, warningLabel, applyDismiss, checkOpenModal,
+  collectWarnings, takeWarnings, collectNotes, takeNotes, warningKind, warningLabel, applyDismiss, checkOpenModal, closeConsent,
 } from './lib.mjs';
 import { findTextureLayers, hideTextureLayers, showTextureLayers, setPageStyle, dropPageStyle, CSP_NO_STYLE } from './texture.mjs';
 
@@ -289,6 +291,19 @@ async function selftest() {
         /крупнейшие — что сдвинулось.*\n\s+[\d.]+ на \d+ мс \(после load\): .*article\.news.* — вниз на 1[56]\d px/.test(so) ? '' : 'в выводе нет строки крупнейшего сдвига «… article.news … вниз на 160 px»',
         j.compression.local === true && /локальный сервер без прокси/.test((j.checks['JS по сети'] || {}).note || '') ? '' : 'сжатие: нет пометки «локальный сервер без прокси» в JSON или у строки «JS по сети»',
         /^INFO Сжатие текста: .*локальный сервер без прокси; на бою сжатие может делать Caddy\/nginx/m.test(so) ? '' : 'в выводе нет «INFO Сжатие текста … локальный сервер без прокси»',
+        j.consent && j.consent.found === false && /^INFO окна cookie нет$/m.test(so) ? '' : `страница без окна: нет «INFO окна cookie нет» или consent.found не false (${JSON.stringify(j.consent || null).slice(0, 120)})`,
+      ];
+    } },
+    /* окно cookie не закрывается до замеров: первая загрузка — как у первого посетителя; после замеров оно находится
+       без нажатия, и видно, что оно — элемент LCP и источник сдвигов */
+    { page: 'cookie.html', runs: 1, why: 'окно cookie снизу — элемент LCP и сдвиг самого окна: не закрывалось, INFO «есть», поле consent', check: (j, so) => {
+      const c = j.consent || {}; const el = (j.lcp.perRun[0] || {}).element || {};
+      return [
+        c.found && c.kind === 'cookie' && /^div#cookie-banner\.cookie/.test(c.box || '') && c.pick === 'Принять' && c.closed === false ? '' : `consent в JSON не «div#cookie-banner.cookie, кнопка «Принять», не закрыто»: ${JSON.stringify(c).slice(0, 200)}`,
+        c.lcp === true && /^Мы используем/.test(el.text || '') ? '' : `элемент LCP не в окне: consent.lcp ${c.lcp}, элемент ${el.el || '—'} «${(el.text || '').slice(0, 30)}»`,
+        c.cls > 0 && c.clsShifts > 0 ? '' : `нет сдвигов самого окна: cls ${c.cls}, сдвигов ${c.clsShifts}`,
+        /^INFO окно cookie: есть \(div#cookie-banner\.cookie, снизу во всю ширину, \d+×\d+; кнопка «Принять»\), не закрывалось — замер как у первого посетителя; оно же элемент LCP; сдвиги самого окна — [\d.]+ из CLS [\d.]+$/m.test(so) ? '' : `в выводе нет «INFO окно cookie: есть (… кнопка «Принять»), не закрывалось — замер как у первого посетителя; оно же элемент LCP; сдвиги самого окна …» — есть «${((so.match(/^INFO окн[^\n]*/m) || [])[0] || 'нет строки').slice(0, 220)}»`,
+        (j.warnings || []).some((w) => /открыто окно/.test(w)) ? 'окно cookie ушло в WARN «окно»' : '',
       ];
     } },
     { page: 'edge.html', runs: 1, why: 'низ блока уходит за край окна — не «смена высоты»; настоящая смена высоты остаётся; текст через <br> — с пробелом', check: (j, so) => {
@@ -646,7 +661,8 @@ async function measure() {
     cdp.on('Network.loadingFailed', (e) => { const r = reqs.get(e.requestId); if (r) { r.done = true; r.failed = e.canceled ? 'отменён' : e.errorText || 'сбой'; } });
 
     await page.evaluateOnNewDocument(() => {
-      const rw = window.__rw = { lcp: [], cls: 0, long: [], scrollStart: null, scrollEnd: null };
+      /* lcpNodes — узлы кандидатов LCP (тот же порядок, что lcp): после замеров — не внутри ли окна cookie */
+      const rw = window.__rw = { lcp: [], lcpNodes: [], cls: 0, long: [], scrollStart: null, scrollEnd: null };
       const sig = (el) => { const c = typeof el.className === 'string' ? el.className : (el.getAttribute && el.getAttribute('class')) || ''; return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (c.trim() ? '.' + c.trim().split(/\s+/).slice(0, 2).join('.') : ''); };
       /* элемент кандидата LCP описывается сразу: потом его могут убрать или перерисовать */
       const describe = (el) => {
@@ -656,7 +672,7 @@ async function measure() {
         const text = /^(img|video|image|svg|canvas)$/i.test(el.tagName) ? '' : String(el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
         return { el: sig(el), where, text, w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top + (se.scrollTop || 0)), vh: innerHeight };
       };
-      try { new PerformanceObserver((l) => { for (const e of l.getEntries()) rw.lcp.push({ t: Math.round(e.startTime), size: Math.round(e.size || 0), url: String(e.url || '').slice(0, 300), ...describe(e.element) }); }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch { /* нет */ }
+      try { new PerformanceObserver((l) => { for (const e of l.getEntries()) { rw.lcp.push({ t: Math.round(e.startTime), size: Math.round(e.size || 0), url: String(e.url || '').slice(0, 300), ...describe(e.element) }); rw.lcpNodes.push(e.element || null); } }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch { /* нет */ }
       /* сдвиги вёрстки с источниками (LayoutShiftAttribution): что сдвинулось, откуда и куда (коробки в
          координатах окна), когда. Узел описывается сразу — потом его могут убрать; не больше 300 сдвигов */
       rw.shifts = [];
@@ -740,12 +756,17 @@ async function measure() {
     const m = await page.evaluate(() => {
       const n = performance.getEntriesByType('navigation')[0] || {}; const p = Object.fromEntries(performance.getEntriesByType('paint').map((e) => [e.name, Math.round(e.startTime)]));
       const rw = window.__rw || {}; const r0 = (v) => (v == null ? null : Math.round(v));
+      /* узлы источников сдвига по сдвигам — до refine (он убирает ni): после замеров — не внутри ли окна cookie */
+      try { rw.srcNi = (rw.shifts || []).map((sh) => (sh.sources || []).map((s) => (s.ni == null ? null : s.ni))); } catch { /* нет */ }
       /* текст источников сдвига со стилем и размер окна — сейчас, после замера, а не в обработчике */
       try { if (rw.refine) rw.refine(); } catch { /* страница переопределила что-то своё — текст без стиля */ }
       return { ttfb: Math.round(n.responseStart || 0), domContentLoaded: Math.round(n.domContentLoadedEventEnd || 0), load: Math.round(n.loadEventEnd || 0), fcp: p['first-contentful-paint'] || null, lcpCandidates: rw.lcp || [], cls: Math.round((rw.cls || 0) * 1000) / 1000, shifts: rw.shifts || [], longList: rw.long || [], scrollStart: r0(rw.scrollStart), scrollEnd: r0(rw.scrollEnd), nodes: document.getElementsByTagName('*').length, images: [...document.images].filter((i) => i.naturalWidth > 0).length, fonts: [...document.fonts].filter((f) => f.status === 'loaded').length, canvases: document.querySelectorAll('canvas').length, animations: document.getAnimations().length };
     });
     Object.assign(m, lcpOf(m), longOf(m), clsOf(m)); m.lcpSwitch = lcpSwitchOf(m);
     const metrics = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((x) => [x.name, x.value]));
+    /* окно cookie — после замеров загрузки и памяти, без нажатия: до замеров его не закрываем (первая загрузка — как у
+       первого посетителя, окно — её часть: бывает элементом LCP и даёт сдвиги); здесь только найти и сказать */
+    const consent = await consentOf(page, m);
     /* тела текстовых ответов — до прохода за ленивым: его картинки вытесняли бы их из буфера DevTools */
     await textBodies(cdp, reqs);
     /* плотность картинок: сначала проход с паузами и ожиданием картинок в кадре — быстрый проход замера
@@ -759,8 +780,35 @@ async function measure() {
     media.lazyPass = { ms: lazyMs, steps: lazyPass.screens ?? null, error: lazyPass.error || null };
     const list = [...reqs.values()];
     /* вес — запрошенное до прокрутки замера (phase load); прокрутка замера и проход за ленивым — отдельно */
-    return { loadMs, quiet, m, reqs: list, cache: cacheOf(list), idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount, windows };
+    return { loadMs, quiet, m, reqs: list, cache: cacheOf(list), idleFps, scroll, media, fpsScroll: scroll.ms ? Math.round(scroll.frames / scroll.ms * 1000) : null, heapMb: Math.round((metrics.JSHeapUsedSize || 0) / 1048576), scriptMs: Math.round((metrics.ScriptDuration || 0) * 1000), layoutCount: metrics.LayoutCount, styleRecalcs: metrics.RecalcStyleCount, windows, consent };
   } finally { await browser.close(); }
+}
+
+/* Окно согласия cookie в замерном прогоне: lib.closeConsent(page, { click: false }) — только найти и пометить
+   (SITE_REWORK_DISMISS в этом документе уже нажат выше, второй раз не жмётся). Не закрывается: perf меряет первую
+   загрузку, и окно — её часть. Окно в основном документе — ещё и не внутри ли него элемент LCP (последний кандидат
+   до прокрутки) и источники сдвигов (сдвиги самого окна, без ввода). Нажатое только по переменной (kind 'dismiss')
+   окном cookie не считается — оно уже в строке SITE_REWORK_DISMISS. → { found, kind, box, place, w, h, share, pick,
+   buttons, frame, closed: false, lcp, cls, clsShifts } | { found: false[, error] } */
+async function consentOf(page, m) {
+  let c;
+  try { c = await closeConsent(page, { click: false }); } catch (e) { return { found: false, error: String((e && e.message) || e).slice(0, 120) }; }
+  if (!c || !c.found || c.kind === 'dismiss') return { found: false };
+  const { kind, box, place, w, h, share, text, buttons, pick, pickKind, frame } = c;
+  const out = { found: true, kind, box, place, w, h, share, text, buttons, pick, pickKind, frame: frame || null, closed: false, lcp: null, cls: null, clsShifts: null };
+  if (frame) return out; /* окно во фрейме CMP: LCP и сдвиги страницы к нему не привязать */
+  const inBox = await page.evaluate(() => {
+    const b = window.__rwConsentBox; const rw = window.__rw || {};
+    if (!b || !b.isConnected) return null;
+    const inside = (n) => !!(n && (n === b || b.contains(n)));
+    return { lcp: (rw.lcpNodes || []).map(inside), shifts: (rw.srcNi || []).map((a) => a.map((ni) => ni != null && inside((rw.shiftNodes || [])[ni]))) };
+  }).catch(() => null);
+  if (!inBox) return out;
+  const i = (m.lcpCandidates || []).indexOf(m.lcpEl);
+  out.lcp = i >= 0 ? !!inBox.lcp[i] : false;
+  const own = (m.shifts || []).filter((s, k) => !s.input && (inBox.shifts[k] || []).some(Boolean));
+  out.cls = Math.round(own.reduce((a, s) => a + s.v, 0) * 1000) / 1000; out.clsShifts = own.length;
+  return out;
 }
 
 /* ---------- цена слоя фактуры: трассировка покоя со слоем и без ---------- */
@@ -1080,6 +1128,21 @@ if (samples.length) {
   }
   const sc = ref.scroll;
   console.log(`\nПрокрутка: ${sc.planned ? `дошли до ${sc.reached} из ${sc.planned} px (${Math.round((sc.share || 0) * 100)}%) за ${sc.frames} кадров, ${sc.ms} мс, прокручивается ${sc.scroller}` : 'страница не выше окна — прокручивать нечего'}${!scrollValid ? ' — FAIL замера: кадры/с при прокрутке не в счёт (прокрутка не доехала: заставка держит, скрипт возвращает или прокручивается не тот блок)' : ''}`);
+  /* окно cookie: до замеров не закрывалось (первая загрузка — как у первого посетителя); найдено после замеров без нажатия */
+  const cons = samples.map((s) => s.consent || { found: false });
+  const cHit = cons.filter((c) => c.found);
+  const c0 = ref.consent && ref.consent.found ? ref.consent : cHit[0] || null;
+  const inRuns = (n) => (samples.length > 1 ? ` в ${n} из ${samples.length} ${plural(samples.length, 'прогона', 'прогонов', 'прогонов')}` : '');
+  let consentLine;
+  if (c0) {
+    const lcpN = cHit.filter((c) => c.lcp).length; const clsMed = pick((s) => (s.consent && s.consent.found ? s.consent.cls : null));
+    consentLine = `${c0.kind === 'ворота' ? 'ворота-заставка' : 'окно cookie'}: есть (${c0.box}, ${c0.place}, ${c0.w}×${c0.h}${c0.frame ? `, во фрейме ${c0.frame}` : ''}; ${c0.pick ? `кнопка «${c0.pick}»` : 'кнопки «принять», «отклонить» или «закрыть» нет'})${cHit.length < samples.length ? inRuns(cHit.length) : ''}, не закрывалось — замер как у первого посетителя${lcpN ? `; оно же элемент LCP${lcpN < samples.length ? inRuns(lcpN) : ''}` : ''}${clsMed ? `; сдвиги самого окна — ${clsMed} из CLS ${m.cls}` : ''}${!scrollValid ? '; прокрутка замера не доехала — проверьте, не запирает ли окно прокрутку страницы' : ''}`;
+  } else {
+    const errs = [...new Set(cons.map((c) => c.error).filter(Boolean))];
+    consentLine = errs.length === cons.length && errs.length ? `окно cookie: поиск не удался — ${errs[0]}` : 'окна cookie нет';
+  }
+  console.log(`INFO ${consentLine}`);
+  report.consent = c0 ? { ...c0, runs: cHit.length, of: samples.length, lcpRuns: cHit.filter((c) => c.lcp).length, note: consentLine, perRun: cons } : { found: false, note: consentLine, perRun: cons };
   console.log(`По сети (${answers(res.length)} — всё, что запрошено до прокрутки замера${runs > 1 ? `, прогон ${refNo}` : ''}): ${Object.entries(by).map(([k, v]) => `${k} ${v.count}/${v.kb} КБ`).join(' · ')} · сторонние домены ${thirdParty} КБ`);
   /* сжатие текста: как передано и как было бы */
   const zt = zip.total, zj = zip.byKind.js;

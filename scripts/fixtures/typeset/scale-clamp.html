@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шкала: один clamp в карточках разной ширины</title>
+<!-- Стенд typeset.mjs --selftest (SKILL-ISSUES 446, «±1 px»): h3 карточек набран одним правилом clamp на cqi,
+     карточки шириной 288 и 300 px дают кегли 23.04 и 24 — после округления 23 и 24. Это один уровень «23–24»,
+     а не два. Контроль — настоящие соседние уровни: основной 16 и лид 18, дисплей 32 и h2 36 — не склеиваются.
+     h4 в 24 px того же веса под h3 23–24 — не «уровни перевёрнуты», а «один уровень». Ожидания — в typeset.mjs. -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+h1 { font-size: 44px; line-height: 1.1; margin: 24px 0 16px; }
+.lead { font-size: 18px; line-height: 1.5; }
+.big { font-size: 32px; line-height: 1.2; font-weight: 400; margin: 32px 0 8px; }
+h2 { font-size: 36px; line-height: 1.2; margin: 32px 0 12px; }
+.cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.card { container-type: inline-size; background: #f3f0ea; }
+.card.n { width: 288px; }
+.card.w { width: 300px; }
+.card h3 { font-size: clamp(18px, 8cqi, 32px); line-height: 1.25; margin: 0; padding: 0; font-weight: 700; }
+.card p { margin: 8px 0 0; }
+h4 { font-size: 24px; line-height: 1.25; font-weight: 700; margin: 32px 0 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="h1">Керамика ручной работы</h1>
+  <p class="lead" id="lead">Посуда для дома и кафе из местной глины, обожжённая в нашей мастерской в Ярославле.</p>
+  <p>Каждую вещь мастер делает сам: формует на гончарном круге, сушит неделю и покрывает глазурью своего цвета.</p>
+  <p class="big" id="big">Четыре коллекции в год</p>
+  <h2 id="h2">Что можно заказать в мастерской</h2>
+  <div class="cards">
+    <div class="card n"><h3 id="c1">Чашки для кофейни</h3><p>Тонкие стенки, удобная ручка и объём от ста до трёхсот миллилитров.</p></div>
+    <div class="card w"><h3 id="c2">Тарелки для ресторана</h3><p>Плоские и глубокие, с неровным краем, выдерживают посудомоечную машину.</p></div>
+    <div class="card n"><h3 id="c3">Вазы под сухоцветы</h3><p>Высокие и узкие, матовая глазурь в тон песка, камня или морской воды.</p></div>
+    <div class="card w"><h3 id="c4">Наборы в подарок</h3><p>Две чашки и блюдце в коробке из крафта, подпись мастера на каждом донце.</p></div>
+  </div>
+  <h4 id="h4">Сроки и доставка по городу</h4>
+  <p>Заказ из каталога готов за две недели, свой эскиз — за месяц; по Ярославлю привозим сами и бесплатно.</p>
+</main>
+</body>
+</html>

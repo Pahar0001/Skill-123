@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Окно cookie в первой загрузке</title>
+<!-- Стенд perf.mjs --selftest (SKILL-ISSUES 422, «окно cookie»): окно согласия закреплено снизу во всю ширину, его
+     текст — самый крупный текстовый блок первого экрана, то есть элемент LCP. Через 0.6 с после load окно поднимается
+     на 80 px (bottom 0 → 80px) — сдвиг самого окна. perf окно не закрывает: первая загрузка меряется как у первого
+     посетителя. Ждём строку «INFO окно cookie: есть (div#cookie-banner.cookie, снизу во всю ширину, …; кнопка
+     «Принять»), не закрывалось — замер как у первого посетителя; оно же элемент LCP; сдвиги самого окна …» и поле
+     consent в JSON. Ожидания — в perf.mjs. -->
+<style>
+body { margin: 0; font: 16px/1.5 Georgia, serif; color: #111; background: #fff; }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+h1 { font-size: 20px; line-height: 1.3; margin: 0 0 8px; }
+.cookie { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px 24px; font-size: 18px; line-height: 1.5; }
+.cookie p { margin: 0 0 12px; max-width: 1100px; }
+.cookie button { font: inherit; padding: 8px 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Пекарня на Советской</h1>
+  <p>Хлеб на закваске каждое утро.</p>
+</main>
+<div class="cookie" id="cookie-banner">
+  <p>Мы используем файлы cookie, чтобы сайт работал, и собираем обезличенную статистику посещений. Продолжая пользоваться сайтом, вы соглашаетесь с обработкой cookie и персональных данных по политике конфиденциальности. Отказаться можно в настройках браузера.</p>
+  <button type="button" onclick="this.closest('.cookie').remove()">Принять</button>
+</div>
+<script>
+addEventListener('load', () => setTimeout(() => { document.getElementById('cookie-banner').style.bottom = '80px'; }, 600));
+</script>
+</body>
+</html>

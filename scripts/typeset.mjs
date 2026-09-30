@@ -38,7 +38,8 @@
  *                 (страница в закреплённом контейнере прокрутки), inner, inmain, inmain-sub, container-sub, flat
  *                 (заголовок следующей секции — не подзаголовок, её кнопка — не кнопка первого экрана), flat-sub
  *                 (подзаголовок своего кегля в плоской разметке — подзаголовок), h2h3 (h3 под h2
- *                 мерится на близость), narrow-nomain, bs-nomain (каркас без main: узкая колонка, шапка в .container);
+ *                 мерится на близость), narrow-nomain, bs-nomain (каркас без main: узкая колонка, шапка в .container),
+ *                 scale-clamp (кегли 23 и 24 одного clamp — один уровень «23–24», 16/18 и 32/36 — разные);
  *                 каждый случай сверяется с ожидаемым.
  *   --help, -h    эта справка.
  * Неизвестный флаг — ошибка с кодом 1 и подсказкой. Адрес, экраны и значения флагов проверяются до
@@ -113,8 +114,9 @@
  *                тонкий текст на тёмном); h1 и дисплей от 80 px — 0.8–1.05, вне — INFO; < 1.0 у текста до 24 px — FAIL
  *   caps-track   разрядка капса и строчного дисплея (INFO/WARN); разрядка основного текста > 0.03em — WARN
  *   scale        кеглей с текстом от 20 знаков > 8 (основное содержимое; заголовок из надписи и подписи —
- *                кеглями частей); соседние уровни заголовков ближе 1.1 при одном весе или перевёрнуты
- *                (h2 крупнее h1) — WARN
+ *                кеглями частей; соседние кегли в пределах max(1 px, 4 %) — один уровень «23–24»: clamp в карточках
+ *                разной ширины и округление); соседние уровни заголовков ближе 1.1 при одном весе или перевёрнуты
+ *                (h2 крупнее h1 больше чем на ту же склейку) — WARN
  *   families     своих гарнитур с ≥ 2% знаков: 3 — WARN, 4 и больше — FAIL (моноширинные и иконки не в счёт)
  *   weights      начертаний одной гарнитуры с ≥ 1% текста больше 4 — WARN
  *   synthetic    синтетический жирный или курсив (проба пикселями, расхождение > 10%) — FAIL
@@ -977,6 +979,26 @@ function sizeMap(list, byId) {
   for (const b of list) { if (b.changing) continue; const parts = b.mixed && b.inner ? b.inner.map((id) => byId.get(id)).filter(Boolean) : [b]; for (const x of parts.length ? parts : [b]) { const k = Math.round(x.fs); m.set(k, (m.get(k) || 0) + x.textLen); } }
   return m;
 }
+/* уровни шкалы: соседние кегли склеиваются, если разброс уровня (наибольший − наименьший, в целых px) не больше
+   max(1 px, 4 % меньшего). 1 px — округление дробного clamp (23.4 → 23, 23.6 → 24) и clamp на cqi/em в карточках
+   разной ширины; 4 % — у крупного кегля тот же clamp даёт разброс пропорционально больше (50 и 52). Настоящие ступени
+   шкалы — от 1.1 (порог «почти не различаются» ниже; 16/18 и 32/36 — 12,5 %), в окно не попадают. Склейка по разбросу
+   всего уровня, не цепочкой: 16, 17, 18 одним уровнем не станут. Представитель — самый частый кегль уровня по длине
+   текста, длина уровня — сумма. → [{ fs, lo, hi, len, sizes }] от крупного к мелкому */
+const sizeTol = (a) => Math.max(1, 0.04 * a) + 1e-9;
+const sameLevel = (a, b) => Math.abs(a - b) <= sizeTol(Math.min(a, b));
+function sizeLevels(m) {
+  const keys = [...m].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+  const used = new Set(); const out = [];
+  for (const [k] of keys) {
+    if (used.has(k)) continue;
+    let lo = k, hi = k, len = 0; const sizes = [];
+    for (const [j, v] of keys) { if (used.has(j)) continue; const a = Math.min(lo, j), b = Math.max(hi, j); if (b - a <= sizeTol(a)) { used.add(j); lo = a; hi = b; len += v; sizes.push(j); } }
+    out.push({ fs: k, lo, hi, len, sizes: sizes.sort((a, b) => b - a) });
+  }
+  return out.sort((a, b) => b.fs - a.fs);
+}
+const lvlLabel = (l) => (l.lo === l.hi ? `${l.fs}` : `${l.lo}–${l.hi}`);
 const LANG_OK = /^(ru|uk|be|bg|sr|kk)\b/i;
 const MONO_ICON = /mono|code|courier|consol|icon|awesome|material|symbols|glyph|fontello|icomoon/i;
 
@@ -1274,20 +1296,26 @@ function judge(d, ctx) {
   /* шкала — по основному содержимому: каркас (шапка, подвал, анонс, меню, закреплённое) считается отдельно;
      заголовок из надписи и подписи разного кегля — кеглями своих частей */
   const sizes = sizeMap(top.filter((b) => !b.frame), byId);
-  const sig20 = [...sizes].filter(([, v]) => v >= 20).map(([k]) => k).sort((a, b) => b - a);
+  /* уровни, а не кегли: 23 и 24 от одного clamp — один уровень «23–24» (sizeLevels) */
+  const lv20 = sizeLevels(sizes).filter((l) => l.len >= 20);
+  const sig20 = lv20.map(lvlLabel);
+  const merged = lv20.filter((l) => l.lo !== l.hi);
+  const mergedNote = merged.length ? ` — соседние кегли склеены в уровень: ${merged.map((l) => `${lvlLabel(l)} px`).join(', ')} (разница до 1 px, у крупных до 4 %: один clamp или округление)` : '';
   const fSizes = sizeMap(top.filter((b) => b.frame), byId);
-  const frameOnly = [...fSizes].filter(([k, v]) => v >= 20 && !sig20.includes(k)).map(([k]) => k).sort((a, b) => b - a);
+  /* кегли каркаса, которых буквально нет среди кеглей шкалы (13 в подвале при 12 в основном — тоже «только каркаса») */
+  const frameOnly = [...fSizes].filter(([k, v]) => v >= 20 && !lv20.some((l) => l.sizes.includes(k))).map(([k]) => k).sort((a, b) => b - a);
   if (frameOnly.length) frameItems.push({ status: 'INFO', kind: 'scale', sizes: frameOnly, frames: [...new Set(top.filter((b) => b.frame && frameOnly.includes(Math.round(b.fs))).map((b) => b.frame))], note: `кегли только каркаса: ${frameOnly.join(', ')} — в шкалу страницы не входят` });
   const lvl = {}; for (const b of top) if (!b.frame && b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lvl[b.headTag] = lvl[b.headTag] || []).push(b);
   const levels = ['h1', 'h2', 'h3', 'h4'].filter((h) => lvl[h]).map((h) => { const fsz = median(lvl[h].map((b) => b.fs)); const wts = lvl[h].map((b) => String(b.weight)); const w = wts.sort((a, b) => wts.filter((x) => x === b).length - wts.filter((x) => x === a).length)[0]; return { h, fs: fsz, w }; });
   const scaleItems = [];
-  if (sig20.length > 8) scaleItems.push({ status: 'WARN', kind: 'count', n: sig20.length, note: `кеглей с текстом от 20 знаков: ${sig20.length} (${sig20.join(', ')}) — не больше 8, лучше 3–4 заметно разных` });
-  for (let i = 1; i < levels.length; i++) { const a = levels[i - 1], b = levels[i]; if (a.fs < b.fs) scaleItems.push({ status: 'WARN', kind: 'close', pair: [a.fs, b.fs], note: `${b.h} ${b.fs}px крупнее ${a.h} ${a.fs}px — уровни перевёрнуты` }); else if (a.fs / b.fs < 1.1 && a.w === b.w) scaleItems.push({ status: 'WARN', kind: 'close', pair: [a.fs, b.fs], note: `${a.h} ${a.fs}px и ${b.h} ${b.fs}px при весе ${a.w} ${a.fs === b.fs ? 'одного кегля' : `почти не различаются (${Math.round(a.fs / b.fs * 100) / 100})`} — различать весом или не делать отдельным уровнем` }); }
+  if (sig20.length > 8) scaleItems.push({ status: 'WARN', kind: 'count', n: sig20.length, levels: sig20, note: `кеглей с текстом от 20 знаков: ${sig20.length} (${sig20.join(', ')} px) — не больше 8, лучше 3–4 заметно разных${mergedNote}` });
+  /* уровни заголовков: разница в пределах склейки (1 px, у крупных 4 %) — один уровень, а не «перевёрнуты» */
+  for (let i = 1; i < levels.length; i++) { const a = levels[i - 1], b = levels[i]; const same = sameLevel(a.fs, b.fs); if (a.fs < b.fs && !same) scaleItems.push({ status: 'WARN', kind: 'close', pair: [a.fs, b.fs], note: `${b.h} ${b.fs}px крупнее ${a.h} ${a.fs}px — уровни перевёрнуты` }); else if ((same || a.fs / b.fs < 1.1) && a.w === b.w) scaleItems.push({ status: 'WARN', kind: 'close', pair: [a.fs, b.fs], note: `${a.h} ${a.fs}px и ${b.h} ${b.fs}px при весе ${a.w} ${a.fs === b.fs ? 'одного кегля' : same ? `— один уровень (${Math.min(a.fs, b.fs)}–${Math.max(a.fs, b.fs)} px)` : `почти не различаются (${Math.round(a.fs / b.fs * 100) / 100})`} — различать весом или не делать отдельным уровнем` }); }
   const h1r = d.hero.ratio;
   if (h1r && h1r < (phone ? 1.6 : 2)) scaleItems.push({ status: 'INFO', kind: 'ratio', ratio: h1r, note: `h1 к основному тексту ${h1r} — плоская шкала (desktop 3–6×, телефон 2–3×); иерархию тогда держат вес, капс, цвет` });
   const bs = base && base.summary;
-  emit('scale', scaleItems, (st, g) => ['шкала', g.map((x) => x.note).join('; ')], { baseMatch: (it) => bs && ((it.kind === 'count' && bs.sizes && bs.sizes.length >= it.n) || (it.kind === 'close' && (bs.closeLevels || []).some(([a, b]) => Math.abs(a - it.pair[0]) <= 1 && Math.abs(b - it.pair[1]) <= 1)) || (it.kind === 'ratio' && bs.h1Ratio && Math.abs(bs.h1Ratio - it.ratio) <= 0.25)) });
-  if (!scaleItems.length) L('OK', `шкала: кеглей с текстом от 20 знаков ${sig20.length}`, [sig20.join(', ') || 'в основном содержимом таких блоков нет', levels.length ? `уровни ${levels.map((l) => `${l.h} ${l.fs}`).join(' > ')}` : '', `основной ${d.bodyFs}px`].filter(Boolean).join('; '));
+  emit('scale', scaleItems, (st, g) => ['шкала', [...g.map((x) => x.note), ...(merged.length && !g.some((x) => x.kind === 'count') ? [`кегли ${sig20.join(', ')} px${mergedNote}`] : [])].join('; ')], { baseMatch: (it) => bs && ((it.kind === 'count' && bs.sizes && bs.sizes.length >= it.n) || (it.kind === 'close' && (bs.closeLevels || []).some(([a, b]) => Math.abs(a - it.pair[0]) <= 1 && Math.abs(b - it.pair[1]) <= 1)) || (it.kind === 'ratio' && bs.h1Ratio && Math.abs(bs.h1Ratio - it.ratio) <= 0.25)) });
+  if (!scaleItems.length) L('OK', `шкала: кеглей с текстом от 20 знаков ${sig20.length}`, [sig20.length ? `${sig20.join(', ')} px${mergedNote}` : 'в основном содержимом таких блоков нет', levels.length ? `уровни ${levels.map((l) => `${l.h} ${l.fs}`).join(' > ')}` : '', `основной ${d.bodyFs}px`].filter(Boolean).join('; '));
   /* каркас — одной строкой INFO: висячие, одинокие, тире, числа, дефисы и кегли шапки, подвала, анонса, меню */
   emit('frame', frameItems, (st, g) => {
     const labels = [...new Set(g.flatMap((x) => x.frames || [x.frame]).filter(Boolean))];
@@ -1390,13 +1418,15 @@ function summaryOf(d) {
   const top = d.blocks.filter((b) => !b.partOf);
   /* как в judge: шкала и уровни — по основному содержимому, без каркаса */
   const sizes = sizeMap(top.filter((b) => !b.frame), new Map(d.blocks.map((b) => [b.id, b])));
+  const lv20 = sizeLevels(sizes).filter((l) => l.len >= 20);
   const lv = {}; for (const b of top) if (!b.frame && b.role === 'semantic' && /^h[1-4]$/.test(b.headTag)) (lv[b.headTag] = lv[b.headTag] || []).push(b.fs);
   const levels = ['h1', 'h2', 'h3', 'h4'].filter((h) => lv[h]).map((h) => median(lv[h]));
   const closeLevels = []; for (let i = 1; i < levels.length; i++) if (levels[i - 1] / levels[i] < 1.1) closeLevels.push([levels[i - 1], levels[i]]);
   const famW = {}; for (const b of top) if (b.webFont && !MONO_ICON.test(b.fam)) { famW[b.fam] = famW[b.fam] || new Set(); famW[b.fam].add(String(b.weight) + (/italic|oblique/.test(b.style) ? 'i' : '')); }
   const P = top.filter((b) => b.role === 'prose' && b.lines.length >= 2 && !b.changing);
   return {
-    bodyFs: d.bodyFs, sizes: [...sizes].filter(([, v]) => v >= 20).map(([k]) => k).sort((a, b) => b - a), levels, closeLevels, h1Ratio: d.hero.ratio,
+    /* sizes — представители уровней (самый частый кегль уровня), sizeLevels — уровни как в строке шкалы («23–24») */
+    bodyFs: d.bodyFs, sizes: lv20.map((l) => l.fs), sizeLevels: lv20.map(lvlLabel), levels, closeLevels, h1Ratio: d.hero.ratio,
     families: Object.keys(famW), weights: Object.fromEntries(Object.entries(famW).map(([k, v]) => [k, [...v]])),
     measure: median(P.map((b) => median(b.lines.slice(0, -1).map((l) => l.chars)))), h1Lines: d.hero.h1 ? d.hero.h1.lines : null,
     nbsp: { total: top.filter((b) => !b.nav).reduce((a, b) => a + b.shortTotal, 0), nb: top.filter((b) => !b.nav).reduce((a, b) => a + b.shortNb, 0) },
@@ -1863,6 +1893,13 @@ const SELFTEST = {
   ],
   'narrow-nomain.html': [
     ['узкая колонка без main: header и footer в ней — шапка и подвал (каркас), кегли 15 и 13 не в шкале', (a) => { const h = a.byEl('brand'), f = a.byEl('fnote'); const s = summaryOf(a.d).sizes; return [h && h.frame === 'шапка' && f && f.frame === 'подвал' && !s.includes(15) && !s.includes(13), `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}, шкала ${s.join(', ')}`]; }],
+  ],
+  /* SKILL-ISSUES 446 («±1 px»): соседние кегли одного clamp — один уровень; настоящие 16/18 и 32/36 — разные */
+  'scale-clamp.html': [
+    ['h3 одного clamp в карточках 288 и 300 px (23 и 24) — один уровень «23–24», строка шкалы показывает «23–24 px»', (a) => { const sm = summaryOf(a.d); const hs = [...new Set(a.d.blocks.filter((b) => !b.partOf && /#c[1-4](\.|$)/.test(b.sig)).map((b) => Math.round(b.fs)))].sort(); const ln = a.res.lines.find((l) => /^шкала/.test(l.what)); return [hs.join() === '23,24' && sm.sizeLevels.includes('23–24') && !sm.sizes.includes(23) && ln && /23–24 px/.test(ln.details || ''), `кегли h3 ${hs.join(', ')}; уровни ${sm.sizeLevels.join(', ')}; строка ${ln ? `${ln.status} «${short(ln.details, 140)}»` : 'нет'}`]; }],
+    ['контроль: настоящие уровни 16 и 18, 32 и 36 не склеены, счёт уровней 6', (a) => { const sm = summaryOf(a.d); return [['44', '36', '32', '23–24', '18', '16'].join() === sm.sizeLevels.join(), `уровни ${sm.sizeLevels.join(', ')}`]; }],
+    ['h4 24 px того же веса под h3 23–24 — «один уровень», не «перевёрнуты»', (a) => { const it = a.res.rules.scale ? a.res.rules.scale.items : []; return [!it.some((x) => /перевёрнуты/.test(x.note)) && it.some((x) => x.kind === 'close' && /h3 .* и h4 24px .*один уровень/.test(x.note)), it.map((x) => x.note).join('; ') || 'пунктов шкалы нет']; }],
+    ['склейка по разбросу уровня, не цепочкой: 16+17+18 — не один уровень; 50 и 52 — один (4 %); 48 и 50 — два', () => { const f = (arr) => sizeLevels(new Map(arr)).map(lvlLabel).join(' '); const a1 = f([[16, 100], [17, 500], [18, 100]]), a2 = f([[50, 100], [52, 90]]), a3 = f([[48, 100], [50, 90]]); return [!/16–18/.test(a1) && a1.split(' ').length === 2 && a2 === '50–52' && a3 === '50 48', `16/17/18 → ${a1}; 50/52 → ${a2}; 48/50 → ${a3}`]; }],
   ],
   'bs-nomain.html': [
     ['шапка и подвал в div.container без main — каркас; header и footer карточек div.post — основное (кегль 20 в шкале)', (a) => { const h = a.byEl('brand'), f = a.byEl('fnote'); const ph = a.d.blocks.find((b) => !b.partOf && /выбираем зерно/.test(b.text)); const pf = a.d.blocks.find((b) => !b.partOf && /^12 сентября$/.test(b.text)); const s = summaryOf(a.d).sizes; return [h && h.frame === 'шапка' && f && f.frame === 'подвал' && ph && !ph.frame && pf && !pf.frame && s.includes(20) && !s.includes(15), `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}, карточка ${ph ? ph.frame || 'основное' : 'нет блока'}/${pf ? pf.frame || 'основное' : 'нет блока'}, шкала ${s.join(', ')}`]; }],
