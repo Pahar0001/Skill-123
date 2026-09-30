@@ -159,7 +159,7 @@ function loadOverused() {
 
 /** CSV → массив строк-массивов: кавычки, "" внутри, запятые и переводы строк в полях, BOM, CRLF и CR. */
 export function parseCsv(text) {
-  const s = String(text).replace(/^﻿/, '');
+  const s = String(text).replace(/^\uFEFF/, '');
   const rows = []; let row = []; let f = ''; let q = false; let any = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];

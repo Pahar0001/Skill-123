@@ -515,7 +515,7 @@ export function lintRuns(runs, o = {}) {
     for (const m of text.matchAll(/!+/g)) push('copy-exclaim', run, sAt(m.index), '!', 'точка; интонацию даёт смысл, а не знак');
     for (const m of text.matchAll(/\p{Extended_Pictographic}/gu)) {
       if (/[©®™←-⇿▶◀]/u.test(m[0])) continue;
-      const icon = !!run.hidden || text.replace(/[\s️‍]/gu, '').length <= 2;
+      const icon = !!run.hidden || text.replace(/[\s\uFE0F\u200D]/gu, '').length <= 2;
       push(icon ? 'copy-emoji-icon' : 'copy-emoji', run, text, m[0], icon ? 'значок-эмодзи: нарисовать SVG в линии сайта (эмодзи разные на каждой системе)' : 'удалить или заменить словом');
     }
     for (const m of text.matchAll(/(?<=[\p{Ll},;:—–]\s+)(?:Вы|Вас|Вам|Вами|Ваш\p{Ll}*)(?![\p{L}])/gu)) push('copy-vy', run, sAt(m.index), m[0], `«${m[0].toLowerCase()}» со строчной`);
