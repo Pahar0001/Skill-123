@@ -82,6 +82,11 @@
   .photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .quote { margin: 0; font: 400 clamp(24px, 1.1vw + 19px, 34px)/1.34 var(--serif); max-width: 24ch; }
   .quote p { margin: 0; }
+  /* россыпь раздела не ложится на текст: широкий экран — левая половина (поле и фото, текст справа);
+     узкий — поле над фото и само фото (фото первым, текст ниже). Высота = отступ блока + фото 3:2 */
+  .pastry-scatter { right: 50%; }
+  @media (max-width: 899px) { .pastry-scatter { right: 0; bottom: auto; height: calc(clamp(72px, 9vw, 128px) + (100vw - 32px) * 2 / 3); } }
+  @media (min-width: 720px) and (max-width: 899px) { .pastry-scatter { height: calc(clamp(72px, 9vw, 128px) + (100vw - 64px) * 2 / 3); } }
   .m-layers { color: var(--honey); }
   .m-layers.dk-set path { stroke-dasharray: 1 1.01; stroke-dashoffset: 1.005; }
   .m-layers.dk-play path { stroke-dasharray: 1 1.01; stroke-dashoffset: 0; transition: stroke-dashoffset .8s var(--dk-ease-move) calc(var(--i) * 160ms); }
@@ -276,9 +281,11 @@
 
 <!-- 3. «Выпечка»: фото шторкой, цитата по словам, рукописная надпись раздела, мотив — слои круассана -->
 <section class="sec dark dk-host t-pastry" id="pastry">
-  <div class="dk-layer" data-dk-scatter="croissant bun whisk rolling-pin" data-dk-scatter-count="6" data-dk-scatter-seed="5">
+  <div class="dk-layer">
     <span class="dk-bgword" style="--dk-y: auto; bottom: -.1em; --dk-x: 36%; --dk-rot: -4deg">выпечка</span>
   </div>
+  <!-- россыпь — своим слоем на стороне фото: у краёв всего блока она ложилась на текст цитаты -->
+  <div class="dk-layer pastry-scatter" data-dk-scatter="croissant bun whisk rolling-pin" data-dk-scatter-count="6" data-dk-scatter-seed="5"></div>
   <div class="wrap split">
     <figure class="photo" data-dk-curtain="from-left">
       <img src="demo-photo.svg" width="1200" height="800" alt="Рисунок вместо фото: каравай и багет на доске" loading="lazy" decoding="async">
