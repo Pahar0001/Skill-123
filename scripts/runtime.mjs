@@ -2141,6 +2141,8 @@ async function selftest() {
       not: [[null, /^окно cookie$/, /закрыто кнопкой/]],
       checks: [(j) => (j && j.consent && j.consent.keep && j.consent.found && !j.consent.closed ? null : `в JSON consent ${JSON.stringify(j && j.consent && { keep: j.consent.keep, found: j.consent.found, closed: j.consent.closed })} — ждали keep, found, не закрыто`)] },
   ];
+  /* проверки 30.09 — и в Firefox (браузер пользователя): якорь, блок шире колонки, фокус в слое, окно cookie */
+  if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
   if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
   let bad = 0;
   console.log(`runtime.mjs --selftest: ${CASES.length} прогонов, по одному браузеру · протоколы ${out}`);
