@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: крупная фактура в фоне блоков</title>
+<!-- Стенд самопроверки texture.mjs. Плитку (tile.webp) рисует surface-tile.mjs во временную папку, сюда она
+     не кладётся. Фактура лежит по шаблону templates/surface.css (файл surface.css — он же, с подстановкой):
+     светлые и цветные поля — класс surface, тёмное — surface--dark. Карточки гладкие. Три метки в двойных
+     фигурных скобках selftest заменяет: DARK — класс тёмной секции, HEAD и EXTRA — добавки в head и в конец
+     body (слой зерна). В этом комментарии меток нет нарочно: заменяются все вхождения. -->
+<link rel="stylesheet" href="surface.css">
+{{HEAD}}
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background-color:#f4f1e8}
+  section,footer{padding:70px 60px;min-height:640px}
+  /* у молочной секции своего фона нет: сквозь неё видно поле body с фактурой */
+  .mint{background-color:#dfeecf}
+  .deep{background-color:#1f3d2b;color:#eef3ea}
+  h2{margin:0 0 18px;font-size:34px}
+  .card{background:#fff;border-radius:16px;padding:22px 26px;max-width:380px}
+  .chips{display:flex;gap:18px;margin-top:340px}
+  .chip{width:150px;height:96px;border-radius:14px;background-color:#cfe6b8}
+  .chip.surface--dark{background-color:#27503a}
+  footer{min-height:420px;background-color:#e9e4d6}
+  @media (max-width: 700px){ .mint.surface{background-image:none} }
+</style>
+</head>
+<body class="surface">
+  <section class="milk">
+    <h2>Молочное поле</h2>
+    <div class="card">Карточка гладкая: фактура у фона, чистота у содержимого.</div>
+  </section>
+  <section class="mint surface">
+    <h2>Мятное поле</h2>
+    <div class="card">Плитка умножается на цвет поля.</div>
+    <div class="chips">
+      <div class="chip surface"></div><div class="chip surface"></div><div class="chip surface--dark"></div>
+    </div>
+  </section>
+  <section class="deep {{DARK}}">
+    <h2>Тёмное поле</h2>
+    <div class="card" style="color:#1d2a22">На тёмном умножение гаснет, поэтому здесь color-burn.</div>
+  </section>
+  <footer class="surface"><h2>Подвал</h2></footer>
+  {{EXTRA}}
+</body>
+</html>

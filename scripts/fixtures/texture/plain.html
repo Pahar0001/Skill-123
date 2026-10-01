@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: ровный фон и фотография — фактуры нет</title>
+<!-- Стенд самопроверки texture.mjs: фактуры нет никакой. Первый экран — картинка во весь блок (photo.jpg,
+     контрастная, как фотография), дальше плавный градиент картинкой (ramp.png) и ровные секции. Обе картинки —
+     кандидаты в крупную фактуру (картинка в фоне большого блока), и обе должны быть отвергнуты разбором
+     файла: первая — контрастная, вторая — общий уклон без деталей. Картинки рисует selftest во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{padding:70px 60px;min-height:640px}
+  .hero{background:#222 url(photo.jpg) center/cover no-repeat;color:#fff}
+  .ramp{background:#eee url(ramp.png) center/cover no-repeat}
+  .light{background-color:#f6f6f6}
+  .dark{background-color:#16202a;color:#f1f1f1}
+  h2{margin:0 0 18px;font-size:34px}
+</style>
+</head>
+<body>
+  <section class="hero"><h2>Первый экран с фотографией</h2></section>
+  <section class="ramp"><h2>Плавный переход картинкой</h2></section>
+  <section class="light"><h2>Ровная светлая секция</h2></section>
+  <section class="dark"><h2>Ровная тёмная секция</h2></section>
+</body>
+</html>

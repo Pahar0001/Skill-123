@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: крупная фактура отдельным слоем</title>
+<!-- Стенд самопроверки texture.mjs — устройство как у образца (zakroma.rest): в каждой секции пустой блок
+     во всю секцию с плиткой в фоне; на светлой секции слой лежит обычным наложением (плитка сама служит
+     фоном), на тёмной — color-burn. Имя файла и классы ничего не подсказывают (tile.webp, lay), размер фона
+     600 px — больше, чем у «мелкой плитки» зерна (до 512 px): слой должен найтись как картинка в фоне большого
+     блока и подтвердиться разбором файла. Плитку рисует surface-tile.mjs во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{position:relative;padding:70px 60px;min-height:700px}
+  .light{background-color:#fff}
+  .dark{background-color:#2b2b2b;color:#f1f1f1}
+  .lay{position:absolute;top:0;left:0;right:0;bottom:0;background-image:url(tile.webp);background-repeat:repeat;background-position:center;background-size:600px auto}
+  .lay--dark{mix-blend-mode:color-burn}
+  .in{position:relative}
+  h2{margin:0 0 18px;font-size:34px}
+  @media (max-width: 700px){ .light .lay{display:none} }
+</style>
+</head>
+<body>
+  <section class="light"><div class="lay"></div><div class="in"><h2>Светлая секция</h2><p>Слой лежит обычным наложением.</p></div></section>
+  <section class="dark"><div class="lay lay--dark"></div><div class="in"><h2>Тёмная секция</h2><p>Слой затемняет основу.</p></div></section>
+  <section class="light"><div class="lay"></div><div class="in"><h2>Ещё светлая</h2></div></section>
+</body>
+</html>

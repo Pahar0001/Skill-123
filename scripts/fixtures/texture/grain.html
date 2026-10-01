@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: зерно слоем, крупной фактуры нет</title>
+<!-- Стенд самопроверки texture.mjs: прежнее поведение для зерна. Слой зерна — по шаблону templates/grain.css
+     (файл grain.css — он же, прозрачность .064, без кипения), плитку grain-gray-256.png рисует grain-tile.mjs
+     во временную папку. Фон секций ровный: крупной фактуры здесь нет, и найтись она не должна. -->
+<link rel="stylesheet" href="grain.css">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{padding:70px 60px;min-height:700px}
+  .light{background-color:#f2f2f2}
+  .dark{background-color:#101010;color:#f1f1f1}
+  h2{margin:0 0 18px;font-size:34px}
+</style>
+</head>
+<body>
+  <section class="light"><h2>Светлая секция</h2><p>Зерно поверх всего.</p></section>
+  <section class="dark"><h2>Тёмная секция</h2><p>И на чёрном тоже.</p></section>
+  <section class="light"><h2>Ещё светлая</h2></section>
+  <div class="grain-overlay" aria-hidden="true"></div>
+</body>
+</html>
