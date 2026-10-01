@@ -193,6 +193,90 @@
       </div>
     </fieldset>
 
+    <fieldset data-only="rework,new">
+      <legend>Сайт-образец</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="donor-have" name="sample" value="have" aria-describedby="donor-have-h">
+          <label for="donor-have">Есть</label>
+          <p class="hint" id="donor-have-h">адрес — в поле «Референсы», со словами, что в нём нравится</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="donor-pick" name="sample" value="pick" checked aria-describedby="donor-pick-h">
+          <label for="donor-pick">Нет — подберите три</label>
+          <p class="hint" id="donor-pick-h">три живых сайта со снимками и рекомендацией; выбираете вы</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="donor-self" name="sample" value="self" aria-describedby="donor-self-h">
+          <label for="donor-self">Нет — дайте каталоги</label>
+          <p class="hint" id="donor-self-h">список каталогов живых сайтов; посмотрите сами и пришлёте 1–3 адреса</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Фон</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="bg-flat" name="bg" value="flat" aria-describedby="bg-flat-h">
+          <label for="bg-flat">Ровный</label>
+          <p class="hint" id="bg-flat-h">чистая заливка без фактуры и рисунков</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="bg-full" name="bg" value="full" checked aria-describedby="bg-full-h">
+          <label for="bg-full">Фактура и рисунки в тему</label>
+          <p class="hint" id="bg-full-h">мятая бумага с прожилками или зерно, наброски от руки, мелкие предметы на полях</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="bg-tex" name="bg" value="texture" aria-describedby="bg-tex-h">
+          <label for="bg-tex">Только фактура</label>
+          <p class="hint" id="bg-tex-h">фон не пустой, но без рисунков и предметов</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Шапка при прокрутке</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="head-solid" name="header" value="solid" aria-describedby="head-solid-h">
+          <label for="head-solid">Плотная</label>
+          <p class="hint" id="head-solid-h">всегда одного цвета, страница под ней не видна</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="head-glass" name="header" value="glass" checked aria-describedby="head-glass-h">
+          <label for="head-glass">Полупрозрачная</label>
+          <p class="hint" id="head-glass-h">наверху плотная, при прокрутке — с размытием, страница просвечивает</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="head-hide" name="header" value="hide" aria-describedby="head-hide-h">
+          <label for="head-hide">Прячется</label>
+          <p class="hint" id="head-hide-h">уходит при прокрутке вниз, возвращается при прокрутке вверх</p>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Цвет</legend>
+      <div class="choices">
+        <div class="choice">
+          <input type="radio" id="col-calm" name="color" value="calm" aria-describedby="col-calm-h">
+          <label for="col-calm">Спокойнее образца</label>
+          <p class="hint" id="col-calm-h">приглушённый акцент, мягкие поля</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="col-near" name="color" value="near" checked aria-describedby="col-near-h">
+          <label for="col-near">Близко к образцу</label>
+          <p class="hint" id="col-near-h">сочно, но под ваше дело; окончательно — на эскизе, по трём плашкам рядом</p>
+        </div>
+        <div class="choice">
+          <input type="radio" id="col-bold" name="color" value="bold" aria-describedby="col-bold-h">
+          <label for="col-bold">Ярче образца</label>
+          <p class="hint" id="col-bold-h">кислотный акцент, контрастные поля</p>
+        </div>
+      </div>
+    </fieldset>
+
     <fieldset>
       <legend>Тексты, фото, видео, логотипы</legend>
       <div class="choices">
@@ -313,7 +397,7 @@
     for (const el of document.querySelectorAll('[data-rework]')) el.textContent = el.dataset[kind];
     for (const el of f.querySelectorAll('[data-rework-ph]')) el.placeholder = el.dataset[kind + 'Ph'];
     for (const el of f.querySelectorAll('[data-only]')) {
-      const on = el.dataset.only === 'own' ? own : el.dataset.only === 'content' ? (cont === 'own' || cont === 'partial') : el.dataset.only === kind;
+      const on = el.dataset.only === 'own' ? own : el.dataset.only === 'content' ? (cont === 'own' || cont === 'partial') : el.dataset.only.split(',').includes(kind);
       el.hidden = !on;
       for (const c of el.querySelectorAll('input, textarea')) c.disabled = !on;
     }
@@ -351,6 +435,10 @@
       ['БЛИЗОСТЬ К ОБРАЗЦУ', { close: 'очень близко — язык образца целиком (шрифты, цвета, раскладка, движение); своё — содержание и детали про наше дело', spirit: 'в духе образца — язык образца плюс свои детали для красоты и 2–3 идеи из банка', inspire: 'только вдохновение — принципы образца, свой стиль и раскладка' }[d.closeness] || 'не выбрано — спросить при запуске'],
       ['РАЗНООБРАЗИЕ И СВОИ ИДЕИ', { calm: 'сдержанно — детали и движение как у образца, одна своя идея', noticeable: 'заметно — детали для красоты в каждом разделе, свой мотив у каждого раздела, 2–3 идеи из банка', bold: 'смело — много движения и своих находок, у каждого раздела свой характер' }[d.variety] || 'не выбрано — спросить при запуске'],
       ['ГЛАВНОЕ', (d.focus || []).length ? d.focus.join('\n') : 'не выбрано — спросить при запуске'],
+      !donor && ['САЙТ-ОБРАЗЕЦ', { have: d.refs ? 'есть — адрес в «Референсах»' : 'есть — адрес не указан, спросить при запуске', pick: 'нет — подберите три: кандидаты со снимками и рекомендацией, выбираю я', self: 'нет — дайте каталоги живых сайтов, выберу сам и пришлю 1–3 адреса' }[d.sample] || 'не выбрано — спросить при запуске'],
+      ['ФОН', { flat: 'ровный — без фактуры и рисунков', full: 'фактура и рисунки в тему — мятая бумага с прожилками или зерно, наброски от руки, мелкие предметы на полях', texture: 'только фактура — без рисунков и предметов' }[d.bg] || 'не выбрано — спросить при запуске'],
+      ['ШАПКА ПРИ ПРОКРУТКЕ', { solid: 'плотная', glass: 'полупрозрачная с размытием; наверху страницы — плотная', hide: 'прячется при прокрутке вниз, возвращается при прокрутке вверх' }[d.header] || 'не выбрано — спросить при запуске'],
+      ['ЦВЕТ', { calm: 'спокойнее образца — приглушённый акцент', near: 'близко к образцу — окончательно выберу на эскизе, по трём плашкам акцента рядом', bold: 'ярче образца — кислотный акцент' }[d.color] || 'не выбрано — спросить при запуске'],
       ['КОНТЕНТ', d.content === 'own' ? 'пришлю свой: ' + (d.contentPath || 'где лежит — не указано, спросить') : d.content === 'partial' ? 'частично есть: ' + (d.contentPath || 'где лежит — не указано, спросить') + '\nчего нет — тексты по данным о деле, фото и видео — из свободных источников' : 'нет — тексты и примеры цен, событий, отзывов пишем сами (в голосе дела, правдоподобно для отрасли и города), фото и видео — из свободных источников с лицензиями; всё придуманное — списком в отчёте для проверки владельцем'],
       ['СТРАНИЦЫ В РАБОТЕ', or(d.pages, fresh ? 'состав — из требований' : 'главная')],
       ['РЕФЕРЕНСЫ', or(d.refs, 'нет')],

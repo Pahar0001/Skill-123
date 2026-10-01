@@ -1,0 +1,23 @@
+[
+  { "name": "menu-m", "viewport": "m", "path": "/",
+    "do": [{ "click": "[data-sheet-open]" }, { "wait": 700 }],
+    "report": "(() => { const s = document.querySelector('#sheet'); return 'открыто: ' + (getComputedStyle(s).visibility !== 'hidden') + ', aria-expanded: ' + document.querySelector('[data-sheet-open]').getAttribute('aria-expanded') + ', фокус внутри: ' + s.contains(document.activeElement); })()" },
+  { "name": "menu-esc-m", "viewport": "m", "path": "/",
+    "do": [{ "click": "[data-sheet-open]" }, { "wait": 600 }, { "press": "Escape" }, { "wait": 500 }],
+    "report": "'после Esc закрыто: ' + (document.querySelector('#sheet').hidden || getComputedStyle(document.querySelector('#sheet')).visibility === 'hidden')" },
+  { "name": "filters-m", "viewport": "m", "path": "/catalog",
+    "do": [{ "click": "[data-filters-open]" }, { "wait": 700 }],
+    "report": "'панель: ' + getComputedStyle(document.querySelector('#filters')).visibility" },
+  { "name": "suggest-d", "viewport": "d", "path": "/",
+    "do": [{ "type": ["#q", "гор"] }, { "wait": 900 }],
+    "report": "'подсказок: ' + document.querySelectorAll('#suggest a').length" },
+  { "name": "toast-m", "viewport": "m", "path": "/product/klever-beliy",
+    "do": [{ "scroll": "#add" }, { "wait": 300 }, { "click": "#add" }, { "wait": 900 }],
+    "report": "'сообщение: ' + (document.querySelector('#toast')?.textContent || '').trim().slice(0, 80)" },
+  { "name": "checkout-err-m", "viewport": "m", "path": "/checkout",
+    "do": [{ "eval": "for (const i of document.querySelectorAll('main form input[name=name], main form input[name=phone]')) i.value = ''" }, { "submit": "main form", "novalidate": true }, { "scroll": "[aria-invalid=true], .msg" }, { "wait": 300 }],
+    "report": "'полей с ошибкой: ' + document.querySelectorAll('[aria-invalid=true]').length" },
+  { "name": "done-d", "viewport": "d", "path": "/checkout",
+    "do": [{ "cookies": true }, { "eval": "for (const [n, v] of Object.entries({ name: 'Проверка Вида', phone: '+7 900 000-00-00', email: 'proverka@example.com', city: 'Иваново', address: 'Пункт выдачи' })) { const i = document.querySelector('main form [name=' + n + ']'); if (i) i.value = v; }" }, { "submit": "main form" }],
+    "report": "document.querySelector('h1')?.textContent.trim()" }
+]

@@ -45,10 +45,12 @@
  *   (или mirror — своё зеркало). Журнал хранит оба адреса: «до» — свой сайт (снимки shots.mjs в <прогон>/before),
  *   эталон — донор (reference/donor-mode.md §1). show печатает блок «Сверки»: «до/после» своего
  *   сайта (before/, after/, diff/diff.json) и донор (donor/, donor/design, donor/texture, cliche
- *   baseline, motion/donor-*) со сверкой с ним (verify --json, texture-compare/compare.json,
- *   cliche/cliche*.json, motion/compare*.json) — что есть в папке прогона и чего нет; когда этап
- *   report начат, а сверки нет, — итог WARN. --mode donor с папкой сайта вне папки прогона — WARN:
- *   «новый сайт по донору» собирается в <прогон>/site, а свои исходники — это rework --donor.
+ *   baseline, motion/donor-*, decor/donor*) со сверкой с ним (verify --json, texture-compare/compare.json,
+ *   cliche/cliche*.json, motion/compare*.json, decor/compare*.json) — что есть в папке прогона и чего
+ *   нет; когда этап report начат, а сверки нет, — итог WARN. Протокол с ошибкой или «сверено 0» сверкой
+ *   не считается (строка «не в счёт»); сверка движения и фона под своим --tag узнаётся по полям протокола.
+ *   --mode donor с папкой сайта вне папки прогона — WARN: «новый сайт по донору» собирается в
+ *   <прогон>/site, а свои исходники — это rework --donor.
  *
  * Флаги:
  *   --site <папка>     папка с файлами сайта: исходники (rework), зеркало <прогон>/mirror
@@ -165,7 +167,7 @@ const DONOR_ONLY = ['donor', 'compare'];
 const stageShown = (s, k) => (k === 'donor' ? !!s.donor : k === 'compare' ? !!s.donor || s.mode === 'donor' : true);
 const STAGES = [
   ['requirements', 'Требования собраны и разобраны'],
-  ['discovered', 'Сайт разведан'], ['donor', 'Донор снят — эталон языка (discover, extract, texture, cliche baseline, motion)'],
+  ['discovered', 'Сайт разведан'], ['donor', 'Донор снят — эталон языка (discover, extract, texture, cliche baseline, motion, bgdecor)'],
   ['browser', 'Открыт в браузере, консоль и сеть сняты'], ['design', 'Дизайн разобран глазами'],
   ['direction', 'Направление выбрано (эскизы показаны)'],
   ['tech', 'Техническая архитектура понята'], ['tools', 'Инструменты выбраны'], ['tokens', 'Дизайн-система снята'],
@@ -181,6 +183,11 @@ const IGNORE_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', '.cache', '.
 const IGNORE_FILE = /(\.(log|db|sqlite3?|tmp|temp|swp|swo|pid|lock)$|-(wal|shm|journal)$|~$|^\.DS_Store$|^Thumbs\.db$|^desktop\.ini$)/i;
 
 const argv = process.argv.slice(2);
+/* у остальных скриптов папка прогона — --out, у журнала — первый аргумент: путают («Зелёный уголок», 01.10) */
+if (argv.some((a) => a === '--out' || a.startsWith('--out=') || a === '--run' || a.startsWith('--run='))) {
+  console.error('state.mjs: папка прогона — первым аргументом (state.mjs <папка> show), а не --out или --run, как у остальных скриптов.');
+  process.exit(1);
+}
 const VALUE_KEYS = ['note', 'evidence', ...CHECKS.map((c) => `evidence-${c}`), 'site', 'mode', 'site-ignore', 'priority', 'area', 'url', 'check', 'task', 'donor'];
 const FLAG_KEYS = ['force', 'strict', 'help', 'h', 'json', 'selftest'];
 /* strict: неизвестный флаг — отказ с подсказкой (раньше WARN, и init --donor молча терял донора) */
@@ -553,6 +560,21 @@ function compareArtifacts(s) {
   const files = runFiles();
   const has = (re) => files.filter((f) => re.test(f));
   const img = /\.(png|jpe?g|webp)$/i;
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(runRoot, f), 'utf8')); } catch { return null; } };
+  /* файл с нужным именем — ещё не сверка: протокол с ошибкой («страница не снялась») или «сверено 0» в счёт не идёт
+     («Зелёный уголок», 01.10: verify упал по таймауту, verify.json появился — и show сказал «verify ✓») */
+  const broken = [];
+  const live = (what, list) => list.filter((f) => {
+    const j = read(f); const bad = !!(j && (j.error || j.checked === 0));
+    if (bad) broken.push(`${what}: ${f} — ${j.error ? String(j.error).replace(/\s+/g, ' ').slice(0, 110) : 'сверено 0'}`);
+    return !bad;
+  });
+  /* сверка движения под своим --tag (motion/cmp.json) — та же сверка: узнаётся по полям протокола compare */
+  const motionCompare = [...new Set([...has(/^motion\/compare[^/]*\.json$/),
+    ...has(/^motion\/[^/]+\.json$/).filter((f) => !/^motion\/(donor|compare)[^/]*\.json$/.test(f)).filter((f) => { const j = read(f); return !!(j && j.donor && Array.isArray(j.steps) && !j.items); })])];
+  /* фон (bgdecor.mjs): замер донора — decor/donor*.json, сверка — decor/compare*.json или любой протокол kind bgdecor-compare */
+  const decorCompare = [...new Set([...has(/^decor\/compare[^/]*\.json$/),
+    ...has(/^decor\/[^/]+\.json$/).filter((f) => !/^decor\/(donor|compare)[^/]*\.json$/.test(f)).filter((f) => { const j = read(f); return !!(j && j.kind === 'bgdecor-compare'); })])];
   const parts = [];
   if (s.donor) {
     parts.push({ group: 'до/после', items: [
@@ -567,13 +589,15 @@ function compareArtifacts(s) {
     ['texture', has(/^donor\/texture\/[^/]+\.json$/), 'texture.mjs <донор> --out <папка>/donor/texture'],
     ['cliche baseline', has(/(^|\/)cliche[^/]*\/[^/]*(donor|baseline)[^/]*\.json$|^cliche-baseline[^/]*\.json$/), 'cliche.mjs baseline <донор> --out <папка>/cliche/donor.json'],
     ['motion', has(/^motion\/donor-[^/]+\.json$/), 'motion.mjs <донор> --tag donor --out <папка>'],
+    ['bgdecor', has(/^decor\/donor[^/]*\.json$/), 'bgdecor.mjs <донор> --out <папка> --tag donor --viewport desktop,mobile'],
   ] });
   parts.push({ group: 'сверка с донором', items: [
-    ['verify', has(/(^|\/)[^/]*verify[^/]*\.json$/), 'verify.mjs <папка>/donor/design/donor.json <адрес> --json <папка>/verify.json'],
+    ['verify', live('verify', has(/(^|\/)[^/]*verify[^/]*\.json$/)), 'verify.mjs <папка>/donor/design/donor.json <адрес> --json <папка>/verify.json'],
     ['texture compare', has(/(^|\/)texture-compare\/[^/]+\.json$/), 'texture.mjs compare … --out <папка>/texture-compare'],
     ['cliche', has(/(^|\/)cliche\/cliche[^/]*\.json$/).filter((f) => !/baseline|donor/.test(f)), 'cliche.mjs <адрес> --baseline <папка>/cliche/donor.json'],
-    ['motion compare', has(/^motion\/compare[^/]*\.json$/), 'motion.mjs compare <папка>/motion/donor-home.json <адрес> --out <папка>'],
-  ] });
+    ['motion compare', live('motion compare', motionCompare), 'motion.mjs compare <папка>/motion/donor-home.json <адрес> --out <папка>'],
+    ['bgdecor compare', live('bgdecor compare', decorCompare), 'bgdecor.mjs compare <папка>/decor/donor.json <адрес> --out <папка>'],
+  ], notes: broken });
   return parts;
 }
 
@@ -725,7 +749,7 @@ if (cmd === 'meta') {
       url: st.url || null, request: st.request, mode: st.mode || null, donor: st.donor || null, site: st.site || null,
       siteEdit: L && L.file ? { file: L.file, at: new Date(L.mtimeMs).toISOString() } : null,
       stages: Object.fromEntries(STAGES.map(([k]) => [k, st.stages[k] || null])),
-      ...(st.donor || st.mode === 'donor' ? { compare: compareArtifacts(st).map((p) => ({ group: p.group, items: p.items.map(([what, found]) => ({ what, files: found.length, sample: found.slice(0, 3) })) })) } : {}),
+      ...(st.donor || st.mode === 'donor' ? { compare: compareArtifacts(st).map((p) => ({ group: p.group, items: p.items.map(([what, found]) => ({ what, files: found.length, sample: found.slice(0, 3) })), ...(p.notes && p.notes.length ? { broken: p.notes } : {}) })) } : {}),
       tasks: st.tasks.map((t) => ({ id: t.id, task: t.task, priority: t.priority, area: t.area || null, impl: t.impl, note: t.note || '', naNotes: naNotesOf(t), reqs: reqIds(t), cells: Object.fromEntries(CHECKS.map((c) => [c, cellJ(t, c)])) })),
     }, null, 1));
     process.exit(0);
@@ -756,6 +780,7 @@ if (cmd === 'meta') {
     for (const p of parts) {
       const miss = p.items.filter(([, f]) => !f.length);
       console.log(`  ${p.group}: ${p.items.map(([what, f]) => `${what} ${f.length ? `✓${f.length > 1 ? ` ${f.length}` : ''}` : '—'}`).join(' · ')}`);
+      for (const n of p.notes || []) console.log(`    не в счёт: ${n}`);
       if (hintsFor(p.group)) for (const [what, , how] of miss) console.log(`    нет «${what}»: ${how}`);
       else hidden += miss.length;
       if (p.group !== 'эталон донора') compareMissing.push(...miss.map(([what]) => `${p.group}: ${what}`));
@@ -866,7 +891,29 @@ function selftest() {
     S(run, 'stage', 'report', 'active');
     r = S(run, 'show');
     check('donor', 'по файлам прогона: «до» и «после» есть, diff, verify, texture compare — нет', /снимки «до» ✓ · снимки «после» ✓ · diff —/.test(r.out) && /motion compare ✓/.test(r.out) && /нет «verify»/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 600));
-    check('donor', 'отчёт начат, а сверок нет — итог WARN с их списком', /^WARN: .*отчёт начат, а сверок нет \(до\/после: diff, сверка с донором: verify, сверка с донором: texture compare, сверка с донором: cliche\)/m.test(r.out), r.out.split('\n').slice(-2).join(' '));
+    check('donor', 'отчёт начат, а сверок нет — итог WARN с их списком', /^WARN: .*отчёт начат, а сверок нет \(до\/после: diff, сверка с донором: verify, сверка с донором: texture compare, сверка с донором: cliche, сверка с донором: bgdecor compare\)/m.test(r.out), r.out.split('\n').slice(-2).join(' '));
+    /* имя файла — ещё не сверка: протокол с ошибкой не в счёт; сверка движения под своим --tag узнаётся по полям */
+    fs.writeFileSync(path.join(run, 'verify.json'), JSON.stringify({ tool: 'verify.mjs', verdict: 'FAIL', error: 'Страница не снялась: http://localhost:3000/ — timed out', checked: 0, steps: [] }));
+    r = S(run, 'show');
+    check('donor', 'verify.json с ошибкой (страница не снялась, сверено 0) сверкой не считается', /verify —/.test(r.out) && /нет «verify»/.test(r.out) && /не в счёт: verify: verify\.json — Страница не снялась/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 600));
+    fs.writeFileSync(path.join(run, 'verify.json'), JSON.stringify({ tool: 'verify.mjs', verdict: 'FAIL', checked: 57, fails: 30, steps: [] }));
+    fs.rmSync(path.join(run, 'motion', 'compare-home.json'));
+    r = S(run, 'show');
+    check('donor', 'verify с расхождениями — сверка есть; без протокола сверки движения — «нет»', /verify ✓/.test(r.out) && /motion compare —/.test(r.out) && !/не в счёт/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 600));
+    fs.writeFileSync(path.join(run, 'motion', 'cmp.json'), JSON.stringify({ url: 'http://localhost:3000/', donor: 'motion/donor-home.json', verdict: 'OK', steps: [] }));
+    fs.writeFileSync(path.join(run, 'motion', 'after-home.json'), JSON.stringify({ url: 'http://localhost:3000/', verdict: 'OK', items: [] }));
+    r = S(run, 'show');
+    check('donor', 'сверка движения под своим --tag (motion/cmp.json) узнаётся по полям, замер движения — нет', /motion compare ✓(?! 2)/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 600));
+    /* фон: замер донора и сверка bgdecor.mjs — в том же блоке; сверка под своим --tag узнаётся по kind */
+    check('donor', 'фон: без замера и сверки bgdecor — «bgdecor —» у эталона и «bgdecor compare —» у сверки', /эталон донора: .*bgdecor —/.test(r.out) && /bgdecor compare —/.test(r.out) && /нет «bgdecor compare»: bgdecor\.mjs compare/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 700));
+    fs.mkdirSync(path.join(run, 'decor'), { recursive: true });
+    fs.writeFileSync(path.join(run, 'decor', 'donor.json'), JSON.stringify({ kind: 'bgdecor', verdict: 'OK', results: [] }));
+    fs.writeFileSync(path.join(run, 'decor', 'ours.json'), JSON.stringify({ kind: 'bgdecor', verdict: 'OK', results: [] }));
+    fs.writeFileSync(path.join(run, 'decor', 'sverka.json'), JSON.stringify({ kind: 'bgdecor-compare', verdict: 'WARN', steps: [] }));
+    r = S(run, 'show');
+    check('donor', 'фон: decor/donor.json — замер донора, сверка под своим --tag (decor/sverka.json) узнаётся по kind, замер своего сайта — нет', /эталон донора: .*bgdecor ✓/.test(r.out) && /bgdecor compare ✓(?! 2)/.test(r.out), (r.out.split('Сверки')[1] || '').slice(0, 700));
+    fs.rmSync(path.join(run, 'decor'), { recursive: true, force: true });
+    fs.rmSync(path.join(run, 'verify.json')); fs.rmSync(path.join(run, 'motion', 'cmp.json')); fs.rmSync(path.join(run, 'motion', 'after-home.json')); touch(path.join(run, 'motion', 'compare-home.json'));
     r = S(run, 'show', '--json');
     let sj = null; try { sj = JSON.parse(r.out); } catch { /* не JSON */ }
     check('donor', 'show --json: donor и compare', !!(sj && sj.donor === 'https://mamuka.rest/' && Array.isArray(sj.compare) && sj.compare.length === 3), r.out.slice(0, 200));
@@ -904,6 +951,8 @@ function selftest() {
     /* strict */
     r = S(run, 'show', '--dnor', 'x');
     check('флаги', 'неизвестный флаг — отказ с подсказкой (strict)', r.code === 1 && /--dnor — может быть, --donor\?/.test(r.out), r.out);
+    r = S(run, 'show', '--out', run);
+    check('флаги', '--out вместо первого аргумента — отказ с подсказкой «папка прогона — первым аргументом»', r.code === 1 && /папка прогона — первым аргументом/.test(r.out), r.out);
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* останется во временной папке */ } }
   const failed = results.filter((x) => !x).length;
   console.log(`\n${failed ? 'FAIL' : 'OK'}: проверок ${results.length}, не прошло ${failed}`);

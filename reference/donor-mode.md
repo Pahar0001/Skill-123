@@ -8,12 +8,38 @@
 первой строкой `analysis.md` — «режим: донор; сайт собирается в <путь>».
 Свой сайт с исходниками в языке донора — `--mode rework --donor <адрес донора>`.
 
-## 0. Донора нет — подобрать в Refero Styles
+## 0. Донора нет — предложить, где его взять
 
-Когда: переработка «сделай дороже» без образца, сайт с нуля без референсов. Каталог
-[Refero Styles](https://styles.refero.design/) — 2 000+ стилей живых сайтов (цвет, шрифты, отступы,
-компоненты, DESIGN.md), у каждого стиля ссылка на сам сайт. Refero — только поиск донора; язык
-снимается с живого сайта обычным порядком (§1), не с DESIGN.md.
+Когда: переработка «сделай дороже» без образца, сайт с нуля без референсов. Владелец (01.10.2026): «перед тем
+как делать сайт, если у человека нет референса, нужно предлагать сайты, где они есть». Молча выбирать язык самому
+нельзя — анкета спрашивает «сайт-образец есть?», на «нет» — два пути на выбор человека:
+
+1. **«Подберите три»** — порядок ниже (Refero Styles, затем каталоги из таблицы): три кандидата со снимками,
+   чем каждый подходит, рекомендация.
+2. **«Дайте каталоги, выберу сам»** — отдать таблицу ниже как есть (адрес и одна строка, что там искать) и
+   попросить вернуть 1–3 адреса живых сайтов со словами, что в каждом нравится: шрифты, фон, движение, раскладка.
+   Что нравится в каждом — в `analysis.md`, «Решения пользователя»; дальше §1 по выбранному.
+
+| каталог | что там | когда смотреть |
+|---|---|---|
+| [styles.refero.design](https://styles.refero.design/) | 2 000+ стилей живых сайтов: цвет, шрифты, отступы, компоненты, DESIGN.md; у каждого — ссылка на сайт | первым; MCP `refero` — поиск запросом |
+| [awwwards.com/websites](https://www.awwwards.com/websites/) | сайты, отмеченные жюри; отбор по отрасли и приёму | смелый язык, движение, 3D |
+| [land-book.com](https://land-book.com/) | посадочные и сайты компаний по видам | спокойный коммерческий сайт |
+| [lapa.ninja](https://www.lapa.ninja/) | посадочные по категориям и цветам | быстро пролистать много вариантов |
+| [onepagelove.com](https://onepagelove.com/) | одностраничные сайты | одна услуга, событие, лендинг |
+| [httpster.net](https://httpster.net/) | необычная вёрстка и типографика | характер, игра шрифтов |
+| [minimal.gallery](https://minimal.gallery/) | сдержанные сайты | «спокойно и дорого» |
+| [tilda.cc/ru/madeontilda](https://tilda.cc/ru/madeontilda/) | русскоязычные сайты на Tilda | кириллица в деле: кафе, школы, мастерские; донор на Tilda — `reference/donor-tilda.md` |
+| [readymag.com/examples](https://readymag.com/examples/) | редакционные и типографские сайты | истории, портфолио, «журнальная» подача |
+| [mobbin.com](https://mobbin.com/) | экраны сайтов и приложений по сценариям (часть — по подписке) | формы, корзина, кабинет — компоненты, которых у донора нет |
+
+Адреса проверены 01.10.2026 только на доступность (ответ 200); описания — общие, состав каталогов не выверялся.
+godly.website перенаправляет на recent.design; siteinspire.com (429), behance.net (403) и dribbble.com (202)
+скриптом не открываются — только руками в браузере. Pinterest, Behance и Dribbble — доски настроения с
+картинками, а не живые сайты: донором служить не могут (язык, движение и фактура снимаются только с живой
+страницы), файлы оттуда на сайт не попадают.
+
+**Refero Styles** — только поиск донора; язык снимается с живого сайта обычным порядком (§1), не с DESIGN.md.
 
 **Доступ.** MCP-сервер `refero` (https://api.refero.design/mcp, вход OAuth через `/mcp` или
 `Authorization: Bearer <токен>`) — только на платном тарифе Refero (Pro, Team, Lifetime), до 8 000
@@ -25,17 +51,23 @@
 1. Запросы по делу и настроению, по-английски, 2–4 штуки: «restaurant dark warm serif», «karaoke bar
    neon night», «billiards club classic», «coffee shop light editorial». С MCP — `refero_search_styles`,
    для 3–5 лучших `refero_get_style` (роли цвета, шкала кеглей, поверхности, компоненты);
-   `refero_search_site` — если нужен сайт того же дела.
+   `refero_search_site` — если нужен сайт того же дела. MCP не подключён или требует входа — те же запросы
+   глазами в браузере: Refero Styles, затем 2–3 каталога из таблицы под характер задачи; русское дело с
+   кириллицей — сначала «Сделано на Tilda».
 2. Отбор до трёх: близкое дело или настроение; живой многостраничный сайт (не одна посадочная);
-   есть детали — фон, рисунки, логотипы, игра шрифтов — и движение; шрифты с кириллицей или ясная
-   замена из Google Fonts (кириллицу проверять `cyrillic-check`); не SaaS-шаблон для ресторана.
+   есть детали — фон с фактурой, рисунки в тему, предметы на полях, логотипы, игра шрифтов — и движение
+   (сайт с ровным белым фоном без деталей кандидатом не брать, если в анкете фон не «ровный»); шрифты с
+   кириллицей или ясная замена из Google Fonts (кириллицу проверять `cyrillic-check`); не SaaS-шаблон для
+   ресторана. Образцы владельца по фону: zakroma.rest (мятая фактура с прожилками, орнамент на полях),
+   mamuka.rest (наброски от руки и буквы-призраки за текстом).
 3. Снимки первых экранов трёх живых сайтов (`shots.mjs <url> --viewports desktop,mobile --segments 0`)
    и вопрос пользователю: три кандидата, чем каждый подходит, рекомендация. Разные ответы — разная работа,
    поэтому спрашивать; пользователь недоступен — взять рекомендованный и записать это в отчёт.
 4. Выбранный — донор: §1 целиком (discover всех типов страниц, extract design-reference, motion, typeset,
    cliche baseline, детали донора — задание агенту 1 в SKILL.md). DESIGN.md Refero сверить с замером:
    расхождения — в пользу живого сайта.
-5. В `analysis.md`, раздел «Донор» — «подобран в Refero: запросы, три кандидата, почему этот».
+5. В `analysis.md`, раздел «Донор» — «подобран: каталог, запросы, три кандидата, почему этот» либо «выбран
+   владельцем из каталогов: что ему в нём нравится» — его словами.
 
 Фирменный стиль кандидатов одним запросом — `firecrawl.mjs scrape <кандидат> --run <папка> --formats branding`
 (по кредиту на кандидата; подсказка, а не замер).
@@ -45,7 +77,8 @@
 ```
 node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <папка>/donor --no-design     # сводка, фактура, паспорт, медиа-слоты; дизайн-систему снимает extract ниже
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
-node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture
+node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture   # зерно и крупная фактура (мятая бумага, прожилки): рецепты --grain-* и --surface-*
+node ~/.claude/skills/site-rework/scripts/bgdecor.mjs <донор> --pages "/,<путь>" --viewport desktop,mobile --out <папка> --tag donor   # фон: рисунки, предметы на полях, буквы-призраки → decor/donor.md, вырезки открыть глазами
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --pages "home=/,product=<путь>,collection=<путь>" --viewport desktop,mobile --out <папка> --tag donor   # всё движение числами: donor-home, donor-home-mobile, donor-product… одним запуском
 node ~/.claude/skills/site-rework/scripts/typeset.mjs <донор> --out <папка> --tag donor --viewports desktop,mobile   # набор донора — база для typeset --baseline на этапе 4
@@ -159,6 +192,7 @@ motion ставит пункты «атрибуты Tilda» вместо зам�
 ```
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
 node ~/.claude/skills/site-rework/scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile --out <папка>/texture-compare
+node ~/.claude/skills/site-rework/scripts/bgdecor.mjs compare <папка>/decor/donor.json <адрес сайта> --out <папка>   # фон: что из рисунков, предметов и букв донора у нас потерялось
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <адрес сайта> <папка>/motion/donor-<тип>.json <наша страница этого типа> --out <папка>   # пары подряд: compare-home, compare-<тип>
 ```
@@ -172,9 +206,17 @@ node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion
   решение записано?), слой фактуры и его режим. Сознательные отступления —
   в `donor.ignore`.
 - `texture.mjs compare` — сила зерна по полосам фона ±20 %, lag1 ±0.15,
-  кипит / не кипит, только при одинаковом DPR. FAIL — задача, а не
+  кипит / не кипит, только при одинаковом DPR; крупная фактура — есть / нет,
+  сила на ровных участках по полосам ±30 %, наложение. FAIL — задача, а не
   примечание. Подсказка назовёт причину: режим гасит на этом фоне или
-  слой слишком слабый.
+  слой слишком слабый. Фактура по слову владельца там, где у донора её нет
+  (или наоборот), — FAIL остаётся в протоколе, в отчёт — строкой с его словами.
+- `bgdecor.mjs compare` — вид украшения фона, который у донора есть, а у нас
+  нет (НЕТ) или заметно реже (РЕЖЕ); без записи в `<папка>/decor-decisions.json`
+  — WARN. «У нас чаще» — проверить глазами, что не перебор. Вырезку находки
+  донора открыть до решения: размытое пятно-свечение скрипт называет рисунком.
+- Протокол сверки с ошибкой («страница не снялась», сверено 0) сверкой не
+  считается — `state.mjs show` пишет его строкой «не в счёт»: перепрогнать.
 - `cliche.mjs` — приёмы, которых нет у донора, «размножено», запреты из
   журнала вкуса; вердикт по порогам из `reference/authorship.md`, обоснования —
   в `<папка>/authorship-decisions.json`.
@@ -191,6 +233,6 @@ node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion
 
 Раздел «Что взято у донора, что своё, что отличается сознательно» —
 таблица по приёмам-подписям с отметкой «сверено: снимок / число», плюс
-итог `verify.mjs`, `texture.mjs compare`, `cliche.mjs` и `motion.mjs compare` (движение донора: взято / решено
-иначе / своё). После сдачи — удачное своё в банк идей (`ideas.mjs add`), реакцию пользователя —
+итог `verify.mjs`, `texture.mjs compare`, `bgdecor.mjs compare`, `cliche.mjs` и `motion.mjs compare` (движение
+донора: взято / решено иначе / своё). После сдачи — удачное своё в банк идей (`ideas.mjs add`), реакцию пользователя —
 `ideas.mjs status <id> liked|rejected --quote "<его слова>"`.

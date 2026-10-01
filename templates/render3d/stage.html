@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сцена пререндера</title>
+<style>
+  html, body { margin: 0; background: transparent; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "/node_modules/three/build/three.module.js", "three/addons/": "/node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+/* Общая сцена для пререндера объёмных предметов (образец — декор магазина семян, боевой прогон 01.10.2026).
+   Адрес: stage.html?scene=<имя>&w=1200&h=900&dpr=2[&n=96][&soft=1][&dome=1][&exp=1.06][&env=0.85][&palette=имя=цвет,…]
+   Сцена — модуль scenes/<имя>.js с функцией build(ctx), которая кладёт объекты в ctx.root
+   и может вернуть { fov, distance, target, tilt, view, margin }.
+
+   Чем кадр лучше прежнего:
+   — накопление: n кадров с дрожанием камеры в пределах пикселя (края без ступенек), с ключевым светом,
+     который гуляет по диску (тень с мягким краем, как от софтбокса), и с «куполом» — светом из случайной
+     точки верхней полусферы с тенью (затенение в стыках и под выступами);
+   — студийное окружение из софтбоксов: длинные блики на лаке и рёбрах ленты вместо пятен комнаты;
+   — материалы с лаком и отливом, мёд с преломлением. */
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+const q = new URLSearchParams(location.search);
+const W = +q.get('w') || 1200, H = +q.get('h') || 900, DPR = +q.get('dpr') || 2;
+const N = Math.max(1, +q.get('n') || 96);
+const SOFT = q.has('soft') ? +q.get('soft') : 1, DOME = q.has('dome') ? +q.get('dome') : 1;
+
+/* Палитра образца (магазин семян: сочный зелёный, мёд, крафт). Свой сайт — свои цвета: править здесь или
+   передать поверх флагом render.mjs --palette "moss=#58A423,kraft=#D6B585". */
+const PAL = {
+  ink: '#16301F', ink2: '#3B4F40', moss: '#58A423', mossDeep: '#2F7A1A', mossSoft: '#E2F8CD',
+  sprout: '#A4E23C', leaf: '#6BC22B', bark: '#7A5A38', kraft: '#D6B585', kraftDark: '#BC9763', paper: '#FBF9F5', paper2: '#F4EFE6',
+  honey: '#F0A92B', honeyDeep: '#C27A12', honeyLight: '#F8D072', milk: '#FFFDF8', soil: '#4A3828', line: '#CFE5AC', lime: '#D3F34A',
+};
+
+for (const kv of (q.get('palette') || '').split(',')) { const [k, v] = kv.split('='); if (k && /^#?[0-9a-f]{3,8}$/i.test(v || '')) PAL[k.trim()] = v.startsWith('#') ? v : '#' + v; }
+
+try {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(DPR);
+  renderer.setSize(W, H);
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = q.get('tone') === 'aces' ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = +q.get('exp') || 1.06;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+
+  /* Студия: тёмный купол и светящиеся плоскости. Яркость выше единицы — это свет, а не цвет. */
+  const studio = new THREE.Scene();
+  const lamp = (w, h, color, power, pos, look = [0, 0, 0]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(power), side: THREE.DoubleSide, toneMapped: false }));
+    m.position.set(...pos); m.lookAt(...look); studio.add(m); return m;
+  };
+  studio.add(new THREE.Mesh(new THREE.SphereGeometry(40, 32, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color('#5d6658').multiplyScalar(0.16), side: THREE.BackSide, toneMapped: false })));
+  lamp(9, 7, '#fff4e0', 11, [-6, 14, 6]);            // верхний ключевой софтбокс, тёплый
+  lamp(2.2, 18, '#ffffff', 9, [-15, 3, 4]);           // длинная полоса слева — блик вдоль рёбер
+  lamp(1.6, 14, '#eaffd8', 5, [15, 2, 6]);            // полоса справа, чуть зелёная
+  lamp(14, 3, '#ffffff', 7, [3, 9, -14]);           // контровой сзади сверху
+  lamp(30, 30, '#dff5c4', 0.45, [0, -12, 0]);          // отсвет мятного поля снизу
+  lamp(8, 5, '#ffffff', 0.7, [0, 1, 16]);            // слабое заполнение от камеры
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(studio, 0.03).texture;
+  scene.environmentIntensity = +q.get('env') || 0.85;
+
+  /* Свет: ключевой и «купол» дают тени, заполняющий и контровой — нет. */
+  const key = new THREE.DirectionalLight(0xfff2dc, 2.7); key.position.set(-4, 6, 5); scene.add(key, key.target);
+  const dome = new THREE.DirectionalLight(0xf4ffe8, 1.15 * DOME); scene.add(dome, dome.target);
+  const fill = new THREE.DirectionalLight(0xe6f6da, 0.5); fill.position.set(5, 1.5, 4); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xf1ffb0, 1.9); rim.position.set(2, 4, -6); scene.add(rim);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xcdeaa8, 0.3));
+
+  const camera = new THREE.PerspectiveCamera(28, W / H, 0.1, 200);
+  const root = new THREE.Group(); scene.add(root);
+
+  /* Материалы. «Пластилин» — мягкий с тонким лаком; «глянец» — гладкий под плотным лаком (листья, лента, монета);
+     «бумага» — матовая с волокном: рядом с глянцем она и даёт ощущение настоящих вещей; «мёд» — с преломлением и своим свечением. */
+  const grain = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d');
+    const im = x.createImageData(512, 512); let seed = 7;
+    const rnd = () => { seed ^= seed << 13; seed >>>= 0; seed ^= seed >> 17; seed ^= seed << 5; seed >>>= 0; return seed / 4294967296; };
+    for (let i = 0; i < im.data.length; i += 4) { const v = 118 + rnd() * 34; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    x.putImageData(im, 0, 0);
+    x.globalAlpha = 0.5; x.lineCap = 'round';
+    for (let i = 0; i < 900; i++) { const px = rnd() * 512, py = rnd() * 512, a = rnd() * Math.PI, l = 6 + rnd() * 26; x.strokeStyle = rnd() > 0.5 ? '#a8a8a8' : '#5c5c5c'; x.lineWidth = 0.6 + rnd(); x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); t.anisotropy = 8; return t;
+  })();
+  const clay = (color, o = {}) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.52, metalness: 0, clearcoat: 0.28, clearcoatRoughness: 0.3, sheen: 0.12, sheenRoughness: 0.7, sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.4), ...o });
+  const gloss = (color, o = {}) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.24, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.07, ...o });
+  const leafy = (color, o = {}) => gloss(color, { roughness: 0.2, emissive: new THREE.Color(color), emissiveIntensity: 0.16, sheen: 0.5, sheenRoughness: 0.35, sheenColor: new THREE.Color('#f4ffb8'), ...o });
+  const metal = (color = '#c9cfc4', o = {}) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.22, metalness: 0.95, clearcoat: 0.4, clearcoatRoughness: 0.2, ...o });
+  /* надпись на плоскости: холст → текстура (экран калькулятора, печать на этикетке) */
+  const printed = (w, h, draw, o = {}) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.5, clearcoat: 0.3, transparent: true, ...o }); };
+  const paper = (color, o = {}) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.86, metalness: 0, clearcoat: 0, sheen: 0.3, sheenRoughness: 0.9, sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.5), bumpMap: grain, bumpScale: 2.4, ...o });
+  const honey = (color = '#FFA91C', o = {}) => new THREE.MeshPhysicalMaterial({ color, roughness: 0.05, metalness: 0, transmission: 0.22, thickness: 0.6, ior: 1.49, attenuationColor: new THREE.Color('#FF8A00'), attenuationDistance: 0.9, emissive: new THREE.Color('#E27A00'), emissiveIntensity: 0.42, clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1, ...o });
+
+  const name = q.get('scene') || 'sprout';
+  const mod = await import(`./scenes/${name}.js?v=${Date.now()}`);
+  const opt = (await mod.build({ THREE, root, scene, camera, renderer, PAL, clay, gloss, leafy, metal, printed, paper, honey, RoundedBoxGeometry, BufferGeometryUtils, q, W, H, lights: { key, fill, rim, dome } })) || {};
+
+  /* Камера по рамке объекта: объект целиком в кадре с полем opt.margin. */
+  camera.fov = opt.fov || 28; camera.updateProjectionMatrix();
+  if (opt.tilt) root.rotation.set(opt.tilt[0] || 0, opt.tilt[1] || 0, opt.tilt[2] || 0);
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  const sph = box.getBoundingSphere(new THREE.Sphere());
+  const dir = new THREE.Vector3(...(opt.view || [0.35, 0.3, 1])).normalize();
+  const margin = opt.margin || 1.12;
+  const vfov = THREE.MathUtils.degToRad(camera.fov), hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+  const dist = opt.distance || (sph.radius * margin) / Math.sin(Math.min(vfov, hfov) / 2);
+  const target = opt.target ? new THREE.Vector3(...opt.target) : sph.center.clone();
+  camera.position.copy(target).addScaledVector(dir, dist);
+  camera.near = Math.max(0.05, dist - sph.radius * 3); camera.far = dist + sph.radius * 6; camera.updateProjectionMatrix();
+  camera.lookAt(target);
+
+  /* Тени: всё отбрасывает и принимает; рамка теневой камеры — по сфере объекта. */
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  if (opt.ground) {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(sph.radius * 8, sph.radius * 8), new THREE.ShadowMaterial({ color: 0x0f2a16, opacity: typeof opt.ground === 'number' ? opt.ground : 0.34 }));
+    g.rotation.x = -Math.PI / 2; g.position.set(sph.center.x, box.min.y + 0.002, sph.center.z); g.receiveShadow = true; scene.add(g);
+  }
+  const R = sph.radius, C = sph.center.clone();
+  const shadowOf = (light, size) => {
+    light.castShadow = N > 1 && opt.shadows !== false;
+    light.shadow.mapSize.set(size, size);
+    const c = light.shadow.camera; c.left = -R * 1.08; c.right = R * 1.08; c.top = R * 1.08; c.bottom = -R * 1.08; c.near = 0.1; c.far = R * 9; c.updateProjectionMatrix();
+    light.shadow.bias = -0.0004; light.shadow.normalBias = 0.012 * R; light.shadow.radius = 2.2;
+    light.target.position.copy(C);
+  };
+  shadowOf(key, 4096); shadowOf(dome, 2048);
+  const keyDir = key.position.clone().normalize();
+  if (opt.keyDir) keyDir.set(...opt.keyDir).normalize();
+  const kx = new THREE.Vector3().crossVectors(keyDir, new THREE.Vector3(0, 1, 0)).normalize(), ky = new THREE.Vector3().crossVectors(kx, keyDir).normalize();
+
+  /* Накопление. Последовательность Холтона — равномерно и без случайности: кадр повторяется точь-в-точь. */
+  const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
+  const gl = renderer.getContext();
+  const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+  const buf = new Uint8Array(w * h * 4), acc = new Uint32Array(w * h * 4);
+  const p = new THREE.Vector3();
+  for (let i = 0; i < N; i++) {
+    const s = i + 1;
+    camera.setViewOffset(w, h, N > 1 ? halton(s, 2) - 0.5 : 0, N > 1 ? halton(s, 3) - 0.5 : 0, w, h);
+    /* ключевой — в диске поперёк луча */
+    const a = halton(s, 5) * Math.PI * 2, r = Math.sqrt(halton(s, 7)) * 0.16 * SOFT;
+    p.copy(keyDir).addScaledVector(kx, Math.cos(a) * r).addScaledVector(ky, Math.sin(a) * r).normalize();
+    key.position.copy(C).addScaledVector(p, R * 4.5);
+    /* купол — точка верхней полусферы, чаще сверху и со стороны камеры */
+    const u1 = halton(s, 11), u2 = halton(s, 13), phi = u2 * Math.PI * 2, el = Math.acos(Math.sqrt(u1));
+    p.set(Math.sin(el) * Math.cos(phi), Math.cos(el) * 0.92 + 0.08, Math.sin(el) * Math.sin(phi) * 0.75 + 0.35).normalize();
+    dome.position.copy(C).addScaledVector(p, R * 4.5);
+    renderer.render(scene, camera);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    for (let k = 0; k < buf.length; k++) acc[k] += buf[k];
+  }
+  camera.clearViewOffset();
+
+  /* Среднее → обычный холст: буфер WebGL хранит цвет, умноженный на прозрачность, строки снизу вверх. */
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const ctx = out.getContext('2d'); const img = ctx.createImageData(w, h); const d = img.data;
+  for (let y = 0; y < h; y++) {
+    const src = (h - 1 - y) * w * 4, dst = y * w * 4;
+    for (let x = 0; x < w * 4; x += 4) {
+      const al = acc[src + x + 3] / N;
+      if (al < 0.5) continue;
+      const k = 255 / al;
+      d[dst + x] = Math.min(255, (acc[src + x] / N) * k + 0.5);
+      d[dst + x + 1] = Math.min(255, (acc[src + x + 1] / N) * k + 0.5);
+      d[dst + x + 2] = Math.min(255, (acc[src + x + 2] / N) * k + 0.5);
+      d[dst + x + 3] = al + 0.5;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  renderer.domElement.style.display = 'none'; document.body.appendChild(out);
+
+  window.__info = { name, w, h, n: N, radius: +R.toFixed(3), dist: +dist.toFixed(3), tris: renderer.info.render.triangles };
+  window.__png = () => out.toDataURL('image/png');
+  window.__done = true;
+} catch (e) {
+  window.__error = String(e && e.stack || e);
+  window.__done = true;
+}
+</script>
+</body>
+</html>

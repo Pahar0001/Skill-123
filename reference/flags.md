@@ -32,6 +32,34 @@ node a11y.mjs --help   (или -h)
 
 Коды выхода: 0 — проверка сделана (вердикт в выводе и в JSON); 1 — неверные аргументы или, с --strict, вердикт FAIL. Аргументы (адрес, экран, значения флагов) проверяются до создания папок и запуска браузера.
 
+## bgdecor.mjs
+
+```
+node bgdecor.mjs <url> [--pages "/,/menu"] [--viewport desktop,mobile] [--out <папка прогона>] [--tag имя]
+node bgdecor.mjs compare <донор.json> <url | наш.json> [--decisions файл] [--out <папка прогона>]
+node bgdecor.mjs selftest [--no-browser]
+node bgdecor.mjs --help | -h
+```
+
+Команды: `compare`, `selftest`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--no-browser` | переключатель | selftest без стенда в браузере |
+| `--no-crops` | переключатель | не сохранять вырезки |
+| `--decisions` | со значением | compare: файл решений (по умолчанию <папка>/decor-decisions.json) |
+| `--md` | со значением | куда записать таблицу |
+| `--out` | со значением | папка прогона (по умолчанию ~/.claude/site-rework/runs/<адрес>) |
+| `--pages` | со значением | --pages "/,/a"   страницы от адреса через запятую: каждая на каждом экране, протокол один |
+| `--tag` | со значением | имя протокола и папки вырезок; по умолчанию — имя сайта по адресу, в compare — compare |
+| `--viewport` | со значением | экраны через запятую (desktop, laptop, tablet, mobile, mobile-s, android или |
+| `--viewports` | со значением | ШxВ@плотность); по умолчанию desktop; --viewports — то же; в compare — экраны донора |
+| `--json` | значение необязательно | куда записать протокол; «-» — JSON в stdout вместо текста |
+
+Коды выхода: 0 — OK или WARN; 1 — FAIL selftest или неизвестный флаг; 2 — неверные аргументы или файл; 3 — страница не открылась или браузер не запустился. Файлы донора не копируются: рисунки, слова и предметы у себя — свои.
+
 ## cliche.mjs
 
 ```
@@ -739,7 +767,7 @@ node state.mjs <папка> show [--strict] [--json]
 | `--evidence-perf` | со значением | --evidence-runtime, --evidence-visual, --evidence-mobile, --evidence-perf |
 | `--evidence-runtime` | со значением | --evidence-runtime, --evidence-visual, --evidence-mobile, --evidence-perf |
 | `--evidence-visual` | со значением | --evidence-runtime, --evidence-visual, --evidence-mobile, --evidence-perf |
-| `--mode` | со значением | rework — переработка по исходникам, mirror — через зеркало |
+| `--mode` | со значением | --mode donor с папкой сайта вне папки прогона — WARN: «новый сайт по донору» собирается в |
 | `--note` | со значением | --note "…"         заметка к задаче; для NA — обязательная причина. Без текста — ошибка. |
 | `--priority` | со значением | --priority, --area (add) приоритет P0…P5 и область задачи. |
 | `--site` | со значением | папка с файлами сайта: исходники (rework), зеркало <прогон>/mirror |
@@ -748,6 +776,40 @@ node state.mjs <папка> show [--strict] [--json]
 | `--url` | со значением | (meta) адрес сайта: http://, https:// или file:// |
 
 Коды выхода: 0 — готово (и после --help); 1 — отказ (ошибка в аргументах, доказательство не годится, нет журнала) или show --strict с итогом не OK.
+
+## surface-tile.mjs
+
+```
+node surface-tile.mjs --out папка [--kind paper|stone|canvas] [--size 1024] [--seed 11] [--name имя]
+node surface-tile.mjs --check файл.webp|png|jpg [--mean M] [--sd S] [--like texture.json] [--json файл]
+node surface-tile.mjs selftest      самопроверка (то же: --selftest)
+node surface-tile.mjs --help | -h
+node surface-tile.mjs               без аргументов — эта справка и код 1, ничего не записано
+```
+
+Команды: `selftest`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--selftest` | переключатель | самопроверка: детерминизм, бесшовность, попадание в яркость и σ, все виды, разбор аргументов |
+| `--sheet` | переключатель | лист 2×2 с усиленным контрастом (<имя>-sheet.jpg) и крест стыков 1:1 (<имя>-seam.jpg) — для глаз |
+| `--check` | со значением | проверить готовый файл: шов по краям числом, яркость ± σ, lag1, вес, узнаёт ли его texture.mjs |
+| `--formats` | со значением | что писать: webp, png (по умолчанию webp; png без потерь и в разы тяжелее) |
+| `--json` | со значением | записать итог в файл |
+| `--kind` | со значением | paper — мятая бумага: грани, заломы, трещины, волокна (по умолчанию); |
+| `--like` | со значением | texture.json замера texture.mjs: яркость и σ плитки донора — из него |
+| `--mean` | со значением | средняя яркость плитки 0…255 (248); главнее --like |
+| `--name` | со значением | имя файлов без расширения (surface-<kind>-<size>) |
+| `--out` | со значением | папка для файлов (по умолчанию текущая — если задан хоть один другой флаг) |
+| `--quality` | со значением | качество WebP 1…100 (86, само поднимается до 96, пока шов больше 1.4; заданное явно не меняется); |
+| `--sd` | со значением | разброс яркости σ, уровней (2.5); меряется по записанному файлу; главнее --like |
+| `--seed` | со значением | зерно генератора (11): тот же seed — побайтно тот же файл |
+| `--size` | со значением | сторона плитки, px (1024, не меньше 128) |
+| `--veins` | со значением | число прожилок-стволов: paper 22, stone 12 на 1024 px; 0 — без прожилок; canvas — не действует |
+
+Коды выхода: 0 — готово (при любых WARN); 1 — FAIL, неверные аргументы или запуск без аргументов.
 
 ## svg3d.mjs
 
@@ -887,18 +949,21 @@ node texture.mjs <texture.json> [--viewport desktop,mobile] [--tokens файл] 
 node texture.mjs compare <донор: url|texture.json> <сайт: url|texture.json> [--viewport desktop,mobile]
 node texture.mjs --png снимок.png [--png2 b.png] [--png3 c.png] [--without без-слоя.png] [--region x,y,w,h] [--json файл]
 node texture.mjs --tile файл.gif|png|webp|svg
+node texture.mjs selftest [--no-browser]
 node texture.mjs --help | --h | -h
 ```
 
-Команды: `compare`.
+Команды: `compare`, `selftest`.
 
 Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
 | `--extras` | переключатель | ещё вуали, псевдоэлементы, backdrop-filter, blend, градиенты, фоновые видео |
+| `--no-browser` | переключатель | selftest без стендов в браузере |
+| `--selftest` | переключатель | самопроверка (или команда selftest): разбор файлов, участки, рецепт, сверка, аргументы — |
 | `--strict` | переключатель | код 1 при FAIL. FAIL даёт только compare (там код 1 и без флага); одиночный замер, |
-| `--css` | со значением | записать templates/grain.css с подставленным рецептом |
+| `--css` | со значением | записать templates/grain.css с подставленным рецептом; есть крупная фактура — и |
 | `--json` | со значением | файл итога (по умолчанию <out>/texture.json; в compare — <out>/compare.json) |
 | `--label` | со значением | имя в файлах |
 | `--md` | со значением | записать раздел «Фактура (параметры для переноса)» для discovery.md |
@@ -908,14 +973,15 @@ node texture.mjs --help | --h | -h
 | `--png3` | со значением | node texture.mjs --png снимок.png [--png2 b.png] [--png3 c.png] [--without без-слоя.png] [--region x,y,w,h] [--json файл] |
 | `--region` | со значением | node texture.mjs --png снимок.png [--png2 b.png] [--png3 c.png] [--without без-слоя.png] [--region x,y,w,h] [--json файл] |
 | `--screens` | со значением | экранов по высоте страницы (4), снимки окна |
-| `--tile` | со значением | разбор файла текстуры по всем кадрам (кадры, мс, σ, lag1, альфа, похож ли на шум) |
-| `--tokens` | со значением | записать блок --grain-* в файл (заменяет блок texture:start…end или дописывает) |
+| `--tile` | со значением | разбор файла текстуры по всем кадрам (кадры, мс, σ, lag1, альфа, похож ли на шум, |
+| `--tokens` | со значением | записать блок --grain-* в файл (заменяет блок texture:start…end или дописывает); |
 | `--viewport` | со значением | --viewport оставляет только эти экраны; texture.json пишется только с --json; |
 | `--viewports` | со значением | по умолчанию desktop,tablet,mobile (compare: desktop,mobile). --viewports и --vp (старое |
 | `--vp` | со значением | по умолчанию desktop,tablet,mobile (compare: desktop,mobile). --viewports и --vp (старое |
 | `--without` | со значением | --without — тот же экран без слоя (ровность и вклад слоя), --region x,y,w,h |
-| `--lag-tol` | значение необязательно | [--out папка] [--screens 4] [--sd-tol 0.2] [--lag-tol 0.15] |
+| `--lag-tol` | значение необязательно | [--out папка] [--screens 4] [--sd-tol 0.2] [--lag-tol 0.15] [--surface-tol 0.3] |
 | `--sd-tol` | значение необязательно | допуск σ по полосам в compare (0.2 = ±20 %); --lag-tol — допуск lag1 (0.15) |
+| `--surface-tol` | значение необязательно | допуск силы крупной фактуры в compare (0.3 = ±30 %) |
 
 ## tilda.mjs
 
