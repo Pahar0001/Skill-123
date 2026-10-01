@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — разметка есть, но спрятана v-cloak</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): весь текст отдаёт сервер, но корень приложения спрятан правилом
+  [v-cloak] { display: none } (Vue; у Alpine — x-cloak), пока скрипт не снимет атрибут. Без JavaScript страница пустая —
+  WARN «без JS на странице нет ни текста, ни картинок» верный, но причина не «нет серверной отрисовки»: разметка на месте, её
+  прячет display: none. Правильный итог: в строке — «разметка на месте … прячет display: none до скрипта: div#app (атрибут
+  v-cloak)», совета «нужна серверная отрисовка» нет (01.10: совет был, хотя серверная отрисовка на месте).
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  [v-cloak] { display: none; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+  <main>
+    <h1>Ресторан «Берег» на набережной</h1>
+    <p>Стейки на углях у самой реки.</p>
+    <p>Банкетный зал на сорок гостей.</p>
+    <p>Открыты каждый день с полудня.</p>
+    <p>Бронь по телефону и на сайте.</p>
+  </main>
+</div>
+<script>document.getElementById('app').removeAttribute('v-cloak');</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — переход не шёл</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest): свойство сменилось, а перехода по нему не было. Все блоки ниже
+  первого экрана появляются классом .on из IntersectionObserver (или скриптом), «не появились: 0».
+  Наблюдается обёртка [data-show]: элемент, целиком скрытый своим clip-path, IntersectionObserver в Chrome не видит.
+  Находки — три строки WARN:
+    .cur img    шторка перебита, как в исходнике «Эпицентра» 30.09: «.cur.on > *» даёт transition: clip-path, а правило
+                точнее «.cur.on img» — только transition: transform. clip-path сменился скачком
+    .kit img    то же, но как в decor-kit: скрипт ставит .armed, при входе в экран .on, а через 1,5 с снимает оба класса —
+                transition объявлен только на время появления (до прохода и после него движения у фото «нет»)
+    .cf img     фото со шторкой внутри блока, который проявляется opacity (сам блок — «ждали появления», фото — нет):
+                переход фото перебит правилом галереи «.gal .cf.on img { transition: transform }»
+                Все три — одной строкой (свойство и transition-property одни): «clip-path сменилось скачком, перехода не было:
+                img.ph.cur-img и ещё 2 (transition-property: transform — clip-path в нём нет: перебит другим правилом или не
+                объявлен?)»
+    .cw         шторка на обёртке без прозрачности и сдвига (не «ждали появления»): её переход перебит правилом галереи
+                «.gal .cw.on { transition: opacity }» — строка «div.cw.on (transition-property: opacity — …)»
+    .nd         переход по clip-path объявлен, но конечное значение none с inset() не интерполируется — строка «div.card.nd.on
+                (transition-property: clip-path, transform — переход объявлен, но не пошёл: inset() ↔ none не интерполируются)»,
+                совет — inset(0) вместо none
+  Не находки:
+    .good img   та же шторка, у фото оба перехода — clip-path и transform идут
+    .gs         значения по кадрам в style (как GSAP): transform и clip-path пишет скрипт — inline style, не в счёт
+    .plain      без объявленного движения (ни transition, ни animation): скачок задуман
+    .wa         Web Animations (как Motion): el.animate по transform и clip-path, в конце класс .on — анимация шла
+    .an         CSS-анимация по opacity и transform (animationstart)
+    .tv img     clip-path ведёт переменная --r, которую скрипт пишет по кадрам (как gsap.to(img, { '--r': 1 })), а transition
+                у фото — только на transform: clip-path менялся плавно (промежуточные значения), это не скачок
+    .kv         transform ведёт переменная --k по кадрам (как gsap.to(el, { '--k': 0 })), переход — только у opacity
+  С --reduced-motion — ни одного WARN: при «меньше движения» скачок — это правильно.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .tall { height: 1100px; }
+  .block { margin: 48px 0; }
+  .ph { display: block; width: 100%; height: 240px; }
+  .card { padding: 40px; background: #fff; }
+  .cur { overflow: hidden; }
+  .cur > * { clip-path: inset(0 100% 0 0); }
+  .cur img { transform: scale(1.12); }
+  .cur.on > * { clip-path: inset(0); transition: clip-path .8s ease; }
+  .cur.on img { transform: none; transition: transform 1.2s ease; }
+  .kit.armed { overflow: hidden; }
+  .kit.armed > * { clip-path: inset(0 100% 0 0); }
+  .kit.armed img { transform: scale(1.12); }
+  .kit.armed.on > * { clip-path: inset(0); transition: clip-path .8s ease; }
+  .kit.armed.on img { transform: none; transition: transform 1.2s ease; }
+  .good { overflow: hidden; }
+  .good > * { clip-path: inset(0 100% 0 0); }
+  .good img { transform: scale(1.12); }
+  .good.on > * { clip-path: inset(0); transition: clip-path .8s ease; }
+  .good.on img { transform: none; transition: clip-path .8s ease, transform 1.2s ease; }
+  .gs { transform: translateY(40px); clip-path: inset(0 100% 0 0); transition: color .2s; }
+  .plain { transform: translateY(40px); }
+  .plain.on { transform: none; }
+  .wa { transform: translateY(40px); clip-path: inset(0 100% 0 0); transition: color .2s; }
+  .wa.on { transform: none; clip-path: inset(0); }
+  .an { opacity: 0; transform: translateY(30px); }
+  .an.on { animation: rise .6s ease both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+  .cf { opacity: 0; transition: opacity .6s; }
+  .cf.on { opacity: 1; }
+  .cf img { clip-path: inset(0 100% 0 0); transform: scale(1.12); }
+  .cf.on img { clip-path: inset(0); transform: none; transition: clip-path .8s; }
+  .gal .cf.on img { transition: transform 1.2s; }
+  .cw { overflow: hidden; clip-path: inset(0 100% 0 0); transition: clip-path .8s ease; }
+  .cw.on { clip-path: inset(0); }
+  .gal .cw.on { transition: opacity .3s; }
+  .nd { clip-path: inset(0 100% 0 0); transform: translateY(20px); transition: clip-path .8s, transform .8s; }
+  .nd.on { clip-path: none; transform: none; }
+  .tv img { clip-path: inset(0 calc(100% - var(--r, 0) * 100%) 0 0); transform: scale(1.08); transition: transform .5s ease; }
+  .tv.on img { transform: none; }
+  .kv { opacity: 0; transform: translateY(calc(var(--k, 1) * 40px)); transition: opacity .6s; }
+  .kv.on { opacity: 1; }
+</style>
+</head>
+<body>
+<main class="gal">
+  <h1>Переход не шёл</h1>
+  <div class="tall"></div>
+  <div class="block cur" data-show><img class="ph cur-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%23c9a27c'/%3E%3C/svg%3E" alt="Шторка перебита"></div>
+  <div class="block kit" data-show="kit"><img class="ph kit-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%23a37c8a'/%3E%3C/svg%3E" alt="Шторка перебита, классы сняты"></div>
+  <div class="block good" data-show><img class="ph good-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%238aa37c'/%3E%3C/svg%3E" alt="Шторка как надо"></div>
+  <div class="block" data-show="gs"><div class="card gs">По кадрам в style, как GSAP</div></div>
+  <div class="block" data-show="class"><div class="card plain">Без объявленного движения</div></div>
+  <div class="block" data-show="wa"><div class="card wa">Web Animations, как Motion</div></div>
+  <div class="block" data-show="class"><div class="card an">CSS-анимация</div></div>
+  <div class="block" data-show="class"><div class="cf"><img class="ph cf-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%237c8aa3'/%3E%3C/svg%3E" alt="Фото со шторкой в проявляющемся блоке"></div></div>
+  <div class="block" data-show="class"><div class="cw"><div class="card">Шторка на обёртке</div></div></div>
+  <div class="block" data-show="class"><div class="card nd">Шторка в none</div></div>
+  <div class="block tv" data-show="var-clip"><img class="ph tv-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%23a3a07c'/%3E%3C/svg%3E" alt="Шторку ведёт переменная"></div>
+  <div class="block" data-show="var-tf"><div class="card kv">Сдвиг ведёт переменная</div></div>
+  <div class="tall"></div>
+</main>
+<script>
+  /* как GSAP: transform и clip-path по кадрам в style */
+  const byFrames = (el) => {
+    const t0 = performance.now();
+    const f = (t) => { const k = Math.min(1, (t - t0) / 450); el.style.transform = `translateY(${(40 * (1 - k)).toFixed(2)}px)`; el.style.clipPath = `inset(0 ${(100 * (1 - k)).toFixed(1)}% 0 0)`; if (k < 1) requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+  };
+  /* как gsap.to(el, { '--r': 1 }): CSS-переменная по кадрам в style, свойство за ней меняется плавно */
+  const tweenVar = (el, name, from, to, ms) => {
+    const t0 = performance.now();
+    const f = (t) => { const k = Math.min(1, (t - t0) / ms); el.style.setProperty(name, (from + (to - from) * k).toFixed(3)); if (k < 1) requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+  };
+  /* как Motion: Web Animations, в конце — конечное состояние классом */
+  const waapi = (el) => { const a = el.animate([{ transform: 'translateY(40px)', clipPath: 'inset(0 100% 0 0)' }, { transform: 'none', clipPath: 'inset(0)' }], { duration: 500, easing: 'ease-out' }); a.finished.then(() => el.classList.add('on')); };
+  /* наблюдается обёртка: элемент, целиком скрытый своим clip-path, IntersectionObserver в Chrome не видит (decor-kit.css) */
+  const io = new IntersectionObserver((es) => {
+    for (const e of es) {
+      if (!e.isIntersecting) continue;
+      const el = e.target; const inner = el.firstElementChild; io.unobserve(el);
+      const how = el.dataset.show;
+      if (how === 'gs') byFrames(inner); else if (how === 'wa') waapi(inner); else if (how === 'class') inner.classList.add('on');
+      else if (how === 'kit') { el.classList.add('on'); setTimeout(() => el.classList.remove('armed', 'on'), 1500); }
+      else if (how === 'var-clip') { el.classList.add('on'); tweenVar(inner, '--r', 0, 1, 800); }
+      else if (how === 'var-tf') { inner.classList.add('on'); tweenVar(inner, '--k', 1, 0, 600); }
+      else el.classList.add('on');
+    }
+  }, { threshold: 0.2 });
+  /* как decor-kit: шторку «взводит» скрипт */
+  document.querySelector('.kit').classList.add('armed');
+  document.querySelectorAll('[data-show]').forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

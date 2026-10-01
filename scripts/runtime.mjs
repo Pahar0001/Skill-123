@@ -5,7 +5,7 @@
  * меню, анимации, видео, выброшенный браузером CSS, переполнение по ширине.
  *
  *   node runtime.mjs <url> [--viewport mobile] [--out папка] [--tag имя] [--browser firefox]
- *        [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent]
+ *        [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent] [--no-js]
  *   node runtime.mjs [шаги и настройки] -- <url>      «--» — конец флагов, дальше только адрес
  *
  *   --viewport  desktop | laptop | tablet | mobile | mobile-s (320×568@2) | android (360×800@3)
@@ -24,7 +24,7 @@
  *   ближайшего («может быть, --scroll?»), до браузера. Известный флаг с одним дефисом («-viewport mobile») —
  *   ошибка (код 2) «флаг пишется с двумя дефисами»: иначе прогон молча шёл бы на desktop.
  *   Настройка дважды с разными значениями (--viewport, --out, --tag, --scheme, --cpu,
- *   --browser) — ошибка (код 2); --wait — не больше 600000 мс.
+ *   --browser, --no-js и --no-js=0) — ошибка (код 2); --wait — не больше 600000 мс.
  *   Следующее слово он забирает значением, только
  *   если это не флаг, не «--» и не адрес (http, https, file, data, about):
  *   «--strict http://localhost:4177/ --css» — WARN про --strict, адрес на месте.
@@ -78,7 +78,29 @@
  *                              line-height: 1 не «текст шире коробки», а кегль 40px в коробке 12px —
  *                              находка. Перед прокруткой открыт слой на весь экран
  *                              (меню, диалог :modal — например, после --click "#burger") — WARN
- *                              «прокрутка идёт при открытом меню/диалоге»: пишите --scroll до --click
+ *                              «прокрутка идёт при открытом меню/диалоге»: пишите --scroll до --click.
+ *                              Переход не шёл: за проход записывается, какие свойства у «ждали появления» и у шторок ниже
+ *                              первого экрана (clip-path или filter не тождественный: обёртка со шторкой, блок, спрятанный
+ *                              только clip-path, фото со шторкой внутри проявляющегося блока) на самом деле анимировались —
+ *                              transitionrun и animationstart (на document, в фазе захвата) и опрос getAnimations() каждые
+ *                              ~100 мс (Web Animations: Motion, WAAPI); opacity, transform, translate, scale, rotate, clip-path
+ *                              и filter до прохода и после сверяются, а на каждом опросе копятся их промежуточные значения.
+ *                              Свойство сменилось, ни переход, ни CSS-анимация, ни WAAPI по нему не шли, промежуточных значений
+ *                              не было, а движение у элемента объявлено (transition-duration > 0 у любого свойства или
+ *                              animation-name) — WARN «clip-path сменилось скачком, перехода не было: img.photo
+ *                              (transition-property: transform — clip-path в нём нет: перебит другим правилом или не объявлен?)»
+ *                              (шторка фото, 30.09: «.md-on img { transition: transform }» перебило transition: clip-path).
+ *                              Свойство в transition-property есть, а перехода не было — «переход объявлен, но не пошёл»:
+ *                              у clip-path значения не интерполируются (none ↔ inset(), разные функции, polygon с разным числом
+ *                              точек — совет «inset(0) вместо none»), у filter — разные списки функций, или длительность 0.
+ *                              Не в счёт: значение менял inline style (GSAP и подобные пишут style.transform по кадрам), свойство
+ *                              шло плавно — промежуточные значения за проход: на опросах и на каждой записи --переменной в
+ *                              style элемента (скрипт по кадрам ведёт CSS-переменную, как GSAP, — хоть четыре кадра подряд),
+ *                              «меньше движения» (reduce), без объявленного движения (скачок задуман), transform сменил только
+ *                              сдвиг вместе с размером коробки (translate(-50%)). Переменная в style, которая к свойству
+ *                              отношения не имеет (прогресс прокрутки для параллакса), скачок не прячет: в строке WARN она
+ *                              названа по имени («в style менялись --переменные: …»). В JSON — data.motion у строки прокрутки
+ *                              (found, smooth, extra; vars — сколько скачков найдено у элементов с такими переменными)
  *        --hover "sel"         навести и записать, что изменилось в стилях (и почему нет): цвет, фон
  *                              (в том числе background-size, -image, -position), рамка, тень,
  *                              transform, opacity, clip-path, фильтр
@@ -129,6 +151,12 @@
  *                              не изменилось»
  *        --resize 1152         сменить ширину окна (или ШxВ — 834x1112, 834X1112, 834×1112;
  *                              или rotate — повернуть); ширина и высота больше 0
+ *        --emulate-motion reduce|no-preference  переключить prefers-reduced-motion на открытой странице посреди шагов
+ *                              (Chrome и Edge — эмуляция медиа на вкладке): строка шага «prefers-reduced-motion:
+ *                              reduce» — что показал matchMedia до шага и после (не применилось — WARN). Firefox так
+ *                              не умеет («меньше движения» у него — настройка запуска, --reduced-motion) — WARN
+ *                              «--emulate-motion reduce не поддерживается в Firefox», шаги идут дальше. --reduced-motion
+ *                              при запуске — как раньше
  *        --canvas              холсты: рисует ли (снимок с холстом и без), меняется ли кадр,
  *                              резкость буфера: FAIL — буфер меньше 0.85 ширины в CSS px,
  *                              WARN — меньше 0.85 от ширины × DPR, 2D с искажёнными пропорциями.
@@ -197,6 +225,46 @@
  *                              перезагрузило страницу — дождаться; увело — нужная страница открывается заново.
  *                              SITE_REWORK_DISMISS нажимается и с --keep-consent (переменную задали явно), а окно
  *                              согласия его второй раз не жмёт
+ *        --no-js               страница без JavaScript (Chrome и Edge, выключается до перехода): проверка прогрессивного улучшения.
+ *                              JavaScript выключается и в iframe другого сайта (карта, видео — свой
+ *                              процесс): его сессия получает ту же команду до своих скриптов. Строка INFO «JavaScript выключен
+ *                              (--no-js)» (сверено: встроенный скрипт не выполнился — на странице и в каждом iframe; сколько
+ *                              <script> и сколько из них выполнялись бы, сколько обработчиков в атрибутах — onload, onclick — и
+ *                              ссылок javascript:, <noscript> показан); в iframe скрипт выполнился — WARN
+ *                              «--no-js: в iframe JavaScript работает». После загрузки и после каждого --scroll — «без JS не
+ *                              видно»: блоки с текстом или картинкой, невидимые из-за opacity < 0.1, visibility: hidden,
+ *                              clip-path, который прячет всё, transform, который уводит за экран (или в ноль), или сдвига за
+ *                              край обёртки с overflow: hidden (строка заголовка под маской «выезжает снизу»). Сверка — с
+ *                              отдельной вкладкой с JavaScript (тот же экран, --init, окно согласия закрыто, прокрутка до
+ *                              конца): WARN «без JS не видно: N блоков» с селекторами, началом текста и причиной — только то,
+ *                              что с JavaScript видно (или с чем сверить нечего); скрытое и с JS (декор, копии, бледный номер
+ *                              с opacity .06) — INFO «без JS не видно и с JS скрыто — по замыслу»; всё видно — OK. absolute
+ *                              (Zero Block Tilda) — в находках, если с JS виден, иначе «не в счёт». Не в счёт: display: none,
+ *                              aria-hidden, sr-only, закрытое меню, окно и аккордеон (details без open, [hidden],
+ *                              переключатель aria-expanded="false"), вкладки, подсказки и показ по :hover, :focus, :checked,
+ *                              :target, закреплённое (fixed), слайдеры и бегущие строки, появление прокруткой без JS
+ *                              (animation-timeline). Страница без текста и картинок (пустой #__nuxt, #app) — WARN «без JS на
+ *                              странице нет ни текста, ни картинок»; есть меньше половины того, что видно с JavaScript, — WARN
+ *                              «без JS на странице N% того, что видно с JavaScript» (страницу рисует скрипт). Доля — по объёму,
+ *                              а не по числу элементов: текст, видный с JavaScript, склеен подряд без пробелов, и считается,
+ *                              сколько его знаков есть в отрисованном без JavaScript тексте (отрезками от шести знаков);
+ *                              картинка в счёте — как 40 знаков. Скрипт, который только разбивает серверный текст на слова и
+ *                              буквы (SplitType, SplitText, data-dk-words), долю не меняет. Разметка есть, но спрятана display:
+ *                              none до скрипта (v-cloak, x-cloak, класс загрузки) — в тех же строках WARN сказано это и назван
+ *                              прячущий элемент, а не «нужна серверная отрисовка». Заставку не убрать без скрипта
+ *                              (при загрузке не ушла, или плотный слой от половины окна закрывает центры большинства блоков
+ *                              первого экрана) — WARN «без JS страницу закрывает заставка …», не OK. Скриптов на странице
+ *                              нет (ни <script>, ни обработчиков в атрибутах, ни ссылок javascript:) — сверка не нужна:
+ *                              страница та же, скрытое — INFO «по замыслу». Шаг увёл на другую страницу (--click по ссылке) —
+ *                              следующая проверка идёт для неё заново («страница сменилась»), сверка — с вкладкой с JavaScript
+ *                              того же адреса. После --scroll на той же странице — только
+ *                              новое против всего уже названного (те же — INFO). Пара modulepreload + module-скрипт (Vite,
+ *                              Nuxt) — INFO «модульные скрипты не загружались: JavaScript выключен», не «упавшие запросы». Без
+ *                              JS в странице не срабатывают таймеры и обработчики — код проверок runtime идёт в изолированном
+ *                              мире, а --eval и --assert — в самой странице: Promise на setTimeout, requestAnimationFrame или
+ *                              событии там не дождётся (предел 15 с — FAIL); --init выполняется и без JS. Без --tag протокол —
+ *                              <экран>-nojs.json. Firefox выключить JavaScript на вкладке через WebDriver BiDi не умеет — WARN
+ *                              «--no-js не поддерживается в Firefox», запуск идёт с JavaScript, «без JS не видно» не проверяется
  *        --full-scale 1|2|3|4|dpr  масштаб снимка --fullpage (как у shots.mjs): 1 — по умолчанию, dpr — как у экрана;
  *                              длиннее 120 млн пикселей — ×1 с пометкой в строке
  *        --out папка, --tag имя  папка прогона и имя протокола
@@ -208,21 +276,37 @@
  *                              fixed, якоря при своей прокрутке страницы под закреплённой лентой, блок шире
  *                              своей колонки на 320 и то, что им не считается, фокус в открытом слое — без
  *                              ловушки, с ловушкой и слой, который закрывается сам, окно cookie поверх кнопки —
- *                              закрыто и оставлено с --keep-consent, предупреждения консоли) и свои серверы
+ *                              закрыто и оставлено с --keep-consent, предупреждения консоли; без JavaScript — блоки,
+ *                              которые показывает только скрипт (и строка под маской overflow, и absolute, видный с JS),
+ *                              скрытое и с JS — «по замыслу», страница, где без JS всё видно, закрытое меню, окно, details,
+ *                              вкладка и подсказка не в счёт, две прокрутки без повторного WARN, пустая страница, страница
+ *                              из одной шапки (и та же, где скрипт сам разбивает свой текст на буквы), текст, который скрипт
+ *                              только разбивает на слова и буквы, разметка под v-cloak и x-cloak, показ обработчиком onload
+ *                              без единого <script>, переход по ссылке на другую страницу, заставка, страница без скриптов;
+ *                              --emulate-motion; переход, который не шёл, —
+ *                              перебитый clip-path (и у фото в проявляющемся блоке, и на обёртке), конечное none, нормальная
+ *                              шторка, inline style по кадрам, ход через CSS-переменную (и быстрый, в четыре кадра), посторонняя
+ *                              переменная прокрутки, WAAPI, CSS-анимация, без объявленного
+ *                              движения и с --reduced-motion; выход сразу после итога, без хвоста таймера; первая строка справки
+ *                              --no-js; ошибки аргументов новых флагов) и свои серверы
  *                              (страница 404 с --expect-status и без, сторонний iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
- *                              же и другого сайта), окна при загрузке (стенды fixtures/lib: окно — WARN;
+ *                              же и другого сайта; --no-js: iframe другого сайта без JavaScript, пара modulepreload и
+ *                              module-скрипт), окна при загрузке (стенды fixtures/lib: окно — WARN;
  *                              SITE_REWORK_DISMISS увёл на шумную главную — нужная страница открыта
  *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
  *                              если он есть; страница снова уводит — «замер не той страницы») и сверить
  *                              строки протокола с ожидаемыми; код 1 — что-то разошлось. Адрес не нужен,
- *                              браузер — один за раз, около трёх минут
+ *                              браузер — один за раз, около десяти минут. Часть случаев — переменной окружения
+ *                              RW_SELFTEST_ONLY (регулярное выражение по имени случая: RW_SELFTEST_ONLY="^(jump|nojs)")
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
  *                              тоже справка. Ищется только до «--»: после него — адрес
  *
  * Упавшие запросы: свои (главная страница и её iframe того же сайта) — WARN «упавшие запросы»;
  * запросы сторонних iframe (реклама и счётчики внутри карты Яндекса, видео) — отдельной строкой INFO:
  * сайт их не чинит. Документ самого iframe (битая ссылка на виджет: ответ 404, отказ соединения) — запрос
- * страницы, которая его вставила: WARN «упавшие запросы», а его строка консоли — ошибка страницы.
+ * страницы, которая его вставила: WARN «упавшие запросы», а его строка консоли — ошибка страницы. С --no-js скрипт
+ * главной страницы, оборванный без текста ошибки (предзагрузка modulepreload у Vite и Nuxt), — INFO «модульные скрипты не
+ * загружались: JavaScript выключен»: файл цел, Chrome обрывает его сам.
  *
  * Предупреждения консоли (console.warn страницы) — в конце строкой INFO: сколько их и тексты первых десяти, по
  * 160 знаков; в JSON — console.warnings (число) и console.warningTexts (первые 10 целиком, до 300 знаков).
@@ -239,6 +323,7 @@
  *       · «--expect» не сразу за «--eval»;
  *       · --type / --select без «=» или с пустым селектором;
  *       · --resize — не ширина больше 0, не ШxВ и не rotate;
+ *       · --emulate-motion — не reduce и не no-preference;
  *       · --wait — не число миллисекунд ≥ 0;
  *       · --scheme — не light, dark или no-preference;
  *       · --cpu — не число больше 0;
@@ -266,14 +351,15 @@ import {
   scrollToY, settleAnimations, findOverflow, canvasList, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, resourceTypeOf,
   collectWarnings, takeWarnings, collectNotes, takeNotes, warningLabel, onPageLogReset, findBrowser,
-  closeConsent, consentNote, resetPageLog,
+  closeConsent, consentNote, resetPageLog, findModuleRoot,
 } from './lib.mjs';
+import { createRequire } from 'node:module';
 
 /* ---------- аргументы: шаги в порядке записи ---------- */
 const argv = process.argv.slice(2);
-const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', 'edit', 'key', 'select', 'resize', 'canvas', 'motion', 'video', 'nav', 'css', 'eval', 'expect', 'assert', 'shot', 'fullpage']);
+const STEP = new Set(['wait', 'scroll', 'hover', 'hover-all', 'click', 'type', 'edit', 'key', 'select', 'resize', 'emulate-motion', 'canvas', 'motion', 'video', 'nav', 'css', 'eval', 'expect', 'assert', 'shot', 'fullpage']);
 /* без значения: шаги-флаги и настройки-флаги */
-const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'keep-consent', 'selftest', 'help', 'h']);
+const FLAG = new Set(['scroll', 'hover-all', 'canvas', 'motion', 'video', 'nav', 'css', 'fullpage', 'reduced-motion', 'no-fail', 'keep-consent', 'no-js', 'selftest', 'help', 'h']);
 /* настройки со значением */
 const OPTS = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status', 'full-scale']);
 /* справочник флагов (flags-doc.mjs, RW_FLAGS_DUMP=1): списки выше и выход с кодом 0 — до справки и разбора */
@@ -339,7 +425,9 @@ const FALSE_RE = /^(0|false|no|off|нет)$/i;
 const steps = []; const opt = {}; const pos = []; const unknown = []; const off = [];
 /* posAt[k] — номер слова pos[k] в argv: «лишнее слово» сразу за неизвестным флагом называется вместе с ним */
 const posAt = [];
-const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser', 'expect-status', 'full-scale']);
+const ONCE = new Set(['viewport', 'viewports', 'out', 'tag', 'scheme', 'cpu', 'browser', 'expect-status', 'full-scale', 'no-js']);
+/* значение настройки-флага в сообщении «задан дважды»: вкл / выкл, а не true / false */
+const onOff = (x) => (x === true ? 'вкл' : x === false ? 'выкл' : x);
 const taken = []; /* значения, взятые следующим словом: [флаг, слово] — для подсказки «адрес ушёл значением» */
 for (let i = 0; i < argv.length; i++) {
   const a = String(argv[i]);
@@ -388,7 +476,7 @@ for (let i = 0; i < argv.length; i++) {
   if (STEP.has(k)) steps.push({ k, v });
   else {
     /* настройка дважды с разными значениями («--viewport mobile --viewport desktop») — раньше молча бралась последняя */
-    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${opt[k]}» и «${v}» — оставьте один${k === 'browser' ? ' (runtime проверяет в одном браузере за запуск)' : k === 'expect-status' ? ' (у документа один ответ)' : ' (runtime проверяет один экран за запуск)'}`);
+    if (ONCE.has(k) && opt[k] !== undefined && String(opt[k]).trim() !== String(v).trim()) usage(`--${k} задан дважды: «${onOff(opt[k])}» и «${onOff(v)}» — оставьте один${k === 'browser' ? ' (runtime проверяет в одном браузере за запуск)' : k === 'expect-status' ? ' (у документа один ответ)' : k === 'no-js' ? ' (JavaScript выключается на весь запуск)' : ' (runtime проверяет один экран за запуск)'}`);
     opt[k] = v;
   }
 }
@@ -443,7 +531,7 @@ const cyrX = (v) => (/^\s*\d+\s*[хХ]\s*\d+/.test(String(v)) ? ' — между
 const WAIT_RE = /^\d+(?:\.\d+)?$/;
 
 /* значения шагов — до папок и браузера */
-const NEEDS_VALUE = new Set(['wait', 'hover', 'click', 'type', 'edit', 'key', 'select', 'resize', 'shot', 'eval', 'assert']);
+const NEEDS_VALUE = new Set(['wait', 'hover', 'click', 'type', 'edit', 'key', 'select', 'resize', 'emulate-motion', 'shot', 'eval', 'assert']);
 for (const s of steps) {
   if (NEEDS_VALUE.has(s.k) && (s.v === true || s.v === undefined || String(s.v).trim() === '')) usage(`--${s.k}: нужно значение`);
   if (s.k === 'wait' && !WAIT_RE.test(String(s.v).trim())) usage(`--wait ${s.v}: нужно число миллисекунд ≥ 0 (--wait 800)`);
@@ -454,6 +542,7 @@ for (const s of steps) {
     if (!p || !p[0].trim()) usage(`--${s.k} "${s.v}": нужно «селектор=${s.k === 'type' ? 'текст' : 'значение'}» (делится по первому «=» вне [ ] и кавычек: ${s.k === 'type' ? 'input[name=phone]=89001234567' : 'select[name=work]=6'})`);
   }
   if (s.k === 'resize' && !parseResize(s.v)) usage(`--resize ${s.v}: ${RESIZE_HELP}${cyrX(s.v)}`);
+  if (s.k === 'emulate-motion' && !/^(reduce|no-preference)$/.test(String(s.v).trim())) usage(`--emulate-motion ${s.v}: нужно reduce или no-preference (--emulate-motion reduce)`);
 }
 for (const k of ['out', 'tag', 'scheme', 'cpu', 'init', 'browser', 'expect-status', 'full-scale']) if (opt[k] !== undefined && String(opt[k]).trim() === '') usage(`--${k}: нужно значение`);
 /* --expect-status: код ответа документа, который ждём (страница 404 открыта нарочно) */
@@ -482,14 +571,16 @@ let cur = { ...vp };
 const run = runDir(opt, url);
 const outDir = ensureDir(path.join(run, 'runtime'));
 /* не Chrome — свой протокол по умолчанию: desktop-firefox.json рядом с desktop.json, а не поверх него */
-const tag = opt.tag || `${vpName}${opt['reduced-motion'] ? '-reduced' : ''}${browserKind !== 'chrome' ? `-${browserKind}` : ''}`;
+const tag = opt.tag || `${vpName}${opt['reduced-motion'] ? '-reduced' : ''}${opt['no-js'] ? '-nojs' : ''}${browserKind !== 'chrome' ? `-${browserKind}` : ''}`;
 const DEPS = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN };
 const effOf = new Function('el', `return (${EFFECTIVE_OPACITY_FN})(el);`);
 
 /* фон целиком (линия под пунктом рисуется background-size градиента) и clip-path — тоже состояние наведения */
 const STATE_PROPS = ['color', 'backgroundColor', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'borderTopColor', 'boxShadow', 'transform', 'opacity', 'textDecorationLine', 'outlineStyle', 'outlineColor', 'filter', 'clipPath', 'letterSpacing', 'scale', 'translate', 'rotate'];
 
-const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], expectStatus, browser: null, startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
+const report = { url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, tag, reducedMotion: !!opt['reduced-motion'], noJs: null, expectStatus, browser: null, startedAt: new Date().toISOString(), steps: [], console: null, verdict: null };
+/* склонение по числу: plural(5, 'блок', 'блока', 'блоков') → «блоков» */
+const plural = (n, one, few, many) => { const a = Math.abs(n) % 100, b = a % 10; return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many; };
 let fails = 0, warns = 0;
 /* вид текущего шага — в протокол: state.mjs отличает запись (eval без --expect, снимок) от проверки */
 let curKind = 'load';
@@ -557,6 +648,157 @@ async function consentStep() {
   }
   return c;
 }
+/* ---------- --no-js: страница без JavaScript ---------- */
+const noJs = !!opt['no-js'];
+/* { off: true, isolated } — выключен (isolated: код проверок идёт в изолированном мире); { off: false, why } — не вышло */
+let noJsState = null;
+const jsOff = () => !!(noJsState && noJsState.off);
+/* Без JavaScript в мире страницы не срабатывают setTimeout, requestAnimationFrame, наблюдатели и обработчики событий
+   (Chrome 154, 30.09: колбэк не вызывается, Promise висит до предела протокола — 90 с), а ими живёт код проверок: lib.
+   waitForMedia в снимках прокрутки и всей страницы, ожидание якоря, запись изменений DOM у --click, видео. Поэтому с
+   --no-js page.evaluate (и lib, и runtime зовут его) идёт в изолированный мир puppeteer: там requestAnimationFrame,
+   наблюдатели и обработчики работают, а setTimeout — нет (он смотрит на запрет скриптов у окна) — таймеры там подменены
+   таймерами на кадрах. Хэндлы мира страницы (page.$$) переносятся в изолированный мир. --eval и --assert — в мире самой
+   страницы (page.rwPageEvaluate, evalInPage): там видно то, что видит страница. Frame.evaluate (lib.closeConsent) — тоже
+   в мире страницы: там только синхронный код */
+function isoTimersInPage() {
+  if (window.__rwIsoTimers) return;
+  window.__rwIsoTimers = true;
+  const live = new Map(); let n = 0;
+  const tick = (k) => {
+    const t = live.get(k); if (!t) return;
+    if (performance.now() < t.due) { requestAnimationFrame(() => tick(k)); return; }
+    if (t.every) t.due = performance.now() + t.every; else live.delete(k);
+    try { t.fn(...t.args); } catch (e) { /* ошибка в колбэке — как у настоящего таймера: дальше */ }
+    if (t.every && live.has(k)) requestAnimationFrame(() => tick(k));
+  };
+  const add = (fn, ms, args, every) => { const k = ++n; if (typeof fn === 'function') { live.set(k, { fn, args, due: performance.now() + (Number(ms) || 0), every }); requestAnimationFrame(() => tick(k)); } return k; };
+  window.setTimeout = (fn, ms, ...args) => add(fn, ms, args, 0);
+  window.setInterval = (fn, ms, ...args) => add(fn, ms, args, Math.max(1, Number(ms) || 0));
+  window.clearTimeout = (k) => { live.delete(k); };
+  window.clearInterval = window.clearTimeout;
+}
+function isolateEvaluate(p) {
+  let fr = null; try { fr = p.mainFrame(); } catch { /* нет кадра */ }
+  if (!fr || typeof fr.isolatedRealm !== 'function') return false;
+  p.rwPageEvaluate = p.evaluate.bind(p);
+  p.evaluate = async (fn, ...args) => {
+    const realm = p.mainFrame().isolatedRealm(); const moved = [];
+    try {
+      const list = [];
+      for (const a of args) {
+        let el = null; try { el = a && typeof a === 'object' && typeof a.asElement === 'function' ? a.asElement() : null; } catch { el = null; }
+        if (el) { const h = await realm.adoptHandle(el); moved.push(h); list.push(h); } else list.push(a);
+      }
+      await realm.evaluate(isoTimersInPage);
+      return await realm.evaluate(fn, ...list);
+    } finally { for (const h of moved) h.dispose().catch(() => {}); }
+  };
+  return true;
+}
+/* выключить JavaScript на вкладке до перехода: Chrome и Edge — Emulation.setScriptExecutionDisabled, Firefox — BiDi
+   emulation.setScriptingEnabled (Firefox на этой машине, 30.09: «unknown command» — тогда WARN и запуск с JavaScript) */
+async function disableJs(p) {
+  try { await p.setJavaScriptEnabled(false); }
+  catch (e) { return { off: false, why: short(String((e && e.message) || e).split('\n')[0].replace(/\s+\S*@\S+:\d+:\d+.*$/, ''), 200) }; }
+  return { off: true, isolated: isolateEvaluate(p), frames: framesNoJs(p) };
+}
+/* iframe другого сайта (карта, видео, виджет) живёт в своём процессе со своей сессией, и setJavaScriptEnabled его не
+   накрывает: EmulationManager puppeteer шлёт Emulation.setScriptExecutionDisabled только в сессию вкладки (и пререндера).
+   01.10: страница на 127.0.0.1 с iframe на localhost — скрипт iframe выполнился, а строка INFO уверяла, что скрипты не
+   выполняются. Поэтому каждой сессии iframe, которую puppeteer подключает (событие Ready — сессия ещё на паузе, до
+   Runtime.runIfWaitingForDebugger), та же команда уходит сразу — раньше, чем iframe запустит свои скрипты; вложенным — так же.
+   → { hooked, sessions, errors } (hooked: false — внутренних сессий puppeteer не видно: iframe другого сайта не накрыт) */
+/* событие Ready — символ из самого модуля puppeteer (lib.loadPuppeteer отдаёт его default без именованных экспортов); тот же
+   файл — тот же экземпляр модуля, что у lib.launch, и тот же символ */
+function readyEvent() {
+  for (const name of ['puppeteer-core', 'puppeteer']) {
+    try { const root = findModuleRoot(name); if (!root) continue; const m = createRequire(path.join(root, 'package.json'))(name); const ev = m.CDPSessionEvent || (m.default && m.default.CDPSessionEvent); if (ev && ev.Ready) return ev.Ready; } catch { /* следующий */ }
+  }
+  return null;
+}
+function framesNoJs(p) {
+  const st = { hooked: false, sessions: 0, errors: 0 };
+  const Ready = readyEvent();
+  let client = null; try { client = typeof p._client === 'function' ? p._client() : null; } catch { client = null; }
+  if (!Ready || !client || typeof client.on !== 'function') return st;
+  const onReady = (session) => {
+    try {
+      const t = session && typeof session.target === 'function' ? session.target() : null;
+      const info = t && typeof t._getTargetInfo === 'function' ? t._getTargetInfo() : null;
+      if (info && info.type === 'iframe') { st.sessions++; session.send('Emulation.setScriptExecutionDisabled', { value: true }).catch(() => { st.errors++; }); }
+      if (session && typeof session.on === 'function') session.on(Ready, onReady);
+    } catch { st.errors++; }
+  };
+  client.on(Ready, onReady);
+  st.hooked = true;
+  return st;
+}
+/* проба в каждом iframe вкладки (изолированный мир кадра): вставленный встроенный скрипт не должен выполниться. Кадр,
+   где он выполнился, — JavaScript там работает. → [{ url, ran, error? }] */
+async function probeFramesNoJs(p) {
+  const out = [];
+  let list = []; try { list = p.frames(); } catch { list = []; }
+  for (const f of list) {
+    if (f === p.mainFrame()) continue;
+    try { if (typeof f.detached === 'boolean' ? f.detached : typeof f.isDetached === 'function' && f.isDetached()) continue; } catch { continue; }
+    let u = ''; try { u = f.url(); } catch { u = ''; }
+    const rec = { url: String(u).slice(0, 160), ran: false };
+    let timer;
+    try {
+      const limit = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('проба не уложилась в 5 с')), 5000); });
+      const realm = typeof f.isolatedRealm === 'function' ? f.isolatedRealm() : null;
+      if (!realm) { rec.error = 'нет изолированного мира кадра'; out.push(rec); continue; }
+      rec.ran = await Promise.race([realm.evaluate(() => {
+        const root = document.documentElement; if (!root) return false;
+        const s = document.createElement('script'); s.textContent = 'document.documentElement.setAttribute("data-rw-js-probe", "1")';
+        (document.head || root).appendChild(s);
+        const ran = root.getAttribute('data-rw-js-probe') === '1';
+        root.removeAttribute('data-rw-js-probe'); s.remove();
+        return ran;
+      }), limit]);
+    } catch (e) { rec.error = short((e && e.message) || e, 100); } finally { clearTimeout(timer); }
+    out.push(rec);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+/* что на странице может выполнить JavaScript (в странице; с --no-js — изолированный мир). exec — скрипты, которые браузер
+   выполнил бы (без type, JavaScript или module): JSON-LD, importmap и шаблоны не в счёт. handlers — обработчики в атрибутах
+   (onload, onclick, onerror… — атрибут с именем события, которое у элемента есть), jsUrls — ссылки и формы на «javascript:».
+   Страница без единого <script> показывает блоки и ими: <body onload="…classList.add('ready')">, <img onload="…"> (01.10:
+   счёт шёл только по <script> — «скриптов на странице нет», и спрятанное до onload уходило в «по замыслу»).
+   probe — ещё и проба: вставленный встроенный скрипт не должен выполниться (разметка возвращается как была).
+   → { scripts, exec, handlers, jsUrls, noscript, handlerNames, ran? } */
+function scriptsInPage(probe) {
+  const scripts = document.scripts.length; const noscript = document.querySelectorAll('noscript').length;
+  const JS = /^(|module|(text|application)\/(x-)?(java|ecma)script(1\.\d)?|text\/(jscript|livescript))$/;
+  const exec = [...document.scripts].filter((x) => JS.test(String(x.getAttribute('type') || '').trim().toLowerCase().split(';')[0])).length;
+  let handlers = 0, jsUrls = 0, seen = 0; const names = new Set();
+  for (const e of document.querySelectorAll('*')) {
+    if (++seen > 20000) break;
+    for (const a of e.attributes) {
+      const n = a.name.toLowerCase();
+      if (n.length > 2 && n.startsWith('on') && n in e && String(a.value).trim()) { handlers++; if (names.size < 4) names.add(n); }
+      else if (/^(href|src|action|formaction|xlink:href)$/.test(n) && /^\s*javascript:/i.test(a.value)) jsUrls++;
+    }
+  }
+  const out = { scripts, exec, handlers, jsUrls, noscript, handlerNames: [...names] };
+  if (probe) {
+    const s = document.createElement('script'); s.textContent = 'document.documentElement.setAttribute("data-rw-js-probe", "1")';
+    (document.head || document.documentElement).appendChild(s);
+    out.ran = document.documentElement.getAttribute('data-rw-js-probe') === '1';
+    document.documentElement.removeAttribute('data-rw-js-probe'); s.remove();
+  }
+  return out;
+}
+/* --eval и --assert: с --no-js — в мире страницы и не дольше 15 с (Promise на таймере или событии там не дождётся) */
+async function evalInPage(expr) {
+  if (!page.rwPageEvaluate) return page.evaluate(expr);
+  let timer;
+  const limit = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('выражение не завершилось за 15 с — с --no-js в странице не срабатывают setTimeout, requestAnimationFrame и обработчики событий: Promise на них не дождётся (ждать — шагом --wait)')), 15000); });
+  try { return await Promise.race([page.rwPageEvaluate(expr), limit]); } finally { clearTimeout(timer); }
+}
 const reqLog = [];
 const conLoc = []; const reqFrame = new Map();
 /* источник кадра: ближайший адрес http(s) от кадра к главному (about:blank и srcdoc наследуют источник родителя) */
@@ -592,6 +834,8 @@ try {
   onPageLogReset(page, () => { reqLog.length = 0; conLoc.length = 0; reqFrame.clear(); });
   /* замедление процессора — Chrome DevTools Protocol, у Firefox его нет: WARN ниже, прогон без замедления */
   if (Number(opt.cpu) > 1) { if (gecko) cpuSkipped = true; else { const cdp = await page.createCDPSession(); await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(opt.cpu) }); } }
+  /* --no-js — до перехода: скрипты страницы не запускаются с самого начала разбора */
+  if (noJs) noJsState = await disableJs(page);
   if (opt.init) await page.evaluateOnNewDocument(String(opt.init));
   navRes = await gotoRetry(page, url);
   await page.evaluate(() => document.fonts.ready).catch(() => {});
@@ -609,6 +853,15 @@ try {
   await sleep(500);
   /* слой на весь экран, который есть уже при загрузке (закреплённый фон, заставка), — не «открытое меню» у --scroll */
   await evaluateWith(page, openLayerInPage, { base: true }, DEPS).catch(() => null);
+  /* --no-js: сверить, что JavaScript правда не работает, — вставленный встроенный скрипт не должен выполниться (разметка
+     возвращается как была). Выполнился — JavaScript работает: пометка снимается, evaluate — снова в мире страницы */
+  if (jsOff()) {
+    noJsState.probe = await page.evaluate(scriptsInPage, true).catch((e) => ({ error: short((e && e.message) || e, 120) }));
+    if (noJsState.probe && noJsState.probe.ran) {
+      noJsState = { ...noJsState, off: false, why: 'встроенный скрипт выполнился — JavaScript на странице работает' };
+      if (page.rwPageEvaluate) { page.evaluate = page.rwPageEvaluate; page.rwPageEvaluate = null; }
+    } else noJsState.frameProbe = await probeFramesNoJs(page).catch(() => []);
+  }
 } catch (e) { console.error(`FAIL открыть ${url}: ${e.message}`); await browser.close(); process.exit(1); }
 if (page.retries) line('WARN', 'соединение', `страница открылась с ${page.retries + 1}-й попытки${page.gotoInfo && page.gotoInfo.waitUntil === 'domcontentloaded' ? ', только DOMContentLoaded' : ''} — сервер или сеть отвечают нестабильно`);
 
@@ -642,7 +895,7 @@ const errCount = () => realConsole().length + page.log.errors.length;
 const loadErrors = errCount();
 /* без --expect-status документ 4xx/5xx — провал, как раньше, но с подсказкой, если так и задумано */
 const docHint = !docExpected && docStatus >= 400 && docErrLines() ? ` · из них ответ самого документа ${docStatus} — если страница ошибки открыта нарочно: --expect-status ${docStatus}` : '';
-line(loadErrors ? 'FAIL' : 'OK', `загрузка ${url} (${vpName} ${report.size}${opt['reduced-motion'] ? ', меньше движения' : ''})`, loadErrors ? `${loadErrors} ошибок в консоли: ${uniqCount([...realConsole().map((c) => c.text), ...page.log.errors].map((t) => short(t, 120)), 3)}${docHint}` : `ошибок в консоли нет, ${page.log.requests.length} запросов`);
+line(loadErrors ? 'FAIL' : 'OK', `загрузка ${url} (${vpName} ${report.size}${opt['reduced-motion'] ? ', меньше движения' : ''}${jsOff() ? ', без JavaScript' : ''})`, loadErrors ? `${loadErrors} ошибок в консоли: ${uniqCount([...realConsole().map((c) => c.text), ...page.log.errors].map((t) => short(t, 120)), 3)}${docHint}` : `ошибок в консоли нет, ${page.log.requests.length} запросов`);
 if (expectStatus !== null) {
   if (docStatus === expectStatus) line('INFO', `ответ документа ${docStatus}, как ждали`, `--expect-status ${expectStatus}${docExpected && docErrLines() ? `; строка консоли «Failed to load resource: … ${docStatus}» — ответ самого документа, в ошибки страницы не считается` : ''}`);
   else line('FAIL', `ответ документа ${docStatus === null ? 'неизвестен' : docStatus}`, `ждали ${expectStatus} (--expect-status)${docStatus === null ? ' — браузер не отдал ответ перехода (адрес с #, about: или data:)' : ''}`);
@@ -650,11 +903,24 @@ if (expectStatus !== null) {
 if (favFails()) line('WARN', 'нет favicon', '/favicon.ico отвечает 404 — вкладка без значка; в провал загрузки не считается');
 /* упавшие запросы: свои (главная страница, iframe того же сайта, кадр неизвестен) — WARN; сторонних iframe — INFO */
 const isDocFail = (f) => docExpected && docUrls.has(noHash(f.url)) && /^HTTP /.test(f.reason);
-const failedNow = page.log.failed.filter((f) => !/\/favicon\.ico(\?|#|$)/i.test(f.url) && !isDocFail(f));
+/* --no-js: пара <link rel="modulepreload"> + <script type="module"> (сборки Vite, Nuxt) — предзагрузку модуля Chrome
+   обрывает сам, раз JavaScript выключен: запрос скрипта главной страницы «упал» без текста ошибки (reason «failed»), а файл
+   цел — с JavaScript он отвечает 200 (virugroup.com и стенд, 01.10). Это не «упавшие запросы» — отдельной строкой INFO.
+   Настоящий сбой (HTTP 404, отказ соединения — с текстом ошибки) остаётся в WARN */
+const typeOfReq = (u) => { const k = String(u).slice(0, 160); const hit = reqLog.find((r) => r.url === k); return hit ? hit.type : null; };
+const jsOffScript = (f) => {
+  if (!jsOff() || f.reason !== 'failed') return false;
+  const t = typeOfReq(f.url); if (!(t === 'script' || (!t && /\.m?js(\?|#|$)/i.test(f.url)))) return false;
+  const fr = reqFrame.get(String(f.url).slice(0, 200)); return !fr || fr.main;
+};
+const failedAll = page.log.failed.filter((f) => !/\/favicon\.ico(\?|#|$)/i.test(f.url) && !isDocFail(f));
+const noJsScripts = failedAll.filter(jsOffScript);
+const failedNow = failedAll.filter((f) => !jsOffScript(f));
 const otherFailed = failedNow.filter((f) => !foreignFrame(f));
 const frameFailed = failedNow.filter((f) => foreignFrame(f));
 const hostOf = (u) => { try { return new URL(u).host; } catch { return String(u).slice(0, 40); } };
 if (otherFailed.length) line('WARN', 'упавшие запросы', otherFailed.slice(0, 4).map((f) => `${f.reason} ${f.url.split('/').pop().slice(0, 50)}`).join('; ') + (otherFailed.length > 4 ? ` и ещё ${otherFailed.length - 4}` : ''));
+if (noJsScripts.length) line('INFO', `модульные скрипты не загружались: JavaScript выключен (${noJsScripts.length})`, `${uniqCount(noJsScripts.map((f) => f.url.split(/[?#]/)[0].split('/').pop().slice(0, 50)), 4)} — предзагрузку модулей (modulepreload) Chrome обрывает сам, когда JavaScript выключен; файлы целы, в «упавшие запросы» не входят`, { failed: noJsScripts });
 if (frameFailed.length) {
   const byFrame = new Map(); for (const f of frameFailed) { const h = hostOf(foreignFrame(f).frame); byFrame.set(h, [...(byFrame.get(h) || []), f]); }
   const fl = foreignErrLines();
@@ -685,6 +951,20 @@ report.windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: 
 /* чего нет в этом браузере (Firefox): честный WARN, а не падение */
 for (const l of page.rwLimits || []) line('WARN', NOT_IN, l);
 if (cpuSkipped) line('WARN', NOT_IN, `замедление процессора (--cpu ${opt.cpu}) — это протокол Chrome (DevTools); прогон идёт без замедления, замер под нагрузкой — в Chrome или Edge`);
+/* --no-js: выключен ли JavaScript — строкой INFO; не вышло (Firefox: в BiDi нет emulation.setScriptingEnabled) — WARN,
+   запуск идёт с JavaScript, «без JS не видно» не проверяется (со скриптами блоки появления честно прозрачны до прокрутки) */
+if (noJs) {
+  const pr = (noJsState && noJsState.probe) || null;
+  const fp = (noJsState && noJsState.frameProbe) || []; const fh = (noJsState && noJsState.frames) || { hooked: false, sessions: 0, errors: 0 };
+  const ranIn = fp.filter((f) => f.ran);
+  report.noJs = { requested: true, off: jsOff(), isolated: !!(noJsState && noJsState.isolated), why: (noJsState && noJsState.why) || null, probe: pr, frames: jsOff() ? { hooked: fh.hooked, sessions: fh.sessions, errors: fh.errors, probed: fp, jsRanIn: ranIn.map((f) => f.url) } : null, checks: [] };
+  /* iframe: сколько проверено пробой; iframe другого сайта (свой процесс) накрыт своей командой — framesNoJs */
+  const framesTxt = !fp.length ? (fh.hooked ? '' : '; iframe другого сайта (свой процесс) выключением не накрыты — внутренних сессий puppeteer не видно')
+    : ranIn.length ? '' : `; iframe: ${fp.length}, в ${fp.length > 1 ? 'каждом' : 'нём'} JavaScript тоже выключен (сверено пробой${fh.sessions ? `, в том числе в ${fh.sessions} iframe другого сайта — своя команда их процессу` : ''})`;
+  if (jsOff()) line('INFO', 'JavaScript выключен (--no-js)', `скрипты страницы не выполняются${pr && !pr.error ? ` — сверено: встроенный скрипт не выполнился; <script> на странице: ${pr.scripts}${pr.exec !== pr.scripts ? ` (выполнялись бы ${pr.exec})` : ''}${pr.handlers ? `, обработчиков в атрибутах (${(pr.handlerNames || []).join(', ')}): ${pr.handlers}` : ''}${pr.jsUrls ? `, ссылок javascript: ${pr.jsUrls}` : ''}${pr.noscript ? `, <noscript> показан: ${pr.noscript}` : ''}` : ''}${framesTxt}; код проверок runtime — в изолированном мире${noJsState.isolated ? '' : ' (НЕ ВЫШЛО: у puppeteer нет isolatedRealm — снимки прокрутки и ожидания могут висеть до предела протокола)'}, --eval и --assert — в самой странице (таймеры и обработчики там не срабатывают)`, { noJs: report.noJs });
+  if (jsOff() && ranIn.length) line('WARN', `--no-js: в iframe JavaScript работает (${ranIn.length} из ${fp.length})`, `${ranIn.slice(0, 3).map((f) => f.url || 'about:blank').join(', ')}${ranIn.length > 3 ? ` и ещё ${ranIn.length - 3}` : ''} — вставленный скрипт в нём выполнился: виджет в iframe работает со скриптами, его вид на снимках и проверках — не «без JavaScript»${fh.hooked ? '' : ' (внутренних сессий puppeteer не видно — iframe другого сайта не выключен)'}`, { noJs: report.noJs });
+  if (!jsOff()) line('WARN', gecko ? `--no-js ${NOT_IN}` : '--no-js не сработал', `${gecko ? 'выключить JavaScript на вкладке Firefox через WebDriver BiDi не умеет' : 'JavaScript на вкладке не выключился'}${noJsState && noJsState.why ? ` (${noJsState.why})` : ''} — запуск идёт с JavaScript, «без JS не видно» не проверялось; без JS проверяйте в Chrome: --no-js без --browser`, { noJs: report.noJs });
+}
 
 /* карта импортов — по разметке, в любом браузере: Firefox принимает <script type="importmap">, только пока
    не начал грузить модули (modulepreload, module-скрипт — внешний или встроенный), и только первую карту;
@@ -714,6 +994,546 @@ if (imap) {
   if (imap.maps > 1) line('WARN', `карт импортов ${imap.maps} — Firefox примет только первую`, 'имена из второй и следующих карт в Firefox не найдутся (Chrome карты объединяет) — сведите их в одну', { importMap: imap });
   if (!imap.before.length && imap.maps === 1) line('OK', 'карта импортов стоит раньше модулей', 'Firefox её примет');
 }
+
+/* ---------- --no-js: «без JS не видно» ---------- */
+/* В странице (с --no-js — изолированный мир). Носитель — элемент с непустым текстом прямо в нём или картинка (img, svg, video,
+   canvas, iframe, object, embed), который отрисован (checkVisibility, есть коробки). Невидим, если: visibility не visible;
+   итоговая opacity (с предками и filter: opacity()) < 0.1; clip-path у него или предка прячет всё (inset от 100% по высоте
+   или ширине, circle(0), ellipse с нулевым радиусом, многоугольник без площади); transform, translate, scale или rotate у
+   него или предка уводит коробку целиком за экран (левее окна, правее, выше страницы) или в ноль; сдвиг уводит его целиком за
+   край обёртки, которая обрезает (overflow: hidden или clip у предка по цепочке содержащих блоков, область не схлопнута —
+   от 8 px по оси): строка заголовка под маской «выезжает снизу» (01.10: маска 56..110, текст 116..170 — заголовка на снимке
+   нет, а проверка молчала). Прячущий — элемент, у которого это стоит (при равных — самый внешний); у обрезки — маска или
+   ближайший к ней блок (маска inline-block внутри h1 — h1): блок, который называет строка, носители внутри него — одним блоком.
+   Не в счёт (skipped — по видам, в элементах): details без open, [hidden] и display: none (не отрисовано — undrawn), aria-hidden,
+   inert, sr-only, закрытое переключателем aria-expanded="false" (aria-controls или следующий сосед), роли и классы меню,
+   окна, вкладки, подсказки, аккордеона, слайдера (nav, dialog, role, aria-modal; .menu, .dropdown, .modal, .tooltip,
+   .tab-pane, .collapse, .swiper, .slide…), показ правилом :hover, :focus, :focus-within, :checked, :target (правило объявляет
+   то самое, что прячет: opacity, visibility, clip-path или transform), закреплённое (fixed — кроме обёртки на всю страницу:
+   ScrollSmoother), бегущая строка (бесконечная анимация), появление прокруткой без JS (animation-timeline). Прячущий вне
+   потока (absolute) — «мягко», в soft: сверка с вкладкой с JavaScript возвращает его в находки, если с JS он виден (Zero Block
+   Tilda — все элементы absolute: 01.10 из 13 блоков, которые показывает скрипт, не был назван ни один).
+   Ключи носителя (keys: [точный, в пределах якоря, по тексту, текст от 10 знаков]) одинаковы во вкладке без JS и с JS:
+   якорь — ближайший предок с id (кроме случайных: «:r1:», swiper-wrapper-…, uuid), data-elem-id или data-record-id; тег;
+   свой текст (у картинки — alt, aria-label, title или имя файла); номер среди таких же в пределах якоря; строкой — хэш.
+   Заставка (cover): центры носителей первого экрана закрыты (elementFromPoint) одним слоем fixed или absolute от половины окна,
+   плотным (итоговая opacity от 0.85, цвет фона с альфой от 0.6 — затемнение 70% у arunnm.com, — или картинка url()), —
+   от трёх и от половины.
+   opt.mode 'js' — вкладка с JavaScript: ключи видимых носителей (vis: [точный, в пределах якоря, по тексту, картинка ли];
+   near — только у окна ± четверть его высоты) и всех отрисованных (seen, без near); видимый носитель помечается на самом
+   элементе (__rwVis) — «видели видимым хотя бы на одном шаге прохода». → { vis, seen, total, text }
+   Доля страницы без JS — по объёму, а не по числу носителей (01.10: скрипт разбил серверные заголовки на слова — каждое слово
+   стало своим носителем, у h1 своего текста не осталось, и «8 из 28 элементов» дало ложное «страницу рисует скрипт»). Текст —
+   обход текстовых узлов в порядке чтения, склеенный без пробелов и в нижнем регистре (на слова, буквы и строки его режут
+   по-разному, а знаки подряд — те же): text — без JS всё отрисованное (видимое и скрытое), с JS — то, что видели видимым;
+   textAll — без JS вся разметка, и неотрисованная (display: none, [hidden], закрытый details). Картинки — ключами по имени:
+   drawnMedia и allMedia. Сверка — в Node (noJsVolume). hiders — кто прячет неотрисованное: самый внешний предок с display:
+   none или [hidden], до трёх, с числом носителей и атрибутами вида v-cloak, x-cloak (страница под v-cloak — не «нет
+   серверной отрисовки»: разметка на месте).
+   → { hidden, soft: [{ sig, text, why, page, carriers, keys }], count, total, skipped, rules, undrawn, cover,
+       text, textAll, drawnMedia, allMedia, hiders: [{ sig, n, attrs, inline }] } */
+function noJsScanInPage(opt) {
+  const jsMode = !!(opt && opt.mode === 'js'); const near = !!(opt && opt.near);
+  const de = document.documentElement; const body = document.body;
+  if (!body) return jsMode ? { vis: [], seen: [], total: 0, text: '' } : { hidden: [], soft: [], count: 0, total: 0, skipped: {}, rules: 0, undrawn: 0, cover: null, text: '', textAll: '', drawnMedia: [], allMedia: [], hiders: [] };
+  const vw = de.clientWidth || innerWidth, vh = innerHeight, sy = scrollY;
+  const memo = new Map(); const cs = (e) => { let s = memo.get(e); if (!s) { s = getComputedStyle(e); memo.set(e, s); } return s; };
+  const up = (e) => { if (e.parentElement) return e.parentElement; const r = e.getRootNode && e.getRootNode(); return r && r !== document && r.host ? r.host : null; };
+  const chainOf = (e) => { const out = []; for (let x = e; x; x = up(x)) out.push(x); return out; };
+  const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  const cls = (e) => `${typeof e.className === 'string' ? e.className : (e.getAttribute && e.getAttribute('class')) || ''} ${e.id || ''}`;
+  /* ключи носителя: хэш cyrb53 строкой */
+  const hash = (str) => {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+  };
+  /* якорь: сначала data-elem-id и data-record-id (Tilda: со скриптом обёртка анимации получает свой id «sbs-2411288551-…» —
+     01.10 картинка Zero Block из-за этого не сошлась), потом ближайший id, кроме созданных скриптом (случайные, с числами) */
+  const RANDOM_ID = /^:|[0-9a-f]{8}-[0-9a-f]{4}-|\d{5,}|[0-9a-f]{12,}|^(swiper-wrapper|radix|headlessui|mui|react-select|downshift|yui_|ember\d|rc-)/i;
+  const ancMemo = new Map();
+  const idAnchor = (e) => {
+    if (!e || e === body || e === de || e.nodeType !== 1) return '';
+    if (ancMemo.has(e)) return ancMemo.get(e);
+    const id = e.id; const v = id && !RANDOM_ID.test(id) ? `#${id}` : idAnchor(up(e));
+    ancMemo.set(e, v); return v;
+  };
+  const anchorOf = (e) => { const t = e.closest('[data-elem-id], [data-record-id]'); if (t) return t.hasAttribute('data-elem-id') ? `e${t.getAttribute('data-elem-id')}` : `r${t.getAttribute('data-record-id')}`; return idAnchor(e); };
+  const MEDIA = /^(img|svg|video|canvas|iframe|object|embed)$/i;
+  /* имя картинки: файл без папок, расширений и суффиксов размера — со скриптом CDN подменяет «photo.png» на «photo.png.webp»
+     (Tilda, 01.10: две картинки Zero Block с JS видны, а по имени файла не сошлись), WordPress — на «photo-300x200.jpg» */
+  const base = (u) => String(u || '').split(/[?#]/)[0].split('/').pop().toLowerCase().replace(/\..*$/, '').replace(/(-\d+x\d+|@\dx)$/, '').slice(0, 60);
+  const ownText = (e) => {
+    const n = e.localName || '';
+    if (n === 'svg') { const t = e.querySelector('title'); const u = e.querySelector('use'); return clean(e.getAttribute('aria-label') || (t && t.textContent) || (u && (u.getAttribute('href') || u.getAttribute('xlink:href'))) || '').slice(0, 60); }
+    if (MEDIA.test(n)) return clean(e.getAttribute('alt') || e.getAttribute('aria-label') || e.getAttribute('title') || base(e.getAttribute('data-original') || e.getAttribute('data-src') || e.getAttribute('data-lazy-src') || e.getAttribute('src') || e.getAttribute('data') || e.getAttribute('poster') || '')).slice(0, 60);
+    let t = ''; for (const c of e.childNodes) if (c.nodeType === 3) t += c.textContent;
+    return clean(t).slice(0, 60);
+  };
+  const occ = new Map();
+  /* четвёртый — можно ли сверять по одному тексту без якоря: текст от 10 знаков, имя картинки от 4 */
+  const keysOf = (e) => {
+    const text = ownText(e); const tg = e.localName; const loose = `${anchorOf(e)}|${tg}|${text}`;
+    const n = occ.get(loose) || 0; occ.set(loose, n + 1);
+    return [hash(`${loose}|${n}`), hash(loose), hash(`${tg}|${text}`), text.length >= (MEDIA.test(tg) ? 4 : 10) ? 1 : 0];
+  };
+  const skipped = {}; const skip = (k) => { skipped[k] = (skipped[k] || 0) + 1; };
+  /* правила показа по состоянию: цель — селектор без :hover, :focus…, :checked, :target; что правило объявляет */
+  const STATE = /:(hover|focus|focus-within|focus-visible|checked|target|active|open|popover-open)(?![\w-])/;
+  const STATE_ALL = new RegExp(STATE.source, 'g');
+  const rules = [];
+  const splitTop = (s) => { const parts = []; let d = 0, cur = ''; for (const ch of s) { if (ch === '(') d++; if (ch === ')') d--; if (ch === ',' && d === 0) { parts.push(cur); cur = ''; } else cur += ch; } parts.push(cur); return parts.map((x) => x.trim()).filter(Boolean); };
+  const walk = (list) => {
+    for (const r of list) {
+      try {
+        if (r.type === CSSRule.MEDIA_RULE) { if (matchMedia(r.conditionText).matches) walk(r.cssRules); }
+        else if (r.type === CSSRule.SUPPORTS_RULE) { if (CSS.supports(r.conditionText)) walk(r.cssRules); }
+        else if (r.type === CSSRule.STYLE_RULE) {
+          if (!STATE.test(r.selectorText)) continue;
+          const decl = {}; for (let i = 0; i < r.style.length; i++) decl[r.style[i]] = r.style.getPropertyValue(r.style[i]);
+          for (const sel of splitTop(r.selectorText)) {
+            if (!STATE.test(sel) || /:not\([^)]*:(hover|focus|checked|target)/.test(sel) || /::/.test(sel)) continue;
+            const target = sel.replace(STATE_ALL, '').trim();
+            if (!target) continue;
+            try { document.querySelector(target); } catch (e) { continue; }
+            rules.push({ target, decl });
+          }
+        } else if (r.cssRules && r.type !== CSSRule.KEYFRAMES_RULE) walk(r.cssRules);
+      } catch (e) { /* правило не читается */ }
+    }
+  };
+  if (!jsMode) for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch (e) { /* чужая таблица без CORS */ } }
+  const showsFor = (why, d) => {
+    if (why === 'opacity') { const o = String(d.opacity || '').trim(); if (!o) return false; if (/var\(|calc\(/i.test(o)) return true; const x = parseFloat(o); return Number.isFinite(x) && (/%/.test(o) ? x / 100 : x) >= 0.1; }
+    if (why === 'visibility') return /^(visible|var\()/i.test(String(d.visibility || '').trim());
+    if (why === 'clip-path') return !!(d['clip-path'] || d['-webkit-clip-path']);
+    return !!(d.transform || d.translate || d.scale || d.rotate);
+  };
+  const match = (x, sel) => { try { return x.matches(sel); } catch (e) { return false; } };
+  /* закрыто переключателем: aria-controls у aria-expanded="false"; без него — следующий сосед (не раздел страницы) */
+  const closedBy = new Set();
+  if (!jsMode) for (const t of document.querySelectorAll('[aria-expanded="false"]')) {
+    let hit = false;
+    for (const id of String(t.getAttribute('aria-controls') || '').split(/\s+/).filter(Boolean)) { const x = document.getElementById(id); if (x) { closedBy.add(x); hit = true; } }
+    if (hit) continue;
+    const cand = [t.nextElementSibling];
+    if (t.parentElement && /^(h[1-6]|dt)$/i.test(t.parentElement.localName)) cand.push(t.parentElement.nextElementSibling);
+    for (const x of cand) if (x && !/^(main|section|article|header|footer|body)$/i.test(x.localName) && x.getElementsByTagName('*').length < 150) closedBy.add(x);
+  }
+  const ROLE = { dialog: 'окно', alertdialog: 'окно', menu: 'меню', menubar: 'меню', navigation: 'меню', listbox: 'меню', tooltip: 'подсказка', tabpanel: 'вкладка' };
+  const KINDS = [
+    ['меню', /(^|[\s_-])(nav|navbar|navigation|menu|menus|submenu|dropdown|drop-down|megamenu|drawer|offcanvas|off-canvas|burger|hamburger|sidenav)([\s_-]|$)/i],
+    ['окно', /(^|[\s_-])(modal|popup|pop-up|popover|dialog|lightbox|overlay|cookie|cookies|consent|gdpr|toast|snackbar|notification|preloader|loader|spinner|skeleton|search|minicart|cart)([\s_-]|$)/i],
+    ['подсказка', /(^|[\s_-])(tooltip|tooltips|tip|tips|hint|hints)([\s_-]|$)/i],
+    ['вкладка', /(^|[\s_-])(tab|tabs|tabpanel|tab-pane|tab-content)([\s_-]|$)/i],
+    ['аккордеон', /(^|[\s_-])(accordion|accordeon|collapse|collapsible|spoiler|expander)([\s_-]|$)/i],
+    /* slide — пункт слайдера (.hero__slide, .slide), но не класс появления (.slide-in, .slide-up) */
+    ['слайдер', /(^|[\s_-])(slider|slides|slideshow|slide(?![-_]?(in|up|down|left|right|out|from|to|top|bottom)([\s_-]|$))|carousel|swiper|splide|glide|slick|owl|flickity|embla|marquee|ticker)([\s_-]|$)/i],
+  ];
+  const SR = /(^|[\s_-])(sr-only|sr_only|visually-hidden|visuallyhidden|screen-reader-text|screen-reader-only|a11y-hidden|hidden-visually|u-hidden-visually|element-invisible|assistive-text)([\s_-]|$)/i;
+  const srOnly = (x) => {
+    if (SR.test(cls(x))) return true;
+    const s = cs(x); if (s.position !== 'absolute' && s.position !== 'fixed') return false;
+    const r = x.getBoundingClientRect();
+    return (r.width <= 2 && r.height <= 2) || /^rect\(0(px)?,?\s*0(px)?,?\s*0(px)?,?\s*0(px)?\)$/.test(String(s.clip || '').trim());
+  };
+  /* обёртка на всю страницу (GSAP ScrollSmoother: fixed, закрывает окно, содержимое выше полутора окон, от трети элементов) */
+  const allEls = body.getElementsByTagName('*').length; const wrapMemo = new Map();
+  const pageWrap = (f) => {
+    if (wrapMemo.has(f)) return wrapMemo.get(f);
+    const r = f.getBoundingClientRect();
+    const on = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0)) / (innerWidth * vh);
+    const tall = Math.max(f.scrollHeight, ...[...f.children].map((c) => c.getBoundingClientRect().height));
+    const yes = on >= 0.9 && tall > vh * 1.5 && f.getElementsByTagName('*').length >= allEls / 3;
+    wrapMemo.set(f, yes); return yes;
+  };
+  const infinite = new Set();
+  if (!jsMode) { try { for (const a of document.getAnimations()) { const t = a.effect && a.effect.getTiming ? a.effect.getTiming() : null; if (t && t.iterations === Infinity && a.effect.target) infinite.add(a.effect.target); } } catch (e) { /* нет getAnimations */ } }
+  /* clip-path прячет всё: inset — сумма сторон от высоты или ширины, circle(0), ellipse(0 …), многоугольник без площади */
+  const clipHidesAll = (x) => {
+    const v = String(cs(x).clipPath || 'none').trim(); if (!v || v === 'none') return false;
+    const r = x.getBoundingClientRect();
+    const w = typeof x.offsetWidth === 'number' ? x.offsetWidth : r.width, h = typeof x.offsetHeight === 'number' ? x.offsetHeight : r.height;
+    const len = (s, b) => { s = String(s || '').trim(); if (/%$/.test(s)) return parseFloat(s) / 100 * b; if (/^-?[\d.]+(px)?$/.test(s)) return parseFloat(s); return NaN; };
+    let m = /^inset\(([^)]*)\)/.exec(v);
+    if (m) {
+      const [t, rr = t, b = t, l = rr] = m[1].split(/\s+round\s+/)[0].trim().split(/\s+/);
+      const T = len(t, h), R = len(rr, w), B = len(b, h), L = len(l, w);
+      if (![T, R, B, L].every(Number.isFinite)) return false;
+      return T + B >= h - 0.5 || L + R >= w - 0.5;
+    }
+    m = /^circle\(\s*([^\s)]+)/.exec(v); if (m) { const q = len(m[1], Math.hypot(w, h) / Math.SQRT2); return Number.isFinite(q) && q <= 0.5; }
+    m = /^ellipse\(\s*([^\s)]+)\s+([^\s)]+)/.exec(v); if (m) { const a = len(m[1], w), b = len(m[2], h); return (Number.isFinite(a) && a <= 0.5) || (Number.isFinite(b) && b <= 0.5); }
+    m = /^polygon\((?:\s*(?:nonzero|evenodd)\s*,)?([^)]*)\)/.exec(v);
+    if (m) {
+      const pts = m[1].split(',').map((p) => p.trim().split(/\s+/)).map(([px, py]) => [len(px, w), len(py, h)]);
+      if (pts.length < 3 || pts.some(([px, py]) => !Number.isFinite(px) || !Number.isFinite(py))) return false;
+      let a = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; a += x1 * y2 - x2 * y1; }
+      return Math.abs(a) / 2 < 1;
+    }
+    return false;
+  };
+  const moved = (s) => (s.transform && s.transform !== 'none') || (s.translate && s.translate !== 'none') || (s.scale && s.scale !== 'none') || (s.rotate && s.rotate !== 'none');
+  const offBox = (x) => {
+    const r = x.getBoundingClientRect();
+    const zero = (r.width < 1 || r.height < 1) && typeof x.offsetWidth === 'number' && x.offsetWidth >= 1 && x.offsetHeight >= 1;
+    return zero || r.right <= 0 || r.left >= vw || r.bottom + sy <= 0;
+  };
+  /* уведён за край обрезающей обёртки: цепочка содержащих блоков — как clipOf у blockWiderInPage (absolute — через
+     позиционированных, fixed — через transform и contain), на ней предок с overflow hidden или clip по оси; между носителем и
+     им есть сдвиг (transform, translate, scale, rotate), область обёртки не схлопнута (от 8 px по оси: свёрнутая панель
+     max-height: 0 — аккордеон, а не «уведено»), а коробка носителя с ней не пересекается → { mask, h, ov } */
+  const fixedCB = (s) => s.transform !== 'none' || s.perspective !== 'none' || (s.filter && s.filter !== 'none') || /paint|layout|strict|content/.test(s.contain || '') || /transform|perspective|filter/.test(s.willChange || '');
+  const absCB = (s) => s.position !== 'static' || fixedCB(s);
+  const maskOut = (e) => {
+    const r = e.getBoundingClientRect(); if (r.width < 1 && r.height < 1) return null;
+    let mode = cs(e).position; let was = moved(cs(e));
+    for (let p = up(e); p && p !== body && p !== de; p = up(p)) {
+      const s = cs(p);
+      const inChain = mode === 'fixed' ? fixedCB(s) : mode === 'absolute' ? absCB(s) : true;
+      if (inChain) {
+        const cx = /^(hidden|clip)$/.test(s.overflowX), cy = /^(hidden|clip)$/.test(s.overflowY);
+        if ((cx || cy) && was) {
+          const q = p.getBoundingClientRect();
+          const L = q.left + (parseFloat(s.borderLeftWidth) || 0), R = q.right - (parseFloat(s.borderRightWidth) || 0);
+          const T = q.top + (parseFloat(s.borderTopWidth) || 0), B = q.bottom - (parseFloat(s.borderBottomWidth) || 0);
+          const outX = cx && R - L >= 8 && (r.right <= L + 0.5 || r.left >= R - 0.5);
+          const outY = cy && B - T >= 8 && (r.bottom <= T + 0.5 || r.top >= B - 0.5);
+          if (outX || outY) { let h = p; while (h && h !== body && /^inline/.test(cs(h).display)) h = up(h); return { mask: p, h: h && h !== body ? h : p, ov: outY ? s.overflowY : s.overflowX }; }
+        }
+        mode = s.position === 'fixed' || s.position === 'absolute' ? s.position : 'flow';
+      }
+      if (moved(s)) was = true;
+    }
+    return null;
+  };
+  /* почему невидим: { why, h, label } или null — видим */
+  const hiddenOf = (e, chain) => {
+    if (cs(e).visibility !== 'visible') { let h = e; for (let x = up(e); x && cs(x).visibility !== 'visible'; x = up(x)) h = x; return { why: 'visibility', h, label: 'visibility: hidden' }; }
+    let prod = 1, minOp = 2, minEl = null;
+    for (const x of chain) {
+      const s = cs(x); if (s.display === 'contents') continue;
+      let t = parseFloat(s.opacity); if (!Number.isFinite(t)) t = 1;
+      if (s.filter && s.filter !== 'none') { const f = /opacity\(([\d.]+)(%?)\)/.exec(s.filter); if (f) t *= f[2] ? parseFloat(f[1]) / 100 : parseFloat(f[1]); }
+      prod *= t; if (t <= minOp) { minOp = t; minEl = x; }
+    }
+    if (prod < 0.1) return { why: 'opacity', h: minEl, label: `opacity ${Math.round(minOp * 100) / 100}` };
+    let h = null;
+    for (const x of chain) if (x !== de && clipHidesAll(x)) h = x;
+    if (h) return { why: 'clip-path', h, label: `clip-path: ${String(cs(h).clipPath).slice(0, 40)}` };
+    for (const x of chain) if (x !== de && x !== body && moved(cs(x)) && offBox(x)) h = x;
+    if (h) return { why: 'transform', h, label: 'transform уводит за экран' };
+    const m = maskOut(e);
+    if (m) return { why: 'overflow', h: m.h, label: `уведено за край обёртки ${sig(m.mask)} (overflow: ${m.ov})` };
+    return null;
+  };
+  /* не в счёт — вид (строка); absolute — отдельно, «мягко» (softAbs) */
+  const excluded = (e, chain, h, why) => {
+    const upto = chain.slice(0, chain.indexOf(h) + 1);
+    const inner = chain.filter((x) => x !== body && x !== de);
+    if (chain.some((x) => x.getAttribute && x.getAttribute('aria-hidden') === 'true')) return 'aria-hidden';
+    if (chain.some((x) => x.hasAttribute && x.hasAttribute('inert'))) return 'inert';
+    if (upto.some(srOnly)) return 'sr-only';
+    if (inner.some((x) => closedBy.has(x))) return 'закрыто переключателем (aria-expanded="false")';
+    for (const x of inner) {
+      const role = String(x.getAttribute('role') || '').trim().toLowerCase();
+      if (ROLE[role]) return ROLE[role];
+      if (x.localName === 'nav') return 'меню';
+      if (x.localName === 'dialog' || x.getAttribute('aria-modal') === 'true') return 'окно';
+    }
+    for (const x of inner) { const c = cls(x); for (const [kind, re] of KINDS) if (re.test(c)) return kind; }
+    if (rules.some((r) => showsFor(why, r.decl) && (match(h, r.target) || match(e, r.target)))) return 'показ по :hover, :focus, :checked, :target';
+    if (inner.some((x) => cs(x).position === 'fixed' && !pageWrap(x))) return 'закреплённое (fixed)';
+    if (chain.some((x) => infinite.has(x))) return 'бегущая строка';
+    if (upto.some((x) => { const t = String(cs(x).animationTimeline || 'auto'); return !/^(auto|none)$/.test(t); })) return 'появление прокруткой (animation-timeline)';
+    return null;
+  };
+  const softAbs = (h) => h !== body && h !== de && cs(h).position === 'absolute';
+  /* заставка: слой fixed или absolute от половины окна над центром носителя (самый внешний, в котором носителя нет) */
+  const layerOver = (e) => {
+    const r = e.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if (!(x >= 0 && y >= 0 && x < vw && y < vh)) return undefined;
+    const t = document.elementFromPoint(x, y);
+    if (!t || t === e || e.contains(t) || t.contains(e)) return null;
+    let L = null;
+    for (let q = t; q && q !== body && q !== de; q = up(q)) {
+      if (q.contains(e)) break;
+      const s = cs(q); if (s.position !== 'fixed' && s.position !== 'absolute') continue;
+      const b = q.getBoundingClientRect();
+      const share = Math.max(0, Math.min(b.right, vw) - Math.max(b.left, 0)) * Math.max(0, Math.min(b.bottom, vh) - Math.max(b.top, 0)) / (vw * vh);
+      if (share >= 0.5) L = q;
+    }
+    return L;
+  };
+  const opaque = (L) => {
+    const s = cs(L); if (s.visibility !== 'visible' || eff(L) < 0.85) return false;
+    if (/url\(/.test(s.backgroundImage || '')) return true;
+    const m = /rgba?\(([^)]*)\)/.exec(s.backgroundColor || ''); if (!m) return false;
+    const p = m[1].split(/[\s,/]+/).filter(Boolean);
+    return p.length < 4 || parseFloat(p[3]) >= 0.6;
+  };
+  const SKIPTAG = /^(script|style|template|noscript|head|title|meta|link|br|wbr|input|select|textarea|option|optgroup|datalist|param|source|track|area|map)$/i;
+  const carrier = (e) => {
+    const n = e.localName || '';
+    if (SKIPTAG.test(n)) return false;
+    if (e instanceof SVGElement) return n === 'svg' && !e.ownerSVGElement;
+    if (MEDIA.test(n)) return true;
+    for (const c of e.childNodes) if (c.nodeType === 3 && c.textContent.trim()) return true;
+    return false;
+  };
+  const groups = new Map(); const soft = new Map(); const vis = []; const seenKeys = [];
+  const drawnEls = new Set(); const drawnMedia = []; const allMedia = []; const hiders = new Map(); let cut = null;
+  /* кто прячет неотрисованный носитель: самый внешний предок (или он сам) с display: none или [hidden] */
+  const noteHider = (e) => { let h = null; for (let x = e; x; x = up(x)) if ((x.hasAttribute && x.hasAttribute('hidden')) || cs(x).display === 'none') h = x; if (h) hiders.set(h, (hiders.get(h) || 0) + 1); };
+  const layers = new Map(); let inView = 0; let total = 0, undrawn = 0, seen = 0, checked = 0;
+  for (const e of body.querySelectorAll('*')) {
+    if (++seen > 20000) { cut = e; break; }
+    if (!carrier(e)) continue;
+    const keys = keysOf(e); const media = MEDIA.test(e.localName || '');
+    /* вкладка с JS, шаг прохода: только у окна (ключи — у всех: по ним номера среди таких же) */
+    if (jsMode && near) { const r = e.getBoundingClientRect(); if (r.bottom < -vh * 0.25 || r.top > vh * 1.25) continue; }
+    if (!jsMode && media) allMedia.push(keys[2]);
+    /* не отрисовано: содержимое закрытого details, [hidden], display: none — до отрисовки, по виду */
+    const det = e.closest('details:not([open])');
+    if (det) { const sm = e.closest('summary'); if (!sm || sm.parentElement !== det) { undrawn++; if (!jsMode) skip('аккордеон'); continue; } }
+    if (e.closest('[hidden]')) { undrawn++; if (!jsMode) { skip('[hidden]'); noteHider(e); } continue; }
+    let drawn = true; try { if (e.checkVisibility && !e.checkVisibility()) drawn = false; } catch (x) { /* старый браузер */ }
+    if (!drawn || !e.getClientRects().length) { undrawn++; if (!jsMode) { skip('display: none'); noteHider(e); } continue; }
+    total++;
+    if (!jsMode) { drawnEls.add(e); if (media) drawnMedia.push(keys[2]); }
+    if (++checked > 8000) continue;
+    const chain = chainOf(e);
+    const hid = hiddenOf(e, chain);
+    if (jsMode) { if (!near) seenKeys.push(keys.slice(0, 3)); if (!hid) { e.__rwVis = 1; vis.push([keys[0], keys[1], keys[2], media ? 1 : 0]); } continue; }
+    if (!hid) {
+      const L = layerOver(e);
+      if (L !== undefined) { inView++; if (L) layers.set(L, (layers.get(L) || 0) + 1); }
+      continue;
+    }
+    const k = excluded(e, chain, hid.h, hid.why);
+    if (k) { skip(k); continue; }
+    const into = softAbs(hid.h) ? soft : groups;
+    const g = into.get(hid.h);
+    if (g) { g.carriers++; if (g.keys.length < 20) g.keys.push(keys); } else into.set(hid.h, { el: hid.h, why: hid.label, carriers: 1, keys: [keys] });
+  }
+  /* текст подряд, в порядке чтения: текстовые узлы носителей, склеенные без пробелов, мягких переносов и знаков нулевой
+     ширины, в нижнем регистре. Запасной текст внутри canvas, video, object, iframe и текст внутри svg — не текст страницы.
+     Шаг прохода во вкладке с JS (near) текст не собирает — только помечает видимое */
+  let text = '', textAll = '';
+  if (!(jsMode && near)) {
+    const TEXT_MAX = 300000;
+    /* пробелы, мягкий перенос (U+00AD) и знаки нулевой ширины (U+200B–U+200D, U+2060, U+FEFF) — кодами, без самих знаков в исходнике */
+    const GAPS = new RegExp(`[\\s${String.fromCharCode(0xad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff)}]+`, 'g');
+    const squash = (s) => String(s || '').toLowerCase().replace(GAPS, '');
+    const tw = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+      const p = n.parentElement; if (!p) continue;
+      if (cut && (p === cut || (cut.compareDocumentPosition(p) & 4))) break;
+      const nm = p.localName || '';
+      if (SKIPTAG.test(nm) || MEDIA.test(nm) || p instanceof SVGElement) continue;
+      const s = squash(n.textContent); if (!s) continue;
+      if (p.closest('canvas, video, audio, object, iframe, svg')) continue;
+      if (jsMode) { if (p.__rwVis && text.length < TEXT_MAX) text += s; continue; }
+      if (textAll.length < TEXT_MAX) textAll += s;
+      if (drawnEls.has(p) && text.length < TEXT_MAX) text += s;
+    }
+  }
+  if (jsMode) return { vis, seen: seenKeys, total, text };
+  /* имя блока: начало текста (без script и style) или alt картинки */
+  const textOf = (x) => {
+    if (x.localName === 'img') return clean(x.alt);
+    let out = ''; const w = document.createTreeWalker(x, NodeFilter.SHOW_TEXT);
+    for (let t = w.nextNode(); t && out.length < 80; t = w.nextNode()) { const p = t.parentElement; if (p && p.closest('script, style, template, noscript')) continue; out += ` ${t.textContent}`; }
+    out = clean(out); if (!out && x.querySelector) { const im = x.querySelector('img[alt]'); if (im) out = clean(im.alt); }
+    return out.length > 30 ? `${out.slice(0, 30)}…` : out;
+  };
+  const outOf = (m) => [...m.values()].slice(0, 200).map((g) => ({ sig: sig(g.el), text: textOf(g.el), why: g.why, page: g.el === body || g.el === de, carriers: g.carriers, keys: g.keys }));
+  let cover = null;
+  for (const [L, n] of layers) if (n >= 3 && n >= inView * 0.5 && (!cover || n > cover.covered) && opaque(L)) cover = { sig: sig(L), text: textOf(L), covered: n, inView };
+  const hid3 = [...hiders.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h, n]) => ({
+    sig: sig(h), n, attrs: [...h.attributes].map((a) => a.name).filter((a) => /cloak|^hidden$/i.test(a)).slice(0, 2),
+    inline: /display\s*:\s*none/i.test(h.getAttribute('style') || ''),
+  }));
+  return { hidden: outOf(groups), soft: outOf(soft), count: groups.size, total, skipped, rules: rules.length, undrawn, cover, text, textAll, drawnMedia, allMedia, hiders: hid3 };
+}
+/* сверка с вкладкой с JavaScript: та же страница (target — адрес документа, который сейчас открыт во вкладке без JS: после
+   --click по ссылке это уже не стартовый адрес; key — он же без #, по нему сверка пересобирается), тот же экран, тема и
+   «меньше движения», --init; окно согласия и ворота закрываются, как у основной вкладки; проход прокрутки (появления) — на
+   каждом шаге ключи видимых носителей у окна, в конце — всех. Видимое с JS хотя бы на одном шаге — «видно с JS»; text — текст
+   таких носителей подряд (для доли по объёму), vis.media — ключи видимых картинок. Предупреждения lib этой вкладки
+   (SITE_REWORK_DISMISS, окно) в протокол не идут: это не страница прогона.
+   → { ok, url, vis: { exact, loose, text, media }, seen: { exact, loose, text }: Set, visCount, text, total, screens, ms, vp }
+   или { ok: false, url, error } */
+let jsCmp = null;
+async function jsCompareBuild(target, key) {
+  const t0 = Date.now(); let p2 = null;
+  drainLib();
+  try {
+    p2 = await preparePage(browser, cur, { scheme: opt.scheme || 'light', reducedMotion: !!opt['reduced-motion'] });
+    if (opt.init) await p2.evaluateOnNewDocument(String(opt.init));
+    await gotoRetry(p2, target);
+    await p2.evaluate(() => document.fonts.ready).catch(() => {});
+    await waitForOverlay(p2, 5000, { dismiss: false, modalCheck: false }).catch(() => null);
+    await closeConsent(p2, { click: !keepConsent }).catch(() => null);
+    await sleep(300); await settleAnimations(p2, 2500);
+    const vis = { exact: new Set(), loose: new Set(), text: new Set(), media: new Set() };
+    const add = (list) => { for (const [a, b, c, m] of list || []) { vis.exact.add(a); vis.loose.add(b); vis.text.add(c); if (m) vis.media.add(c); } };
+    add((await evaluateWith(p2, noJsScanInPage, { mode: 'js', near: true }, DEPS).catch(() => null) || {}).vis);
+    const res = await scrollThrough(p2, { pause: 350, onStep: async () => { const r = await evaluateWith(p2, noJsScanInPage, { mode: 'js', near: true }, DEPS).catch(() => null); if (r) add(r.vis); } });
+    await settleAnimations(p2, 2500);
+    const full = await evaluateWith(p2, noJsScanInPage, { mode: 'js' }, DEPS);
+    add(full.vis);
+    const seen = { exact: new Set(), loose: new Set(), text: new Set() };
+    for (const [a, b, c] of full.seen || []) { seen.exact.add(a); seen.loose.add(b); seen.text.add(c); }
+    return { ok: true, url: key, vis, seen, visCount: vis.text.size, text: String(full.text || ''), total: full.total, screens: res.screens, ms: Date.now() - t0, vp: `${cur.width}x${cur.height}` };
+  } catch (e) {
+    return { ok: false, url: key, error: short(String((e && e.message) || e).split('\n')[0], 160), ms: Date.now() - t0, vp: `${cur.width}x${cur.height}` };
+  } finally {
+    if (p2) await p2.close().catch(() => {});
+    takeWarnings(); takeNotes();
+  }
+}
+/* состояние носителя с JS по ключам: vis — виден, hid — отрисован и скрыт, absent — с JS такого нет (перестроен скриптом) */
+const jsStateOf = ([a, b, c, long]) => {
+  if (jsCmp.vis.exact.has(a)) return 'vis';
+  if (jsCmp.seen.exact.has(a)) return 'hid';
+  if (jsCmp.vis.loose.has(b)) return 'vis';
+  if (jsCmp.seen.loose.has(b)) return 'hid';
+  if (long && jsCmp.vis.text.has(c)) return 'vis';
+  if (long && jsCmp.seen.text.has(c)) return 'hid';
+  return 'absent';
+};
+const groupJsState = (g) => { const st = (g.keys || []).map(jsStateOf); return st.includes('vis') ? 'vis' : st.includes('hid') ? 'hid' : 'absent'; };
+/* доля страницы без JS — по объёму: какая часть текста, видного с JavaScript (J — знаки подряд, без пробелов), есть в тексте
+   вкладки без JS (N). Знак J покрыт, если входит в отрезок из KGRAM знаков подряд, который есть в N: серверный текст находится,
+   как бы скрипт ни резал его на носители (слова, буквы, строки), а буквы и короткие слова текста, которого без JS нет,
+   «подстроками» шапки не засчитываются (стенды nojs-split и nojs-spa-split). Текст короче KGRAM — целиком подстрокой.
+   Картинки — по именам; в общем счёте картинка — как MEDIA_W знаков (строка текста): галерея, которую вставляет скрипт, — тоже
+   «страницу рисует скрипт». share — против отрисованного без JS, shareMarkup — против всей разметки без JS, и неотрисованной
+   (display: none до скрипта: v-cloak, x-cloak): по разнице видно, чего нет в разметке, а что в ней есть, но спрятано */
+const KGRAM = 6; const MEDIA_W = 40;
+function coveredChars(J, N) {
+  if (!J || !N) return 0;
+  if (J.length < KGRAM) return N.includes(J) ? J.length : 0;
+  if (N.length < KGRAM) return J.includes(N) ? N.length : 0;
+  const grams = new Set(); for (let i = 0; i + KGRAM <= N.length; i++) grams.add(N.slice(i, i + KGRAM));
+  let covered = 0, until = 0;
+  for (let i = 0; i + KGRAM <= J.length; i++) if (grams.has(J.slice(i, i + KGRAM))) { covered += i + KGRAM - Math.max(until, i); until = i + KGRAM; }
+  return covered;
+}
+function noJsVolume(r) {
+  const J = jsCmp.text || ''; const jm = [...jsCmp.vis.media];
+  const dm = new Set(r.drawnMedia || []), am = new Set(r.allMedia || []);
+  const covered = coveredChars(J, r.text || ''); const coveredMarkup = Math.max(covered, coveredChars(J, r.textAll || ''));
+  const mediaHit = jm.filter((k) => dm.has(k)).length; const mediaMarkup = jm.filter((k) => am.has(k)).length;
+  const sum = J.length + MEDIA_W * jm.length; const round = (x) => Math.round(x * 1000) / 1000;
+  return { chars: J.length, covered, coveredMarkup, media: jm.length, mediaHit, mediaMarkup, share: sum ? round((covered + MEDIA_W * mediaHit) / sum) : 1, shareMarkup: sum ? round((coveredMarkup + MEDIA_W * mediaMarkup) / sum) : 1 };
+}
+/* строки «без JS …»: после загрузки — заставка (WARN), пустая страница или малая её доля (WARN), блоки, которые показывает
+   только скрипт (WARN со списком) или OK, скрытое и с JS — INFO «по замыслу»; после --scroll — только новое против всего уже
+   названного (WARN), те же — INFO. Скриптов нет (ни <script>, ни обработчиков в атрибутах, ни ссылок javascript:) — страница
+   та же, что с JS: скрытое — по замыслу (INFO).
+   Шаг увёл на другую страницу (--click по ссылке; 01.10: проверка после перехода сверяла новую страницу с вкладкой с JS
+   стартового адреса и со списком находок главной) — проверка для нового документа идёт заново, как после загрузки: счёт
+   скриптов, сверка с JS по его адресу, список названного — свои; в строке — «страница сменилась» */
+let noJsLoad = null; const noJsNamed = new Set(); let noJsCoverSaid = false;
+let noJsDoc = null; /* документ прошлой проверки: { url — без #, probe — счёт скриптов, first — стартовый ли } */
+async function noJsCheck(when) {
+  await settleAnimations(page, 2500);
+  let here = ''; try { here = noHash(page.url()); } catch { here = ''; }
+  let moved = '';
+  if (!noJsDoc) noJsDoc = { url: here, probe: (noJsState && noJsState.probe) || {}, first: true };
+  else if (here && noJsDoc.url !== here) {
+    const probe = await page.evaluate(scriptsInPage, false).catch((e) => ({ error: short((e && e.message) || e, 120) }));
+    noJsDoc = { url: here, probe, first: false };
+    noJsLoad = null; noJsNamed.clear(); noJsCoverSaid = false;
+    moved = `страница сменилась — теперь ${here.length > 110 ? `…${here.slice(-109)}` : here}: «без JS» проверено для неё заново (${when}), сверка — с вкладкой с JavaScript этого адреса · `;
+  }
+  const r = await evaluateWith(page, noJsScanInPage, { mode: 'nojs' }, DEPS).catch((e) => ({ error: short((e && e.message) || e, 160) }));
+  const strip = (l) => (l || []).map(({ keys, ...x }) => x);
+  if (!r || r.error) { if (report.noJs) report.noJs.checks.push({ at: when, url: here, error: r ? r.error : 'нет ответа' }); return line('INFO', `без JS не видно ${when}`, `не проверялось: ${r ? r.error : 'нет ответа'}`, null, { count: false }); }
+  const pr = noJsDoc.probe || {};
+  const noScripts = pr.exec === 0 && !pr.handlers && !pr.jsUrls;
+  /* сверка с JS — один раз на документ и экран (после --resize и после перехода — заново) */
+  const vpKey = `${cur.width}x${cur.height}`;
+  if (!noScripts && (!jsCmp || jsCmp.vp !== vpKey || jsCmp.url !== here)) jsCmp = await jsCompareBuild(noJsDoc.first ? url : page.url(), here);
+  const cmp = !noScripts && jsCmp && jsCmp.ok;
+  const vol = cmp ? noJsVolume(r) : null;
+  const blocks = (n) => `${n} ${plural(n, 'блок', 'блока', 'блоков')}`;
+  const fmt = (x) => `${x.sig}${x.page ? ' — вся страница' : ''}${x.text ? ` «${x.text}»` : ''} (${x.why}${x.absent ? '; с JS сверить не с чем — там он не отрисован или перестроен скриптом' : ''}${x.softAbs ? '; вне потока, absolute' : ''})`;
+  const listOf = (l) => `${l.slice(0, 6).map(fmt).join(', ')}${l.length > 6 ? ` и ещё ${l.length - 6}` : ''}`;
+  /* что прячет только отсутствие скрипта (dep), что скрыто и с JS (design); absolute, видный с JS, — в dep, остальные absolute
+     (и все absolute без сверки) — «не в счёт» числом носителей */
+  let dep = r.hidden, design = []; let softLeft = r.soft.reduce((s, g) => s + g.carriers, 0);
+  if (noScripts) { design = r.hidden; dep = []; }
+  else if (cmp) {
+    dep = []; softLeft = 0;
+    for (const g of r.hidden) { const s = groupJsState(g); if (s === 'hid') design.push(g); else dep.push(s === 'absent' ? { ...g, absent: true } : g); }
+    for (const g of r.soft) { if (groupJsState(g) === 'vis') dep.push({ ...g, softAbs: true }); else softLeft += g.carriers; }
+  }
+  const sk = Object.entries(r.skipped || {}).filter(([k]) => k !== 'display: none' && k !== '[hidden]');
+  if (softLeft) sk.push([cmp ? 'вне потока (absolute), скрыто и с JS' : 'вне потока (absolute)', softLeft]);
+  const nd = ((r.skipped || {})['display: none'] || 0) + ((r.skipped || {})['[hidden]'] || 0);
+  const skipTxt = `${sk.length ? ` · не в счёт (элементов): ${sk.map(([k, n]) => `${k} ${n}`).join(', ')}` : ''}${nd ? ` · не отрисовано (display: none, [hidden]): ${nd}` : ''}`;
+  const fix = 'показ зависит от скрипта: прячьте до появления только под классом, который ставит скрипт (<html class="no-js"> → js), или верните видимость в <noscript><style>…</style></noscript>';
+  const checked = `проверено ${r.total} ${plural(r.total, 'элемент', 'элемента', 'элементов')} с текстом или картинкой`;
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  const cmpTxt = noScripts ? ' · скриптов на странице нет — без JavaScript она та же, что с ним'
+    : cmp ? ` · сверено с вкладкой с JavaScript (прокрутка ${jsCmp.screens} экранов): с JS видно ${jsCmp.visCount} разных элементов с текстом или картинкой; без JavaScript отрисовано ${pct(vol.share)} этого по объёму`
+      : jsCmp && jsCmp.error ? ` · сверка с вкладкой с JavaScript не вышла (${jsCmp.error}) — скрытое и с JS не отсеяно, absolute не проверялось` : '';
+  const data = { noJs: { ...r, url: here, hidden: strip(r.hidden), soft: strip(r.soft), text: undefined, textAll: undefined, drawnMedia: undefined, allMedia: undefined, textChars: (r.text || '').length, markupChars: (r.textAll || '').length, dep: strip(dep), design: strip(design), volume: vol, compare: noScripts ? { scripts: 0 } : jsCmp ? { ok: jsCmp.ok, url: jsCmp.url, error: jsCmp.error || null, visCount: jsCmp.visCount, total: jsCmp.total, screens: jsCmp.screens, ms: jsCmp.ms, vp: jsCmp.vp } : null } };
+  if (report.noJs) report.noJs.checks.push({ at: when, ...data.noJs });
+  const key = (x) => `${x.sig}|${x.text}`;
+  /* заставка, которую без скрипта не убрать: слой над носителями первого экрана или заставка при загрузке не ушла */
+  const stuck = noJsDoc.first && page.overlay && page.overlay.hadOverlay && !page.overlay.gone ? page.overlay.overlay : null;
+  const cover = noScripts ? null : r.cover ? r.cover : stuck ? { sig: stuck, stuck: true } : null;
+  if (cover && !noJsCoverSaid) {
+    noJsCoverSaid = true;
+    line('WARN', `без JS страницу закрывает заставка ${cover.sig}`, `${moved}${cover.covered ? `${cover.covered} из ${cover.inView} элементов с текстом или картинкой первого экрана под ней${cover.text ? ` («${cover.text}»)` : ''}` : 'заставка при загрузке не ушла'} — убрать её без скрипта нечем: прячьте заставку только под классом, который ставит скрипт, или в <noscript><style>…</style></noscript>`, { cover });
+  }
+  /* пустая без JS страница или её малая доля. Причин две, и совет у них разный: разметки нет — страницу рисует скрипт (SPA
+     без серверной отрисовки); разметка есть, но спрятана display: none до скрипта (v-cloak у Vue, x-cloak у Alpine, класс
+     загрузки) — серверная отрисовка на месте, вернуть надо видимость (01.10: под v-cloak советовали серверную отрисовку) */
+  const empty = !noScripts && r.total === 0;
+  const low = !empty && !!vol && jsCmp.visCount >= 5 && vol.share < 0.5;
+  const inMarkup = !!vol && vol.shareMarkup >= 0.5;
+  const signs = (n) => `${n} ${plural(n, 'знака', 'знаков', 'знаков')}`;
+  const hidTxt = (r.hiders || []).map((h) => `${h.sig}${h.attrs && h.attrs.length ? ` (атрибут ${h.attrs.join(', ')})` : h.inline ? ' (display: none в style)' : ''}`).join(', ');
+  const cloakFix = 'показывайте разметку сразу, а прячьте её только под классом, который ставит скрипт (<html class="no-js"> → js), или верните видимость в <noscript><style>…</style></noscript>';
+  if (!noJsLoad) {
+    noJsLoad = { ...r, dep, design };
+    for (const x of [...dep, ...design]) noJsNamed.add(key(x));
+    if (empty) {
+      const root = await page.evaluate(() => { const b = document.body; if (!b) return ''; const c = [...b.children].filter((x) => !/^(script|style|noscript|template|link|meta)$/i.test(x.localName)); return c.slice(0, 3).map((x) => `${x.localName}${x.id ? `#${x.id}` : ''}${x.children.length || String(x.textContent || '').trim() ? '' : ' пустой'}`).join(', '); }).catch(() => '');
+      if (inMarkup) line('WARN', 'без JS на странице нет ни текста, ни картинок', `${moved}разметка на месте, но не отрисована — её прячет display: none до скрипта${hidTxt ? `: ${hidTxt}` : ''} (так работают v-cloak, x-cloak, класс загрузки); в разметке ${pct(vol.shareMarkup)} того, что видно с JavaScript (текста — ${vol.coveredMarkup} из ${signs(vol.chars)}${vol.media ? `, картинок — ${vol.mediaMarkup} из ${vol.media}` : ''}) — без JavaScript посетитель видит пустой экран: ${cloakFix}${skipTxt}`, data);
+      else if (!cmp && (r.textAll || '').length) line('WARN', 'без JS на странице нет ни текста, ни картинок', `${moved}в разметке текст есть (${signs((r.textAll || '').length)}), но не отрисован — display: none${hidTxt ? ` у ${hidTxt}` : ''}; сверка с вкладкой с JavaScript не вышла${jsCmp && jsCmp.error ? ` (${jsCmp.error})` : ''}, и показывает ли его скрипт, неизвестно: показывает (v-cloak, x-cloak) — ${cloakFix}; не показывает — нужна серверная отрисовка${skipTxt}`, data);
+      else line('WARN', 'без JS на странице нет ни текста, ни картинок', `${moved}её целиком рисует скрипт (без серверной отрисовки)${root ? `: в <body> — ${root}` : ''}${cmp ? `; с JavaScript видно ${jsCmp.visCount} разных элементов с текстом или картинкой` : ''} — без JavaScript посетитель и поисковик видят пустой экран: нужна серверная отрисовка или хотя бы <noscript> с содержимым${skipTxt}`, data);
+    } else if (low) {
+      const volTxt = `текста — ${vol.covered} из ${signs(vol.chars)}${vol.media ? `, картинок — ${vol.mediaHit} из ${vol.media}` : ''} (знаки без пробелов; картинка в счёте — как ${MEDIA_W} знаков)`;
+      const hiddenPart = vol.shareMarkup - vol.share >= 0.05 ? ` (ещё ${pct(vol.shareMarkup - vol.share)} в разметке есть, но спрятано display: none${hidTxt ? `: ${hidTxt}` : ''})` : '';
+      line('WARN', `без JS на странице ${pct(vol.share)} того, что видно с JavaScript`, `${moved}${volTxt} — ${inMarkup
+        ? `остальное в разметке есть (с ним — ${pct(vol.shareMarkup)}), но не отрисовано: его прячет display: none до скрипта${hidTxt ? ` — ${hidTxt}` : ''} (так работают v-cloak, x-cloak, класс загрузки); ${cloakFix}`
+        : `остального без JavaScript нет в разметке${hiddenPart} — страницу рисует скрипт: посетитель и поисковик без него получают ${pct(vol.share)} страницы; нужна серверная отрисовка`}${skipTxt}`, data);
+    }
+    if (dep.length) line('WARN', `без JS не видно: ${blocks(dep.length)}`, `${moved}${listOf(dep)} — ${cmp ? `с JavaScript видны${dep.some((x) => x.absent) ? ' (или сверить не с чем)' : ''}, без него` : 'без JavaScript'} прозрачны, спрятаны или уведены; ${fix}${cmpTxt}${skipTxt}`, data);
+    else if (!empty && !low && !cover) line('OK', 'без JS всё видно', `${moved}${checked} — ни один не прозрачен, не спрятан и не уведён${design.length ? ' (кроме скрытого по замыслу — строкой ниже)' : ''}${cmpTxt}${skipTxt}`, data);
+    if (design.length) line('INFO', `без JS не видно и с JS скрыто — по замыслу: ${blocks(design.length)}`, `${listOf(design)} — ${noScripts ? 'показать их нечему: скриптов на странице нет' : 'во вкладке с JavaScript после прокрутки они тоже скрыты (декор, копии, закрытое)'}`, null, { count: false });
+    return;
+  }
+  const fresh = dep.filter((x) => !noJsNamed.has(key(x)));
+  const now = new Set(dep.map(key));
+  const gone = noJsLoad.dep.filter((x) => !now.has(key(x)));
+  for (const x of [...dep, ...design]) noJsNamed.add(key(x));
+  const goneTxt = gone.length ? ` · показались прокруткой без JS: ${listOf(gone)}` : '';
+  if (fresh.length) line('WARN', `без JS не видно ${when}: ещё ${blocks(fresh.length)}`, `${listOf(fresh)} — раньше их в списке не было; ${fix}${goneTxt}${cmpTxt}${skipTxt}`, data);
+  else if (dep.length) line('INFO', `без JS не видно ${when}: ${gone.length ? `осталось ${dep.length} из ${noJsLoad.dep.length}` : `те же ${blocks(dep.length)}`}`, `прокрутка без JavaScript их не показала (WARN — строкой выше)${goneTxt}`, data, { count: false });
+  /* пустая страница, малая доля или заставка — «всё видно» было бы неправдой: они названы строкой WARN после загрузки */
+  else if (empty || low || cover) line('INFO', `без JS ${when}: ${empty ? 'на странице по-прежнему нет ни текста, ни картинок' : low ? `на странице по-прежнему ${pct(vol.share)} того, что видно с JavaScript` : `страницу по-прежнему закрывает заставка ${cover.sig}`}`, `прокрутка без JavaScript этого не изменила (WARN — строкой выше)${goneTxt}`, data, { count: false });
+  else line('OK', `без JS ${when} всё видно`, `${checked}${goneTxt}${cmpTxt}${skipTxt}`, data);
+}
+if (jsOff()) { curKind = 'load'; await noJsCheck('после загрузки'); }
 
 /* ---------- общие помощники ---------- */
 const readState = (h) => h.evaluate((el, props) => { const s = getComputedStyle(el); return Object.fromEntries(props.map((p) => [p, s[p]])); }, STATE_PROPS);
@@ -1113,6 +1933,183 @@ async function focusTrapCheck(v, before) {
 }
 let lastClick = null; /* селектор последнего --click: после него слой на весь экран часто остаётся открытым */
 
+/* переход не шёл (30.09, шторка фото: «.md-on img { transition: transform }» перебило transition: clip-path — clip-path
+   сменился скачком, а runtime засчитал появление). У отмеченных «ждали появления» (data-rw-hidden) и у шторок без отметки
+   (data-rw-mvx: clip-path или filter не тождественный — обёртка со шторкой, блок, спрятанный только clip-path, фото со шторкой
+   внутри отмеченного блока; 01.10 все три открылись скачком, а журнал брал только отмеченные) до прохода — вычисленные
+   MV_PROPS, inline style, размер коробки без transform и объявлено ли движение; за проход — какие свойства у каждого
+   анимировались на самом деле: transitionrun (propertyName) и animationstart (свойства из ключевых кадров) на document в фазе
+   захвата, опрос getAnimations() каждые ~100 мс на кадрах (Web Animations: Motion, WAAPI — свойства из getKeyframes()), атрибут
+   style — наблюдателем (по кадрам его пишут GSAP и подобные; на каждой записи --переменной в нём значения свойств снимаются
+   вне очереди). Анимация без известных свойств — «*»: закрывает все. На каждом опросе копятся разные значения свойств (до 16):
+   промежуточное значение между «до» и «после» — свойство шло плавно, чем бы его ни вели (01.10: clip-path вела переменная --r,
+   которую скрипт писал по кадрам, — 72 разных значения за ход, а runtime назвал это скачком).
+   Объявленное движение и transition-property — ещё и во время прохода (при transitionrun, animationstart и каждом опросе):
+   decor-kit после появления снимает классы (dk-armed, dk-on), и transition объявлен только на время появления — до прохода
+   и после него у фото движения «нет», и скачок clip-path сходил за задуманный (проверено на копии набора с правилом 30.09) */
+const MV_PROPS = ['opacity', 'transform', 'translate', 'scale', 'rotate', 'clip-path', 'filter'];
+function motionLogStartInPage(props) {
+  if (window.__rwMv && window.__rwMv.off) window.__rwMv.off();
+  const els = [...document.querySelectorAll('[data-rw-hidden], [data-rw-mvx]')];
+  const kebab = (k) => (k.startsWith('--') ? k : k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`));
+  const SERVICE = /^(offset|computedOffset|easing|composite)$/;
+  const declOf = (s) => { const durs = String(s.transitionDuration || '').split(',').map((x) => parseFloat(x) || 0); const an = String(s.animationName || 'none'); return { tr: durs.some((d) => d > 0), an: an.split(',').some((x) => x.trim() && x.trim() !== 'none') ? an : null }; };
+  const snap = (el) => {
+    const s = getComputedStyle(el); const r = el.getBoundingClientRect();
+    const v = {}, inl = {};
+    for (const p of props) { v[p] = s.getPropertyValue(p); inl[p] = el.style ? el.style.getPropertyValue(p) : ''; }
+    const d = declOf(s);
+    return { v, inl, w: typeof el.offsetWidth === 'number' ? el.offsetWidth : r.width, h: typeof el.offsetHeight === 'number' ? el.offsetHeight : r.height, tp: s.transitionProperty, td: s.transitionDuration, an: String(s.animationName || 'none'), motion: d.tr || !!d.an };
+  };
+  for (const el of els) {
+    el.__rwMv0 = snap(el); el.__rwMvRan = new Set(); el.__rwMvInl = new Set(); el.__rwMvVarN = 0; el.__rwMvVars = new Set(); el.__rwJumps = null; el.__rwMvDecl = null;
+    el.__rwMvSeen = {}; for (const p of props) el.__rwMvSeen[p] = new Set([el.__rwMv0.v[p]]);
+  }
+  /* разные значения свойств за проход (до 16 на свойство) */
+  const keep = (el) => { const s = getComputedStyle(el); for (const p of props) { const set = el.__rwMvSeen[p]; if (set && set.size < 16) set.add(s.getPropertyValue(p)); } };
+  /* движение объявлено во время прохода: transition-property и transition-duration в этот миг; первое событие (появление)
+     важнее опроса и последующих событий */
+  const decl = (el, fromEvent) => {
+    if (!el || !el.__rwMvRan || (el.__rwMvDecl && el.__rwMvDecl.ev)) return;
+    const s = getComputedStyle(el); const d = declOf(s);
+    if (!d.tr && !d.an && !fromEvent) return;
+    el.__rwMvDecl = { ev: !!fromEvent, tp: d.tr ? s.transitionProperty : (el.__rwMvDecl && el.__rwMvDecl.tp) || s.transitionProperty, td: d.tr ? s.transitionDuration : (el.__rwMvDecl && el.__rwMvDecl.td) || s.transitionDuration, an: d.an || (el.__rwMvDecl && el.__rwMvDecl.an) || null };
+  };
+  const add = (el, p) => { if (el && el.__rwMvRan) el.__rwMvRan.add(p); };
+  const fromAnim = (el, a) => {
+    let got = false;
+    if (a.transitionProperty) { add(el, a.transitionProperty); got = true; }
+    try { for (const k of a.effect.getKeyframes()) for (const key of Object.keys(k)) if (!SERVICE.test(key)) { add(el, kebab(key)); got = true; } } catch (e) { /* без кадров */ }
+    if (!got) add(el, '*');
+  };
+  const onRun = (e) => { if (e.pseudoElement || !e.target || !e.target.__rwMvRan) return; add(e.target, e.propertyName); decl(e.target, true); };
+  const onAnim = (e) => {
+    const t = e.target; if (e.pseudoElement || !t || !t.__rwMvRan) return;
+    let hit = false;
+    try { for (const a of t.getAnimations()) if (a.animationName === e.animationName) { fromAnim(t, a); hit = true; } } catch (x) { /* нет getAnimations */ }
+    if (!hit) add(t, '*');
+    decl(t, true);
+  };
+  document.addEventListener('transitionrun', onRun, true);
+  document.addEventListener('animationstart', onAnim, true);
+  /* атрибут style: свойство из MV_PROPS сменилось в нём — inline; сменились --переменные — значения свойств снимаются тут же
+     (keep), между опросами: у свойства, которое ведёт переменная, на каждой её записи появляется промежуточное значение, даже
+     если весь ход короче опроса (четыре кадра). Сама по себе смена переменных ничего не списывает (01.10: правило «переменные
+     менялись от трёх раз» прятало скачок clip-path у фото, которому скрипт писал прогресс прокрутки --p для параллакса) —
+     имена и число записей идут в находку: по ним видно, что переменная была, но свойство плавно не вела */
+  const varsOf = (s) => { const o = {}; for (const m of String(s || '').matchAll(/(--[\w-]+)\s*:\s*([^;]*)/g)) o[m[1]] = m[2].trim(); return o; };
+  let varSamples = 0; /* сколько раз значения сняты на записи переменной — в счётчики (varSamples) */
+  const mo = new MutationObserver((ms) => {
+    const wrote = new Set();
+    for (const m of ms) {
+      const el = m.target; if (!el.__rwMv0) continue;
+      for (const p of props) if (el.style.getPropertyValue(p) !== el.__rwMv0.inl[p]) el.__rwMvInl.add(p);
+      const A = varsOf(m.oldValue), B = varsOf(el.getAttribute('style'));
+      const changed = Object.keys({ ...A, ...B }).filter((k) => A[k] !== B[k]);
+      if (!changed.length) continue;
+      el.__rwMvVarN++; wrote.add(el);
+      for (const k of changed) if (el.__rwMvVars.size < 4) el.__rwMvVars.add(k);
+    }
+    /* не больше 400 таких снимков на элемент: скрипт, который пишет переменную каждый кадр весь проход, опрос не утяжеляет */
+    for (const el of wrote) if (el.isConnected && el.__rwMvVarN <= 400) { keep(el); varSamples++; }
+  });
+  for (const el of els) mo.observe(el, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+  const sample = () => { for (const el of els) { if (!el.isConnected) continue; let list = []; try { list = el.getAnimations(); } catch (e) { /* нет getAnimations */ } for (const a of list) fromAnim(el, a); decl(el, false); keep(el); } };
+  const st = { stop: false, samples: 0, sample, snap, els, reduced0: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  let last = -1e9;
+  const loop = (t) => { if (st.stop) return; if (t - last >= 90) { last = t; sample(); st.samples++; } requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+  st.varSamples = () => varSamples;
+  st.off = () => { st.stop = true; document.removeEventListener('transitionrun', onRun, true); document.removeEventListener('animationstart', onAnim, true); mo.disconnect(); };
+  window.__rwMv = st;
+  return { tracked: els.length };
+}
+/* сверка после прохода: свойство сменилось (тождественные значения — inset(0px) и none, blur(0px) и none — одно и то же),
+   ни переход, ни CSS-анимация, ни WAAPI по нему не шли, inline style его не менял, промежуточных значений за проход не было
+   (плавный ход через --переменную, у предка, любым движком — не скачок: smooth; значения сняты на опросах и на каждой записи
+   --переменной в style элемента), движение у элемента объявлено до, во время или после прохода (transition-duration > 0 у
+   любого свойства или animation-name), «меньше движения» нет — находка в el.__rwJumps с transition-property той минуты, когда
+   шло появление, и с именами --переменных, которые писались в style элемента (vars, varN — сколько раз): переменная была, а
+   свойство плавно не вела. transform, у которого сменился только сдвиг вместе с размером коробки (translate(-50%) при догрузке
+   картинки), — не в счёт. → счётчики { tracked, extra, samples, varSamples, reduced, changed, jumps, inline, smooth, vars,
+   noMotion, resized }; vars — сколько из находок у элементов с такими переменными, varSamples — сколько раз значения сняты
+   на записи переменной (вне опроса) */
+function motionLogStopInPage(props) {
+  const st = window.__rwMv; if (!st || !st.snap) return null;
+  try { st.sample(); } catch (e) { /* страница ушла */ }
+  st.off();
+  const reduced = !!st.reduced0 || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const IDENT = {
+    transform: /^(none|matrix\(1, 0, 0, 1, 0, 0\)|matrix3d\(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1\))$/,
+    translate: /^(none|0px|0px 0px|0px 0px 0px)$/, scale: /^(none|1|1 1|1 1 1)$/, rotate: /^(none|0deg)$/,
+    'clip-path': /^(none|inset\(0(px|%)?\))$/,
+  };
+  const FILTER_ID = /^(blur\(0(px)?\)|brightness\(1\)|contrast\(1\)|grayscale\(0\)|hue-rotate\(0deg\)|invert\(0\)|opacity\(1\)|saturate\(1\)|sepia\(0\))$/;
+  const norm = (p, v) => {
+    v = String(v || '').trim();
+    if (IDENT[p] && IDENT[p].test(v)) return 'none';
+    if (p === 'filter' && v !== 'none') { const fns = v.match(/[a-z-]+\([^)]*\)/g); if (fns && fns.join(' ') === v.replace(/\s+/g, ' ') && fns.every((f) => FILTER_ID.test(f))) return 'none'; }
+    return v;
+  };
+  const lin = (t) => { t = String(t || '').trim(); if (t === 'none') return [1, 0, 0, 1]; const m = /^matrix(3d)?\(([^)]*)\)$/.exec(t); if (!m) return null; const n = m[2].split(',').map(Number); return m[1] ? [n[0], n[1], n[4], n[5]] : n.slice(0, 4); };
+  const sameLin = (a, b) => { const x = lin(a), y = lin(b); return !!x && !!y && x.every((q, i) => Math.abs(q - y[i]) < 1e-3); };
+  const out = { tracked: st.els.length, extra: st.els.filter((e) => e.hasAttribute('data-rw-mvx')).length, samples: st.samples, varSamples: st.varSamples ? st.varSamples() : 0, reduced, changed: 0, jumps: 0, inline: 0, smooth: 0, vars: 0, noMotion: 0, resized: 0 };
+  for (const el of st.els) {
+    if (!el.isConnected || !el.__rwMv0) continue;
+    const b = el.__rwMv0; const a = st.snap(el); const list = [];
+    for (const p of props) {
+      const nb = norm(p, b.v[p]), na = norm(p, a.v[p]);
+      if (nb === na) continue;
+      out.changed++;
+      if (el.__rwMvRan.has(p) || el.__rwMvRan.has('*')) continue;
+      if (el.__rwMvInl.has(p) || b.inl[p] !== a.inl[p]) { out.inline++; continue; }
+      const mid = [...((el.__rwMvSeen && el.__rwMvSeen[p]) || [])].map((v) => norm(p, v)).filter((v) => v !== nb && v !== na);
+      if (mid.length) { out.smooth++; continue; }
+      if (p === 'transform' && (Math.abs(a.w - b.w) > 0.5 || Math.abs(a.h - b.h) > 0.5) && sameLin(b.v[p], a.v[p])) { out.resized++; continue; }
+      list.push({ prop: p, from: b.v[p], to: a.v[p] });
+    }
+    if (!list.length) continue;
+    const dl = el.__rwMvDecl;
+    if (!(b.motion || a.motion || dl)) { out.noMotion += list.length; continue; }
+    if (reduced) continue;
+    el.__rwJumps = { list, tp: dl ? dl.tp : a.motion ? a.tp : b.tp, td: dl ? dl.td : a.motion ? a.td : b.td, an: dl ? dl.an || 'none' : a.an, ran: [...el.__rwMvRan].slice(0, 8), vars: [...(el.__rwMvVars || [])], varN: el.__rwMvVarN || 0 };
+    out.jumps += list.length;
+    if (el.__rwMvVarN) out.vars += list.length;
+  }
+  window.__rwMv = null;
+  return out;
+}
+
+/* подсказка к скачку. Свойства нет в transition-property — «перебит другим правилом или не объявлен?», совет — добавить его в
+   transition правила, которое действует при появлении. Есть (или all) — переход объявлен, но не пошёл: у clip-path значения не
+   интерполируются (none ↔ inset(), разные функции, polygon с разным числом точек — 01.10: конечное «none» при transition:
+   clip-path давало совет «добавьте clip-path в transition», а он там уже был), у filter — разные списки функций, длительность
+   у свойства 0, иначе — переход не запустился (элемент только что вставлен или был display: none).
+   → { declared, con — в скобки строки консоли, fix — что делать } */
+function jumpHint(f) {
+  const tpl = String(f.tp || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const tdl = String(f.td || '').split(',').map((x) => parseFloat(x) || 0);
+  const alias = f.prop === 'clip-path' ? ['clip-path', '-webkit-clip-path'] : [f.prop];
+  let k = tpl.findIndex((x) => alias.includes(x)); if (k < 0) k = tpl.indexOf('all');
+  if (k < 0) return { declared: false, con: `${f.prop} в нём нет: перебит другим правилом или не объявлен?`, fix: `добавьте ${f.prop} в transition правила, которое действует при появлении (перебило более точное правило — в него)` };
+  const dur = tdl.length ? tdl[k % tdl.length] : 0;
+  if (!(dur > 0)) return { declared: true, con: `у ${f.prop} длительность 0`, fix: `${f.prop} в transition есть, но с длительностью 0 (transition-duration: ${f.td}) — задайте длительность` };
+  const fn = (v) => { v = String(v || '').trim(); const m = /^([a-z-]+)\(/.exec(v); return m ? m[1] : v; };
+  const pts = (v) => { const m = /^polygon\(([^)]*)\)/.exec(String(v || '').trim()); return m ? m[1].split(',').length : null; };
+  const con = 'переход объявлен, но не пошёл';
+  if (f.prop === 'clip-path') {
+    const a = fn(f.from), b = fn(f.to); const nm = (x) => (x === 'none' ? 'none' : `${x}()`);
+    if (a === 'none' || b === 'none') return { declared: true, con: `${con}: ${nm(a)} ↔ ${nm(b)} не интерполируются`, fix: `значения ${nm(a)} и ${nm(b)} не интерполируются — задайте оба состояния одной функцией: ${a === 'inset' || b === 'inset' ? 'inset(0) вместо none' : `${a === 'none' ? b : a}() и в конечном состоянии, а не none`}` };
+    if (a !== b) return { declared: true, con: `${con}: ${nm(a)} и ${nm(b)} не интерполируются`, fix: `разные функции ${nm(a)} и ${nm(b)} не интерполируются — задайте оба состояния одной функцией` };
+    if (a === 'polygon' && pts(f.from) !== pts(f.to)) return { declared: true, con: `${con}: polygon с разным числом точек`, fix: `polygon с разным числом точек (${pts(f.from)} и ${pts(f.to)}) не интерполируется — одинаковое число точек в обоих состояниях` };
+  }
+  if (f.prop === 'filter' && fn(f.from) !== 'none' && fn(f.to) !== 'none') {
+    const list = (v) => (String(v || '').match(/[a-z-]+(?=\()/g) || []).join(' ');
+    if (list(f.from) !== list(f.to)) return { declared: true, con: `${con}: разные списки функций filter`, fix: `списки функций filter «${list(f.from)}» и «${list(f.to)}» разные и не интерполируются — задайте оба состояния одним списком (blur(0) вместо none)` };
+  }
+  return { declared: true, con, fix: `${f.prop} в transition есть, а переход не запустился — значение сменилось, когда элемент только что вставили или он был display: none; меняйте значение после того, как элемент отрисован` };
+}
+
 async function scrollStep() {
   /* прокрутка при открытом меню меряет меню, а не страницу (закреплены: div#drawer.is-open) — сказать прямо */
   const layer = await evaluateWith(page, openLayerInPage, null, DEPS).catch(() => null);
@@ -1140,7 +2137,7 @@ async function scrollStep() {
     return out;
   }, null, { ...DEPS, hov: hoverRulesInPage.toString() }).catch(() => []);
   await evaluateWith(page, (rules) => {
-    document.querySelectorAll('[data-rw-hidden], [data-rw-hover-shown], [data-rw-hvtrig]').forEach((e) => { e.removeAttribute('data-rw-hidden'); e.removeAttribute('data-rw-hover-shown'); e.removeAttribute('data-rw-hvtrig'); });
+    document.querySelectorAll('[data-rw-hidden], [data-rw-hover-shown], [data-rw-hvtrig], [data-rw-mvx]').forEach((e) => { e.removeAttribute('data-rw-hidden'); e.removeAttribute('data-rw-hover-shown'); e.removeAttribute('data-rw-hvtrig'); e.removeAttribute('data-rw-mvx'); });
     const infinite = new Set(document.getAnimations().filter((a) => a.effect && a.effect.getTiming && a.effect.getTiming().iterations === Infinity && a.effect.target).map((a) => a.effect.target));
     const moving = (el) => { for (let e = el; e && e.nodeType === 1; e = e.parentElement) if (infinite.has(e)) return true; return false; };
     /* правила наведения, чья цель — этот элемент или его предок: кандидат в подсказки (проверка — после прохода) */
@@ -1167,13 +2164,23 @@ async function scrollStep() {
        невидимые поля идут отдельно, в «невидимы по замыслу» */
     const FIELD = /^(INPUT|SELECT|TEXTAREA|OPTION|OPTGROUP|DATALIST)$/;
     const fields = [];
-    const vh = innerHeight; let i = 0;
+    /* шторка без прозрачности и сдвига — clip-path или filter не тождественный — не блок появления, но её переход сверяет
+       журнал движения (data-rw-mvx, до 120): обёртка со шторкой, блок, спрятанный только clip-path, фото со шторкой внутри
+       отмеченного блока */
+    const CLIP_ID = /^(none|inset\(0(px|%)?\))$/;
+    const FILTER_ID = /^(none|((blur\(0(px)?\)|brightness\(1\)|contrast\(1\)|grayscale\(0\)|hue-rotate\(0deg\)|invert\(0\)|opacity\(1\)|saturate\(1\)|sepia\(0\))\s*)+)$/;
+    const curtain = (s) => !CLIP_ID.test(String(s.clipPath || 'none').trim()) || !FILTER_ID.test(String(s.filter || 'none').trim());
+    const vh = innerHeight; let i = 0, x = 0;
     for (const el of document.body.querySelectorAll('*')) {
-      if (i >= 120) break;
+      if (i >= 120 && x >= 120) break;
       const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 30) || r.top + scrollY <= vh) continue;
       const s = getComputedStyle(el); if (s.display === 'none' || s.position === 'fixed' || /hover/i.test(String(el.className))) continue;
-      if (!(parseFloat(s.opacity) < 0.95 || (s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)'))) continue;
-      if (moving(el) || (el.parentElement && el.parentElement.closest('[data-rw-hidden]'))) continue;
+      const hid = parseFloat(s.opacity) < 0.95 || (s.transform !== 'none' && s.transform !== 'matrix(1, 0, 0, 1, 0, 0)');
+      if (!hid || (el.parentElement && el.parentElement.closest('[data-rw-hidden]'))) {
+        if (x < 120 && curtain(s) && !FIELD.test(el.tagName) && !moving(el) && !inFixed(el)) el.setAttribute('data-rw-mvx', String(x++));
+        continue;
+      }
+      if (i >= 120 || moving(el)) continue;
       if (FIELD.test(el.tagName)) { if (fields.length < 40) fields.push(el); continue; }
       if (inFixed(el)) continue;
       el.setAttribute('data-rw-hidden', String(i++));
@@ -1185,7 +2192,9 @@ async function scrollStep() {
     }
     window.__rwFields = fields;
   }, hoverRules, DEPS);
-  /* на каждом шаге прохода — что с отмеченными: стало ли видно, менялась ли прозрачность или сдвиг */
+  /* переход не шёл: до прохода — значения у отмеченных, за проход — что у них анимировалось на самом деле */
+  const mvOn = await evaluateWith(page, motionLogStartInPage, MV_PROPS, DEPS).catch(() => null);
+  /* на каждом шаге прохода — что с отмеченными: стало ли видно, менялась ли прозрачность или сдвиг (и ещё один опрос анимаций) */
   const onStep = () => evaluateWith(page, () => {
     for (const el of document.querySelectorAll('[data-rw-hidden]')) {
       const o = eff(el);
@@ -1193,9 +2202,25 @@ async function scrollStep() {
       if (Math.abs(o - (el.__rwOp0 || 0)) > 0.01) el.__rwOpMoved = true;
       if (!el.__rwTfMoved && getComputedStyle(el).transform !== el.__rwTf0) el.__rwTfMoved = true;
     }
+    if (window.__rwMv && window.__rwMv.sample) window.__rwMv.sample();
   }, null, DEPS).catch(() => {});
-  const res = await scrollThrough(page, { shotsDir: outDir, tag: `${tag}-scroll`, maxShots: 6, onStep });
-  scrolled = true;
+  /* проход упал (снимок окна не уложился в срок, вкладка упала) — журнал движения не остаётся на странице: слушатели, наблюдатель
+     и опрос getComputedStyle каждые ~90 мс нагружали бы следующие шаги (--canvas меряет кадры в секунду) */
+  let res, mv = null;
+  try {
+    res = await scrollThrough(page, { shotsDir: outDir, tag: `${tag}-scroll`, maxShots: 6, onStep });
+    scrolled = true;
+    /* сверка — сразу после прохода, до наведения на подсказки (наведение меняет стили само) */
+    mv = mvOn ? await evaluateWith(page, motionLogStopInPage, MV_PROPS, DEPS).catch(() => null) : null;
+  } finally {
+    /* не дольше 3 с: зависшая вкладка не должна держать уборку до предела протокола. Таймер предела снимается: неснятый
+       держал процесс ещё ~3 с после строки итога у каждого прогона с --scroll (01.10: 2,7 с против 0,05 с без --scroll) */
+    if (mvOn) {
+      let limit;
+      await Promise.race([page.evaluate(() => { if (window.__rwMv && window.__rwMv.off) window.__rwMv.off(); window.__rwMv = null; }).catch(() => {}), new Promise((r) => { limit = setTimeout(r, 3000); })]);
+      clearTimeout(limit);
+    }
+  }
   /* подсказки при наведении: отмеченное, что не появилось за проход и совпало с целью правила «показать при
      наведении», проверяется настоящим наведением на триггер (предок по селектору до :hover или сосед при «+»/«~»).
      Показалось (итоговая прозрачность от 0.3) — «показываются при наведении», без WARN; не показалось, триггер
@@ -1275,10 +2300,10 @@ async function scrollStep() {
     };
     /* блок называется селектором и началом текста: «section.reveal «Ближайшие события»» */
     const named = (el) => { const t = String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); return `${sig(el)}${t ? ` «${t.length > 30 ? t.slice(0, 30) + '…' : t}»` : ''}`; };
-    const still = [], meant = [], stillNamed = [];
+    const still = [], meant = [], stillNamed = []; const gone = new Set(); /* gone — не появились и невидимы по замыслу */
     for (const el of marked) {
       if (eff(el) >= 0.05 || (el.__rwOpMax || 0) >= 0.05) continue; /* видно сейчас или было видно на каком-то шаге */
-      const h = hider(el);
+      const h = hider(el); gone.add(el);
       /* прозрачность ни разу не менялась, проявиться нечем и не похоже на появление — невидимо по замыслу */
       if (!el.__rwOpMoved && !canMove(h) && !(h !== el && canMove(el)) && !hinted(h) && !hinted(el)) meant.push(sig(el));
       else { still.push(sig(el)); stillNamed.push(named(el)); }
@@ -1289,7 +2314,11 @@ async function scrollStep() {
     /* в списке «ждали появления» — то, что было спрятано или двигалось за проход; полупрозрачное без движения
        (подпись к фото с opacity .6, силуэт .32) видно и так — оно в счёт marked, но в список не идёт */
     const waited = marked.filter((el) => (el.__rwOp0 || 0) < 0.05 || el.__rwOpMoved || el.__rwTfMoved);
-    return { marked: marked.length, waitedCount: waited.length, waited: waited.slice(0, 40).map(named), still, stillNamed, meant: [...fields, ...meant], fields: fields.length, hoverOnly, sticky };
+    /* переход не шёл — только у появившихся (не появившиеся — в «не появились»); шторки без отметки (data-rw-mvx) — если
+       блок появления вокруг них появился (или его нет) */
+    const extra = [...document.querySelectorAll('[data-rw-mvx]')].filter((el) => { if (!el.__rwJumps) return false; const m = el.closest('[data-rw-hidden]'); return !(m && gone.has(m)); });
+    const jumps = [...waited.filter((el) => el.__rwJumps && !gone.has(el)), ...extra].slice(0, 40).map((el) => ({ el: sig(el), named: named(el), ...el.__rwJumps }));
+    return { marked: marked.length, waitedCount: waited.length, waited: waited.slice(0, 40).map(named), still, stillNamed, meant: [...fields, ...meant], fields: fields.length, hoverOnly, sticky, jumps };
   }, null, DEPS);
   const ov = await overflowOf();
   const st = ov.verdict === 'FAIL' ? 'FAIL' : (after.still.length || ov.verdict === 'WARN' || res.stuck || !res.reachedBottom) ? 'WARN' : 'OK';
@@ -1298,13 +2327,31 @@ async function scrollStep() {
   const hoverNote = (after.hoverOnly.length ? ` · показываются при наведении (проверено наведением на триггер правила :hover — не появление при прокрутке): ${after.hoverOnly.length} (${list4(after.hoverOnly)})` : '')
     + (hvGroups.length > HV_MAX ? ` · наведением проверены первые ${HV_MAX} триггеров из ${hvGroups.length}, остальные кандидаты — в «не появились»` : '');
   const revealTxt = `ждали появления: ${after.waitedCount}${after.waitedCount ? ` (${list4(after.waited)}${after.waitedCount > after.waited.length ? `, всего ${after.waitedCount}` : ''})` : ''} — не появились: ${after.still.length}${after.still.length ? ` (${list4(after.stillNamed)})` : ''}`;
-  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount, blockWider: ov.blockWider || [], blockWiderCount: ov.blockWiderCount || 0, docWiderSmall: ov.docWiderSmall || null, docScrollWidth: ov.docScrollWidth, vw: ov.vw } });
+  const mvNote = mv && mv.reduced && mv.changed ? ' · переходы появления не сверялись: «меньше движения» (reduce)' : '';
+  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${mvNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, motion: mv ? { ...mv, found: after.jumps || [] } : null, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount, blockWider: ov.blockWider || [], blockWiderCount: ov.blockWiderCount || 0, docWiderSmall: ov.docWiderSmall || null, docScrollWidth: ov.docScrollWidth, vw: ov.vw } });
   /* «текст перекрыт» — всегда своей строкой: по строке прокрутки не видно, шла ли проверка. Её WARN уже
      посчитан строкой прокрутки (переполнение WARN), поэтому здесь не считается второй раз */
   if (ov.coveredCount === undefined) line('INFO', 'текст перекрыт картинкой', 'не проверялось: lib.findOverflow без поля covered', null, { count: false });
   else {
     const cov = ov.coveredCount;
     line(cov ? 'WARN' : 'OK', 'текст перекрыт картинкой', cov ? `${cov} мест: ${ov.covered.slice(0, 5).map((t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y})`).join(' | ')}${cov > 5 ? ` и ещё ${cov - 5}` : ''} — картинка лежит поверх чужого текста (фон под текстом не в счёт)` : 'нет: img, video, canvas и svg от 40px не лежат поверх чужого текста', { covered: ov.covered, coveredCount: cov }, { count: false });
+  }
+  /* переход не шёл: свойство и вычисленный transition-property — одной строкой WARN на группу (галерея из 12 фото с одной
+     ошибкой — одна строка с числом, а не 12) */
+  const jg = new Map();
+  for (const j of after.jumps || []) for (const x of j.list) { const k = `${x.prop}|${j.tp}`; if (!jg.has(k)) jg.set(k, []); jg.get(k).push({ ...x, el: j.el, named: j.named, tp: j.tp, td: j.td, an: j.an, ran: j.ran, vars: j.vars || [], varN: j.varN || 0 }); }
+  for (const list of jg.values()) {
+    const f = list[0]; const more = list.length > 1 ? ` и ещё ${list.length - 1}` : '';
+    const anim = f.an && f.an !== 'none' ? `; animation-name: ${f.an}` : '';
+    const tp = `transition-property: ${f.tp}${anim}`;
+    const hint = jumpHint(f);
+    /* в style элемента писались --переменные, а свойство всё равно встало рывком: назвать их — читающий видит, что переменная
+       была и к свойству отношения не имеет (прогресс прокрутки для параллакса) или ведёт его рывком */
+    const withVars = list.filter((x) => x.vars && x.vars.length);
+    const varsNote = withVars.length ? ` · в style менялись --переменные: ${withVars.slice(0, 3).map((x) => `у ${x.el} — ${x.vars.join(', ')} (записей: ${x.varN})`).join('; ')}${withVars.length > 3 ? ` и ещё у ${withVars.length - 3}` : ''} — ${f.prop} они плавно не вели: на записях переменной промежуточных значений у него не было (переменная прокрутки для другого свойства скачок не оправдывает; если ${f.prop} привязан к ней на коротком отрезке, проход шагами мог его перескочить — смотреть глазами)` : '';
+    line('WARN', `${f.prop} сменилось скачком, перехода не было: ${f.el}${more}`,
+      `${tp} — ${hint.con} · было «${short(f.from, 60)}» → стало «${short(f.to, 60)}»; движение у элемента объявлено (transition-duration: ${f.td}${anim}), а по ${f.prop} за проход не шли ни переход, ни CSS-анимация, ни WAAPI${f.ran && f.ran.length ? ` (анимировалось: ${f.ran.join(', ')})` : ''} — появление засчитано, но ${f.prop} встал на место рывком: ${hint.fix}${list.length > 1 ? ` · все: ${list.slice(0, 5).map((x) => x.named).join(', ')}${list.length > 5 ? ` и ещё ${list.length - 5}` : ''}` : ''}${varsNote}`,
+      { jumps: list, declared: hint.declared }, { con: `${f.prop} сменилось скачком, перехода не было: ${f.el}${more} (${tp} — ${hint.con}) · было «${short(f.from, 40)}» → «${short(f.to, 40)}»${withVars.length ? ` · в style менялись --переменные (${[...new Set(withVars.flatMap((x) => x.vars))].slice(0, 4).join(', ')}) — ${f.prop} они не вели` : ''}` });
   }
 }
 
@@ -1677,6 +2724,25 @@ async function selectStep(v) {
   await autoCheck(`после выбора ${sel}=${hit.v}`);
 }
 
+/* --emulate-motion reduce|no-preference: переключить prefers-reduced-motion на открытой странице (Chrome и Edge — эмуляция
+   медиа на вкладке; тема прогона остаётся — setEmulatedMedia заменяет весь набор). Сверка — matchMedia до шага и после.
+   Firefox: «меньше движения» — настройка запуска, эмуляции медиа на вкладке в BiDi нет — WARN, шаги идут дальше */
+async function emulateMotionStep(v) {
+  const want = String(v).trim();
+  const mm = () => page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches).catch(() => null);
+  const state = (x) => (x === true ? 'reduce' : x === false ? 'no-preference' : 'не прочитано');
+  const before = await mm();
+  try { await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: opt.scheme || 'light' }, { name: 'prefers-reduced-motion', value: want }]); }
+  catch (e) {
+    const why = short(String((e && e.message) || e).split('\n')[0], 140);
+    return line('WARN', gecko ? `--emulate-motion ${want} ${NOT_IN}` : `--emulate-motion ${want} не сработал`, `${gecko ? `переключить «меньше движения» на открытой странице Firefox не умеет: у него это настройка запуска (--reduced-motion), эмуляции медиа на вкладке в WebDriver BiDi нет (${why})` : why} — страница осталась с prefers-reduced-motion: ${state(before)}, шаги идут дальше`, { want, before, now: before, applied: false });
+  }
+  await sleep(120); const waited = await settleAnimations(page, 2500);
+  const now = await mm();
+  const ok = now === (want === 'reduce');
+  line(ok ? 'OK' : 'WARN', `prefers-reduced-motion: ${want}`, `переключено на открытой странице (--emulate-motion ${want}): matchMedia — ${state(now)}, до шага — ${state(before)}; переходы после переключения кончились через ${waited} мс${ok ? '' : ' — ЭМУЛЯЦИЯ НЕ ПРИМЕНИЛАСЬ: страница видит другое'}`, { want, before, now, applied: ok });
+}
+
 async function resizeStep(v) {
   let w = cur.width, hh = cur.height;
   const r = parseResize(v); if (!r) return line('FAIL', `окно ${v}`, RESIZE_HELP);
@@ -1813,7 +2879,8 @@ async function motionStep() {
    это настройка запуска, поэтому — отдельный Firefox на время замера (закрывается в close) */
 async function reducedTab() {
   const prep = { scheme: opt.scheme || 'light', reducedMotion: true };
-  if (!gecko) { const p2 = await preparePage(browser, cur, prep); return { page: p2, where: 'отдельная вкладка', close: () => p2.close().catch(() => {}) }; }
+  /* с --no-js и эта вкладка без JavaScript: весь прогон — о странице без скриптов */
+  if (!gecko) { const p2 = await preparePage(browser, cur, prep); if (jsOff()) await disableJs(p2); return { page: p2, where: 'отдельная вкладка', close: () => p2.close().catch(() => {}) }; }
   const b2 = await launch({ browser: 'firefox', scheme: opt.scheme === 'dark' ? 'dark' : 'light', reducedMotion: true, mobile: !!cur.isMobile });
   try { const p2 = await preparePage(b2, cur, prep); return { page: p2, where: 'отдельный Firefox', close: () => b2.close().catch(() => {}) }; }
   catch (e) { await b2.close().catch(() => {}); throw e; }
@@ -2043,7 +3110,7 @@ for (const { k, v, expect } of steps) {
   curKind = k === 'eval' && expect != null ? 'expect' : k;
   try {
     if (k === 'wait') { const ms = Number(String(v).trim()); await sleep(ms); line('OK', `ждали ${ms} мс`); }
-    else if (k === 'scroll') await scrollStep();
+    else if (k === 'scroll') { await scrollStep(); if (jsOff()) await noJsCheck('после прокрутки'); }
     else if (k === 'hover') await hoverStep(v);
     else if (k === 'hover-all') await hoverAllStep();
     else if (k === 'click') handled = await clickStep(v);
@@ -2052,6 +3119,7 @@ for (const { k, v, expect } of steps) {
     else if (k === 'key') await keyStep(v);
     else if (k === 'select') await selectStep(v);
     else if (k === 'resize') await resizeStep(v);
+    else if (k === 'emulate-motion') await emulateMotionStep(v);
     else if (k === 'canvas') await canvasStep();
     else if (k === 'motion') await motionStep();
     else if (k === 'video') await videoStep();
@@ -2059,7 +3127,7 @@ for (const { k, v, expect } of steps) {
     else if (k === 'css') await cssStep();
     else if (k === 'eval') {
       /* результат целиком — в протокол (details); в консоль — его начало, выражение коротко в конце строки */
-      const r = await page.evaluate(String(v)); const got = show(r); const expr = ` · выражение «${short(v, 50)}${String(v).length > 50 ? '…' : ''}»`;
+      const r = await evalInPage(String(v)); const got = show(r); const expr = ` · выражение «${short(v, 50)}${String(v).length > 50 ? '…' : ''}»`;
       if (expect == null) line('OK', `eval ${short(v, 200)}`, got, { expr: String(v), length: got.length }, { con: `eval → ${headOf(got)}${expr}` });
       else {
         const ok = got === String(expect) || String(r) === String(expect);
@@ -2068,7 +3136,7 @@ for (const { k, v, expect } of steps) {
       }
     }
     else if (k === 'assert') {
-      const r = await page.evaluate(String(v)); const got = show(r);
+      const r = await evalInPage(String(v)); const got = show(r);
       line(r ? 'OK' : 'FAIL', `assert ${short(v, 200)}`, r ? got : `ложно: ${got}`, null, { con: `assert ${short(v, 200)} — ${r ? headOf(got, 200) : `ложно: ${headOf(got, 200)}`}` });
     }
     else if (k === 'shot') { const f = await shot(String(v)); line('OK', `снимок ${v}`, f); }
@@ -2121,7 +3189,14 @@ async function selftest() {
      в свой процесс (как карту Яндекса), и его строки консоли во вкладку не приходят. localhost браузер может
      открыть и по 127.0.0.1, и по ::1 — сервер слушает оба адреса на одном порту (только петлю, не сеть);
      ::1 не открылся — случай пропускается */
-  const frameC = (req, rs) => { if (req.url === '/frame') { rs.setHeader('content-type', 'text/html; charset=utf-8'); rs.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет</p><img src="/pixel-missing.gif" alt="">'); return; } rs.statusCode = 404; rs.end('нет'); };
+  /* jsHits — какие скрипты выполнились (--no-js и iframe другого сайта): 'main' — страница, 'frame' — виджет в iframe */
+  const jsHits = [];
+  const frameC = (req, rs) => {
+    if (req.url === '/frame') { rs.setHeader('content-type', 'text/html; charset=utf-8'); rs.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет</p><img src="/pixel-missing.gif" alt="">'); return; }
+    if (req.url === '/js-frame') { rs.setHeader('content-type', 'text/html; charset=utf-8'); rs.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет со скриптом</p><script>new Image().src = "/js-ran?frame=1";</script>'); return; }
+    if (req.url.startsWith('/js-ran')) { jsHits.push('frame'); rs.statusCode = 204; rs.end(); return; }
+    rs.statusCode = 404; rs.end('нет');
+  };
   const C4 = await serve(frameC);
   const C = await new Promise((res) => { const s = http.createServer(frameC); s.once('error', () => res(null)); s.listen(C4.address().port, '::1', () => res(s)); });
   const cUrl = C ? `http://localhost:${C4.address().port}` : null;
@@ -2132,6 +3207,12 @@ async function selftest() {
     /* битая ссылка на чужой виджет: документ iframe отвечает 404 — это ошибка самой страницы, не «сторонних iframe» */
     if (req.url === '/gone') { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${bUrl}/map-widget" width="400" height="200"></iframe>`); return; }
     if (req.url === '/gone-xsite' && cUrl) { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><iframe src="${cUrl}/map-widget" width="400" height="200"></iframe><iframe src="${cUrl}/frame" width="400" height="200"></iframe>`); return; }
+    /* --no-js и iframe другого сайта (свой процесс): скрипт виджета не должен выполниться */
+    if (req.url === '/nojs-xsite' && cUrl) { res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Карта</title><h1>Контакты</h1><p>Как проехать — на карте.</p><iframe src="${cUrl}/js-frame" width="400" height="200"></iframe><script>new Image().src = '/js-ran?main=1';</script>`); return; }
+    if (req.url.startsWith('/js-ran')) { jsHits.push('main'); res.statusCode = 204; res.end(); return; }
+    /* пара modulepreload + module-скрипт (сборки Vite, Nuxt): без JavaScript Chrome обрывает предзагрузку сам */
+    if (req.url === '/pre') { res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Модули</title><link rel="modulepreload" crossorigin href="/m.js"><script type="module" src="/m.js" crossorigin></script></head><body><h1>Меню</h1><p>Страница видна и без JavaScript.</p></body></html>'); return; }
+    if (req.url === '/m.js') { res.setHeader('content-type', 'text/javascript; charset=utf-8'); res.end('document.body.dataset.ok = "1";'); return; }
     res.statusCode = 404; res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Нет страницы</title><h1>Такой страницы нет</h1>');
   });
   const aUrl = `http://127.0.0.1:${A.address().port}`;
@@ -2139,12 +3220,22 @@ async function selftest() {
      менять ожидания */
   const run = (tag, args, target, env = {}) => new Promise((res) => {
     const p = spawn(process.execPath, [self, '--out', out, '--tag', tag, ...args, '--', target], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, SITE_REWORK_DISMISS: '', ...env } });
-    let text = ''; p.stdout.on('data', (d) => { text += d; }); p.stderr.on('data', (d) => { text += d; });
+    /* tailMs — сколько процесс жил после строки итога («OK: 0 провалов…»): браузер к ней уже закрыт, протокол записан, и
+       держать процесс может только неснятый таймер (01.10: sleep(3000) в гонке уборки журнала — ~3 с у каждого --scroll) */
+    let text = '', doneAt = null;
+    p.stdout.on('data', (d) => { text += d; if (doneAt === null && /(^|\n)(OK|WARN|FAIL): \d+ провалов/.test(text)) doneAt = Date.now(); });
+    p.stderr.on('data', (d) => { text += d; });
     const timer = setTimeout(() => p.kill(), 240000);
-    p.on('close', (code) => { clearTimeout(timer); let j = null; try { j = JSON.parse(fs.readFileSync(path.join(out, 'runtime', `${tag}.json`), 'utf8')); } catch { /* нет протокола */ } res({ code, text, j }); });
+    p.on('close', (code) => { clearTimeout(timer); let j = null; try { j = JSON.parse(fs.readFileSync(path.join(out, 'runtime', `${tag}.json`), 'utf8')); } catch { /* нет протокола */ } res({ code, text, j, tailMs: doneAt === null ? null : Date.now() - doneAt }); });
   });
+  /* проверки полей протокола: доля страницы без JS по объёму и строка прокрутки */
+  const volOf = (j, k = 0) => { const c = j && j.noJs && j.noJs.checks && j.noJs.checks[k]; return (c && c.volume) || null; };
+  const motionOf = (j) => { const s = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); return (s && s.data && s.data.motion) || null; };
+  const foundOf = (m) => (m && (m.found || []).map((f) => f.el).sort().join(',')) || '';
   /* ожидание: [статус, what, details] — what и details регулярками; статус null — любой */
   const has = (j, [st, w, d]) => ((j && j.steps) || []).some((s) => (st == null || s.status === st) && w.test(String(s.what)) && (!d || d.test(String(s.details || ''))));
+  /* цвет плашки стенда emulate.html */
+  const FLAG_BG = "getComputedStyle(document.getElementById('flag')).backgroundColor";
   const CASES = [
     { name: 'form', file: 'form.html', code: 1, args: ['--type', '#name=Иван', '--type', '#d=2026-10-10', '--type', '#dbad=10.10.2026', '--type', '#dnone=завтра', '--type', '#t=20:30', '--type', '#dt=2026-10-10T20:30', '--type', '#dts=2026-10-10T20:30:00', '--type', '#drw=2026-10-10', '--type', '#m=2026-10', '--select', '#venue=oktava', '--select', '#loose=2', '--select', '#filter=bar', '--select', '#hall=banquet', '--select', '#hall=terrace', '--eval', 'document.body.dataset.date', '--expect', '2026-10-10'],
       want: [['OK', /^ввод в #name$/, /Иван/], ['OK', /^ввод в #d$/, /«2026-10-10».*input и change/], ['OK', /^ввод в #dbad$/, /2026-10-10/], ['FAIL', /^ввод в #dnone$/, /ГГГГ-ММ-ДД/], ['OK', /^ввод в #t$/, /20:30/], ['OK', /^ввод в #dt$/, /2026-10-10T20:30/], ['OK', /^ввод в #m$/, /2026-10/],
@@ -2182,7 +3273,8 @@ async function selftest() {
       want: [['OK', /^клик #burger$/], ['WARN', /^прокрутка идёт при открытом меню\/диалоге$/, /div#drawer.*после --click #burger/]] },
     { name: 'menu-closed', file: 'menu.html', code: 0, args: ['--viewport', 'mobile', '--click', '#burger', '--click', '#close', '--scroll'],
       want: [['OK', /^клик #close$/], ['OK', /^прокрутка/]], not: [['WARN', /открытом меню/]] },
-    { name: 'fixed-hero', file: 'fixed-hero.html', code: 0, args: ['--scroll'],
+    /* tail — после строки итога процесс выходит сразу (предел в мс): прогон с --scroll не ждёт неснятый таймер уборки */
+    { name: 'fixed-hero', file: 'fixed-hero.html', code: 0, tail: 1500, args: ['--scroll'],
       want: [['OK', /^прокрутка/]], not: [['WARN', /открытом меню/]] },
     { name: 'menu-more', file: 'menu.html', code: 0, args: ['--click', '#more', '--scroll', '--nav', '--eval', 'document.body.dataset.long'],
       want: [['OK', /^клик #more$/], ['INFO', /^активный пункт меню: якорей нет$/, /меню ведёт на другие страницы/], ['OK', /^eval document\.body\.dataset\.long$/, /строка 60 \| КОНЕЦ$/]],
@@ -2266,17 +3358,174 @@ async function selftest() {
       }] },
     { name: 'fullpage-x2', file: 'tall.html', code: 0, verdict: 'OK', args: ['--viewport', 'mobile', '--full-scale', '2', '--fullpage'],
       want: [['OK', /^снимок всей страницы$/, /^fullpage-x2-full\.png 780×\d+ px, ×2: 2 пикселя снимка на CSS px/]] },
+    /* без JavaScript (--no-js): блоки, которые показывает только скрипт, — WARN со списком и причинами (visibility, строка под
+       маской overflow: hidden, clip-path, transform, opacity; absolute, который с JS виден, — тоже, Zero Block Tilda); скрытое и с
+       JS (копия с opacity 0, бледный номер) — INFO «по замыслу»; закрытое меню, окно, details, аккордеон, вкладка, подсказка,
+       sr-only и aria-hidden — не в счёт; после --scroll — те же (INFO, без второго WARN). Клик по summary раскрывает details и
+       без JS — изменения DOM пишутся (код проверок в изолированном мире: в мире страницы без JS наблюдатель молчит). --eval —
+       в самой странице без скриптов */
+    { name: 'nojs', file: 'nojs.html', code: 0, verdict: 'WARN', args: ['--no-js', '--scroll', '--click', 'details summary', '--eval', "document.body.dataset.js || 'нет'", '--expect', 'нет'],
+      want: [['INFO', /^JavaScript выключен \(--no-js\)$/, /встроенный скрипт не выполнился/],
+        ['WARN', /^без JS не видно: 7 блоков$/, /^h1\.hero__title «Стейки на углях у реки» \(visibility: hidden\), h2\.lines «Банкеты у воды» \(уведено за край обёртки span\.m \(overflow: hidden\)\), img\.pic «Зал ресторана» \(clip-path: inset\(0px 100% 0px 0px\)\), div\.slide-in «Банкетный зал на сорок гостей» \(transform уводит за экран\), section\.reveal «О ресторане: готовим на углях …» \(opacity 0\), section\.reveal «Меню дня: суп, горячее, десерт» \(opacity 0\) и ещё 1 — с JavaScript видны, без него/],
+        ['INFO', /^без JS не видно и с JS скрыто — по замыслу: 2 блока$/, /^div\.atom «согласен на обработку данных» \(opacity 0\), p\.num «01» \(opacity 0\.06\) — /],
+        ['INFO', /^без JS не видно после прокрутки: те же 7 блоков$/], ['OK', /^клик details summary$/, /DOM: open у details/], ['OK', /^eval .* = нет$/]],
+      not: [[null, /^без JS не видно/, /drawer|Завтраки|Подсказка при|Доставляем|Скрыто для читалки|Декоративная|Вторая вкладка|Окно брони|Бронь держим|Предоплата/], ['WARN', /^без JS не видно после прокрутки/]],
+      checks: [(j) => {
+        const n = j && j.noJs; const c0 = n && n.checks && n.checks[0]; const sk = c0 && c0.skipped;
+        const need = ['меню', 'окно', 'аккордеон', 'вкладка', 'sr-only', 'aria-hidden', 'показ по :hover, :focus, :checked, :target', 'закрыто переключателем (aria-expanded="false")'];
+        const zel = c0 && (c0.dep || []).find((g) => /zel-a/.test(g.sig));
+        return n && n.off && n.isolated && sk && need.every((k) => sk[k] >= 1) && zel && zel.softAbs && c0.compare && c0.compare.ok ? null : `в JSON noJs ${JSON.stringify(n && { off: n.off, isolated: n.isolated, skipped: sk, zel: zel || null, compare: c0 && c0.compare })} — ждали off, isolated, не в счёт: ${need.join(', ')}; div.zel-a (absolute, с JS виден) в находках; сверка с JS вышла`;
+      }] },
+    /* две прокрутки: блок, найденный после первой (p.dnote в раскрытом details), после второй — INFO «те же», а не второй WARN */
+    { name: 'nojs-twice', file: 'nojs.html', code: 0, verdict: 'WARN', args: ['--no-js', '--click', 'details summary', '--scroll', '--scroll'],
+      want: [['WARN', /^без JS не видно после прокрутки: ещё 1 блок$/, /^p\.dnote «Предоплата — только для банкет…» \(opacity 0; с JS сверить не с чем/], ['INFO', /^без JS не видно после прокрутки: те же 8 блоков$/]],
+      checks: [(j) => { const n = ((j && j.steps) || []).filter((s) => s.status === 'WARN' && /^без JS не видно после прокрутки: ещё/.test(s.what)).length; return n === 1 ? null : `строк WARN «без JS не видно после прокрутки: ещё …» — ${n}, ждали 1`; }] },
+    /* без JS всё видно: прячут только под классом js, <noscript><style> возвращает видимость — OK до и после прокрутки */
+    { name: 'nojs-ok', file: 'nojs-ok.html', code: 0, verdict: 'OK', args: ['--no-js', '--scroll', '--eval', 'document.documentElement.className', '--expect', 'no-js'],
+      want: [['INFO', /^JavaScript выключен \(--no-js\)$/, /<noscript> показан: 1/], ['OK', /^без JS всё видно$/, /^проверено \d+ элемент.*сверено с вкладкой с JavaScript/], ['OK', /^без JS после прокрутки всё видно$/], ['OK', /^eval .* = no-js$/]],
+      not: [['WARN', /./], ['FAIL', /./]] },
+    /* страницу целиком рисует скрипт (Nuxt без серверной отрисовки): WARN, и ни после загрузки, ни после прокрутки не OK */
+    { name: 'nojs-empty', file: 'nojs-empty.html', code: 0, verdict: 'WARN', args: ['--no-js', '--scroll'],
+      want: [['WARN', /^без JS на странице нет ни текста, ни картинок$/, /в <body> — div#__nuxt пустой; с JavaScript видно \d+ разных элементов/], ['INFO', /^без JS после прокрутки: на странице по-прежнему нет ни текста, ни картинок$/]],
+      not: [['OK', /^без JS/]] },
+    /* сервер отдаёт одну шапку, остальное рисует скрипт: доля страницы без JS мала — WARN, не OK. Доля — по объёму текста */
+    { name: 'nojs-spa', file: 'nojs-spa.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['WARN', /^без JS на странице \d+% того, что видно с JavaScript$/, /^текста — \d+ из \d+ знаков.*остального без JavaScript нет в разметке — страницу рисует скрипт.*нужна серверная отрисовка/]], not: [['OK', /^без JS/]],
+      checks: [(j) => { const v = volOf(j); return v && v.share < 0.2 && v.chars >= 150 ? null : `в JSON volume ${JSON.stringify(v)} — ждали долю меньше 0.2 при 150+ знаках с JS`; }] },
+    /* то же, но свой текст скрипт ещё и разбивает на слова и буквы: отдельные буквы «находятся» в шапке подстроками, а текста
+       страницы без JS нет — доля остаётся малой (счёт отрезками от шести знаков, а не совпадением коротких кусков) */
+    { name: 'nojs-spa-split', file: 'nojs-spa-split.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['WARN', /^без JS на странице \d+% того, что видно с JavaScript$/, /страницу рисует скрипт.*нужна серверная отрисовка/]], not: [['OK', /^без JS/]],
+      checks: [(j) => { const v = volOf(j); return v && v.share < 0.3 && v.chars >= 150 ? null : `в JSON volume ${JSON.stringify(v)} — ждали долю меньше 0.3 при 150+ знаках с JS`; }] },
+    /* скрипт только разбивает серверный текст на слова, буквы и строки (SplitType, SplitText, data-dk-words) и ничего не прячет:
+       носителей с JS в несколько раз больше, текста столько же — OK, а не «страницу рисует скрипт» (01.10: 8 из 28 элементов) */
+    { name: 'nojs-split', file: 'nojs-split.html', code: 0, verdict: 'OK', args: ['--no-js'],
+      want: [['OK', /^без JS всё видно$/, /сверено с вкладкой с JavaScript.*без JavaScript отрисовано 100% этого по объёму/]], not: [['WARN', /./], ['FAIL', /./]],
+      checks: [(j) => { const v = volOf(j); const c = j && j.noJs && j.noJs.checks && j.noJs.checks[0]; return v && v.share >= 0.98 && v.chars >= 300 && c && c.compare && c.compare.visCount >= c.total * 3 ? null : `в JSON volume ${JSON.stringify(v)}, носителей без JS ${c && c.total}, с JS ${c && c.compare && c.compare.visCount} — ждали долю от 0.98 при 300+ знаках и носителей с JS втрое больше, чем без него`; }] },
+    /* разметка на месте, но спрятана display: none до скрипта (v-cloak): пустая страница — WARN, причина и совет — про
+       спрятанную разметку, а не «нужна серверная отрисовка» */
+    { name: 'nojs-cloak', file: 'nojs-cloak.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['WARN', /^без JS на странице нет ни текста, ни картинок$/, /^разметка на месте, но не отрисована — её прячет display: none до скрипта: div#app \(атрибут v-cloak\).*в разметке 100% того, что видно с JavaScript.*верните видимость в <noscript>/]],
+      not: [[null, /^без JS/, /нужна серверная отрисовка|рисует скрипт/], ['OK', /^без JS/]],
+      checks: [(j) => { const v = volOf(j); return v && v.share === 0 && v.shareMarkup >= 0.98 ? null : `в JSON volume ${JSON.stringify(v)} — ждали долю 0 и долю разметки от 0.98`; }] },
+    /* шапка видна, остальное под x-cloak: малая доля — WARN, остальное «в разметке есть, но не отрисовано» */
+    { name: 'nojs-cloak-part', file: 'nojs-cloak-part.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['WARN', /^без JS на странице \d+% того, что видно с JavaScript$/, /остальное в разметке есть \(с ним — 100%\), но не отрисовано: его прячет display: none до скрипта — main#page \(атрибут x-cloak\)/]],
+      not: [[null, /^без JS/, /нужна серверная отрисовка|рисует скрипт/], ['OK', /^без JS/]] },
+    /* ни одного <script>, показ — обработчиками в атрибутах (body onload, img onload): сверка с JS идёт, блоки — находки */
+    { name: 'nojs-onload', file: 'nojs-onload.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['INFO', /^JavaScript выключен \(--no-js\)$/, /<script> на странице: 0, обработчиков в атрибутах \(onload\): 2/],
+        ['WARN', /^без JS не видно: 2 блока$/, /^h1\.hero «Стейки на углях у реки» \(visibility: hidden\), img\.fade «Зал ресторана» \(opacity 0\) — с JavaScript видны, без него.*сверено с вкладкой с JavaScript/]],
+      not: [['OK', /^без JS всё видно$/], [null, /./, /скриптов на странице нет/], ['INFO', /по замыслу/]] },
+    /* --click по ссылке увёл на другую страницу: проверка после прокрутки — для неё, заново, сверка — с вкладкой с JS её же
+       адреса; бледная подложка новой страницы — «по замыслу», а не находка «с JS сверить не с чем» */
+    { name: 'nojs-nav', file: 'nojs-nav-a.html', code: 0, verdict: 'OK', args: ['--no-js', '--click', '#go', '--scroll'],
+      want: [['OK', /^клик #go$/, /адрес → .*nojs-nav-b\.html/], ['OK', /^без JS всё видно$/, /^страница сменилась — теперь \S*nojs-nav-b\.html: «без JS» проверено для неё заново \(после прокрутки\)/],
+        ['INFO', /^без JS не видно и с JS скрыто — по замыслу: 1 блок$/, /^p\.ghost «МЕНЮ ДНЯ» \(opacity 0\) — во вкладке с JavaScript/]],
+      not: [['WARN', /./], ['FAIL', /./]],
+      checks: [(j) => { const c = (j && j.noJs && j.noJs.checks) || []; const u = (k) => String((c[k] && c[k].compare && c[k].compare.url) || ''); return c.length === 2 && /nojs-nav-a\.html$/.test(u(0)) && /nojs-nav-b\.html$/.test(u(1)) ? null : `в JSON noJs.checks ${c.length}, сверка: «${u(0)}» и «${u(1)}» — ждали две проверки: первая сверена с nojs-nav-a.html, вторая — с nojs-nav-b.html`; }] },
+    /* заставка, которую убирает скрипт: без JS закрывает страницу — WARN, не OK */
+    { name: 'nojs-cover', file: 'nojs-cover.html', code: 0, verdict: 'WARN', args: ['--no-js'],
+      want: [['WARN', /^без JS страницу закрывает заставка div#preloader$/, /^\d+ из \d+ элементов с текстом или картинкой первого экрана под ней \(«Загрузка 0%»\) — убрать её без скрипта нечем/]], not: [['OK', /^без JS/]] },
+    /* скриптов нет (только JSON-LD): без JS страница та же — бледное по замыслу INFO, не WARN */
+    { name: 'nojs-plain', file: 'nojs-plain.html', code: 0, verdict: 'OK', args: ['--no-js'],
+      want: [['INFO', /^JavaScript выключен \(--no-js\)$/, /<script> на странице: 1 \(выполнялись бы 0\)/], ['OK', /^без JS всё видно$/, /скриптов на странице нет/], ['INFO', /^без JS не видно и с JS скрыто — по замыслу: 1 блок$/, /^p\.num «01» \(opacity 0\.06\) — показать их нечему/]],
+      not: [['WARN', /./], ['FAIL', /./]] },
+    /* пара modulepreload + module-скрипт (Vite, Nuxt) без JS: Chrome обрывает предзагрузку сам — INFO, не «упавшие запросы» */
+    { name: 'nojs-pre', url: `${aUrl}/pre`, code: 0, verdict: 'OK', args: ['--no-js'],
+      want: [['INFO', /^модульные скрипты не загружались: JavaScript выключен \(1\)$/, /^m\.js — /], ['OK', /^без JS всё видно$/]], not: [['WARN', /./], ['FAIL', /./]] },
+    /* iframe другого сайта (свой процесс, как карта Яндекса): JavaScript выключен и в нём — сессия iframe получила команду,
+       проба в кадре не выполнилась; скрипт виджета сервер видел не больше раза (вкладка сверки с JavaScript) */
+    ...(C ? [{ name: 'nojs-xsite', url: `${aUrl}/nojs-xsite`, code: 0, args: ['--no-js'],
+      want: [['INFO', /^JavaScript выключен \(--no-js\)$/, /iframe: 1, в нём JavaScript тоже выключен \(сверено пробой, в том числе в 1 iframe другого сайта/]], not: [['WARN', /в iframe JavaScript работает/]],
+      checks: [(j) => { const f = j && j.noJs && j.noJs.frames; return f && f.hooked && f.sessions >= 1 && f.jsRanIn.length === 0 ? null : `в JSON noJs.frames ${JSON.stringify(f)} — ждали hooked, sessions от 1 и jsRanIn пустой`; },
+        () => { const n = jsHits.filter((h) => h === 'frame').length; return n <= 1 ? null : `скрипт iframe выполнился ${n} раз — ждали не больше одного (вкладка сверки с JavaScript)`; }] }] : []),
+    /* --emulate-motion посреди шагов: медиа-запрос reduce перекрашивает плашку — --eval до шага и после */
+    { name: 'emulate', file: 'emulate.html', code: 0, verdict: 'OK', args: ['--eval', FLAG_BG, '--expect', 'rgb(200, 0, 0)', '--emulate-motion', 'reduce', '--eval', FLAG_BG, '--expect', 'rgb(0, 128, 0)', '--emulate-motion', 'no-preference', '--eval', FLAG_BG, '--expect', 'rgb(200, 0, 0)'],
+      want: [['OK', /^prefers-reduced-motion: reduce$/, /matchMedia — reduce, до шага — no-preference/], ['OK', /^eval .* = rgb\(0, 128, 0\)$/, /совпало/], ['OK', /^prefers-reduced-motion: no-preference$/, /matchMedia — no-preference, до шага — reduce/]],
+      not: [['FAIL', /./], ['WARN', /./]] },
+    /* переход не шёл: перебитая шторка, она же с уборкой классов, как в decor-kit (transition объявлен только на время появления),
+       и фото со шторкой внутри проявляющегося блока — одной строкой WARN; шторка на обёртке без прозрачности — своей строкой;
+       переход объявлен, но конечное none не интерполируется — своя строка с советом inset(0), без совета «добавьте в transition»;
+       нормальная шторка, inline style по кадрам, WAAPI, CSS-анимация, блок без объявленного движения и ход через CSS-переменную
+       по кадрам (clip-path и transform) — нет */
+    { name: 'jump', file: 'jump.html', code: 0, verdict: 'WARN', warns: 3, args: ['--scroll'],
+      want: [['OK', /^прокрутка/, /ждали появления: 11 .* — не появились: 0/],
+        ['WARN', /^clip-path сменилось скачком, перехода не было: img\.ph\.cur-img и ещё 2$/, /^transition-property: transform — clip-path в нём нет: перебит другим правилом или не объявлен\? · было «inset\(0px 100% 0px 0px\)» → стало «inset\(0px\)».*добавьте clip-path в transition правила, которое действует при появлении/],
+        ['WARN', /^clip-path сменилось скачком, перехода не было: div\.card\.nd\.on$/, /^transition-property: clip-path, transform — переход объявлен, но не пошёл: inset\(\) ↔ none не интерполируются · было .*inset\(0\) вместо none/],
+        ['WARN', /^clip-path сменилось скачком, перехода не было: div\.cw\.on$/, /^transition-property: opacity — clip-path в нём нет/]],
+      not: [['WARN', /сменилось скачком/, /good-img|tv-img|div\.card\.(gs|plain|wa|an|kv)/], ['WARN', /^(opacity|transform|translate|scale|rotate|filter) сменилось скачком/], ['WARN', /nd\.on/, /добавьте clip-path в transition/]],
+      checks: [(j) => {
+        const s = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); const m = s && s.data && s.data.motion;
+        const els = m && (m.found || []).map((f) => f.el).sort().join(',');
+        return m && m.tracked === 13 && m.extra === 2 && els === 'div.card.nd.on,div.cw.on,img.ph.cf-img,img.ph.cur-img,img.ph.kit-img' && m.inline >= 2 && m.smooth >= 2 && m.noMotion >= 1 && !m.reduced ? null : `в JSON motion ${JSON.stringify(m && { tracked: m.tracked, extra: m.extra, found: els, inline: m.inline, smooth: m.smooth, noMotion: m.noMotion, reduced: m.reduced })} — ждали 13 (из них без отметки 2), nd, cw, cf-img, cur-img и kit-img, inline от 2, smooth от 2, noMotion от 1`;
+      }] },
+    /* --переменная в style и скачок: посторонняя переменная прокрутки (--p ведёт параллакс translate) скачок шторки не прячет —
+       в находках оба фото, переменная названа в строке; быстрый ход шторки через переменную (четыре кадра подряд) — не скачок:
+       значения снимаются на каждой записи переменной */
+    { name: 'jump-vars', file: 'jump-vars.html', code: 0, verdict: 'WARN', warns: 1, args: ['--scroll'],
+      want: [['OK', /^прокрутка/, /ждали появления: 3 .* — не появились: 0/],
+        ['WARN', /^clip-path сменилось скачком, перехода не было: img\.ph\.a-img и ещё 1$/, /clip-path в нём нет.*в style менялись --переменные: у img\.ph\.b-img — --p \(записей: \d+\) — clip-path они плавно не вели/]],
+      not: [['WARN', /сменилось скачком/, /c-img/], ['WARN', /^(opacity|transform|translate|scale|rotate|filter) сменилось скачком/]],
+      /* varSamples — значения сняты на записях переменной: четыре записи --r у c-img (опрос раз в ~100 мс ход в четыре кадра
+         ловит через раз — без этих снимков случай сходился бы случайно) и записи --p у b-img */
+      checks: [(j) => { const m = motionOf(j); return m && foundOf(m) === 'img.ph.a-img,img.ph.b-img' && m.vars === 1 && m.smooth >= 1 && m.varSamples >= 5 ? null : `в JSON motion ${JSON.stringify(m && { found: foundOf(m), vars: m.vars, smooth: m.smooth, jumps: m.jumps, varSamples: m.varSamples })} — ждали a-img и b-img, vars 1 (b-img), smooth от 1 (clip-path у c-img), varSamples от 5`; }] },
+    /* шторки без отметки «ждали появления» (обёртка, блок только с clip-path, фото в проявляющемся блоке) — три находки */
+    { name: 'jump-gaps', file: 'jump-gaps.html', code: 0, verdict: 'WARN', warns: 3, args: ['--scroll'],
+      want: [['WARN', /^clip-path сменилось скачком, перехода не было: div\.wa\.on$/, /^transition-property: opacity — clip-path в нём нет/], ['WARN', /^clip-path сменилось скачком, перехода не было: div\.card\.cb\.on$/, /^transition-property: color — clip-path в нём нет/],
+        ['WARN', /^clip-path сменилось скачком, перехода не было: img\.ph\.fw-img$/, /^transition-property: transform — clip-path в нём нет/]],
+      not: [['WARN', /сменилось скачком/, /wa-img/], ['WARN', /^(opacity|transform|translate|scale|rotate|filter) сменилось скачком/]],
+      checks: [(j) => { const m = motionOf(j); return m && foundOf(m) === 'div.card.cb.on,div.wa.on,img.ph.fw-img' && m.extra === 3 ? null : `в JSON motion ${JSON.stringify(m && { found: foundOf(m), extra: m.extra, tracked: m.tracked })} — ждали wa, cb и fw-img, без отметки 3`; }] },
+    /* с «меньше движения» скачок и есть правильное поведение: ни одного WARN, в строке прокрутки — пометка */
+    { name: 'jump-reduced', file: 'jump.html', code: 0, verdict: 'OK', args: ['--reduced-motion', '--scroll'],
+      want: [['OK', /^прокрутка/, /переходы появления не сверялись: «меньше движения» \(reduce\)/]], not: [['WARN', /сменилось скачком/]],
+      checks: [(j) => { const s = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); const m = s && s.data && s.data.motion; return m && m.reduced && m.jumps === 0 ? null : `в JSON motion ${JSON.stringify(m && { reduced: m.reduced, jumps: m.jumps })} — ждали reduced и 0`; }] },
+    /* ошибки аргументов новых флагов — до браузера, код 2, протокола нет */
+    { name: 'args-emulate', file: 'emulate.html', code: 2, noJson: true, args: ['--emulate-motion', 'fast'], text: /--emulate-motion fast: нужно reduce или no-preference/ },
+    { name: 'args-nojs', file: 'nojs.html', code: 2, noJson: true, args: ['--no-js', '--no-js=0'], text: /--no-js задан дважды: «вкл» и «выкл»/ },
+    /* справка: первая строка --no-js — законченная фраза: справочник флагов (flags-doc.mjs) берёт из справки одну строку, и
+       описание обрывалось на слове «проверка» */
+    { name: 'help-nojs', file: 'nojs.html', code: 0, noJson: true, args: ['-h'], text: /(^|\n) *--no-js {2,}страница без JavaScript \([^)\n]*\): проверка прогрессивного улучшения\.(\r?\n|$)/ },
   ];
-  /* проверки 30.09 — и в Firefox (браузер пользователя): якорь, блок шире колонки, фокус в слое, окно cookie */
-  if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
+  /* проверки 30.09 — и в Firefox (браузер пользователя): якорь, блок шире колонки, фокус в слое, окно cookie, переход не шёл
+     (и посторонняя --переменная, и шторки без отметки) */
+  if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep', 'jump', 'jump-vars', 'jump-gaps']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
+  /* Firefox без выключения JavaScript и эмуляции медиа на вкладке (157, 30.09): WARN «не поддерживается», запуск идёт дальше.
+     Научится (BiDi emulation.setScriptingEnabled, эмуляция медиа) — ждём того же, что в Chrome */
+  if (findBrowser('firefox')) {
+    CASES.push({ name: 'nojs-ff', file: 'nojs.html', code: 0, args: ['--browser', 'firefox', '--no-js'],
+      checks: [(j) => {
+        const st = (j && j.steps) || []; const at = (status, re) => st.some((s) => s.status === status && re.test(s.what));
+        const warn = at('WARN', /^--no-js не поддерживается в Firefox$/); const off = at('INFO', /^JavaScript выключен \(--no-js\)$/); const any = st.some((s) => /^без JS/.test(s.what));
+        return (warn && !off && !any) || (off && !warn && at('WARN', /^без JS не видно: 7 блоков$/)) ? null : `ждали WARN «--no-js не поддерживается в Firefox» без строк «без JS…» (или, если Firefox научился, INFO «JavaScript выключен» и «без JS не видно: 7 блоков»): WARN ${warn}, INFO ${off}, строки «без JS» ${any}`;
+      }] });
+    CASES.push({ name: 'emulate-ff', file: 'emulate.html', code: 0, args: ['--browser', 'firefox', '--emulate-motion', 'reduce', '--eval', FLAG_BG],
+      checks: [(j) => {
+        const st = (j && j.steps) || []; const ev = st.find((s) => /^eval /.test(s.what)); const bg = ev ? String(ev.details) : '';
+        const warn = st.some((s) => s.status === 'WARN' && /^--emulate-motion reduce не поддерживается в Firefox$/.test(s.what) && /настройка запуска \(--reduced-motion\)/.test(String(s.details)));
+        const ok = st.some((s) => s.status === 'OK' && /^prefers-reduced-motion: reduce$/.test(s.what));
+        return (warn && bg === 'rgb(200, 0, 0)') || (ok && bg === 'rgb(0, 128, 0)') ? null : `ждали WARN «--emulate-motion reduce не поддерживается в Firefox» и красную плашку (или OK шага и зелёную): WARN ${warn}, OK ${ok}, плашка «${bg}»`;
+      }] });
+  }
   if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
+  /* часть случаев: RW_SELFTEST_ONLY — регулярное выражение по имени (полный прогон — около десяти минут; после правки одной
+     проверки хватает её случаев). Итог тогда — «выбрано N из M», а не «все»: частичный прогон за полный не сойдёт */
+  const ALL = CASES.length; let only = null;
+  if (process.env.RW_SELFTEST_ONLY) {
+    try { only = new RegExp(process.env.RW_SELFTEST_ONLY); } catch (e) { console.error(`RW_SELFTEST_ONLY: не регулярное выражение — ${short(e.message || e, 100)}`); A.close(); B.close(); C4.close(); if (C) C.close(); return 2; }
+    for (let i = CASES.length - 1; i >= 0; i--) if (!only.test(CASES[i].name)) CASES.splice(i, 1);
+    if (!CASES.length) { console.error(`RW_SELFTEST_ONLY=${process.env.RW_SELFTEST_ONLY}: ни один из ${ALL} случаев не подошёл`); A.close(); B.close(); C4.close(); if (C) C.close(); return 2; }
+  }
   let bad = 0;
-  console.log(`runtime.mjs --selftest: ${CASES.length} прогонов, по одному браузеру · протоколы ${out}`);
+  console.log(`runtime.mjs --selftest: ${CASES.length} прогонов${only ? ` (выбрано RW_SELFTEST_ONLY=${process.env.RW_SELFTEST_ONLY} из ${ALL})` : ''}, по одному браузеру · протоколы ${out}`);
   try {
     for (const c of CASES) {
       const r = await run(c.name, c.args, c.url || U(c.file), c.env);
       const miss = [];
-      if (!r.j) miss.push(`нет протокола: ${short(r.text.split('\n').filter(Boolean).slice(-2).join(' | '), 200)}`);
+      /* noJson — ошибка аргументов до браузера: протокола нет, сверяется вывод (text) */
+      if (!r.j && !c.noJson) miss.push(`нет протокола: ${short(r.text.split('\n').filter(Boolean).slice(-2).join(' | '), 200)}`);
+      if (c.noJson && r.j) miss.push('протокол есть, а ждали ошибку аргументов до браузера');
+      if (c.text && !c.text.test(r.text)) miss.push(`в выводе нет ${c.text}: ${short(r.text.split('\n').filter(Boolean).slice(-2).join(' | '), 200)}`);
       if (r.code !== c.code) miss.push(`код выхода ${r.code}, ждали ${c.code}`);
       if (c.verdict && r.j && r.j.verdict !== c.verdict) miss.push(`вердикт ${r.j.verdict}, ждали ${c.verdict}`);
       if (c.warns != null && !new RegExp(` ${c.warns} предупреждени`).test(r.text)) miss.push(`предупреждений не ${c.warns}: ${short((r.text.match(/\d+ провалов, \d+ предупреждений/) || [''])[0], 60)}`);
@@ -2284,6 +3533,8 @@ async function selftest() {
       for (const w of c.not || []) if (has(r.j, w)) miss.push(`лишняя строка ${w[0] || '*'} ${w[1]}${w[2] ? ` — ${w[2]}` : ''}`);
       /* проверки полей протокола (не строк): функция → null или текст расхождения */
       for (const f of c.checks || []) { let m = null; try { m = f(r.j); } catch (e) { m = `проверка протокола упала: ${short(e.message || e, 100)}`; } if (m) miss.push(m); }
+      /* tail — процесс вышел не позже чем через столько мс после строки итога */
+      if (c.tail != null && !(r.tailMs != null && r.tailMs <= c.tail)) miss.push(`после строки итога процесс жил ${r.tailMs == null ? 'неизвестно сколько (строки итога нет)' : `${r.tailMs} мс`}, ждали не больше ${c.tail} мс — его держит неснятый таймер`);
       if (miss.length) bad++;
       console.log(`${miss.length ? 'FAIL' : 'OK  '} ${c.name}${miss.length ? ` — ${miss.join('; ')}` : ''}`);
       if (miss.length) console.log(r.text.split('\n').filter((l) => /^(OK|WARN|FAIL|INFO) /.test(l)).map((l) => `       ${short(l, 220)}`).join('\n'));
@@ -2291,6 +3542,6 @@ async function selftest() {
   } finally { A.close(); B.close(); C4.close(); if (C) C.close(); }
   /* сошлось — временные протоколы и снимки не нужны; разошлось — остаются для разбора */
   if (!bad) { try { fs.rmSync(out, { recursive: true, force: true }); } catch { /* занято — останется во временной папке */ } }
-  console.log(bad ? `\nFAIL: разошлось ${bad} из ${CASES.length} — протоколы в ${out}` : `\nOK: все ${CASES.length} прогонов сошлись`);
+  console.log(bad ? `\nFAIL: разошлось ${bad} из ${CASES.length} — протоколы в ${out}` : only ? `\nOK: сошлись ${CASES.length} выбранных прогонов из ${ALL} (RW_SELFTEST_ONLY) — это не полная самопроверка` : `\nOK: все ${CASES.length} прогонов сошлись`);
   return bad ? 1 : 0;
 }

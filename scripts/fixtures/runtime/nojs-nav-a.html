@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — главная, ссылка ведёт на другую страницу</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): главная, всё видно и без JavaScript; ссылка #go ведёт на страницу
+  меню (nojs-nav-b.html). Прогон: --no-js --click "#go" --scroll — прокрутка и проверка «без JS» идут уже на странице меню, и
+  сверка должна идти с вкладкой с JavaScript той же страницы меню, а не главной (01.10: сверялось с главной — бледная
+  подложка меню выходила находкой «с JS сверить не с чем»).
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ресторан «Берег» на набережной</h1>
+  <p>Стейки на углях у самой реки, банкеты и завтраки.</p>
+  <p>Открыты каждый день с полудня до полуночи.</p>
+  <p>Бронь по телефону и на сайте.</p>
+  <p><a id="go" href="nojs-nav-b.html">Смотреть меню ресторана</a></p>
+</main>
+<script>document.body.dataset.js = 'да';</script>
+</body>
+</html>

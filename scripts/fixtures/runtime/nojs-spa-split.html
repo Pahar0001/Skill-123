@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — страницу рисует скрипт и сам же разбивает текст на буквы</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): обратный к nojs-split.html. Сервер отдаёт только шапку, остальное
+  рисует скрипт в div#app — и разбивает свой текст на слова и буквы. Отдельные буквы и короткие слова «находятся» в шапке
+  как подстроки, но текста страницы без JavaScript нет: доля считается по объёму текста подряд (отрезками от шести знаков),
+  а не по совпадению коротких кусков. Правильный итог: WARN «без JS на странице N% того, что видно с JavaScript» с малой
+  долей и словами «страницу рисует скрипт»; строки OK «без JS всё видно» нет.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { padding: 16px 32px; display: flex; gap: 24px; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .word, .char { display: inline-block; }
+</style>
+</head>
+<body>
+<header><strong>Ресторан «Берег» на набережной</strong><a href="#menu">Меню</a><a href="#bar">Бар</a></header>
+<div id="app"></div>
+<script>
+  const items = ['Стейки на углях у реки', 'Банкетный зал на сорок гостей', 'Открыты каждый день с полудня', 'Завтраки до одиннадцати', 'Бронь по телефону и на сайте', 'Детское меню и высокие стулья', 'Парковка у входа'];
+  const span = (cls, html) => `<span class="${cls}">${html}</span>`;
+  const chars = (t) => t.split(/\s+/).map((w) => span('word', [...w].map((c) => span('char', c)).join(''))).join(' ');
+  const words = (t) => t.split(/\s+/).map((w) => span('word', w)).join(' ');
+  document.getElementById('app').innerHTML = `<main><h1>${chars('Меню и зал ресторана')}</h1>${items.map((t, i) => `<p>${i % 2 ? words(t) : chars(t)}</p>`).join('')}</main>`;
+</script>
+</body>
+</html>

@@ -574,6 +574,7 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--click` | шаг | --click "sel"         кликнуть: эффект — изменения DOM (MutationObserver), адрес, |
 | `--css` | шаг | объявления CSS, которые браузер выбросил: файл:строка |
 | `--edit` | шаг | --edit "sel"          поле с маской: набор, Backspace до конца, правка в середине, |
+| `--emulate-motion` | шаг | переключить prefers-reduced-motion на открытой странице посреди шагов |
 | `--eval` | шаг | --eval "js"           выполнить выражение (можно Promise) и записать результат; |
 | `--expect` | шаг | сразу за ним --expect "значение" — FAIL, если не совпало. |
 | `--fullpage` | шаг | снимок всей страницы <tag>-full.png (второй — <tag>-full-2.png): масштаб — --full-scale, |
@@ -591,9 +592,10 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--wait` | шаг | --wait 800            подождать столько миллисекунд (число ≥ 0, «0» — не ждать; |
 | `--keep-consent` | переключатель | не закрывать окно согласия cookie и ворота-заставку («ENTER», «Мне есть 18») — |
 | `--no-fail` | переключатель | --no-fail=0 — провалы снова дают код 1. Шаг (--scroll, --css, --canvas…): --scroll=0 |
-| `--reduced-motion` | переключатель | [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent] |
+| `--no-js` | переключатель | страница без JavaScript (Chrome и Edge, выключается до перехода): проверка прогрессивного улучшения. |
+| `--reduced-motion` | переключатель | [--reduced-motion] [--scheme dark] [--cpu 4] [--no-fail] [--init "js"] [--keep-consent] [--no-js] |
 | `--selftest` | переключатель | прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка, |
-| `--browser` | со значением | --browser) — ошибка (код 2); --wait — не больше 600000 мс. |
+| `--browser` | со значением | --browser, --no-js и --no-js=0) — ошибка (код 2); --wait — не больше 600000 мс. |
 | `--cpu` | со значением | --cpu 4               процессор в N раз медленнее (только Chrome и Edge) |
 | `--expect-status` | со значением | --expect-status 404   ждать такой ответ самого документа (страница ошибки открыта нарочно): |
 | `--full-scale` | со значением | --full-scale 1\|2\|3\|4\|dpr  масштаб снимка --fullpage (как у shots.mjs): 1 — по умолчанию, dpr — как у экрана; |
@@ -603,6 +605,8 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--tag` | со значением | node runtime.mjs <url> [--viewport mobile] [--out папка] [--tag имя] [--browser firefox] |
 | `--viewport` | со значением | desktop \| laptop \| tablet \| mobile \| mobile-s (320×568@2) \| android (360×800@3) |
 | `--viewports` | со значением | --viewports — то же самое. Экран один за запуск: список «mobile,desktop» — |
+
+Переменные окружения: `RW_SELFTEST_ONLY`.
 
 ## security.mjs
 
@@ -680,7 +684,7 @@ node shots.mjs <url> [--out папка] [--tag before|after] [--viewports deskto
 ## skill-audit.mjs
 
 ```
-node skill-audit.mjs audit <папка | файл.zip | адрес GitHub> [--ref ветка|тег|коммит] [--skill имя] [--out файл.json|папка] [--max-mb 200] [--strict]
+node skill-audit.mjs audit <папка | файл.zip | адрес GitHub> [--ref ветка|тег|коммит] [--skill имя] [--exclude путь,путь] [--out файл.json|папка] [--max-mb 200] [--strict]
 node skill-audit.mjs install <источник> --skill <имя|путь> [--yes] [--target папка] [--exclude путь,путь] [--ref …] [--out …] [--max-mb …]
 node skill-audit.mjs --selftest [--out папка]
 node skill-audit.mjs --help   (или -h)
@@ -695,12 +699,14 @@ node skill-audit.mjs --help   (или -h)
 | `--selftest` | переключатель | --selftest стенды fixtures/skill-audit без сети: чистый навык, опасный, широкий без лицензии, |
 | `--strict` | переключатель | код выхода 1 при вердикте FAIL (audit). |
 | `--yes` | переключатель | install: на самом деле скопировать; без него — только план. |
-| `--exclude` | значение необязательно | install: не брать эти пути внутри папки навыка (через запятую, * — любые знаки), |
+| `--exclude` | значение необязательно | audit — не проверять, install — не брать эти пути (через запятую; папка — целиком, * — любые знаки). |
 | `--max-mb` | значение необязательно | предел скачивания и распаковки, МБ (по умолчанию 200). |
 | `--out` | значение необязательно | протокол JSON: файл .json или папка (skill-audit-<источник>.json); по умолчанию |
 | `--ref` | значение необязательно | ветка, тег или коммит для адреса GitHub (по умолчанию из адреса, иначе HEAD). |
 | `--skill` | значение необязательно | имя навыка (name из frontmatter или имя папки) или путь его папки внутри источника; |
 | `--target` | значение необязательно | install: папка навыков (по умолчанию ~/.claude/skills; для проверок — временная). |
+
+Переменные окружения: `CLAUDE_CONFIG_DIR`.
 
 ## state.mjs
 

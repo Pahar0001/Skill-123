@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — без JavaScript не видно</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): блоки, которые показывает только скрипт. Без JavaScript —
+  WARN «без JS не видно: 7 блоков», по блоку на каждую причину и ещё один блок появления ниже экрана:
+    h1.hero__title   visibility: hidden, пока скрипт не поставит .ready на <html>
+    h2.lines         строка под маской «выезжает снизу»: span.i сдвинут translateY(110%) за край span.m (overflow: hidden),
+                     пока скрипт не поставит .in — «уведено за край обёртки span.m (overflow: hidden)»
+    img.pic          шторка clip-path: inset(0 100% 0 0), пока скрипт не поставит .on
+    div.slide-in     transform: translateX(-120vw) — уведён за экран, пока скрипт не поставит .on
+    section.reveal   opacity 0 — появление классом .in из IntersectionObserver (два блока: вверху и ниже экрана)
+    div.zel-a        как Zero Block Tilda: absolute, opacity 0, пока скрипт не поставит .shown — вне потока, но с JavaScript
+                     виден: сверка с вкладкой с JS возвращает его в находки
+  Скрыто и с JavaScript — строка INFO «по замыслу», не WARN (сверка с вкладкой с JS):
+    div.atom         статичная копия с opacity 0 внутри absolute-элемента (у Tilda — копии подписи согласия)
+    p.num            номер раздела с opacity .06 — бледный по замыслу
+  После --scroll — строка INFO «те же 7 блоков»: прокрутка без JavaScript их не показывает.
+  p.dnote в details — opacity 0 до скрипта: после --click по summary он отрисован; «--click summary --scroll --scroll» —
+  WARN «ещё 1 блок» один раз, вторая прокрутка — INFO «те же» (раньше его WARN повторялся).
+  Не в счёт — закрыто по замыслу и без скрипта:
+    nav .sub           подменю в потоке, opacity 0 — внутри nav (меню) и показ по :hover
+    div#drawer         выезжающее меню: fixed, за краем, visibility: hidden — переключатель aria-expanded="false"
+    details            закрытый аккордеон — содержимое не отрисовано
+    div#acc1           панель аккордеона, opacity 0 — кнопка aria-expanded="false" с aria-controls
+    span.note          подсказка в потоке, opacity 0 — показ правилом .note-wrap:hover .note
+    span.sr-only       текст для читалки (clip-path: inset(50%))
+    div.deco           надпись aria-hidden="true", opacity 0
+    div[role=tabpanel] вторая вкладка, opacity 0
+    div.modal          окно: fixed, role="dialog", aria-modal, visibility: hidden
+  Скрипт ставит body.dataset.js = «да» — --eval без JavaScript видит «нет». Клик по summary раскрывает details и без
+  JavaScript (DOM: open у details) — запись изменений DOM у --click работает и без скриптов страницы.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 16px; }
+  nav .sub { opacity: 0; transition: opacity .2s; }
+  nav li:hover .sub { opacity: 1; }
+  .burger { font: inherit; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 280px; padding: 24px; background: #1b1b1b; color: #fff; transform: translateX(100%); visibility: hidden; }
+  .drawer.open { transform: none; visibility: visible; }
+  .hero__title { visibility: hidden; }
+  .ready .hero__title { visibility: visible; }
+  .pic { display: block; width: 100%; height: auto; clip-path: inset(0 100% 0 0); }
+  .pic.on { clip-path: inset(0); transition: clip-path .8s; }
+  .clip { overflow: hidden; }
+  .lines .m { display: inline-block; overflow: hidden; vertical-align: top; }
+  .lines .i { display: inline-block; transform: translateY(110%); }
+  .lines.in .i { transform: none; transition: transform .8s; }
+  .slide-in { padding: 24px; background: #fff; transform: translateX(-120vw); transition: transform .6s; }
+  .slide-in.on { transform: none; }
+  .reveal { padding: 32px; margin: 24px 0; background: #fff; opacity: 0; transform: translateY(24px); transition: opacity .4s, transform .4s; }
+  .reveal.in { opacity: 1; transform: none; }
+  .zero { position: relative; height: 140px; }
+  .zel { position: absolute; left: 0; }
+  .zel-a { top: 0; opacity: 0; }
+  .zel-a.shown { opacity: 1; transition: opacity .4s; }
+  .zel-b { top: 70px; }
+  .zel-b .atom { opacity: 0; }
+  .num { font-size: 96px; line-height: 1; font-weight: 800; opacity: .06; margin: 0; }
+  .dnote { opacity: 0; }
+  .dnote.in { opacity: 1; transition: opacity .4s; }
+  .acc-panel { opacity: 0; max-height: 0; overflow: hidden; }
+  .note { opacity: 0; transition: opacity .2s; }
+  .note-wrap:hover .note { opacity: 1; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .deco { opacity: 0; font-size: 64px; line-height: 1.1; }
+  [role="tabpanel"] + [role="tabpanel"] { opacity: 0; }
+  .modal { position: fixed; top: 20%; left: 20%; right: 20%; padding: 32px; background: #fff; box-shadow: 0 8px 40px rgba(0, 0, 0, .2); visibility: hidden; opacity: 0; }
+  .tall { height: 1200px; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Ресторан «Берег»</strong>
+  <nav aria-label="Разделы"><ul><li><a href="#menu">Меню</a><ul class="sub"><li><a href="#breakfast">Завтраки</a></li></ul></li><li><a href="#bar">Бар</a></li></ul></nav>
+  <button class="burger" type="button" aria-expanded="false" aria-controls="drawer">Разделы</button>
+</header>
+<div class="drawer" id="drawer"><p>Ресторан</p><p>Банкеты</p></div>
+<main>
+  <h1 class="hero__title">Стейки на углях у реки</h1>
+  <p>Этот абзац виден и без скрипта.</p>
+  <h2 class="lines"><span class="m"><span class="i">Банкеты у воды</span></span></h2>
+  <img class="pic" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%23c9a27c'/%3E%3C/svg%3E" width="600" height="240" alt="Зал ресторана">
+  <div class="clip"><div class="slide-in">Банкетный зал на сорок гостей</div></div>
+  <section class="reveal">О ресторане: готовим на углях с 2012 года</section>
+  <div class="zero">
+    <div class="zel zel-a">Прозрачный процесс брони</div>
+    <div class="zel zel-b"><div class="atom">согласен на обработку данных</div></div>
+  </div>
+  <p class="num">01</p>
+  <details><summary>Условия брони</summary><p>Бронь держим пятнадцать минут.</p><p class="dnote">Предоплата — только для банкетов</p></details>
+  <div class="acc"><h3><button type="button" aria-expanded="false" aria-controls="acc1">Доставка</button></h3><div class="acc-panel" id="acc1">Доставляем по городу до 23:00.</div></div>
+  <p class="note-wrap">Наведите на слово <span class="note">Подсказка при наведении</span></p>
+  <span class="sr-only">Скрыто для читалки</span>
+  <div class="deco" aria-hidden="true">Декоративная надпись</div>
+  <div role="tablist"><button type="button" role="tab" aria-selected="true">Кухня</button> <button type="button" role="tab" aria-selected="false">Бар</button></div>
+  <div role="tabpanel">Первая вкладка: мясо и рыба</div>
+  <div role="tabpanel">Вторая вкладка: коктейли</div>
+  <div class="tall"></div>
+  <section class="reveal">Меню дня: суп, горячее, десерт</section>
+</main>
+<div class="modal" role="dialog" aria-modal="true" aria-label="Бронь">Окно брони</div>
+<script>
+  document.documentElement.classList.add('ready');
+  document.body.dataset.js = 'да';
+  const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { e.target.classList.add(e.target.classList.contains('pic') ? 'on' : 'in'); io.unobserve(e.target); } });
+  document.querySelectorAll('.reveal, .pic, .dnote').forEach((el) => io.observe(el));
+  document.querySelector('.slide-in').classList.add('on');
+  document.querySelector('.lines').classList.add('in');
+  document.querySelector('.zel-a').classList.add('shown');
+  document.querySelector('.burger').addEventListener('click', (e) => { const d = document.getElementById('drawer'); const open = d.classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(open)); });
+</script>
+</body>
+</html>

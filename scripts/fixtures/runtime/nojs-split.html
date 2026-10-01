@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — скрипт только разбивает серверный текст на слова и буквы</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): весь текст отдаёт сервер, и он виден без JavaScript. Скрипт ничего не
+  прячет и ничего не дорисовывает — только разбивает текст на части, как SplitType, SplitText и data-dk-words набора деталей:
+    h1.words    слова в span, между ними пробелы текстом (самый частый приём «заголовок выезжает по словам»)
+    h2.chars    слова в span, внутри каждого — буквы в span (SplitType types: 'words, chars')
+    h2.tight    слова в span без пробелов между ними, расстояние — полем (margin-right)
+    h2.lines    строки блоками div, в них слова
+    p.words     абзац по словам
+  С JavaScript носителей текста в несколько раз больше (каждое слово и каждая буква — свой элемент), а текста столько же.
+  Правильный итог: OK «без JS всё видно», доля — 100% (01.10: доля считалась по числу носителей — 8 из 28 — и давала ложный
+  WARN «страницу рисует скрипт, нужна серверная отрисовка»).
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { padding: 16px 32px; display: flex; gap: 24px; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .word, .char { display: inline-block; }
+  .tight .word { margin-right: .28em; }
+  .line { display: block; }
+</style>
+</head>
+<body>
+<header><strong>Ресторан «Берег»</strong><a href="#menu">Меню</a><a href="#bar">Бар</a></header>
+<main>
+  <h1 class="words">Стейки на углях у самой реки</h1>
+  <p>Готовим на живом огне с две тысячи двенадцатого года, мясо выдерживаем сами.</p>
+  <h2 class="chars">Банкетный зал на сорок гостей</h2>
+  <p>Большой стол у окна, отдельный вход и своя музыка для вашего вечера.</p>
+  <h2 class="tight">Завтраки каждый день с восьми</h2>
+  <p class="words">Сырники, омлеты и каши с восьми утра до одиннадцати, кофе из своей обжарки.</p>
+  <h2 class="lines">Как нас найти в городе</h2>
+  <p>Набережная, дом семь, парковка прямо у входа, от центра пять минут пешком.</p>
+</main>
+<footer><p>Телефон для брони: +7 900 000-00-00</p></footer>
+<script>
+  const wordsOf = (el) => el.textContent.trim().split(/\s+/);
+  const span = (cls, html) => `<span class="${cls}">${html}</span>`;
+  for (const el of document.querySelectorAll('.words')) el.innerHTML = wordsOf(el).map((w) => span('word', w)).join(' ');
+  for (const el of document.querySelectorAll('.chars')) el.innerHTML = wordsOf(el).map((w) => span('word', [...w].map((c) => span('char', c)).join(''))).join(' ');
+  for (const el of document.querySelectorAll('.tight')) el.innerHTML = wordsOf(el).map((w) => span('word', w)).join('');
+  for (const el of document.querySelectorAll('.lines')) {
+    const w = wordsOf(el); const half = Math.ceil(w.length / 2);
+    el.innerHTML = [w.slice(0, half), w.slice(half)].map((l) => `<div class="line">${l.map((x) => span('word', x)).join(' ')}</div>`).join('');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — без JavaScript пустая страница</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): страницу целиком рисует скрипт, как Nuxt или Vue без серверной
+  отрисовки (virugroup.com, 01.10: без JavaScript — сплошной фон и пустой div#__nuxt, а runtime писал «OK без JS всё видно —
+  проверено 0 элементов»). Без JavaScript — WARN «без JS на странице нет ни текста, ни картинок» с «div#__nuxt пустой» и
+  числом элементов, видных с JavaScript; строки OK «без JS всё видно» нет.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #2f5d50; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; background: #faf8f4; }
+</style>
+</head>
+<body>
+<div id="__nuxt"></div>
+<script>
+  document.getElementById('__nuxt').innerHTML = '<main><h1>Ресторан «Берег»</h1><p>Стейки на углях у реки.</p><p>Банкетный зал на сорок гостей.</p><p>Открыты каждый день с полудня.</p><p>Бронь по телефону и на сайте.</p><img src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22600%22 height=%22240%22%3E%3Crect width=%22600%22 height=%22240%22 fill=%22%23c9a27c%22/%3E%3C/svg%3E" width="600" height="240" alt="Зал ресторана"></main>';
+</script>
+</body>
+</html>

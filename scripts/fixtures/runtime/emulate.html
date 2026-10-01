@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — «меньше движения» посреди шагов</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --emulate-motion (node runtime.mjs --selftest): медиа-запрос prefers-reduced-motion: reduce меняет
+  то, что видно, — плашка #flag красная (rgb(200, 0, 0)) с подписью «движение есть», при «меньше движения» зелёная
+  (rgb(0, 128, 0)) с подписью «меньше движения». --eval до шага и после него это подтверждает:
+    --emulate-motion reduce          → зелёная; --emulate-motion no-preference → снова красная
+  Firefox переключать на открытой странице не умеет — WARN «--emulate-motion reduce не поддерживается в Firefox», плашка
+  остаётся красной.
+-->
+<style>
+  body { margin: 0; padding: 32px; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  #flag { width: 320px; padding: 24px; color: #fff; background: rgb(200, 0, 0); }
+  #flag::after { content: 'движение есть'; }
+  @media (prefers-reduced-motion: reduce) {
+    #flag { background: rgb(0, 128, 0); }
+    #flag::after { content: 'меньше движения'; }
+  }
+</style>
+</head>
+<body>
+<h1>«Меньше движения» посреди шагов</h1>
+<div id="flag"></div>
+</body>
+</html>

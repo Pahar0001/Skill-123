@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — страница без скриптов</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): на странице нет ни одного скрипта, номер раздела p.num бледный по
+  замыслу (opacity .06). Без JavaScript страница та же, что с ним: OK «без JS всё видно» с пометкой «скриптов на странице нет»
+  и INFO «без JS не видно и с JS скрыто — по замыслу: 1 блок» (01.10: был WARN «показ зависит от скрипта» при 0 скриптов).
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  .num { font-size: 120px; line-height: 1; font-weight: 800; opacity: .06; margin: 0; }
+</style>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Restaurant", "name": "Берег"}</script>
+</head>
+<body>
+<main>
+  <p class="num">01</p>
+  <h2>Кухня на углях</h2>
+  <p>Обычный текст раздела.</p>
+</main>
+</body>
+</html>

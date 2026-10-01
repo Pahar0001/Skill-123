@@ -109,6 +109,7 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile-s 
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --hover-all --nav --css
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --click "a[href='#contacts']" --edit "input[type=tel]" --type "#phone=89001234567" --click "form button[type=submit]" --shot sent
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --reduced-motion --scroll --motion --canvas
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --no-js --scroll                                  # без JavaScript: что видно, а что спрятано до скрипта
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --eval "document.querySelectorAll('.card').length" --expect 12
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector('.cta')).position === 'sticky'"
 ```
@@ -139,6 +140,30 @@ WARN (радиокнопка с `opacity: 0` поверх подписи — п�
 то, что не стало видно ни на одном шаге прохода. `--canvas`: у FAIL «ПУСТОЙ» названа причина —
 ни разу не рисовала; буфер сменил размер после кадра; рисует только по событию и кадр потерян
 (нужен `preserveDrawingBuffer: true` или перерисовка по `visibilitychange`); контекст WebGL потерян.
+
+`--scroll`, переход не шёл: WARN «clip-path сменилось скачком, перехода не было: img.photo
+(transition-property: transform — clip-path в нём нет…)» — блок появился, но свойство встало на место
+рывком: переход перебит более точным правилом или значения не интерполируются (`none` ↔ `inset()` —
+совет «inset(0) вместо none»). Не в счёт: inline style по кадрам (GSAP), плавный ход через
+CSS-переменную, WAAPI, CSS-анимация, «меньше движения». Переменная в `style`, которая к свойству
+отношения не имеет (прогресс прокрутки для параллакса), скачок не оправдывает — она названа в строке.
+
+`--no-js` (Chrome и Edge) — страница без JavaScript, проверка прогрессивного улучшения. После загрузки
+и после каждого `--scroll` — «без JS не видно: N блоков»: то, что с JavaScript видно, а без него
+прозрачно, спрятано или уведено (сверка — с отдельной вкладкой с JavaScript); скрытое и с JS — INFO
+«по замыслу». Страница пустая или на ней меньше половины того, что видно с JavaScript, — WARN «без JS
+на странице N% того, что видно с JavaScript»: доля считается по объёму текста и картинок, а не по
+числу элементов, поэтому скрипт, который только разбивает текст на слова и буквы (SplitType,
+`data-dk-words`), её не меняет. В строке сказано, чего нет в разметке («нужна серверная отрисовка»),
+а что в ней есть, но спрятано `display: none` до скрипта (v-cloak, x-cloak) — тогда вернуть надо
+видимость, а не отрисовку. Обработчики в атрибутах (`onload`, `onclick`) — тоже скрипты: сверка идёт
+и на странице без единого `<script>`. Шаг увёл на другую страницу (`--click` по ссылке) — следующая
+проверка идёт для неё заново, в строке «страница сменилась». Firefox выключить JavaScript на вкладке
+не умеет — WARN, запуск идёт с JavaScript.
+
+`--emulate-motion reduce|no-preference` — шаг: переключить `prefers-reduced-motion` на открытой
+странице посреди шагов (Chrome и Edge; в Firefox — WARN «не поддерживается»). `--reduced-motion` —
+настройка всего запуска, как раньше.
 
 Что считается эффектом клика: изменения DOM за время клика (атрибуты,
 классы, узлы) за вычетом того, что менялось и без клика (карусель,

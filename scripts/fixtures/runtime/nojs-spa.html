@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — без JavaScript только шапка</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): сервер отдаёт только шапку, остальное рисует скрипт в div#app.
+  Без JavaScript видна одна строка — WARN «без JS видно 1 из N элементов с текстом или картинкой» (сверка с вкладкой с
+  JavaScript: остальное рисует скрипт); строки OK «без JS всё видно» нет.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { padding: 16px 32px; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+</style>
+</head>
+<body>
+<header><strong>Ресторан «Берег»</strong></header>
+<div id="app"></div>
+<script>
+  const items = ['Стейки на углях у реки', 'Банкетный зал на сорок гостей', 'Открыты каждый день с полудня', 'Завтраки до одиннадцати', 'Бронь по телефону и на сайте', 'Детское меню и высокие стулья', 'Парковка у входа'];
+  document.getElementById('app').innerHTML = `<main><h1>Меню и зал</h1>${items.map((t) => `<p>${t}</p>`).join('')}</main>`;
+</script>
+</body>
+</html>

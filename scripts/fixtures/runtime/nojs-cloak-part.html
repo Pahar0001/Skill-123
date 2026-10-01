@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — шапка видна, остальное спрятано x-cloak</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): шапку и весь текст отдаёт сервер, шапка видна и без JavaScript,
+  а основная часть спрятана правилом [x-cloak] { display: none } (Alpine), пока скрипт не снимет атрибут. Без JavaScript
+  видна малая доля страницы — WARN «без JS на странице N% того, что видно с JavaScript», причина — «остальное в разметке
+  есть, но не отрисовано: display: none до скрипта — main#page (атрибут x-cloak)», совета «нужна серверная отрисовка» нет.
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header { padding: 16px 32px; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  [x-cloak] { display: none !important; }
+</style>
+</head>
+<body>
+<header><strong>Ресторан «Берег»</strong></header>
+<main id="page" x-cloak>
+  <h1>Меню и зал ресторана на набережной</h1>
+  <p>Стейки на углях у самой реки.</p>
+  <p>Банкетный зал на сорок гостей.</p>
+  <p>Открыты каждый день с полудня.</p>
+  <p>Завтраки до одиннадцати утра.</p>
+  <p>Бронь по телефону и на сайте.</p>
+  <p>Детское меню и высокие стулья.</p>
+</main>
+<script>document.getElementById('page').removeAttribute('x-cloak');</script>
+</body>
+</html>

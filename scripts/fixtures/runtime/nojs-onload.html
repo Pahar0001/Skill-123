@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — показ обработчиком onload, без единого script</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --no-js (node runtime.mjs --selftest): на странице нет ни одного <script>, но показ держится на JavaScript
+  в атрибутах: заголовок спрятан, пока <body onload> не поставит .ready, фото проявляется, когда onload картинки поставит .in.
+  Без JavaScript заголовок и фото не видны, с JavaScript видны. Правильный итог: WARN «без JS не видно: 2 блока» со сверкой с
+  вкладкой с JavaScript (01.10: «скриптов на странице нет» считалось только по <script> — выходил OK «без JS всё видно», а оба
+  блока уходили в «по замыслу: показать их нечему»).
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px; }
+  body:not(.ready) .hero { visibility: hidden; }
+  .fade { display: block; width: 100%; height: auto; opacity: 0; transition: opacity .6s; }
+  .fade.in { opacity: 1; }
+</style>
+</head>
+<body onload="document.body.classList.add('ready')">
+<main>
+  <h1 class="hero">Стейки на углях у реки</h1>
+  <p>Обычный абзац, виден всегда.</p>
+  <img class="fade" onload="this.classList.add('in')" width="600" height="240" alt="Зал ресторана" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='240'%3E%3Crect width='600' height='240' fill='%23c9a27c'/%3E%3C/svg%3E">
+</main>
+</body>
+</html>
