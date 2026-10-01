@@ -225,7 +225,8 @@ P0 сломано · P1 крупная проблема UX · P2 крупная 
   неразрывные пробелы — в исходном тексте и данных, `typeset.mjs` только меряет (`reference/typography.md`);
 - фото и видео — `media.mjs search` → лист-контакт глазами → `pick --seen --caption` → `credits`; заменённая
   под тем же именем картинка — метка версии в адресе (`photo.webp?v=<хэш>`);
-- фактура, 3D — `reference/engines.md`; детали — `templates/decor-kit/` (README);
+- фактура, 3D — `reference/engines.md`; детали — `templates/decor-kit/` (README); иконки, предметы и фоны с
+  объёмом в SVG — `svg3d.mjs` (`reference/svg-3d.md`);
 - движение — рецепты `reference/motion.md` по числам `motion.mjs`, `prefers-reduced-motion` всегда; своё и
   полировка — `reference/craft.md` (навык `impeccable` не вызывать — читать его `reference/*.md`);
 - телефон — своя вёрстка первого экрана, меню, форм и таблиц, а не «ужать десктоп»; 320 px тоже.
@@ -312,9 +313,10 @@ puppeteer-core sharp ffmpeg-static --prefix ~/.claude/site-rework`, `CHROME_PATH
 ```
 scripts/     lib (браузер, экраны, прокрутка, снимки — общий для всех) · discover · runtime · shots + diff · perf · a11y
              typeset · cliche + taste · copy + copy-rules · motion + clicks · tilda · texture + grain-tile
-             media (+ media/) · recraft · firecrawl · fonts · security · requirements · state · ideas
+             media (+ media/) · recraft · svg3d (+ svg3d/) · firecrawl · fonts · security · requirements · state · ideas
              mirror + serve · skill-audit · flags-doc; стенды самопроверок — scripts/fixtures/<скрипт>/
 templates/   brief.md, report.md, grain.css, decor-kit/ (детали для красоты, README и demo.html),
+             svg3d/ (сцены и образец «3D SVG», README и demo.html),
              deps/ (package.json и .env.example для ~/.claude/site-rework)
 ui/          brief-form.html — форма брифа в браузере
 reference/   steps.md          шаги подробно: статусы, подготовка, разведка, план, реализация, отчёт, когда спрашивать
@@ -327,6 +329,7 @@ reference/   steps.md          шаги подробно: статусы, под
              analysis.md       разбор запроса, матрица, воронка UX, детали для красоты, приоритеты
              new-site.md       сайт с нуля: реестр требований, вопросы, направления, изменения по ходу
              engines.md        картинки и видео, фактура, 3D, телефон; motion.md — движение; craft.md — полировка
+             svg-3d.md         рисунки с объёмом в SVG: какой движок когда, качество, лицензии
              copy.md           тексты; typography.md — набор и шрифты
              security.md, firecrawl.md, skills-search.md — безопасность, Firecrawl, чужие навыки
 ```

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Стенд самопроверки svg3d.mjs optimize: всё, чего в выходе быть не должно. viewBox нет нарочно — только размеры. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="120" height="80" onload="alert(1)">
+  <script>alert('x')</script>
+  <style>@import url("https://example.com/a.css"); .b { fill: red }</style>
+  <defs>
+    <linearGradient id="grad"><stop offset="0" stop-color="#5E7A33"/><stop offset="1" stop-color="#E8B647"/></linearGradient>
+  </defs>
+  <rect id="plate" x="10" y="10" width="100" height="60" rx="8" fill="url(#grad)" onclick="steal()"/>
+  <a xlink:href="https://example.com/"><circle cx="40" cy="40" r="14" fill="#16301F"/></a>
+  <a href="javascript:alert(2)"><circle cx="80" cy="40" r="14" fill="#F4F1E4"/></a>
+  <image xlink:href="https://example.com/tracker.png" x="0" y="0" width="1" height="1"/>
+  <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" x="100" y="60" width="10" height="10"/>
+  <use xlink:href="https://example.com/sprite.svg#icon"/>
+  <foreignObject x="0" y="0" width="10" height="10"><div xmlns="http://www.w3.org/1999/xhtml">текст</div></foreignObject>
+  <circle cx="60" cy="40" r="4" fill="#E8B647"><animate attributeName="r" values="4;8;4" dur="1s" repeatCount="indefinite"/></circle>
+</svg>
