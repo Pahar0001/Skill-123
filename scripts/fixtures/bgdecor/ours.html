@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд bgdecor: «наш сайт» для сверки</title>
+<!--
+  Вторая страница стенда: «наш сайт» для `bgdecor.mjs compare`. Рисунки в фоне и предметы на полях есть,
+  слов-призраков и узоров нет — сверка со стендом-донором (index.html) должна назвать оба пропуска.
+-->
+<style>
+  * { box-sizing: border-box; }
+  html { background: #EFE9DB; }
+  body { margin: 0; font: 17px/1.6 Arial, Helvetica, sans-serif; color: #2B2118; }
+  .wrap { width: 1000px; max-width: 100%; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 1100px) { .wrap { padding: 0; } }
+  h1, h2 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 16px; line-height: 1.1; }
+  h1 { font-size: 52px; } h2 { font-size: 40px; }
+  p { margin: 0 0 16px; }
+  .sec { position: relative; padding: 70px 0; }
+  .text { position: relative; max-width: 640px; }
+  .sketch { position: absolute; right: 10px; top: 0; width: 190px; height: auto; opacity: 0.3; pointer-events: none; }
+  .doodle { position: absolute; left: 40px; top: 90px; width: 140px; height: 220px; z-index: -1; background: url(img/sketch-wheat.svg) no-repeat center / contain; }
+  .bit { position: absolute; width: 70px; height: auto; pointer-events: none; }
+  @media (max-width: 720px) { .bit { display: none; } }
+</style>
+</head>
+<body>
+<section class="sec">
+  <span class="doodle"></span>
+  <img class="bit" src="img/ornament.svg" alt="" style="right: 28px; top: 60px">
+  <div class="wrap">
+    <h1>Пекарня у реки</h1>
+    <div class="text">
+      <p>Печём хлеб на закваске с шести утра. Тесто подходит шестнадцать часов, поэтому к прилавку успевает только то, что замесили вчера. Мука — с мельницы за рекой, соль — обычная.</p>
+      <p>Буханку можно отложить по телефону до девяти вечера. Забрать — до закрытия.</p>
+      <img class="sketch" src="img/sketch-loaf.svg" alt="">
+    </div>
+  </div>
+</section>
+<section class="sec">
+  <img class="bit" src="img/ornament.svg" alt="" style="left: 28px; top: 70px">
+  <div class="wrap">
+    <h2>Как заказать</h2>
+    <p>Позвоните на прилавок или зайдите сами. Возим по городу с восьми до полудня, хлеб едет в ящиках, а не в пакетах: в пакете корка мокнет. За город — по вторникам и пятницам.</p>
+    <p>Кафе и магазинам печём по договору, от двадцати буханок в день. Если буханка не понравилась — принесите её обратно вместе с чеком, заменим или вернём деньги.</p>
+  </div>
+</section>
+</body>
+</html>

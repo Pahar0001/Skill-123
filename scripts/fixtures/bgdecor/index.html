@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд bgdecor: что стоит в фоне</title>
+<!--
+  Стенд для `node bgdecor.mjs selftest`. Вымышленная пекарня «Опара»; все рисунки — свои, в папке img/.
+  data-expect="вид"        — здесь должна быть находка этого вида (drawing, ghost-word, margin-object, pattern);
+  data-expect-side         — сторона на экране компьютера; data-expect-count — сколько одинаковых (×N);
+  data-expect-section      — заголовок раздела; data-expect-pseudo — находка на псевдоэлементе;
+  data-expect-not          — здесь находок быть не должно; data-expect-why — код причины отказа в «не засчитано».
+  Вёрстка: колонка содержимого 1000 px по центру (220–1220 px при окне 1440).
+-->
+<style>
+  * { box-sizing: border-box; }
+  html { background: #EFE9DB; }
+  body { margin: 0; font: 17px/1.6 Arial, Helvetica, sans-serif; color: #2B2118; }
+  .wrap { width: 1000px; max-width: 100%; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 1100px) { .wrap { padding: 0; } }
+  h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; margin: 0 0 16px; line-height: 1.1; }
+  h1 { font-size: clamp(56px, 8.4vw, 120px); }
+  h2 { font-size: clamp(30px, 4vw, 44px); }
+  h3 { font-size: 22px; }
+  p { margin: 0 0 16px; }
+  .sec { position: relative; padding: 70px 0; }
+
+  /* шапка: логотип, меню с иконками, кнопка с иконкой — не украшения */
+  .top { padding: 16px 0; border-bottom: 1px solid #D8CFBB; }
+  .top__row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+  .logo { display: inline-flex; align-items: center; gap: 10px; font: 700 24px Georgia, serif; color: inherit; text-decoration: none; }
+  .logo img { pointer-events: none; }
+  .top nav { display: flex; gap: 20px; margin-left: auto; }
+  .top nav a { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; font-size: 15px; }
+  .top nav svg, .btn svg { width: 16px; height: 16px; pointer-events: none; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border: 0; border-radius: 6px; background: #5A4632; color: #fff; font: inherit; cursor: pointer; }
+
+  /* первый экран: крупный заголовок с высоким контрастом — не призрак; слово-призрак за ним */
+  #hero { overflow: hidden; padding: 90px 0 110px; }
+  #hero p { max-width: 600px; }
+  .ghost { position: absolute; left: -12px; top: 60px; margin: 0; font: 800 clamp(96px, 22vw, 320px)/0.8 Georgia, serif; white-space: nowrap; color: rgba(90, 70, 50, 0.07); pointer-events: none; }
+
+  /* о пекарне: набросок за текстом, колос на поле, фото содержимого, аватар */
+  .cols { display: flex; gap: 40px; align-items: flex-start; flex-wrap: wrap; }
+  .text { position: relative; flex: 1 1 320px; max-width: 560px; }
+  .sketch { position: absolute; right: 20px; top: 6px; width: 200px; height: auto; opacity: 0.32; pointer-events: none; }
+  .photo { flex: 0 0 auto; width: 400px; max-width: 100%; height: auto; border-radius: 6px; }
+  .doodle { position: absolute; left: 40px; top: 110px; width: 140px; height: 220px; z-index: -1; background: url(img/sketch-wheat.svg) no-repeat center / contain; }
+  .author { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
+  .avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+
+  /* меню: буквы картинкой за текстом, карточки с иллюстрациями, фото-обложка, рисунок под карточкой, предметы на полях */
+  .letters { position: absolute; left: 50%; top: 34px; width: 900px; height: 200px; margin-left: -450px; z-index: -1; background: url(img/word.svg) no-repeat center / 100% auto; }
+  .cards { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 20px; margin-top: 150px; }
+  .card { position: relative; padding: 20px; border-radius: 8px; background: #fff; }
+  .card__pic { display: block; width: 96px; height: 96px; margin-bottom: 10px; pointer-events: none; }
+  .shot { position: relative; height: 150px; margin: -20px -20px 14px; border-radius: 8px 8px 0 0; overflow: hidden; }
+  .cover { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+  .buried { position: absolute; left: 24px; top: 24px; width: 160px; height: 120px; z-index: -1; opacity: 0.5; background: url(img/sketch-loaf.svg) no-repeat center / contain; }
+  .bit { position: absolute; width: 70px; height: auto; pointer-events: none; }
+  .bit--l { left: 28px; } .bit--r { right: 28px; }
+
+  /* доставка: узор мелкой плиткой, полосы градиентом; крупная плитка и «шумная» плитка — фактура */
+  .tile { margin: 0 0 18px; padding: 44px 24px; border-radius: 8px; }
+  .tiled { background: #EFE9DB url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 4l6 8-6 8-6-8z' fill='%23D9CFB8'/%3E%3C/svg%3E") repeat; }
+  .striped { background: repeating-linear-gradient(45deg, #EFE9DB 0 10px, #E0D6C0 10px 20px); }
+  .papered { background: url(img/wash-600.svg) repeat; background-size: 600px 600px; }
+  .noisy { background: url(img/noise-tile.svg) repeat; }
+  .orn-wrap { position: absolute; right: 40px; top: 90px; width: 80px; pointer-events: none; }
+  .orn { display: block; width: 80px; height: 133px; color: #B8862B; }
+
+  /* контакты: рисунок псевдоэлементом, рисунок фоном блока с текстом, карта, видео */
+  .stampbox { position: relative; padding: 20px 240px 20px 0; min-height: 160px; }
+  .stampbox::after { content: ""; position: absolute; right: 20px; top: 8px; width: 200px; height: 140px; opacity: 0.3; pointer-events: none; background: url(img/sketch-cup.svg) no-repeat center / contain; }
+  .note { margin: 18px 0; padding: 24px 220px 24px 24px; border-radius: 8px; background: #fff url(img/sketch-leaf.svg) no-repeat right 24px bottom 16px / 160px auto; }
+  .leaflet-container { position: relative; width: 420px; max-width: 100%; height: 200px; overflow: hidden; background: #DCE6DE; }
+  .leaflet-container img { position: absolute; top: 0; width: 256px; height: 256px; pointer-events: none; }
+  .video-js { position: relative; width: 320px; max-width: 100%; height: 180px; margin-top: 18px; background: #000; }
+  .video-js video { width: 100%; height: 100%; }
+  .video-js .poster-pic { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+
+  /* закрытые панели и кнопка «наверх» */
+  .drawer { position: fixed; left: 0; top: 0; width: 300px; height: 100%; padding: 20px; background: #fff; transform: translateX(-100%); }
+  .drawer img { width: 200px; opacity: 0.3; pointer-events: none; }
+  .totop { position: fixed; right: 20px; bottom: 20px; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #5A4632; color: #fff; }
+  .totop svg { width: 28px; height: 28px; pointer-events: none; }
+
+  footer { padding: 40px 0 60px; border-top: 1px solid #D8CFBB; }
+  footer .wrap { display: flex; align-items: center; gap: 20px; }
+  footer img { pointer-events: none; }
+
+  @media (max-width: 720px) {
+    .letters { width: 340px; height: 76px; margin-left: -170px; }
+    .cards { margin-top: 60px; }
+    .bit, .orn-wrap { display: none; }
+    .stampbox { padding-right: 0; padding-bottom: 150px; }
+    .stampbox::after { top: auto; bottom: 0; }
+    .note { padding-right: 24px; padding-bottom: 150px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- спрайт своих значков -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="orn" viewBox="0 0 90 150"><path d="M45 146V40M25 140h40" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="45" cy="22" r="12" fill="currentColor"/><path d="M45 70c-22-2-32-14-32-30 18 2 32 12 32 30zM45 70c22-2 32-14 32-30-18 2-32 12-32 30z" fill="currentColor"/><path d="M45 108c-24 0-36-12-38-28 20 0 36 10 38 28zM45 108c24 0 36-12 38-28-20 0-36 10-38 28z" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/></symbol>
+  <symbol id="ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap top__row">
+    <a class="logo" href="/" data-expect-not data-name="логотип в шапке"><img src="img/mark.svg" alt="" aria-hidden="true" width="44" height="44"> Опара</a>
+    <nav data-expect-not data-name="иконки в меню">
+      <a href="#about"><svg aria-hidden="true"><use href="#ico"/></svg> О пекарне</a>
+      <a href="#menu"><svg aria-hidden="true"><use href="#ico"/></svg> Меню</a>
+      <a href="#contacts"><svg aria-hidden="true"><use href="#ico"/></svg> Контакты</a>
+    </nav>
+    <button class="btn" type="button" data-expect-not data-name="иконка в кнопке"><svg aria-hidden="true"><use href="#ico"/></svg> Заказать</button>
+  </div>
+</header>
+
+<section class="sec" id="hero">
+  <p class="ghost" aria-hidden="true" data-expect="ghost-word" data-expect-side="за текстом" data-name="слово-призрак текстом">ОПАРА</p>
+  <div class="wrap">
+    <h1 data-expect-not data-expect-why="loud-word" data-name="крупный заголовок с высоким контрастом">Пекарня Опара</h1>
+    <p>Печём хлеб на закваске с шести утра. Тесто подходит шестнадцать часов, поэтому к прилавку успевает только то, что замесили вчера. Мука — с мельницы за рекой, соль — обычная.</p>
+    <p>Буханку можно отложить по телефону до девяти вечера.</p>
+  </div>
+</section>
+
+<section class="sec" id="about">
+  <span class="doodle" data-expect="drawing" data-expect-side="слева" data-expect-section="О пекарне" data-name="бледный рисунок фоном пустого элемента на поле"></span>
+  <div class="wrap">
+    <h2>О пекарне</h2>
+    <div class="cols">
+      <div class="text">
+        <p>Мы открылись в бывшей булочной на углу. Печь оставили прежнюю, дровяную: она держит жар ровнее новой, и корка выходит толще. Замес ведём руками, машина только делит тесто на куски.</p>
+        <p>Каждое утро первую буханку режем сами и пробуем: если мякиш липнет к ножу, партию на прилавок не ставим. Так бывает редко, но бывает.</p>
+        <img class="sketch" src="img/sketch-loaf.svg" alt="" data-expect="drawing" data-expect-side="за текстом" data-expect-section="О пекарне" data-name="набросок картинкой, приглушён непрозрачностью">
+      </div>
+      <img class="photo" src="img/photo.svg" alt="Хлеб на столе" width="400" height="267" data-expect-not data-name="фото содержимого">
+    </div>
+    <p class="author" data-expect-not data-name="аватар"><img class="avatar" src="img/photo.svg" alt="Анна" width="64" height="64"> Анна, пекарь</p>
+  </div>
+</section>
+
+<section class="sec" id="menu">
+  <span class="letters" data-expect="ghost-word" data-expect-side="за текстом" data-expect-section="Меню" data-name="буквы-призраки картинкой"></span>
+  <img class="bit bit--l" src="img/ornament.svg" alt="" style="top: 70px" data-expect="margin-object" data-expect-side="слева" data-expect-count="3" data-name="предмет на полях слева">
+  <img class="bit bit--r" src="img/ornament.svg" alt="" style="top: 250px" data-expect="margin-object" data-expect-side="справа" data-expect-count="3" data-name="предмет на полях справа">
+  <img class="bit bit--l" src="img/ornament.svg" alt="" style="top: 430px" data-expect="margin-object" data-expect-side="слева" data-expect-count="3" data-name="предмет на полях слева, второй">
+  <div class="wrap">
+    <h2>Меню</h2>
+    <p>Четыре вида хлеба каждый день и один — только по субботам. Цены на ценниках у прилавка, здесь — то, из чего хлеб сделан и сколько он лежит, не черствея.</p>
+    <div class="cards">
+      <span class="buried" data-expect-not data-expect-why="covered" data-name="рисунок под карточкой"></span>
+      <article class="card" data-expect-not data-expect-why="bright-in-column" data-name="иллюстрация в карточке">
+        <img class="card__pic" src="img/card-pic.svg" alt="">
+        <h3>Ржаной</h3><p>Закваска и обдирная мука. Лежит неделю.</p>
+      </article>
+      <article class="card">
+        <img class="card__pic" src="img/card-pic.svg" alt="">
+        <h3>Пшеничный</h3><p>Мука высшего сорта, корка тонкая.</p>
+      </article>
+      <article class="card">
+        <img class="card__pic" src="img/card-pic.svg" alt="">
+        <h3>С тмином</h3><p>Ржано-пшеничный, тмин в тесте и сверху.</p>
+      </article>
+      <article class="card" data-expect-not data-expect-why="solid" data-name="фото-обложка карточки без alt">
+        <div class="shot"><img class="cover" src="img/photo.svg"></div>
+        <h3>Субботний</h3><p>С мёдом и орехами, только по субботам.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="delivery">
+  <div class="orn-wrap" data-expect="margin-object" data-expect-side="справа" data-expect-section="Доставка" data-name="орнамент символом спрайта, вне потока обёртка"><svg class="orn" aria-hidden="true" focusable="false"><use href="#orn"/></svg></div>
+  <div class="wrap">
+    <h2>Доставка</h2>
+    <p>Возим по городу с восьми до полудня. Хлеб едет в ящиках, а не в пакетах: в пакете корка мокнет.</p>
+    <div class="tile tiled" data-expect="pattern" data-name="узор мелкой плиткой"><strong>По городу</strong> — в день заказа.</div>
+    <div class="tile striped" data-expect="pattern" data-name="узор полосами (градиент с повтором)"><strong>За город</strong> — по вторникам и пятницам.</div>
+    <div class="tile papered" data-expect-not data-name="крупная плитка — фактура"><strong>Кафе и магазинам</strong> — по договору.</div>
+    <div class="tile noisy" data-expect-not data-name="плитка с шумным именем — фактура"><strong>Самовывоз</strong> — с семи утра.</div>
+  </div>
+</section>
+
+<section class="sec" id="contacts">
+  <div class="wrap">
+    <h2>Контакты</h2>
+    <div class="stampbox" data-expect="drawing" data-expect-pseudo="::after" data-expect-section="Контакты" data-name="рисунок псевдоэлементом">
+      <p>Угол Речной и Мельничной, вход со двора. Работаем каждый день с семи до девяти, в воскресенье — до трёх.</p>
+      <p>Телефон прилавка написан на двери и на пакетах.</p>
+    </div>
+    <div class="note" data-expect="drawing" data-expect-section="Контакты" data-name="рисунок фоном блока с текстом">
+      <p>Если буханка не понравилась — принесите её обратно вместе с чеком, заменим или вернём деньги. Половину тоже берём.</p>
+    </div>
+    <div class="leaflet-container" data-expect-not data-name="карта">
+      <img src="img/map-tile.svg" alt="" style="left: 0">
+      <img src="img/map-tile.svg" alt="" style="left: 256px">
+    </div>
+    <div class="video-js" data-expect-not data-name="видео с постером">
+      <video poster="img/photo.svg" muted playsinline></video>
+      <img class="poster-pic" src="img/photo.svg" alt="">
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="/" data-expect-not data-name="знак в подвале — ссылка на главную"><img src="img/mark.svg" alt="" width="84" height="84"></a>
+    <p>Пекарня «Опара». Стенд проверки, не настоящая пекарня.</p>
+  </div>
+</footer>
+
+<div class="drawer" aria-hidden="true" data-expect-not data-name="закрытое боковое меню"><img src="img/sketch-loaf.svg" alt=""><p>Меню</p></div>
+<div hidden data-expect-not data-name="скрытое окно"><img src="img/sketch-cup.svg" alt="" aria-hidden="true" style="position:absolute;opacity:.3"></div>
+<a class="totop" href="#hero" aria-label="Наверх" data-expect-not data-name="кнопка «наверх» у края"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 10l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2"/></svg></a>
+
+</body>
+</html>

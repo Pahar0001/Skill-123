@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" fill="none" stroke="#5A4632" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- знак бренда стенда: стоит в ссылке на главную в шапке — логотип, не украшение -->
+  <circle cx="60" cy="60" r="50"/>
+  <path d="M34 72c0-20 12-32 26-32s26 12 26 32z"/>
+  <path d="M48 52c2 6 2 12 0 18M60 46c2 8 2 16 0 24M72 52c2 6 2 12 0 18"/>
+</svg>

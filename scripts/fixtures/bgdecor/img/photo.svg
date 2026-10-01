@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" width="480" height="320">
+  <!-- «фото содержимого»: сплошная непрозрачная картинка без единого прозрачного пикселя -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7A5A3A"/><stop offset="1" stop-color="#2E1F14"/></linearGradient>
+    <radialGradient id="loaf" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#E9B66B"/><stop offset="1" stop-color="#8A4F1E"/></radialGradient>
+  </defs>
+  <rect width="480" height="320" fill="url(#sky)"/>
+  <rect y="230" width="480" height="90" fill="#3B2A1C"/>
+  <ellipse cx="200" cy="200" rx="140" ry="74" fill="url(#loaf)"/>
+  <ellipse cx="350" cy="232" rx="70" ry="38" fill="#C98A3F"/>
+  <path d="M120 180c20-16 44-20 70-14M210 162c24-8 48-4 70 10" stroke="#5B3414" stroke-width="6" fill="none"/>
+</svg>

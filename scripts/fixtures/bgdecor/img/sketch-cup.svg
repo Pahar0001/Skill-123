@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140" width="200" height="140" fill="none" stroke="#5A4632" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- чашка с паром: рисунок для псевдоэлемента, бледным его делает opacity псевдоэлемента -->
+  <path d="M40 60h92v34c0 20-18 34-46 34s-46-14-46-34z"/>
+  <path d="M132 70c22-4 34 6 30 20-3 12-16 16-30 12"/>
+  <path d="M28 132h116"/>
+  <path d="M64 44c-6-8 6-14 0-24"/>
+  <path d="M88 44c-6-8 6-14 0-24"/>
+  <path d="M112 44c-6-8 6-14 0-24"/>
+</svg>

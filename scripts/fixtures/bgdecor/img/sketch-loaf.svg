@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150" width="200" height="150" fill="none" stroke="#5A4632" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- набросок каравая: свой рисунок стенда, бледным его делает opacity на странице -->
+  <path d="M22 96c0-34 32-58 78-58s78 24 78 58c0 14-10 24-28 24H50c-18 0-28-10-28-24z"/>
+  <path d="M58 58c6 8 8 20 6 32"/>
+  <path d="M92 48c6 10 8 26 6 42"/>
+  <path d="M128 52c6 10 8 24 4 38"/>
+  <path d="M34 122h132"/>
+  <path d="M150 28c4-8 12-12 20-10"/>
+  <path d="M40 30c-2-8 2-14 10-16"/>
+</svg>

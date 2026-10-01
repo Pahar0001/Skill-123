@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none">
+  <!-- «плитка карты»: линии улиц на прозрачном фоне внутри контейнера карты — не украшение -->
+  <path d="M0 60h256M0 150h256M70 0v256M180 0v256M0 0l256 256" stroke="#9CB0A0" stroke-width="6"/>
+  <rect x="86" y="76" width="78" height="58" fill="#C9D8CC"/>
+</svg>
