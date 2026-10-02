@@ -417,7 +417,7 @@ node mirror.mjs --help
 ```
 node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop[,mobile]]
 node motion.mjs compare <motion.json донора> <адрес нашего сайта | наш motion.json> [ещё пары…]
-node motion.mjs selftest            проверка распознавания на стенде fixtures/motion/index.html
+node motion.mjs selftest [--no-browser]   проверка распознавания на стенде fixtures/motion/index.html и сверки
 node motion.mjs --help
 node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/y" --viewport desktop,mobile --tag donor
 ```
@@ -429,16 +429,17 @@ node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/
 | флаг | вид | из справки |
 |---|---|---|
 | `--debug` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
+| `--no-browser` | переключатель | node motion.mjs selftest [--no-browser]   проверка распознавания на стенде fixtures/motion/index.html и сверки |
 | `--no-clicks` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
 | `--no-crops` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
 | `--no-hover` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
 | `--no-mouse` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
 | `--no-scroll` | переключатель | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
 | `--clicks` | значение необязательно | [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug] |
-| `--decisions` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport …] |
+| `--decisions` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport desktop[,mobile]] |
 | `--hover` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14] |
 | `--out` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14] |
-| `--pages` | значение необязательно | node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop[,mobile]] |
+| `--pages` | значение необязательно | --pages (https://site.ru и "home=/") — одна страница, имя с типом: <--tag>-home; разные страницы с одним именем — |
 | `--tag` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14] |
 | `--time` | значение необязательно | --time — базовое окно «время» (мс); медленную петлю (период длиннее окна: покачивание Framer 7–13 с) окно |
 | `--time-cap` | значение необязательно | [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14] |
@@ -613,7 +614,7 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--nav` | шаг | меню: подсвеченный пункт ведёт на раздел, который на экране |
 | `--resize` | шаг | --resize 1152         сменить ширину окна (или ШxВ — 834x1112, 834X1112, 834×1112; |
 | `--scroll` | шаг | прокрутить до конца: появления, закреплённые, переполнение |
-| `--select` | шаг | --select "sel=знач"   выбрать вариант списка (value или текст варианта); делится так же, |
+| `--select` | шаг | --select и --resize эта проверка не повторяется. |
 | `--shot` | шаг | снимок экрана |
 | `--type` | шаг | --type "sel=текст"    ввести текст и проверить, что он в поле (tel: 8… = +7…); |
 | `--video` | шаг | видео: poster, muted/playsinline, играет ли, пауза вне экрана |
@@ -634,7 +635,7 @@ node runtime.mjs [шаги и настройки] -- <url>      «--» — ко�
 | `--viewport` | со значением | desktop \| laptop \| tablet \| mobile \| mobile-s (320×568@2) \| android (360×800@3) |
 | `--viewports` | со значением | --viewports — то же самое. Экран один за запуск: список «mobile,desktop» — |
 
-Переменные окружения: `RW_SELFTEST_ONLY`.
+Переменные окружения: `RW_CSS_NO_BODY`, `RW_SELFTEST_ONLY`.
 
 ## security.mjs
 
