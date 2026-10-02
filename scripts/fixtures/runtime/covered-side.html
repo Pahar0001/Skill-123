@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — проверка перекрытий не оставляет следов</title>
+<!--
+  Стенд runtime.mjs --scroll --css (node runtime.mjs --selftest, случаи covered-css, covered-css-ff; он же — для
+  fixtures/lib/selftest.mjs, случай overflow). Сверка снимком у «текст перекрыт соседним блоком» прячет элемент текста —
+  и не должна оставлять на странице следов (независимая проверка 02.10: текст прятался через style.setProperty, браузер
+  пересобирал атрибут style, выброшенные объявления из него пропадали — шаг --css после --scroll терял FAIL; заодно
+  обрывался идущий переход цвета).
+  Три находки, у каждой сверка снимком:
+    p.keep   со своим style="color: #333; colr: red; width: 10 px" — атрибут после прохода тот же до знака, и шаг --css
+             после --scroll по-прежнему даёт FAIL «style="" у p.keep:1 x { width: 10 px }»
+    p#pulse  с идущим переходом цвета (40 с): переход не обрывается (transitioncancel 0, анимация та же и идёт)
+    p.all    с transition: all .4s — прячется сразу (иначе на втором снимке текст ещё виден, и находка снята бы сверкой),
+             а новых переходов visibility и событий transition* от проверки нет
+  window.__traces() — что увидела страница: записи MutationObserver по всему документу (attr — атрибуты, отдельно style;
+  nodes — узлы), события transition*, атрибут style у p.keep, идёт ли переход цвета.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; font: 16px/24px Arial, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { width: 600px; max-width: calc(100% - 32px); margin: 0 auto; padding: 24px 0 900px; }
+  section { margin: 0 0 96px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p { margin: 0; }
+  .cv { position: relative; margin-top: -24px; height: 60px; background: #223; }
+  #pulse { color: #000; transition: color 40s linear; }
+  #pulse.go { color: #f00; }
+  .all { transition: all .4s; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h2>Свой атрибут style с выброшенным объявлением</h2>
+    <p class="keep" style="color: #333; colr: red; width: 10 px">Строка под карточкой — со своим атрибутом style.</p>
+    <div class="cv"></div>
+  </section>
+  <section>
+    <h2>Идёт долгий переход цвета</h2>
+    <p id="pulse">Строка под карточкой — у неё идёт переход цвета.</p>
+    <div class="cv"></div>
+  </section>
+  <section>
+    <h2>Плавность на всё</h2>
+    <p class="all">Строка под карточкой — с transition: all.</p>
+    <div class="cv"></div>
+  </section>
+</main>
+<script>
+  (function () {
+    var T = { attr: 0, style: 0, nodes: 0, tr: [] };
+    ['transitionrun', 'transitionstart', 'transitionend', 'transitioncancel'].forEach(function (t) {
+      document.addEventListener(t, function (e) { T.tr.push(t.slice(10) + ':' + (e.target.id || e.target.className) + ':' + e.propertyName); }, true);
+    });
+    var pulse = document.getElementById('pulse');
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      pulse.classList.add('go');
+      /* наблюдатель — после своей же правки класса: в счёт идёт только чужое */
+      setTimeout(function () {
+        T.tr.length = 0;
+        new MutationObserver(function (ms) { ms.forEach(function (m) { if (m.type === 'attributes') { T.attr++; if (m.attributeName === 'style') T.style++; } else T.nodes++; }); })
+          .observe(document.documentElement, { attributes: true, childList: true, characterData: true, subtree: true });
+      }, 60);
+    }); });
+    window.__traces = function () {
+      var run = document.getAnimations().some(function (a) { return a.transitionProperty === 'color' && a.playState === 'running' && a.effect && a.effect.target === pulse; });
+      return { style: T.style, tr: T.tr.slice(), keep: document.querySelector('.keep').getAttribute('style'), run: run, attr: T.attr, nodes: T.nodes };
+    };
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — текст перекрыт соседним блоком: правило после независимой проверки</title>
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest, случаи covered2, covered2-320, covered2-ff; он же — для
+  fixtures/lib/selftest.mjs, случай overflow). Дополнение к covered.html: случаи независимой проверки 02.10 — где правило
+  «слой по замыслу» молчало о настоящей ошибке и где оно давало ложную тревогу.
+  Находки (WARN, 9 мест; у каждой proof «снимок»):
+    p.t-open            под a.btn.js-popup-open — кнопка «Заказать звонок», которая окно ОТКРЫВАЕТ, сама легла на строку:
+                        слово окна в классе кнопки или ссылки ничего не значит
+    p.t-card            под div.modal-card — обычная карточка в потоке со словом окна в классе
+    p.t-cookie          под div.cookie-card — карточка печенья в кондитерской, в потоке
+    p.t-thumb           под a.image-popup — миниатюра галереи (ссылка с плотным фоном) наехала на подпись
+    button.t-btn        под span.lid — плашка inset: 0 точно по размеру кнопки: не «стопка слайдов», а пустая плашка
+    p.t-skel            под div.skel — заглушка-скелет осталась поверх загруженного текста, точно по его размеру
+    p.t-gap             под span.gap — плашка закрыла слова между 20 и 45 % длинной строки: между точками 15, 50 и 85 %
+                        её не видно, видят добавленные 32,5 и 67,5 %
+    p.t-dlg             под div.dialogue — реплика (absolute) легла на строку: «dialogue» — не слово «dialog»
+    p.t-sug             под div.suggested-items — блок «рекомендуем» (absolute): «suggested» — не слово «suggest»
+  Не находки:
+    div.deck > div      отзывы «колодой»: три карточки absolute со сдвигом 30 px — нижние закрыты верхними по замыслу
+                        (нижняя с верхней совпадают меньше чем наполовину — связаны цепочкой через среднюю)
+    div.fc              карточки одного родителя с z-index и transform, которые скрипт перекладывает (stripe.com)
+    div.more            «Показать полностью»: текст свёрнут max-height + overflow hidden, кнопка с плотным фоном лежит на
+                        нижних видимых строках
+    div.city-popup      настоящее окно: position absolute и слово окна в классе — поверх абзаца
+    div.flip            карточка-перевёртыш: лицевая сторона — фон-картинка без текста, под ней оборот с текстом
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; font: 16px/24px Arial, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { width: 600px; max-width: calc(100% - 32px); margin: 0 auto; padding: 24px 0 160px; }
+  section { position: relative; margin: 0 0 96px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p { margin: 0; }
+  /* находки */
+  .btn { display: block; position: relative; width: 240px; max-width: 100%; margin-top: -24px; padding: 12px 20px; background: #c33; color: #fff; text-decoration: none; }
+  .modal-card, .cookie-card { position: relative; margin-top: -24px; height: 60px; background: #334; }
+  .image-popup { display: block; position: relative; margin-top: -24px; height: 70px; background: #456; }
+  .hold { position: relative; display: inline-block; max-width: 100%; }
+  .t-btn { font: inherit; padding: 12px 28px; background: #fff; border: 1px solid #333; }
+  .lid { position: absolute; inset: 0; background: #297; }
+  .skel { position: absolute; inset: 0; background: #d9d9d9; }
+  .gap { position: absolute; top: -4px; left: 20%; width: 25%; height: 32px; background: #e96; }
+  /* не находки */
+  .deck { position: relative; height: 220px; width: 420px; max-width: 100%; }
+  .deck > div { position: absolute; left: 0; right: 0; height: 150px; padding: 16px; background: #fff; border: 1px solid #999; }
+  .deck > div:nth-child(1) { top: 0; } .deck > div:nth-child(2) { top: 30px; } .deck > div:nth-child(3) { top: 60px; }
+  .fcs { position: relative; height: 130px; width: 360px; max-width: 100%; }
+  .fc { position: absolute; left: 0; top: 0; width: 100%; height: 100px; padding: 12px 16px; background: #fff; border: 1px solid #99a; }
+  .fc--a { z-index: 1; transform: scale(.94); } .fc--b { z-index: 2; transform: translateY(14px) scale(.97); } .fc--c { z-index: 3; transform: translateY(28px); }
+  .more { position: relative; max-height: 120px; overflow: hidden; width: 460px; max-width: 100%; }
+  .more button { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px; background: #fff; border: 1px solid #999; font: inherit; }
+  .city-popup { position: absolute; left: 0; top: 30px; width: 300px; max-width: 100%; padding: 16px; background: #fff; border: 1px solid #999; z-index: 5; }
+  .flip { position: relative; width: 320px; max-width: 100%; height: 120px; }
+  .flip > div { position: absolute; inset: 0; padding: 16px; }
+  .flip .back { background: #fff; }
+  .flip .front { background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMwCXMwCXNggFAAFfYDKTQP00YAAAAASUVORK5CYII=") center / cover no-repeat; }
+  /* absolute без top: блок остаётся там, где стоял бы в потоке (сразу под строкой), и поднят на неё отрицательным полем */
+  .dialogue, .suggested-items { position: absolute; margin-top: -26px; width: 260px; max-width: 100%; height: 40px; background: #334; }
+</style>
+</head>
+<body>
+<main>
+  <section id="s-open">
+    <h2>Кнопка, открывающая окно, легла на строку</h2>
+    <p class="t-open">Перезвоним в течение пятнадцати минут</p>
+    <a class="btn js-popup-open" href="#callback">Заказать звонок</a>
+  </section>
+  <section id="s-card">
+    <h2>Карточка со словом окна в классе</h2>
+    <p class="t-card">Подробности уточняйте у администратора</p>
+    <div class="modal-card"></div>
+  </section>
+  <section id="s-cookie">
+    <h2>Карточка печенья</h2>
+    <p class="t-cookie">Овсяное печенье с изюмом, двести граммов</p>
+    <div class="cookie-card"></div>
+  </section>
+  <section id="s-thumb">
+    <h2>Миниатюра галереи на подписи</h2>
+    <p class="t-thumb">Кухня в стиле лофт, проект прошлого года</p>
+    <a class="image-popup" href="#photo" aria-label="Открыть фото"></a>
+  </section>
+  <section id="s-btn">
+    <h2>Плашка точно по размеру кнопки</h2>
+    <div class="hold"><button class="t-btn" type="button">Оформить заказ</button><span class="lid"></span></div>
+  </section>
+  <section id="s-skel">
+    <h2>Заглушка осталась поверх текста</h2>
+    <div class="hold"><p class="t-skel">Описание загрузилось, а заглушка осталась.</p><div class="skel"></div></div>
+  </section>
+  <section id="s-gap">
+    <h2>Плашка между точками строки</h2>
+    <div class="hold"><p class="t-gap">Скидка двадцать процентов на первый заказ</p><span class="gap"></span></div>
+  </section>
+  <section id="s-dlg">
+    <h2>Реплика легла на строку</h2>
+    <p class="t-dlg">Отзыв клиента: всё сделали быстро</p>
+    <div class="dialogue"></div>
+  </section>
+  <section id="s-sug">
+    <h2>Блок «рекомендуем» лёг на строку</h2>
+    <p class="t-sug">Итого к оплате четыре тысячи рублей</p>
+    <div class="suggested-items"></div>
+  </section>
+
+  <section id="s-deck">
+    <h2>Отзывы колодой</h2>
+    <div class="deck">
+      <div><p>Нижняя карточка: отзыв Марии о спальне, длинный</p><p>Вторая строка нижней карточки</p></div>
+      <div><p>Средняя карточка: отзыв Игоря о кухне, длинный</p><p>Вторая строка средней карточки</p></div>
+      <div><p>Верхняя карточка: отзыв Елены о прихожей</p><p>Вторая строка верхней карточки</p></div>
+    </div>
+  </section>
+  <section id="s-fc">
+    <h2>Карточки, которые перекладывает скрипт</h2>
+    <div class="fcs">
+      <div class="fc fc--a"><p>Платежи: список с выгрузкой</p><p>Вторая строка первой карточки</p></div>
+      <div class="fc fc--b"><p>Выплаты: баланс и перевод</p><p>Вторая строка второй карточки</p></div>
+      <div class="fc fc--c"><p>Уведомление сверху</p><p>Вторая строка верхней карточки</p></div>
+    </div>
+  </section>
+  <section id="s-more">
+    <h2>Показать полностью</h2>
+    <div class="more">
+      <p class="t-more">Фабрика работает много лет. Мы делаем мебель по размерам: кухни, шкафы, гардеробные, прихожие, детские. В работе плиты и фурнитура проверенных поставщиков, гарантия два года. Замер и проект бесплатны, срок от двух недель, доставка и сборка входят в стоимость. Оплата по договору в два этапа, возможна рассрочка без переплаты.</p>
+      <button type="button">Показать полностью</button>
+    </div>
+  </section>
+  <section id="s-popup">
+    <h2>Настоящее окно по слову в классе</h2>
+    <p>Абзац под окном выбора города.</p>
+    <p>Вторая строка под окном.</p><p>Третья строка под окном.</p>
+    <div class="city-popup">Выберите город доставки</div>
+  </section>
+  <section id="s-flip">
+    <h2>Карточка-перевёртыш с картинкой на лицевой стороне</h2>
+    <div class="flip"><div class="back"><p>Оборот карточки: подробности услуги.</p></div><div class="front"></div></div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — --css на file://</title>
+<!--
+  Стенд runtime.mjs --css (node runtime.mjs --selftest, случаи css-file, css-file-ff): таблица по ссылке на file:// (файл с
+  BOM, выброшенное объявление в строке 4) и таблица в адресе data: (выброшенное объявление в строке 1). Тела ответа у
+  file:// в Firefox нет — файл читается с диска; текст data: берётся из самого адреса. Номера строк — как у файла.
+-->
+<link rel="stylesheet" href="css-file.css">
+<link rel="stylesheet" href="data:text/css,.c%7Bheight%3A5%20px%7D">
+</head>
+<body>
+<p class="a b c">Таблица стилей с диска и таблица в адресе data:.</p>
+</body>
+</html>

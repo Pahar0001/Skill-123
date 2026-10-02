@@ -72,6 +72,47 @@
  *                              Закрытое меню на весь экран обёрткой не считается.
  *                              Отдельной строкой — «текст перекрыт картинкой»: OK или WARN с числом мест
  *                              и селекторами (img, video, canvas, svg от 40px поверх чужого текста).
+ *                              Ещё одной строкой — «текст перекрыт соседним блоком»: OK, WARN с числом мест и первыми пятью (что
+ *                              перекрыто, чем, y; «строк 2 из 5» — закрыта часть строк блока) или INFO — находок нет, но проверена
+ *                              меньшая часть строк страницы либо сработал предел: причина числом, «нет» относится только к
+ *                              проверенному. Страница проходится ещё раз шагами в 0,75 окна; у каждой видимой строки текста
+ *                              (Range.getClientRects) точки на 15, 50 и 85 % длины, у строки от 240 px — ещё на 32,5 и 67,5 % (у
+ *                              вертикального письма — по высоте). Кандидат — в точке выше текста лежит чужой элемент (не предок и не
+ *                              потомок), непрозрачный по стилям: фон-цвет или градиент с альфой от 0.9, файл в фоне, img /
+ *                              video / canvas / iframe, растянутый псевдоэлемент с фоном; opacity от 0.9. Первые 12 кандидатов
+ *                              сверяются снимком: элемент текста на миг невидим — место не изменилось, значит букв и правда не
+ *                              видно: находка; изменилось — текст просвечивает (прозрачный PNG, узор): не находка. Прячет его правило
+ *                              в своей сконструированной таблице стилей: DOM и атрибуты style страницы не меняются, идущие переходы
+ *                              не обрываются — шаг --css после --scroll в том же запуске видит страницу как была. Без сверки плотный
+ *                              фон-цвет остаётся находкой с пометкой «снимком не сверено», файл в фоне — не в счёт. Не находка по
+ *                              замыслу: закреплённое (position fixed / sticky — шапка, нижняя панель); открытые окна и меню —
+ *                              dialog[open], popover, aria-modal, role dialog / menu / listbox / tooltip, блок вне потока (absolute,
+ *                              fixed — сам или предок) со словом окна в классе или id (dropdown, submenu, popup, popover, tooltip,
+ *                              cookie, consent, lightbox, datepicker… — по началу слова; modal, dialog, drawer, toast, suggest —
+ *                              словом целиком), absolute после кнопки с aria-expanded="true", по aria-controls, в details[open], в
+ *                              nav; стопка — два содержательных блока-близнеца (тот же тег, в обоих текст или картинка), коробки
+ *                              совпадают от 0.85, колода карточек (тот же первый класс, вне потока или transform, совпадение от 0.5,
+ *                              в том числе цепочкой) и соседние слайды одной ленты; кнопка «Показать полностью» внутри предка,
+ *                              обрезающего этот текст по высоте; декор (aria-hidden, role presentation), слово-фон с z-index < 0,
+ *                              прозрачный текст, бесконечная анимация; конца перехода появления проход ждёт (до 0,7 с на шаг).
+ *                              Находка: блок в потоке со словом окна в классе (.modal-card, .cookie-card), кнопка или ссылка,
+ *                              открывающая окно (a.js-popup-open, button.open-modal, миниатюра a.image-popup), пустая плашка точно
+ *                              по размеру текста (inset: 0 на кнопке, заглушка-скелет).
+ *                              Не видит: блок или текст с pointer-events: none; фон с альфой ниже 0.9 и opacity ниже 0.9; псевдоэлемент
+ *                              предка поверх его же текста и фон псевдоэлемента внутри коробки блока; перекрытие внутри закреплённого
+ *                              контейнера (плашка на цене в sticky-колонке); перекрытие уже промежутка между точками строки;
+ *                              absolute-блок в nav, свесившийся на текст (считается меню); sticky-блок, который не прилип, а лёг на
+ *                              текст; содержательные блоки-близнецы, по ошибке вставшие стопкой или колодой; сдвиг, который скрипт
+ *                              ведёт через style по кадрам; теневой DOM и iframe. Выйдут находкой, а решают глаза: перекрытое до
+ *                              наведения (обложка уезжает по :hover), открытое самодельное меню без aria, слова окна и nav, стрелка
+ *                              карусели с плотным фоном над текстом слайда, слово-украшение без aria-hidden под соседним блоком.
+ *                              Пределы: 60 шагов прокрутки, 12 с, 8000 узлов текста, 24 строки на узел, 6000 строк, 12 сверок
+ *                              снимком — сработавший назван в строке («ПРЕДЕЛ: …»), там же — сколько строк проверено из найденных и
+ *                              почему остальные нет (под закреплённым слоем, в переходе, за краем окна вбок, в окно не попали).
+ *                              В JSON — data.coveredBy [{ sig, text, by, x, y, lines, of, proof }], data.coveredByCount, data.stat (в нём
+ *                              dropped — кого сняла сверка и почему), data.partial («меньше половины строк» или «предел» — у INFO) и
+ *                              overflow.coveredBy у строки прокрутки; прежние covered и coveredCount не менялись. После --click,
+ *                              --select и --resize эта проверка не повторяется.
  *                              Вертикальное письмо (writing-mode: vertical-*, sideways-*): вдоль строки
  *                              (по высоте) — допуск 5% кегля, поперёк (по ширине) — ещё край глифа
  *                              (половина разницы между высотой шрифта и line-height): вкладка с
@@ -178,6 +219,18 @@
  *                              («#top», «#/…», «#!…» и «#…:…» не в счёт); якоря на <a name> (Tilda) —
  *                              INFO «не проверялось»
  *        --css                 объявления CSS, которые браузер выбросил: файл:строка
+ *                              (таблицы по ссылке, блоки <style>, атрибуты style=""). Текст таблицы — тело ответа, который
+ *                              браузер уже получил при загрузке (Chrome и Edge — CDP Network.getResponseBody, Firefox — BiDi
+ *                              network.getData): новых запросов нет, CSP и CORS страницы не задеты, читается и чужая таблица
+ *                              (Google Fonts) на сайте со строгим connect-src. Тела ответа нет — запрос из Node (агент
+ *                              страницы; cookie вкладки — только своему источнику), file:// — с диска, data: — из самого адреса,
+ *                              blob: — читает сама страница (в сеть это не идёт), если её CSP не запрещает blob: в connect-src.
+ *                              Таблица не прочитана — WARN «CSS: не прочитано таблиц N» с причиной у каждой (её объявления не
+ *                              проверены), не FAIL, и в счёт «таблиц» она не идёт: сервер ответил ошибкой («HTTP 404» — заново не
+ *                              запрашивается), запрос из Node не прошёл, blob: при CSP с connect-src без blob: (в Firefox; Chrome
+ *                              отдаёт её тело). Нарушение CSP самой страницей по-прежнему ошибка консоли. В JSON — data.sheets
+ *                              [{ name, href, via: body | node | file | data | page | null, error, why }]. Не читаются: таблицы из
+ *                              @import и теневого DOM
  *        --eval "js"           выполнить выражение (можно Promise) и записать результат;
  *                              сразу за ним --expect "значение" — FAIL, если не совпало.
  *                              Результат целиком — в JSON (steps[].details); в консоли — начало
@@ -288,15 +341,26 @@
  *                              шторка, inline style по кадрам, ход через CSS-переменную (и быстрый, в четыре кадра), посторонняя
  *                              переменная прокрутки, WAAPI, CSS-анимация, без объявленного
  *                              движения и с --reduced-motion; выход сразу после итога, без хвоста таймера; первая строка справки
- *                              --no-js; ошибки аргументов новых флагов) и свои серверы
+ *                              --no-js; ошибки аргументов новых флагов; текст перекрыт соседним блоком — covered.html на
+ *                              desktop, на 320 и в Firefox: восемь перекрытий со сверкой снимком и слои по замыслу, которые
+ *                              молчат; covered2.html — слово окна в классе кнопки и блока в потоке, пустая плашка по размеру
+ *                              текста, плашка между точками строки — находки, колода карточек, «Показать полностью», окно по
+ *                              слову в классе и перевёртыш — молчат; covered-side.html — --css после --scroll видит выброшенное
+ *                              объявление в атрибуте style, переход цвета не оборван, событий transition* нет) и свои серверы
  *                              (страница 404 с --expect-status и без, сторонний iframe с упавшей картинкой, iframe с битой ссылкой — документ 404 — того
  *                              же и другого сайта; --no-js: iframe другого сайта без JavaScript, пара modulepreload и
- *                              module-скрипт), окна при загрузке (стенды fixtures/lib: окно — WARN;
+ *                              module-скрипт; предел проверки перекрытий по числу строк и страница, которую прокручивает body, —
+ *                              INFO, а не OK; таблица с ответом 404 — «не прочитано: HTTP 404»; таблица по адресу blob: — с
+ *                              CSP и без, из тела ответа и чтением из страницы; --css при строгом CSP с таблицей
+ *                              другого источника — чистой, с выброшенным объявлением, страница сама нарушает CSP, таблица,
+ *                              которую сервер отдаёт один раз, запасной путь «не прочитано», таблица на file:// и в адресе
+ *                              data: (стенд css-file.html) — в Chrome и в Firefox, номера строк), окна при загрузке (стенды
+ *                              fixtures/lib: окно — WARN;
  *                              SITE_REWORK_DISMISS увёл на шумную главную — нужная страница открыта
  *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
  *                              если он есть; страница снова уводит — «замер не той страницы») и сверить
  *                              строки протокола с ожидаемыми; код 1 — что-то разошлось. Адрес не нужен,
- *                              браузер — один за раз, около десяти минут. Часть случаев — переменной окружения
+ *                              браузер — один за раз, около тринадцати минут. Часть случаев — переменной окружения
  *                              RW_SELFTEST_ONLY (регулярное выражение по имени случая: RW_SELFTEST_ONLY="^(jump|nojs)")
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
  *                              тоже справка. Ищется только до «--»: после него — адрес
@@ -801,6 +865,8 @@ async function evalInPage(expr) {
 }
 const reqLog = [];
 const conLoc = []; const reqFrame = new Map();
+const sheetRes = new Map(); /* адрес таблицы стилей → её ответ (HTTPResponse): шаг --css берёт текст из его тела */
+const docCsp = { enforce: '', report: '' }; /* заголовки CSP последнего документа вкладки: по ним шаг --css решает, можно ли странице самой прочитать таблицу blob: */
 /* источник кадра: ближайший адрес http(s) от кадра к главному (about:blank и srcdoc наследуют источник родителя) */
 const originOf = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.origin : null; } catch { return null; } };
 const frameInfo = (f) => {
@@ -829,6 +895,23 @@ try {
   };
   page.on('requestfailed', noteFrame);
   page.on('response', (res) => { try { if (res.status() >= 400) noteFrame(res.request()); } catch { /* нет запроса */ } });
+  /* ответы с таблицами стилей — для шага --css (sheetTextBody): по адресу ответа и по адресам, с которых на него
+     перенаправило (у таблицы в DOM href — адрес до перенаправления). Сам ответ-перенаправление тела не имеет */
+  page.on('response', (res) => {
+    try {
+      const rq0 = res.request();
+      if (rq0.isNavigationRequest() && rq0.frame() === page.mainFrame() && !(res.status() >= 300 && res.status() < 400)) { const h = res.headers() || {}; docCsp.enforce = String(h['content-security-policy'] || ''); docCsp.report = String(h['content-security-policy-report-only'] || ''); }
+    } catch { /* нет запроса или кадра */ }
+  });
+  page.on('response', (res) => {
+    try {
+      const st = res.status(); if ((st >= 300 && st < 400) || sheetRes.size >= 4000) return;
+      const rq = res.request();
+      if (resourceTypeOf(rq) !== 'stylesheet' && !/css/i.test(String((res.headers() || {})['content-type'] || ''))) return;
+      sheetRes.set(res.url().split('#')[0], res);
+      for (const r0 of (typeof rq.redirectChain === 'function' ? rq.redirectChain() : [])) sheetRes.set(r0.url().split('#')[0], res);
+    } catch { /* нет запроса или цепочки */ }
+  });
   /* нажатие SITE_REWORK_DISMISS увело, и lib открыл нужную страницу заново (resetPageLog): свои журналы — тоже только её.
      Иначе /menu/ mamuka.rest получала строки консоли и кадры запросов промежуточной главной (30.09) */
   onPageLogReset(page, () => { reqLog.length = 0; conLoc.length = 0; reqFrame.clear(); });
@@ -1641,11 +1724,13 @@ function verticalTextInPage(arg) {
 /* findOverflow, затем две поправки runtime: блок шире своей колонки и страница шире окна на 1 px (blockFix — ниже) и
    вертикальное письмо (verticalFix): из «текст шире коробки» уходит вертикальный текст, который
    в коробке и по высоте, и сбоку (с краем глифа). Вердикт пересчитывается от вердикта lib: FAIL остаётся FAIL,
-   WARN остаётся, пока есть любая другая находка — docWider или любое поле …Count, кроме textWiderCount
-   (panelCut, covered, clipCut, fieldCut и то, что lib добавит потом). Из summary вырезается только кусок
+   WARN остаётся, пока есть любая другая находка — docWider или любое поле …Count, кроме textWiderCount и coveredByCount
+   (panelCut, covered, clipCut, fieldCut и то, что lib добавит потом; coveredBy — отдельная строка со своим WARN). Из summary вырезается только кусок
    «текст шире коробки: …» — остальные куски («текст обрезан», «текст не влез в поле», …) остаются */
-async function overflowOf() {
-  const ov = await findOverflow(page);
+/* o.coveredBy — ещё и «текст перекрыт соседним блоком» (lib проходит страницу шагами прокрутки): только у шага --scroll;
+   перепроверка после --click, --select и --resize идёт без него — там открыты меню и окна, и проход стоил бы секунд */
+async function overflowOf(o = {}) {
+  const ov = await findOverflow(page, o);
   if (!ov) return ov;
   if (ov.textWiderCount) await verticalFix(ov);
   await blockFix(ov);
@@ -1790,7 +1875,8 @@ async function verticalFix(ov) {
   if (!skipped.length && !kept.some((t) => t.vertical)) return ov;
   const oldList = ov.textWider;
   ov.textWider = kept; ov.textWiderCount = Math.max(kept.length, ov.textWiderCount - skipped.length); ov.verticalSkipped = skipped;
-  const otherWarn = !!ov.docWider || Object.entries(ov).some(([k, n]) => /Count$/.test(k) && k !== 'textWiderCount' && Number(n) > 0);
+  /* coveredByCount — не находка переполнения: у «текст перекрыт соседним блоком» своя строка и свой WARN (в вердикт lib не входит) */
+  const otherWarn = !!ov.docWider || Object.entries(ov).some(([k, n]) => /Count$/.test(k) && k !== 'textWiderCount' && k !== 'coveredByCount' && Number(n) > 0);
   if (ov.verdict !== 'FAIL') ov.verdict = ov.textWiderCount || otherWarn ? 'WARN' : 'OK';
   /* кусок summary «текст шире коробки: …» — тот, что написал lib.findOverflow (по первым трём), заменить
      на новый по оставшимся; не нашёлся дословно (lib сменил запись) — до следующего куска « · слово…: » */
@@ -2320,7 +2406,7 @@ async function scrollStep() {
     const jumps = [...waited.filter((el) => el.__rwJumps && !gone.has(el)), ...extra].slice(0, 40).map((el) => ({ el: sig(el), named: named(el), ...el.__rwJumps }));
     return { marked: marked.length, waitedCount: waited.length, waited: waited.slice(0, 40).map(named), still, stillNamed, meant: [...fields, ...meant], fields: fields.length, hoverOnly, sticky, jumps };
   }, null, DEPS);
-  const ov = await overflowOf();
+  const ov = await overflowOf({ coveredBy: true });
   const st = ov.verdict === 'FAIL' ? 'FAIL' : (after.still.length || ov.verdict === 'WARN' || res.stuck || !res.reachedBottom) ? 'WARN' : 'OK';
   const list4 = (l) => `${l.slice(0, 4).join(', ')}${l.length > 4 ? ` и ещё ${l.length - 4}` : ''}`;
   const meantNote = after.meant.length ? ` · невидимы по замыслу (поля формы и прозрачное без перехода и анимации, прозрачность не менялась): ${after.meant.length} (${after.meant.slice(0, 4).join(', ')}${after.meant.length > 4 ? '…' : ''})` : '';
@@ -2328,13 +2414,35 @@ async function scrollStep() {
     + (hvGroups.length > HV_MAX ? ` · наведением проверены первые ${HV_MAX} триггеров из ${hvGroups.length}, остальные кандидаты — в «не появились»` : '');
   const revealTxt = `ждали появления: ${after.waitedCount}${after.waitedCount ? ` (${list4(after.waited)}${after.waitedCount > after.waited.length ? `, всего ${after.waitedCount}` : ''})` : ''} — не появились: ${after.still.length}${after.still.length ? ` (${list4(after.stillNamed)})` : ''}`;
   const mvNote = mv && mv.reduced && mv.changed ? ' · переходы появления не сверялись: «меньше движения» (reduce)' : '';
-  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${mvNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, motion: mv ? { ...mv, found: after.jumps || [] } : null, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount, blockWider: ov.blockWider || [], blockWiderCount: ov.blockWiderCount || 0, docWiderSmall: ov.docWiderSmall || null, docScrollWidth: ov.docScrollWidth, vw: ov.vw } });
+  line(st, `прокрутка ${res.pageHeight}px, ${res.screens} экранов`, `${revealTxt}${meantNote}${hoverNote}${mvNote}${res.stuck ? ' · СТРАНИЦА НЕ ПРОКРУЧИВАЕТСЯ' : !res.reachedBottom ? ` · не доехали до низа (${res.maxScrollY}px)` : ''}${after.sticky.length ? ` · закреплены: ${after.sticky.join(', ')}` : ''} · переполнение: ${ov.verdict} — ${ov.summary}`, { reveal: { marked: after.marked, waitedCount: after.waitedCount, waited: after.waited, still: after.still, stillNamed: after.stillNamed, meant: after.meant, hoverOnly: after.hoverOnly, hoverTriggers: { candidates: hvGroups.length, tried: hvTried, reached: hvReached } }, motion: mv ? { ...mv, found: after.jumps || [] } : null, overflow: { verdict: ov.verdict, outer: ov.outer, wideCauses: ov.wideCauses, textWider: ov.textWider, textWiderCount: ov.textWiderCount, verticalSkipped: ov.verticalSkipped || [], panelCut: ov.panelCut, covered: ov.covered, coveredCount: ov.coveredCount, coveredBy: ov.coveredBy || [], coveredByCount: ov.coveredByCount === undefined ? null : ov.coveredByCount, clipCut: ov.clipCut, clipCutCount: ov.clipCutCount, fieldCut: ov.fieldCut, fieldCutCount: ov.fieldCutCount, blockWider: ov.blockWider || [], blockWiderCount: ov.blockWiderCount || 0, docWiderSmall: ov.docWiderSmall || null, docScrollWidth: ov.docScrollWidth, vw: ov.vw } });
   /* «текст перекрыт» — всегда своей строкой: по строке прокрутки не видно, шла ли проверка. Её WARN уже
      посчитан строкой прокрутки (переполнение WARN), поэтому здесь не считается второй раз */
   if (ov.coveredCount === undefined) line('INFO', 'текст перекрыт картинкой', 'не проверялось: lib.findOverflow без поля covered', null, { count: false });
   else {
     const cov = ov.coveredCount;
     line(cov ? 'WARN' : 'OK', 'текст перекрыт картинкой', cov ? `${cov} мест: ${ov.covered.slice(0, 5).map((t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y})`).join(' | ')}${cov > 5 ? ` и ещё ${cov - 5}` : ''} — картинка лежит поверх чужого текста (фон под текстом не в счёт)` : 'нет: img, video, canvas и svg от 40px не лежат поверх чужого текста', { covered: ov.covered, coveredCount: cov }, { count: false });
+  }
+  /* «текст перекрыт соседним блоком» — своя строка и свой WARN (в вердикт lib.findOverflow не входит, поэтому считается
+     здесь): подпись под карточкой внахлёст (01.10) проверка картинок не видела. Сколько строк проверено и какой предел
+     сработал — в той же строке: OK без этого читался бы как «проверено всё» */
+  if (ov.coveredByCount === undefined) line('INFO', 'текст перекрыт соседним блоком', 'не проверялось: lib.findOverflow без поля coveredBy');
+  else {
+    const n = ov.coveredByCount; const cs = ov.coveredByStat || {};
+    const vf = cs.verify || {};
+    const scope = cs.error ? `проверка не прошла: ${short(cs.error, 120)}`
+      : `проверено строк текста ${cs.lines} из ${cs.linesAll} за ${cs.steps} ${plural(cs.steps, 'шаг', 'шага', 'шагов')} прокрутки${cs.lines < cs.linesAll ? ` (не проверено: под закреплённым слоем на всех шагах — ${cs.under || 0}, в переходе — ${cs.moving || 0}, за краем окна вбок — ${cs.aside || 0}, в окно не попали — ${cs.linesAll - cs.lines - (cs.under || 0) - (cs.moving || 0) - (cs.aside || 0)})` : ''}`
+        + `${cs.refuted ? ` · на снимке текст виден сквозь блок (прозрачная картинка в фоне, маска) — не находка: ${cs.refuted}` : ''}${cs.gone ? ` · при сверке перекрывающего на месте уже не было (сдвиг по прокрутке, слайд ушёл) — не находка: ${cs.gone}` : ''}${cs.unsure ? ` · картинка в фоне без сверки снимком${vf.why ? ` (${vf.why})` : ''} — не в счёт: ${cs.unsure}` : ''}${cs.capped ? ` · ПРЕДЕЛ: ${cs.capped}` : ''}`;
+    const item = (t) => `${t.sig} «${t.text}» под ${t.by} (y ${t.y}${t.of > 1 ? `, строк ${t.lines} из ${t.of}` : ''}${t.proof === 'снимок' ? '' : '; снимком не сверено'})`;
+    /* находок нет, но проверена меньшая часть строк (страницу прокручивает body — в окно попал один экран; открытое окно
+       cookie на телефоне; ленты за краем окна) или сработал предел — не OK, а INFO с причиной числом: «OK … нет» читается
+       как «проверена вся страница» (независимая проверка 02.10: allbirds.com 12 строк из 129, ikea на телефоне 136 из 591).
+       На вердикт INFO не влияет */
+    const few = !cs.error && cs.linesAll > 0 && cs.lines * 2 < cs.linesAll;
+    const part = !cs.error && !n && (few || !!cs.capped);
+    const none = part ? `среди проверенных строк нет, но ${few ? `проверена меньшая часть — ${cs.lines} из ${cs.linesAll} (${Math.round(100 * cs.lines / cs.linesAll)} %)` : 'сработал предел — страница проверена не вся'}: «нет» относится только к проверенному · `
+      : 'нет: блоки с плотным фоном не лежат поверх чужого текста (закреплённое, окна, меню и стопки слайдов не в счёт) · ';
+    line(cs.error ? 'WARN' : n ? 'WARN' : part ? 'INFO' : 'OK', 'текст перекрыт соседним блоком', n ? `${n} ${plural(n, 'место', 'места', 'мест')}: ${ov.coveredBy.slice(0, 5).map(item).join(' | ')}${n > 5 ? ` и ещё ${n - 5}` : ''} — блок с плотным фоном лежит поверх чужого текста, и на снимке букв под ним не видно (спрятали текст — место не изменилось); закреплённое, окна, меню и стопки слайдов не в счёт — открыть снимок на этой высоте · ${scope}`
+      : `${cs.error ? '' : none}${scope}`, { coveredBy: ov.coveredBy, coveredByCount: n, stat: cs, ...(part ? { partial: few ? 'меньше половины строк' : 'предел' } : {}) });
   }
   /* переход не шёл: свойство и вычисленный transition-property — одной строкой WARN на группу (галерея из 12 фото с одной
      ошибкой — одна строка с числом, а не 12) */
@@ -3012,13 +3120,93 @@ function cssCheckInPage(arg) {
   }
   return { total, skippedVar, skippedPrefix, bad };
 }
+/* Текст таблиц по ссылке — без единого запроса из страницы. Раньше каждая читалась fetch(sh.href) изнутри страницы, и
+   проверка сама создавала находку: на сайте со строгим CSP (connect-src 'self', таблица Google Fonts — zel-ugolok, 01.10)
+   браузер писал в консоль «Connecting to … violates … connect-src» и «Fetch API cannot load», а без CSP у таблицы другого
+   источника без CORS — «blocked by CORS policy»; обе пары строк уходили в «FAIL новые ошибки после шага css: 2» при строке
+   «CSS: … выброшенных браузером нет» (стенд 02.10: страница на одном порту, таблица на другом). Отчёт о нарушении уходил и
+   на report-uri сайта. Теперь текст таблицы — тело того самого ответа, который браузер получил при загрузке страницы
+   (sheetRes: ответы с таблицами копятся с открытия вкладки; Chrome и Edge — CDP Network.getResponseBody, Firefox — BiDi
+   network.getData): нового запроса нет вовсе — ни из страницы, ни от браузера, — CSP и CORS это не задевает, читается и
+   чужая таблица без CORS, строки те же, что в файле. Домен CSS у CDP (getStyleSheetText) не годится: при включении он сам
+   перезапрашивает каждую таблицу через загрузчик страницы — у таблицы без заголовков кеша это настоящий запрос к серверу, а
+   его отказ — «Failed to load resource» в консоли и пустой текст, принятый за прочитанный (стенд 02.10: сервер отдаёт
+   таблицу один раз). Тела ответа нет (ответ вытеснен из памяти браузера, вкладку открыл не этот запуск) или оно пустое —
+   запрос из Node: агент страницы (Google Fonts отдаёт разный CSS разным агентам — номера строк должны совпасть с тем, что
+   получил браузер), для своего источника — cookie вкладки; file:// — с диска, data: — из самого адреса. Не прочиталось никак — WARN «не прочитано
+   таблиц N» с причиной, не FAIL. Ошибки консоли при этом не глушатся: нарушение CSP самой страницей по-прежнему ошибка,
+   выброшенное объявление в чужой таблице — FAIL с файлом и строкой.
+   Не читаются, как и раньше: таблицы из @import (берутся только document.styleSheets) и теневого DOM */
+async function sheetTextBody(s) {
+  /* RW_CSS_NO_BODY — только для самопроверки запасного пути (случаи css-unread): тело ответа не берётся */
+  if (process.env.RW_CSS_NO_BODY) { s.body = 'тело ответа не бралось (RW_CSS_NO_BODY)'; return; }
+  /* таблица в адресе data: — текст в самом адресе, сети нет: его разбирает Node (Firefox отдаёт телом такой таблицы
+     нераскодированную строку адреса — объявлений в ней не найти, а таблица числилась бы прочитанной) */
+  if (/^data:/i.test(s.href)) { s.body = 'адрес data: — текст в самом адресе'; return; }
+  const res = sheetRes.get(s.href.split('#')[0]);
+  if (!res) { s.body = 'ответа с этой таблицей в журнале сети нет'; return; }
+  /* сервер ответил ошибкой (404, 403, 500): таблицы у браузера нет — она не прочитана, и спрашивать её заново незачем.
+     Раньше пустое тело такого ответа сходило за «таблица пустая, прочитана»: строка «не прочитано» пропадала, счёт таблиц
+     был завышен (независимая проверка 02.10, страница с двумя missing.css) */
+  let code = 0; try { code = res.status(); } catch { /* ответ без статуса */ }
+  if (code >= 400) { s.http = code; s.error = `HTTP ${code}`; s.body = `сервер ответил ${code}`; return; }
+  s.okBody = code >= 200 && code < 300;
+  let timer;
+  try {
+    const t = await Promise.race([res.text(), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('тело ответа не пришло за 10 с')), 10000); })]);
+    if (typeof t !== 'string' || !t.trim()) { s.body = 'тело ответа пустое'; return; } /* пустому не верим: вдруг его не отдал браузер — спросит Node */
+    s.text = t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t; s.via = 'body';
+  } catch (e) { s.body = short(String((e && e.message) || e).split('\n')[0], 80); } finally { clearTimeout(timer); }
+}
+async function sheetTextNode(s, ua, cookieOf) {
+  try {
+    const u = new URL(s.href);
+    if (u.protocol === 'file:') { const t = fs.readFileSync(fileURLToPath(u), 'utf8'); s.text = t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t; s.via = 'file'; return; }
+    if (u.protocol === 'data:') { s.text = await (await fetch(s.href)).text(); s.via = 'data'; return; }
+    const headers = { accept: 'text/css,*/*;q=0.1' };
+    if (ua) headers['user-agent'] = ua;
+    const pu = (() => { try { return new URL(page.url()); } catch { return null; } })();
+    if (pu && /^https?:$/.test(pu.protocol)) { headers.referer = `${pu.origin}/`; if (pu.origin === u.origin) { const c = await cookieOf(); if (c) headers.cookie = c; } }
+    const r = await fetch(s.href, { headers, signal: AbortSignal.timeout(20000) });
+    if (r.ok) { s.text = await r.text(); s.via = 'node'; } else s.error = `HTTP ${r.status}`;
+  } catch (e) { s.error = short(String((e && e.cause && e.cause.code) || (e && e.message) || e), 60); }
+  /* таблица и правда пустая: браузер получил её с ответом 2xx и пустым телом, и Node её не прочитал или получил то же —
+     прочитана, объявлений нет. Ответ с ошибкой сюда не доходит (sheetTextBody: «не прочитано: HTTP 404») */
+  if (s.text == null && s.okBody && s.body === 'тело ответа пустое') { s.text = ''; s.via = 'body'; delete s.error; }
+}
+/* Таблица по адресу blob: (страница собрала её скриптом: URL.createObjectURL). В Chrome её тело отдаёт журнал сети, в
+   Firefox ответа с таким адресом в журнале нет вовсе, а из Node адрес blob: не открыть (независимая проверка 02.10: на
+   master — FAIL с находкой, здесь было WARN «не прочитано»). Текст читает сама страница: fetch(blob:) своего же
+   источника в сеть не идёт. Но это запрос страницы, и connect-src её CSP действует и на blob: (ни 'self', ни * адрес
+   blob: не разрешают) — тогда чтение само стало бы нарушением CSP в консоли, то есть находкой, которую создала
+   проверка. Поэтому читаем, только если ни одна политика страницы (заголовок, заголовок Report-Only, meta) не запрещает
+   blob: в connect-src (иначе в default-src); запрещает — таблица остаётся непрочитанной (WARN с причиной) */
+async function sheetTextBlob(s) {
+  const policies = [docCsp.enforce, docCsp.report].filter(Boolean);
+  let timer;
+  try {
+    const r = await Promise.race([page.evaluate(async (href, pols) => {
+      const metas = [...document.querySelectorAll('meta[http-equiv]')].filter((m) => /^content-security-policy$/i.test(m.httpEquiv)).map((m) => m.content);
+      for (const pol of [...pols, ...metas]) for (const one of String(pol || '').split(/[\n,]/)) {
+        const dirs = Object.create(null);
+        for (const d of one.split(';')) { const t = d.trim().toLowerCase().split(/\s+/); if (t[0] && !(t[0] in dirs)) dirs[t[0]] = t.slice(1); }
+        const src = dirs['connect-src'] || dirs['default-src'];
+        if (src && !src.includes('blob:')) return { csp: true };
+      }
+      try { const res = await fetch(href); return res.ok ? { text: await res.text() } : { error: `HTTP ${res.status}` }; } catch (e) { return { error: String((e && e.message) || e).slice(0, 80) }; }
+    }, s.href, policies), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('страница не ответила за 10 с')), 10000); })]);
+    if (r && typeof r.text === 'string') { s.text = r.text.charCodeAt(0) === 0xFEFF ? r.text.slice(1) : r.text; s.via = 'page'; delete s.error; }
+    else s.why = r && r.csp ? 'адрес blob:, тела ответа браузер не отдал, а читать из страницы запрещает её CSP (connect-src без blob:)' : `адрес blob:, чтение из страницы: ${(r && r.error) || 'нет ответа'}`;
+  } catch (e) { s.why = `адрес blob:, чтение из страницы: ${short(String((e && e.message) || e).split('\n')[0], 80)}`; } finally { clearTimeout(timer); }
+}
 async function cssStep() {
-  const got = await evaluateWith(page, async () => {
+  /* что есть у страницы — из DOM, без сети: таблицы по ссылке (только адрес), <style> и style="" (текст) */
+  const got = await evaluateWith(page, () => {
     const sources = [];
     for (const sh of document.styleSheets) {
       const node = sh.ownerNode;
       if (node && node.getAttribute && node.getAttribute('data-rw')) continue; /* свои стили проверок */
-      if (sh.href) { try { const r = await fetch(sh.href); sources.push({ name: sh.href.split('?')[0].split('/').pop() || sh.href, href: sh.href, text: r.ok ? await r.text() : null }); } catch (e) { sources.push({ name: sh.href.split('?')[0].split('/').pop() || sh.href, href: sh.href, text: null }); } }
+      if (sh.href) sources.push({ name: sh.href.split('?')[0].split('/').pop() || sh.href, href: sh.href, text: null });
       else if (node) {
         const html = document.documentElement.outerHTML; const at = html.indexOf(node.textContent.slice(0, 80));
         sources.push({ name: '<style>', text: node.textContent, lineOffset: at > 0 ? html.slice(0, at).split('\n').length - 1 : 0 });
@@ -3027,8 +3215,20 @@ async function cssStep() {
     for (const el of document.querySelectorAll('[style]')) { if (el.closest('[data-rw-hidden]') && /opacity/.test(el.getAttribute('style'))) continue; sources.push({ name: `style="" у ${sig(el)}`, text: `x{${el.getAttribute('style')}}` }); }
     return sources;
   }, null, DEPS);
-  /* таблицы с чужого домена без CORS страница не прочитает — берём их запросом отсюда */
-  for (const s of got) if (s.href && s.text == null) { try { const r = await fetch(s.href, { signal: AbortSignal.timeout(20000) }); if (r.ok) s.text = await r.text(); else s.error = `HTTP ${r.status}`; } catch (e) { s.error = String(e.message || e).slice(0, 60); } }
+  const linked = got.filter((s) => s.href);
+  if (linked.length) {
+    for (const s of linked) await sheetTextBody(s);
+    /* тела нет: blob: — читает сама страница (из Node такой адрес не открыть); ответ с ошибкой — не прочитана, заново не
+       спрашиваем; остальное — запрос из Node */
+    for (const s of linked) if (s.text == null && /^blob:/i.test(s.href)) await sheetTextBlob(s);
+    const ask = linked.filter((s) => s.text == null && !s.http && !/^blob:/i.test(s.href));
+    if (ask.length) {
+      const ua = await page.evaluate(() => navigator.userAgent).catch(() => null);
+      let jar; /* cookie вкладки — один раз и только если есть таблица своего источника без тела ответа */
+      const cookieOf = async () => { if (jar === undefined) { try { jar = (await page.cookies()).map((c) => `${c.name}=${c.value}`).join('; '); } catch { jar = ''; } } return jar; };
+      for (const s of ask) await sheetTextNode(s, ua, cookieOf);
+    }
+  }
   const res = await evaluateWith(page, cssCheckInPage, { sources: got.filter((s) => s.text).map((s) => ({ name: s.name, text: s.text, lineOffset: s.lineOffset || 0 })) }, {});
   const unread = got.filter((s) => s.href && s.text == null);
   /* одинаковые объявления (генератор повторяет одно и то же в каждом блоке) — одной строкой со счётчиком */
@@ -3036,9 +3236,16 @@ async function cssStep() {
   const real = group(res.bad.filter((b) => b.known)); const unknown = group(res.bad.filter((b) => !b.known));
   const kinds = { sheets: got.filter((s) => s.href && s.text != null).length, styles: got.filter((s) => s.name === '<style>').length, attrs: got.filter((s) => /^style=""/.test(s.name)).length };
   line(real.length ? 'FAIL' : 'OK', `CSS: проверено ${res.total} объявлений — таблиц ${kinds.sheets}, блоков <style> ${kinds.styles}, атрибутов style="" ${kinds.attrs} (с var() не проверялось ${res.skippedVar}, с префиксами ${res.skippedPrefix})`,
-    real.length ? real.slice(0, 8).map((b) => `${b.file}:${b.line} ${b.rule} { ${b.prop}: ${b.value} }${b.count > 1 ? ` ×${b.count}` : ''} — браузер выбросил`).join(' | ') + (real.length > 8 ? ` и ещё ${real.length - 8} разных` : '') : 'выброшенных браузером нет', { bad: res.bad });
+    real.length ? real.slice(0, 8).map((b) => `${b.file}:${b.line} ${b.rule} { ${b.prop}: ${b.value} }${b.count > 1 ? ` ×${b.count}` : ''} — браузер выбросил`).join(' | ') + (real.length > 8 ? ` и ещё ${real.length - 8} разных` : '') : 'выброшенных браузером нет',
+    /* sheets — чем прочитана каждая таблица по ссылке: body (тело ответа, полученного браузером), node (запрос отсюда), file (с
+       диска), data (текст из адреса data:), page (таблицу по адресу blob: прочитала сама страница), null — не прочитана;
+       body у не-body — почему тела ответа не было; error — чем кончилось чтение (HTTP 404 — так ответил сервер браузеру) */
+    { bad: res.bad, sheets: linked.map((s) => ({ name: s.name, href: s.href.slice(0, 200), via: s.via || null, ...(s.body && s.via !== 'body' ? { body: s.body } : {}), ...(s.error ? { error: s.error } : {}), ...(s.why ? { why: s.why } : {}) })) });
   if (unknown.length) line('WARN', `CSS: свойства, которых браузер не знает: ${unknown.length}`, unknown.slice(0, 6).map((b) => `${b.file}:${b.line} ${b.prop}`).join(', '));
-  if (unread.length) line('WARN', `CSS: не прочитано таблиц ${unread.length}`, unread.slice(0, 4).map((s) => `${s.name} (${s.error || 'нет доступа'})`).join(', '));
+  /* причина у каждой: ответ с ошибкой — «HTTP 404» (так ответил сервер браузеру, таблицы у страницы нет); blob: — почему не
+     прочитала страница; остальное — чем кончился запрос из Node и почему не было тела ответа */
+  const whyUnread = (s) => (s.http ? `HTTP ${s.http}` : s.why ? s.why : `запрос из Node: ${s.error || 'нет доступа'}; в браузере: ${s.body || 'тела ответа нет'}`);
+  if (unread.length) line('WARN', `CSS: не прочитано таблиц ${unread.length}`, `${unread.slice(0, 4).map((s) => `${s.name} (${whyUnread(s)})`).join(', ')}${unread.length > 4 ? ` и ещё ${unread.length - 4}` : ''} — их объявления не проверены`);
 }
 
 /* снимок всей страницы (SKILL-ISSUES 460, 456). Масштаб — --full-scale, по умолчанию ×1: на телефоне ×2 выходило 780×14962,
@@ -3180,8 +3387,21 @@ async function selftest() {
   const LIBU = (f) => pathToFileURL(path.join(path.dirname(self), 'fixtures', 'lib', f)).href;
   /* два источника: A — страница (и её 404), B — «чужой» iframe с упавшей картинкой (другой порт — другой источник) */
   const serve = (handler) => new Promise((res) => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => res(s)); });
+  /* таблицы стилей «чужого» источника для --css: ok — чистая, bad — с выброшенным объявлением в строке 5, once — та же, но
+     сервер отдаёт её один раз (второй запрос — 403: шаг --css не должен запрашивать таблицу заново). cssHits — сколько раз
+     отдана каждая (адрес с ?c=<случай>) */
+  const cssHits = {};
+  const CSS_OK = '/* чужая таблица */\n.a { color: red; }\n.b { margin: 0 auto; }\n';
+  const CSS_BAD = '/* чужая таблица */\n.a { color: red; }\n.b {\n  margin: 0 auto;\n  border: 1.2% solid #F4F1EA;\n}\n';
   const B = await serve((req, res) => {
     if (req.url === '/frame') { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end('<!doctype html><meta charset="utf-8"><p>Чужой виджет</p><img src="/pixel-missing.gif" alt="">'); return; }
+    /* таблицы нет: 404 (шаг --css не должен ни считать её прочитанной, ни спрашивать заново) */
+    if (req.url.startsWith('/missing.css')) { cssHits[req.url] = (cssHits[req.url] || 0) + 1; res.statusCode = 404; res.end('нет'); return; }
+    if (/^\/(ok|bad|once)\.css/.test(req.url)) {
+      cssHits[req.url] = (cssHits[req.url] || 0) + 1; res.setHeader('content-type', 'text/css; charset=utf-8');
+      if (req.url.startsWith('/once.css') && cssHits[req.url] > 1) { res.statusCode = 403; res.end('/* второй раз не отдаётся */'); return; }
+      res.end(req.url.startsWith('/ok.css') ? CSS_OK : CSS_BAD); return;
+    }
     res.statusCode = 404; res.end('нет');
   });
   const bUrl = `http://127.0.0.1:${B.address().port}`;
@@ -3213,6 +3433,31 @@ async function selftest() {
     /* пара modulepreload + module-скрипт (сборки Vite, Nuxt): без JavaScript Chrome обрывает предзагрузку сам */
     if (req.url === '/pre') { res.end('<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Модули</title><link rel="modulepreload" crossorigin href="/m.js"><script type="module" src="/m.js" crossorigin></script></head><body><h1>Меню</h1><p>Страница видна и без JavaScript.</p></body></html>'); return; }
     if (req.url === '/m.js') { res.setHeader('content-type', 'text/javascript; charset=utf-8'); res.end('document.body.dataset.ok = "1";'); return; }
+    /* --css: страница со строгим CSP (connect-src 'self') и таблицей стилей с другого источника (B). csp — чистая таблица,
+       bad — с выброшенным объявлением, own — страница сама нарушает свой CSP (fetch чужого адреса), once — таблица, которую
+       сервер отдаёт один раз, lines — без CSP: своя таблица, чужая, <style> и style="" с выброшенными объявлениями */
+    if (req.url.startsWith('/own.css')) { res.setHeader('content-type', 'text/css; charset=utf-8'); res.end('h1 { color: navy; }\n'); return; }
+    const cssM = req.url.match(/^\/css-(csp|bad|own|once|lines|404|blob|blobcsp)\?c=([\w-]+)$/);
+    if (cssM) {
+      const [, kind, c] = cssM; const csp = `default-src 'self'; connect-src 'self'; style-src 'self' ${bUrl}; img-src 'self' data:`;
+      /* 404 — своя и чужая таблицы, которых нет; blob — таблица по адресу blob: с выброшенным объявлением в строке 3 (страница
+         собирает её скриптом); blobcsp — то же при CSP, где connect-src не разрешает blob: (читать её из страницы нельзя) */
+      if (kind === '404') { res.setHeader('content-security-policy', csp); res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>CSS</title><link rel="stylesheet" href="/own.css"><link rel="stylesheet" href="/missing.css?c=${c}"><link rel="stylesheet" href="${bUrl}/missing.css?c=${c}"></head><body><h1 class="a">Таблиц нет</h1><p class="b">Две ссылки на таблицы отвечают 404.</p></body></html>`); return; }
+      if (kind === 'blob' || kind === 'blobcsp') {
+        if (kind === 'blobcsp') res.setHeader('content-security-policy', "default-src 'self'; connect-src 'self'; style-src 'self' blob:; script-src 'self' 'unsafe-inline'; img-src 'self' data:");
+        res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>CSS</title><link rel="stylesheet" href="/own.css"></head><body><h1 class="a">Таблица по адресу blob:</h1><p class="z">Таблицу собрал скрипт страницы.</p><script>var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = URL.createObjectURL(new Blob(['.z {\\n  margin: 0;\\n  width: 10 px;\\n}\\n'], { type: 'text/css' })); document.head.appendChild(l);</script></body></html>`); return;
+      }
+      const pg = (sheet, extra = '') => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>CSS</title><link rel="stylesheet" href="/own.css"><link rel="stylesheet" href="${bUrl}/${sheet}.css?c=${c}"></head><body><h1 class="a">Строгий CSP</h1><p class="b">Таблица с другого источника.</p>${extra}</body></html>`;
+      if (kind === 'lines') { res.end(pg('bad', '\n<style>\n  .s1 { color: red; }\n  .s2 {\n    margin: 0 auto;\n    height: 10 px;\n  }\n</style>\n<p style="width: 5 px">в атрибуте</p>')); return; }
+      res.setHeader('content-security-policy', kind === 'own' ? `${csp}; script-src 'self' 'unsafe-inline'` : csp);
+      res.end(pg(kind === 'bad' ? 'bad' : kind === 'once' ? 'once' : 'ok', kind === 'own' ? `<script>fetch('${bUrl}/ok.css?c=${c}-page').catch(function () {});</script>` : ''));
+      return;
+    }
+    /* страницу прокручивает body (html { overflow: hidden }): проход перекрытий видит один экран — проверена меньшая часть
+       строк, и строка протокола не OK, а INFO (allbirds.com, 02.10: «проверено 12 из 129» при статусе OK) */
+    if (req.url === '/few') { res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Прокрутка body</title><style>html { height: 100%; overflow: hidden; } body { height: 100%; margin: 0; overflow: auto; font: 16px/24px Arial, sans-serif; } section { min-height: 900px; padding: 24px; }</style></head><body><section><h1>Первый экран</h1><p>Страницу прокручивает body.</p></section><section>${'<p>Строка ниже первого экрана.</p>'.repeat(30)}</section></body></html>`); return; }
+    /* предел проверки «текст перекрыт соседним блоком»: 8200 коротких узлов текста на невысокой странице */
+    if (req.url === '/many') { res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Много строк</title><style>body { margin: 0; font: 16px/24px Arial, sans-serif; } main { width: 900px; max-width: 100%; margin: 0 auto; }</style></head><body><main>${'<span>ая</span> '.repeat(8200)}</main></body></html>`); return; }
     res.statusCode = 404; res.end('<!doctype html><html lang="ru"><meta charset="utf-8"><link rel="icon" href="data:,"><title>Нет страницы</title><h1>Такой страницы нет</h1>');
   });
   const aUrl = `http://127.0.0.1:${A.address().port}`;
@@ -3234,6 +3479,116 @@ async function selftest() {
   const foundOf = (m) => (m && (m.found || []).map((f) => f.el).sort().join(',')) || '';
   /* ожидание: [статус, what, details] — what и details регулярками; статус null — любой */
   const has = (j, [st, w, d]) => ((j && j.steps) || []).some((s) => (st == null || s.status === st) && w.test(String(s.what)) && (!d || d.test(String(s.details || ''))));
+  /* --css: чем прочитана каждая таблица по ссылке (data.sheets[].via) и сколько раз сервер B отдал таблицу этого случая */
+  const viaIs = (...want) => (j) => { const s = ((j && j.steps) || []).find((x) => /^CSS: проверено/.test(x.what)); const got = ((s && s.data && s.data.sheets) || []).map((x) => x.via); return JSON.stringify(got) === JSON.stringify(want) ? null : `таблицы прочитаны через ${JSON.stringify(got)} — ждали ${JSON.stringify(want)}`; };
+  const hitOnce = (key) => () => (cssHits[key] === 1 ? null : `сервер отдал ${key} ${cssHits[key] || 0} раз — ждали 1: таблицу запросили заново`);
+  /* случаи --css (правка 02.10: ложный FAIL при строгом CSP) — в Chrome и, с хвостом -ff, в Firefox. Текст таблицы берётся из
+     тела ответа, который браузер уже получил: новых запросов нет (сервер отдал таблицу один раз), в консоли нет «violates …
+     connect-src» и «blocked by CORS policy» от самой проверки (на master — FAIL «новые ошибки после шага css: 2») */
+  const cssCases = (ff) => {
+    const n = (name) => `${name}${ff ? '-ff' : ''}`; const a = (...args) => [...(ff ? ['--browser', 'firefox'] : []), ...args];
+    return [
+      /* (а) строгий CSP + чужая таблица без ошибок: FAIL нет, обе таблицы прочитаны и посчитаны */
+      { name: n('css-csp'), url: `${aUrl}/css-csp?c=${n('css-csp')}`, code: 0, verdict: 'OK', args: a('--css'),
+        want: [['OK', /^CSS: проверено 3 объявлений — таблиц 2, блоков <style> 0, атрибутов style="" 0 /, /^выброшенных браузером нет$/]],
+        not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs('body', 'body'), hitOnce(`/ok.css?c=${n('css-csp')}`)] },
+      /* (б) строгий CSP + выброшенное объявление в чужой таблице: FAIL с файлом и строкой — и только он */
+      { name: n('css-csp-bad'), url: `${aUrl}/css-bad?c=${n('css-csp-bad')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^CSS: проверено 4 объявлений — таблиц 2,/, /^bad\.css:5 \.b \{ border: 1\.2% solid #F4F1EA \} — браузер выбросил$/]],
+        not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [hitOnce(`/bad.css?c=${n('css-csp-bad')}`)] },
+      /* (в) страница сама нарушает свой CSP (fetch чужого адреса): ошибка консоли остаётся — проверка её не глушит и своих не добавляет */
+      { name: n('css-csp-own'), url: `${aUrl}/css-own?c=${n('css-csp-own')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^загрузка /, /ошибок в консоли: .*(Content Security Policy|Content-Security-Policy)/], ['OK', /^CSS: проверено 3 объявлений/, /^выброшенных браузером нет$/]],
+        not: [[null, /^новые ошибки после шага css/]] },
+      /* таблица, которую сервер отдаёт один раз: прочитана из тела ответа (домен CSS у CDP перезапрашивал её и получал 403) */
+      { name: n('css-once'), url: `${aUrl}/css-once?c=${n('css-once')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^CSS: проверено 4 объявлений — таблиц 2,/, /^once\.css:5 \.b \{ border: 1\.2% solid #F4F1EA \} — браузер выбросил$/]],
+        not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs('body', 'body'), hitOnce(`/once.css?c=${n('css-once')}`)] },
+      /* запасной путь (тело ответа не берётся): своя таблица — запросом из Node, чужую сервер второй раз не отдал — WARN
+         «не прочитано», а не FAIL */
+      { name: n('css-unread'), url: `${aUrl}/css-once?c=${n('css-unread')}`, env: { RW_CSS_NO_BODY: '1' }, code: 0, verdict: 'WARN', args: a('--css'),
+        want: [['OK', /^CSS: проверено 1 объявлений — таблиц 1,/, /^выброшенных браузером нет$/], ['WARN', /^CSS: не прочитано таблиц 1$/, /^once\.css \(запрос из Node: HTTP 403; в браузере: тело ответа не бралось \(RW_CSS_NO_BODY\)\) — их объявления не проверены$/]],
+        not: [['FAIL', /./]], checks: [viaIs('node', null)] },
+      /* таблица на file:// (файл с BOM; в Firefox тела ответа нет — читается с диска) и таблица в адресе data: (текст — из
+         самого адреса): обе прочитаны, строки — как в файле */
+      { name: n('css-file'), file: 'css-file.html', code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^CSS: проверено 3 объявлений — таблиц 2,/, /^css-file\.css:4 \.b \{ width: 10 px \} — браузер выбросил \| css,\.c%7Bheight%3A5%20px%7D:1 \.c \{ height: 5 px \} — браузер выбросил$/]],
+        not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs(ff ? 'file' : 'body', 'data')] },
+      /* таблица, на которую сервер ответил 404 (своя и чужая): не прочитана — WARN «HTTP 404», в счёт таблиц не идёт, заново
+         не запрашивается (до правки 02.10 пустое тело такого ответа сходило за прочитанную пустую таблицу: «таблиц 3»).
+         FAIL в Chrome — от строки загрузки (404 в консоли); Firefox ошибку ответа в консоль не пишет — там итог WARN */
+      { name: n('css-404'), url: `${aUrl}/css-404?c=${n('css-404')}`, code: ff ? 0 : 1, verdict: ff ? 'WARN' : 'FAIL', args: a('--css'),
+        want: [['OK', /^CSS: проверено 1 объявлений — таблиц 1,/, /^выброшенных браузером нет$/], ['WARN', /^CSS: не прочитано таблиц 2$/, /^missing\.css \(HTTP 404\), missing\.css \(HTTP 404\) — их объявления не проверены$/]],
+        not: [[null, /^новые ошибки после шага css/]], checks: [viaIs('body', null, null), hitOnce(`/missing.css?c=${n('css-404')}`)] },
+      /* таблица по адресу blob: — в Chrome из тела ответа, в Firefox ответа в журнале сети нет: её читает сама страница
+         (fetch своего blob: в сеть не идёт); находка с номером строки, новых ошибок консоли нет */
+      { name: n('css-blob'), url: `${aUrl}/css-blob?c=${n('css-blob')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^CSS: проверено 3 объявлений — таблиц 2,/, /^[0-9a-f-]+:3 \.z \{ width: 10 px \} — браузер выбросил$/]],
+        not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs('body', ff ? 'page' : 'body')] },
+      /* то же при CSP, где connect-src не разрешает blob:. Chrome берёт тело ответа — находка на месте. Firefox тела не даёт, а
+         чтение из страницы само нарушило бы её CSP (ошибка консоли от проверки) — таблица не прочитана: WARN с причиной */
+      ff ? { name: n('css-blobcsp'), url: `${aUrl}/css-blobcsp?c=${n('css-blobcsp')}`, code: 0, verdict: 'WARN', args: a('--css'),
+        want: [['OK', /^CSS: проверено 1 объявлений — таблиц 1,/, /^выброшенных браузером нет$/], ['WARN', /^CSS: не прочитано таблиц 1$/, /^[0-9a-f-]+ \(адрес blob:, тела ответа браузер не отдал, а читать из страницы запрещает её CSP \(connect-src без blob:\)\) — их объявления не проверены$/]],
+        not: [[null, /^новые ошибки/], ['FAIL', /./]], checks: [viaIs('body', null)] }
+        : { name: n('css-blobcsp'), url: `${aUrl}/css-blobcsp?c=${n('css-blobcsp')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+          want: [['FAIL', /^CSS: проверено 3 объявлений — таблиц 2,/, /^[0-9a-f-]+:3 \.z \{ width: 10 px \} — браузер выбросил$/]],
+          not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs('body', 'body')] },
+      /* тот же запасной путь в Chrome (тело ответа не берётся): без CSP таблицу blob: читает страница, с CSP — WARN */
+      ...(ff ? [] : [
+        { name: 'css-blob-page', url: `${aUrl}/css-blob?c=css-blob-page`, env: { RW_CSS_NO_BODY: '1' }, code: 1, verdict: 'FAIL', args: ['--css'],
+          want: [['FAIL', /^CSS: проверено 3 объявлений — таблиц 2,/, /^[0-9a-f-]+:3 \.z \{ width: 10 px \} — браузер выбросил$/]],
+          not: [[null, /^новые ошибки/], [null, /^CSS: не прочитано/]], checks: [viaIs('node', 'page')] },
+        { name: 'css-blobcsp-page', url: `${aUrl}/css-blobcsp?c=css-blobcsp-page`, env: { RW_CSS_NO_BODY: '1' }, code: 0, verdict: 'WARN', args: ['--css'],
+          want: [['OK', /^CSS: проверено 1 объявлений — таблиц 1,/], ['WARN', /^CSS: не прочитано таблиц 1$/, /запрещает её CSP \(connect-src без blob:\)/]],
+          not: [[null, /^новые ошибки/], ['FAIL', /./]], checks: [viaIs('node', null)] },
+      ]),
+      /* номера строк — как были: своя таблица, чужая без CORS, <style> (со сдвигом строк в документе) и style="" */
+      { name: n('css-lines'), url: `${aUrl}/css-lines?c=${n('css-lines')}`, code: 1, verdict: 'FAIL', args: a('--css'),
+        want: [['FAIL', /^CSS: проверено 8 объявлений — таблиц 2, блоков <style> 1, атрибутов style="" 1 /, /^bad\.css:5 \.b \{ border: 1\.2% solid #F4F1EA \} — браузер выбросил \| <style>:6 \.s2 \{ height: 10 px \} — браузер выбросил \| style="" у p:1 x \{ width: 5 px \} — браузер выбросил$/]],
+        not: [[null, /^новые ошибки/]] },
+    ];
+  };
+  /* «текст перекрыт соседним блоком» на стенде covered.html: восемь находок по порядку сверху вниз, у каждой сверка снимком;
+     остальное на стенде (шапка, меню, окна, растянутая ссылка, стопка и веер слайдов, свой фон, значок, подложка, затухание,
+     слова-фон, движущийся блок, прозрачная строка, узор, картинка) — не находки; полупрозрачный PNG в фоне снят сверкой (2) */
+  const COV_WANT = ['figcaption.credit|div.card', 'p.note|div.banner', 'p.long|div.plate', 'p.g|div.grad', 'p.pseudo|a.cover', 'p.lt|div.late.in', 'p|div.pile__card', 'figcaption.vcredit|div.vcard'];
+  const covCheck = (j) => {
+    const s = ((j && j.steps) || []).find((x) => x.what === 'текст перекрыт соседним блоком'); const d = (s && s.data) || {}; const st = d.stat || {}; const list = d.coveredBy || [];
+    const got = list.map((x) => `${x.sig}|${x.by}`); const miss = [];
+    if (JSON.stringify(got) !== JSON.stringify(COV_WANT)) miss.push(`находки ${JSON.stringify(got)} — ждали ${JSON.stringify(COV_WANT)}`);
+    if (list.some((x) => x.proof !== 'снимок')) miss.push(`не у всех находок сверка снимком: ${list.map((x) => x.proof).join(', ')}`);
+    const long = list.find((x) => x.sig === 'p.long'); if (!long || long.lines !== 2 || long.of !== 5) miss.push(`p.long: строк ${long ? `${long.lines} из ${long.of}` : '—'} — ждали 2 из 5`);
+    if (st.refuted !== 2 || st.unsure || st.gone) miss.push(`сверка: текст виден сквозь блок ${st.refuted}, перекрывающий ушёл ${st.gone}, без сверки ${st.unsure} — ждали 2, 0, 0`);
+    const dr = (st.dropped || []).map((x) => `${x.sig}|${x.by}|${x.why}`);
+    if (JSON.stringify(dr) !== JSON.stringify(['p.up|div.pattern|refuted', 'p.uv|div.veil|refuted'])) miss.push(`снято сверкой (stat.dropped): ${JSON.stringify(dr)} — ждали строки под узором и под вуалью из полупрозрачного PNG`);
+    if (st.lines !== st.linesAll || st.capped || st.error) miss.push(`проверено строк ${st.lines} из ${st.linesAll}, предел «${st.capped}», ошибка «${st.error}» — ждали все строки без предела`);
+    const pr = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); const ov = (pr && pr.data && pr.data.overflow) || {};
+    if (ov.coveredByCount !== 8 || ov.coveredCount !== 1) miss.push(`в JSON строки прокрутки coveredByCount ${ov.coveredByCount}, coveredCount ${ov.coveredCount} — ждали 8 и 1`);
+    return miss.length ? miss.join('; ') : null;
+  };
+  /* стенд covered2.html — правило после независимой проверки 02.10: девять находок по порядку (кнопка, открывающая окно;
+     карточки в потоке со словом окна; миниатюра-ссылка; пустая плашка по размеру кнопки; скелет; плашка между точками
+     строки; .dialogue и .suggested-items), у каждой сверка снимком; колода карточек, «Показать полностью», настоящее окно
+     по слову в классе и перевёртыш с картинкой — молчат */
+  const COV2_WANT = ['p.t-open|a.btn.js-popup-open', 'p.t-card|div.modal-card', 'p.t-cookie|div.cookie-card', 'p.t-thumb|a.image-popup', 'button.t-btn|span.lid', 'p.t-skel|div.skel', 'p.t-gap|span.gap', 'p.t-dlg|div.dialogue', 'p.t-sug|div.suggested-items'];
+  const cov2Check = (j) => {
+    const s = ((j && j.steps) || []).find((x) => x.what === 'текст перекрыт соседним блоком'); const d = (s && s.data) || {}; const st = d.stat || {}; const list = d.coveredBy || [];
+    const got = list.map((x) => `${x.sig}|${x.by}`); const miss = [];
+    if (JSON.stringify(got) !== JSON.stringify(COV2_WANT)) miss.push(`находки ${JSON.stringify(got)} — ждали ${JSON.stringify(COV2_WANT)}`);
+    if (list.some((x) => x.proof !== 'снимок')) miss.push(`не у всех находок сверка снимком: ${list.map((x) => x.proof).join(', ')}`);
+    if (st.refuted || st.unsure || st.gone) miss.push(`сверка сняла: текст виден ${st.refuted}, перекрывающий ушёл ${st.gone}, без сверки ${st.unsure} — ждали 0, 0, 0`);
+    if (st.lines !== st.linesAll || st.capped || st.error) miss.push(`проверено строк ${st.lines} из ${st.linesAll}, предел «${st.capped}», ошибка «${st.error}» — ждали все строки без предела`);
+    return miss.length ? miss.join('; ') : null;
+  };
+  /* стенд covered-side.html — следы проверки: что увидела страница за шаги --scroll и --css (атрибут style дословно,
+     записей MutationObserver по атрибуту style — 0, событий transition* — 0, переход цвета идёт) */
+  const TRACES = 'JSON.stringify((function (t) { return { style: t.style, tr: t.tr, keep: t.keep, run: t.run }; })(window.__traces()))';
+  const TRACES_WANT = '{"style":0,"tr":[],"keep":"color: #333; colr: red; width: 10 px","run":true}';
+  const sideCheck = (j) => {
+    const s = ((j && j.steps) || []).find((x) => x.what === 'текст перекрыт соседним блоком'); const list = (s && s.data && s.data.coveredBy) || [];
+    const got = list.map((x) => `${x.sig}|${x.proof}`).join(', ');
+    return got === 'p.keep|снимок, p#pulse.go|снимок, p.all|снимок' ? null : `находки и сверка: «${got}» — ждали три строки под карточками, у каждой сверка снимком (текст с transition: all спрятан сразу)`;
+  };
   /* цвет плашки стенда emulate.html */
   const FLAG_BG = "getComputedStyle(document.getElementById('flag')).backgroundColor";
   const CASES = [
@@ -3248,7 +3603,7 @@ async function selftest() {
         ['WARN', /^наведение: цели правила нет у наведённых элементов: 1$/, /\.box:hover \.box__tip — у этого \.box нет \.box__tip \(в DOM таких 1 — у других\)/]],
       not: [['WARN', /перебито/, /card__tip|box__tip/], ['WARN', /мёртвый селектор/, /box__tip/]] },
     { name: 'scroll', file: 'scroll.html', code: 0, verdict: 'OK', args: ['--eval', "document.getElementById('end').scrollIntoView()", '--scroll'],
-      want: [['OK', /^прокрутка/, /ждали появления: 1 \(section\.reveal(\.in)? «Появляется при прокрутке»\) — не появились: 0/], ['OK', /^прокрутка/, /показываются при наведении \(проверено наведением.*\): 1 \(span\.card__tip/], ['OK', /^прокрутка/, /вертикальное письмо сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/], ['OK', /^текст перекрыт картинкой$/, /^нет/]],
+      want: [['OK', /^прокрутка/, /ждали появления: 1 \(section\.reveal(\.in)? «Появляется при прокрутке»\) — не появились: 0/], ['OK', /^прокрутка/, /показываются при наведении \(проверено наведением.*\): 1 \(span\.card__tip/], ['OK', /^прокрутка/, /вертикальное письмо сверено по высоте и сбоку \(с краем глифа\), в коробке: span «Забронировать»/], ['OK', /^текст перекрыт картинкой$/, /^нет/], ['OK', /^текст перекрыт соседним блоком$/, /^нет: /]],
       not: [[null, /^прокрутка/, /rail__tip|текст шире коробки/]] },
     /* подсказка — только то, что наведение действительно показывает: приглушение соседей и проигравшее правило — WARN */
     { name: 'reveal-hover', file: 'reveal-hover.html', code: 0, verdict: 'WARN', args: ['--scroll'],
@@ -3480,6 +3835,37 @@ async function selftest() {
     { name: 'jump-reduced', file: 'jump.html', code: 0, verdict: 'OK', args: ['--reduced-motion', '--scroll'],
       want: [['OK', /^прокрутка/, /переходы появления не сверялись: «меньше движения» \(reduce\)/]], not: [['WARN', /сменилось скачком/]],
       checks: [(j) => { const s = ((j && j.steps) || []).find((x) => /^прокрутка/.test(x.what)); const m = s && s.data && s.data.motion; return m && m.reduced && m.jumps === 0 ? null : `в JSON motion ${JSON.stringify(m && { reduced: m.reduced, jumps: m.jumps })} — ждали reduced и 0`; }] },
+    /* текст перекрыт соседним блоком (02.10): стенд covered.html на desktop и на 320; предел по числу строк — на странице
+       сервера с 8200 узлами текста (строка OK, но с «ПРЕДЕЛ: …» и числом проверенных строк) */
+    { name: 'covered', file: 'covered.html', code: 0, verdict: 'WARN', warns: 2, args: ['--scroll'],
+      want: [['WARN', /^текст перекрыт соседним блоком$/, /^8 мест: figcaption\.credit «Фото: И\. Петров» под div\.card \(y \d+\) \| .*p\.long «Четвёртая строка под плашкой» под div\.plate \(y \d+, строк 2 из 5\) \| .* и ещё 3 — .* · проверено строк текста (\d+) из \1 за \d+ шаг\S* прокрутки · на снимке текст виден сквозь блок \(прозрачная картинка в фоне, маска\) — не находка: 2$/],
+        ['WARN', /^текст перекрыт картинкой$/, /^1 мест: p\.ui .* под img\.pic/]],
+      checks: [covCheck] },
+    { name: 'covered-320', file: 'covered.html', code: 0, verdict: 'WARN', warns: 2, args: ['--viewport', 'mobile-s', '--scroll'],
+      want: [['WARN', /^текст перекрыт соседним блоком$/, /^8 мест: figcaption\.credit .* и ещё 3 — /], ['WARN', /^текст перекрыт картинкой$/, /^1 мест: p\.ui .* под img\.pic/]],
+      checks: [covCheck] },
+    /* сработал предел — строка не OK, а INFO: «OK … нет» читалось бы как «проверена вся страница» */
+    { name: 'covered-limit', url: `${aUrl}/many`, code: 0, args: ['--scroll'],
+      want: [['INFO', /^текст перекрыт соседним блоком$/, /^среди проверенных строк нет, но сработал предел — страница проверена не вся: «нет» относится только к проверенному · проверено строк текста 6000 из 8000 .* · ПРЕДЕЛ: строк больше 6000 — ниже y \d+ не проверено; текстовых узлов больше 8000 — остальные не проверены$/]],
+      not: [['OK', /^текст перекрыт соседним блоком$/]] },
+    /* проверена меньшая часть строк (страницу прокручивает body — проход видит один экран): INFO с числом, не OK */
+    { name: 'covered-few', url: `${aUrl}/few`, code: 0, args: ['--scroll'],
+      want: [['INFO', /^текст перекрыт соседним блоком$/, /^среди проверенных строк нет, но проверена меньшая часть — (\d+) из (\d+) \(\d+ %\): «нет» относится только к проверенному · проверено строк текста \1 из \2 за \d+ шаг\S* прокрутки \(не проверено: /]],
+      not: [['OK', /^текст перекрыт соседним блоком$/], ['WARN', /^текст перекрыт соседним блоком$/]] },
+    /* правило после независимой проверки 02.10: стенд covered2.html на desktop и на 320 */
+    { name: 'covered2', file: 'covered2.html', code: 0, verdict: 'WARN', args: ['--scroll'],
+      want: [['WARN', /^текст перекрыт соседним блоком$/, /^9 мест: p\.t-open «Перезвоним в течение пятнадцати минут» под a\.btn\.js-popup-open \(y \d+\) \| p\.t-card .* под div\.modal-card /]],
+      checks: [cov2Check] },
+    { name: 'covered2-320', file: 'covered2.html', code: 0, verdict: 'WARN', args: ['--viewport', 'mobile-s', '--scroll'],
+      want: [['WARN', /^текст перекрыт соседним блоком$/, /^9 мест: p\.t-open /]],
+      checks: [cov2Check] },
+    /* проверка не оставляет следов: --css после --scroll в одном запуске видит выброшенное объявление в атрибуте style
+       (до правки 02.10 сверка снимком переписывала атрибут, и FAIL пропадал), переход цвета не оборван, событий transition*
+       и правок атрибута style страница не увидела */
+    { name: 'covered-css', file: 'covered-side.html', code: 1, verdict: 'FAIL', args: ['--scroll', '--css', '--eval', TRACES, '--expect', TRACES_WANT],
+      want: [['WARN', /^текст перекрыт соседним блоком$/, /^3 места: p\.keep .* под div\.cv /], ['FAIL', /^CSS: проверено \d+ объявлений — таблиц 0, блоков <style> 1, атрибутов style="" 1 /, /^style="" у p\.keep:1 x \{ width: 10 px \} — браузер выбросил$/], ['OK', /^eval .* = \{"style":0,"tr":\[\],"keep":"color: #333; colr: red; width: 10 px","run":true\}$/, /совпало/]],
+      checks: [sideCheck] },
+    ...cssCases(false),
     /* ошибки аргументов новых флагов — до браузера, код 2, протокола нет */
     { name: 'args-emulate', file: 'emulate.html', code: 2, noJson: true, args: ['--emulate-motion', 'fast'], text: /--emulate-motion fast: нужно reduce или no-preference/ },
     { name: 'args-nojs', file: 'nojs.html', code: 2, noJson: true, args: ['--no-js', '--no-js=0'], text: /--no-js задан дважды: «вкл» и «выкл»/ },
@@ -3489,7 +3875,9 @@ async function selftest() {
   ];
   /* проверки 30.09 — и в Firefox (браузер пользователя): якорь, блок шире колонки, фокус в слое, окно cookie, переход не шёл
      (и посторонняя --переменная, и шторки без отметки) */
-  if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep', 'jump', 'jump-vars', 'jump-gaps']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
+  if (findBrowser('firefox')) for (const n of ['anchor', 'wide', 'focus', 'consent', 'consent-keep', 'jump', 'jump-vars', 'jump-gaps', 'covered', 'covered2', 'covered-css']) { const c = CASES.find((x) => x.name === n); if (c) CASES.push({ ...c, name: `${n}-ff`, args: ['--browser', 'firefox', ...c.args] }); }
+  /* --css в Firefox (браузер пользователя): тело ответа — через BiDi network.getData; lines — только в Chrome (сдвиг строк <style> один) */
+  if (findBrowser('firefox')) CASES.push(...cssCases(true).filter((c) => !/^css-lines/.test(c.name)));
   /* Firefox без выключения JavaScript и эмуляции медиа на вкладке (157, 30.09): WARN «не поддерживается», запуск идёт дальше.
      Научится (BiDi emulation.setScriptingEnabled, эмуляция медиа) — ждём того же, что в Chrome */
   if (findBrowser('firefox')) {
@@ -3508,7 +3896,7 @@ async function selftest() {
       }] });
   }
   if (!C) console.log('     iframe-xsite пропущен: сервер на ::1 не открылся (нет IPv6)');
-  /* часть случаев: RW_SELFTEST_ONLY — регулярное выражение по имени (полный прогон — около десяти минут; после правки одной
+  /* часть случаев: RW_SELFTEST_ONLY — регулярное выражение по имени (полный прогон — около тринадцати минут; после правки одной
      проверки хватает её случаев). Итог тогда — «выбрано N из M», а не «все»: частичный прогон за полный не сойдёт */
   const ALL = CASES.length; let only = null;
   if (process.env.RW_SELFTEST_ONLY) {

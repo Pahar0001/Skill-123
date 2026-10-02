@@ -16,7 +16,15 @@
  *              такой же блок без aria-hidden — FAIL; decor-real.html (и ?plain=1) — настоящий текст в разметке декора:
  *              заголовок, разбитый на слова (aria-label у заголовка, aria-hidden у слов — GSAP SplitText), за краем
  *              экрана (FAIL) и обрезан в карточке, надпись со слогами под aria-hidden и sr-only копией обрезана, меню
- *              WAI-ARIA (li role=none > a) обрезано; слова-фон рядом с заголовком того же смысла — молчат (скептик 30.09)
+ *              WAI-ARIA (li role=none > a) обрезано; слова-фон рядом с заголовком того же смысла — молчат (скептик 30.09);
+ *              findOverflow({ coveredBy: true }) на ../runtime/covered.html — «текст перекрыт соседним блоком»: восемь
+ *              находок со сверкой снимком, слои по замыслу молчат, прежние поля и вердикт те же, страница возвращена как
+ *              была; без coveredBy новых полей нет; предел по числу строк на странице из 8200 узлов текста;
+ *              ../runtime/covered2.html — правило после независимой проверки 02.10: слово окна в классе кнопки, ссылки и
+ *              блока в потоке, пустая плашка по размеру текста, плашка между точками строки — находки; колода карточек,
+ *              «Показать полностью», окно по слову в классе, перевёртыш — молчат; ../runtime/covered-side.html —
+ *              проверка не оставляет следов: атрибут style до и после строка в строку, записей MutationObserver и
+ *              событий transition* нет, идущий переход цвета не оборван
  *   modal      checkOpenModal: окно выбора города через 1,5 с (крестик скрыт — предложен пункт списка; ждали из-за
  *              признаков окна), видимый крестик (?close=1) — предложен он, <dialog> с «Закрыть», страница без окон —
  *              тихо и без ожидания 2 с; не окно — закреплённый первый экран, половина экрана «пополам», страница в
@@ -143,6 +151,66 @@ if (needBrowser) {
         const r6 = await findOverflow(p6); await p6.close();
         const t6 = [...r6.clipCut, ...r6.textWider].map((x) => x.text);
         check('overflow: слова-фон «меню» и «БАР» без aria-hidden — находка (контроль)', t6.includes('меню') && t6.includes('БАР'), JSON.stringify(t6));
+      }
+      /* текст перекрыт соседним блоком (02.10): по умолчанию выключено — ответ прежний поле в поле; coveredBy: true — восемь
+         находок стенда ../runtime/covered.html со сверкой снимком, остальное на стенде молчит; прежние поля и вердикт те же,
+         прокрутка и стили страницы возвращены */
+      {
+        const p7 = await open(pathToFileURL(path.join(here, '..', 'runtime', 'covered.html')).href, 'desktop', { settle: 500, modalCheck: false });
+        await p7.evaluate(() => window.scrollTo(0, 300)); await sleep(200);
+        const ra = await findOverflow(p7);
+        check('overflow: без coveredBy полей coveredBy, coveredByCount, coveredByStat в ответе нет (discover и перепроверка после клика получают прежний ответ)', !('coveredBy' in ra) && !('coveredByCount' in ra) && !('coveredByStat' in ra), Object.keys(ra).join(','));
+        const state = () => p7.evaluate(() => ({ y: scrollY, styled: document.querySelectorAll('[style]').length, styles: [...document.querySelectorAll('[style]')].map((e) => e.getAttribute('style')).join(' | '), sheets: document.adoptedStyleSheets.length, hidden: document.querySelectorAll('[style*="visibility"], [style*="transition"]').length, cov: typeof window.__rwCov }));
+        const before = await state();
+        const rb = await findOverflow(p7, { coveredBy: true });
+        const after = await state();
+        const got = (rb.coveredBy || []).map((x) => `${x.sig}|${x.by}`);
+        const wantCov = ['figcaption.credit|div.card', 'p.note|div.banner', 'p.long|div.plate', 'p.g|div.grad', 'p.pseudo|a.cover', 'p.lt|div.late.in', 'p|div.pile__card', 'figcaption.vcredit|div.vcard'];
+        check('overflow: coveredBy — восемь перекрытий стенда covered.html сверху вниз: подпись под карточкой, строка под фоном-картинкой, под плашкой, под градиентом, под псевдоэлементом, под въехавшим блоком, под соседней карточкой, вертикальная подпись (закрыта верхняя треть)', JSON.stringify(got) === JSON.stringify(wantCov) && rb.coveredByCount === 8, JSON.stringify(got));
+        const st7 = rb.coveredByStat || {};
+        check('overflow: coveredBy — у каждой находки сверка снимком; полупрозрачный PNG в фоне (узор и вуаль) снят сверкой', (rb.coveredBy || []).every((x) => x.proof === 'снимок') && st7.refuted === 2 && !st7.unsure && !st7.gone && JSON.stringify((st7.dropped || []).map((x) => `${x.sig}|${x.by}|${x.why}`)) === '["p.up|div.pattern|refuted","p.uv|div.veil|refuted"]', JSON.stringify(st7));
+        const lg = (rb.coveredBy || []).find((x) => x.sig === 'p.long');
+        check('overflow: coveredBy — перекрыта часть строк: p.long — 2 из 5', !!lg && lg.lines === 2 && lg.of === 5, JSON.stringify(lg));
+        check('overflow: coveredBy — липкая шапка, нижняя панель, меню, диалог, окно, растянутая ссылка, слайды стопкой и веером, свой фон, значок, подложка, затухание, слова-фон, бесконечная анимация, прозрачная строка, картинка (она в covered) — молчат', !(rb.coveredBy || []).some((x) => !wantCov.includes(`${x.sig}|${x.by}`)) && rb.coveredCount === 1, JSON.stringify(got));
+        check('overflow: coveredBy — проверены все строки, предел не сработал', st7.lines > 0 && st7.lines === st7.linesAll && !st7.capped && !st7.error, JSON.stringify(st7));
+        const strip = (r) => { const { coveredBy, coveredByCount, coveredByStat, ...rest } = r; return JSON.stringify(rest); };
+        check('overflow: coveredBy не меняет прежние поля, вердикт и сводку (covered, coveredCount, verdict, summary — как без него)', strip(ra) === strip(rb), `${strip(ra).slice(0, 180)} ≠ ${strip(rb).slice(0, 180)}`);
+        check('overflow: после coveredBy прокрутка на месте, атрибуты style прежние строка в строку, своя таблица сверки снята, состояние проверки со страницы убрано', before.y === after.y && before.y === 300 && before.styled === after.styled && before.styles === after.styles && before.sheets === after.sheets && after.hidden === 0 && after.cov === 'undefined', JSON.stringify({ before, after }));
+        await p7.close();
+        /* правило после независимой проверки 02.10 (стенд ../runtime/covered2.html): кнопка, открывающая окно, карточки в
+           потоке со словом окна, миниатюра-ссылка, пустая плашка по размеру кнопки, скелет, плашка между точками строки,
+           .dialogue и .suggested-items — находки; колода карточек, «Показать полностью», настоящее окно по слову в классе и
+           перевёртыш с картинкой на лицевой стороне — молчат */
+        {
+          const p9 = await open(pathToFileURL(path.join(here, '..', 'runtime', 'covered2.html')).href, 'desktop', { settle: 500, modalCheck: false });
+          const r9 = await findOverflow(p9, { coveredBy: true }); await p9.close();
+          const got9 = (r9.coveredBy || []).map((x) => `${x.sig}|${x.by}`); const st9 = r9.coveredByStat || {};
+          const want9 = ['p.t-open|a.btn.js-popup-open', 'p.t-card|div.modal-card', 'p.t-cookie|div.cookie-card', 'p.t-thumb|a.image-popup', 'button.t-btn|span.lid', 'p.t-skel|div.skel', 'p.t-gap|span.gap', 'p.t-dlg|div.dialogue', 'p.t-sug|div.suggested-items'];
+          check('overflow: coveredBy — слово окна в классе кнопки, ссылки и блока в потоке не делает их окном: a.js-popup-open, .modal-card, .cookie-card, a.image-popup на тексте — находки; .dialogue и .suggested-items — не слова «dialog» и «suggest»', want9.filter((w) => !/t-btn|t-skel|t-gap/.test(w)).every((w) => got9.includes(w)), JSON.stringify(got9));
+          check('overflow: coveredBy — пустая плашка точно по размеру блока текста (inset: 0 на кнопке, скелет) — находка, а не «стопка слайдов»', got9.includes('button.t-btn|span.lid') && got9.includes('p.t-skel|div.skel'), JSON.stringify(got9));
+          check('overflow: coveredBy — плашка между 20 и 45 % длинной строки видна точкам 32,5 и 67,5 %', got9.includes('p.t-gap|span.gap'), JSON.stringify(got9));
+          check('overflow: coveredBy — колода карточек (со сдвигом и с z-index и transform), «Показать полностью», окно .city-popup, перевёртыш с картинкой — молчат; девять находок по порядку, у каждой сверка снимком', JSON.stringify(got9) === JSON.stringify(want9) && (r9.coveredBy || []).every((x) => x.proof === 'снимок') && !st9.refuted && !st9.unsure && !st9.gone && st9.lines === st9.linesAll, JSON.stringify({ got9, st9 }));
+        }
+        /* проверка не оставляет следов (стенд ../runtime/covered-side.html): сверка прячет текст правилом в своей
+           сконструированной таблице — атрибут style с выброшенными объявлениями тот же до знака (раньше браузер пересобирал
+           его, и --css после --scroll терял FAIL), страница не видит ни записей MutationObserver, ни событий transition*,
+           идущий переход цвета не оборван, текст с transition: all спрятан сразу */
+        {
+          const p10 = await open(pathToFileURL(path.join(here, '..', 'runtime', 'covered-side.html')).href, 'desktop', { settle: 500, modalCheck: false });
+          const snap = () => p10.evaluate(() => ({ styles: [...document.querySelectorAll('[style]')].map((e) => e.getAttribute('style')), t: window.__traces(), sheets: document.adoptedStyleSheets.length, red: parseInt((getComputedStyle(document.getElementById('pulse')).color.match(/\d+/) || ['-1'])[0], 10) }));
+          const b10 = await snap(); const r10 = await findOverflow(p10, { coveredBy: true }); const a10 = await snap(); await p10.close();
+          check('overflow: coveredBy — атрибут style до и после сверки — строка в строку, вместе с выброшенными объявлениями («color: #333; colr: red; width: 10 px»)', JSON.stringify(b10.styles) === JSON.stringify(a10.styles) && a10.styles.includes('color: #333; colr: red; width: 10 px'), JSON.stringify({ before: b10.styles, after: a10.styles }));
+          check('overflow: coveredBy — страница не увидела ни одной записи MutationObserver (атрибуты, узлы) и ни одного события transition*; таблица сверки снята', b10.t.attr === 0 && a10.t.attr === 0 && a10.t.nodes === 0 && a10.t.tr.length === 0 && a10.sheets === b10.sheets, JSON.stringify({ before: b10.t, after: a10.t, sheets: [b10.sheets, a10.sheets] }));
+          check('overflow: coveredBy — идущий переход цвета у перекрытого текста не оборван: та же анимация идёт, цвет между начальным и конечным', a10.t.run === true && a10.red > b10.red && a10.red < 255, JSON.stringify({ run: a10.t.run, red: [b10.red, a10.red] }));
+          check('overflow: coveredBy — три находки стенда следов, у каждой сверка снимком (текст с transition: all спрятан сразу, а не через 0,4 с)', JSON.stringify((r10.coveredBy || []).map((x) => `${x.sig}|${x.proof}`)) === '["p.keep|снимок","p#pulse.go|снимок","p.all|снимок"]', JSON.stringify(r10.coveredBy));
+        }
+        /* предел: 8200 коротких узлов текста — проверено 6000 строк, предел назван числом, проход — не десятки секунд */
+        const many = path.join(out, 'covered-many.html');
+        fs.writeFileSync(many, `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Много строк</title><style>body { margin: 0; font: 16px/24px Arial, sans-serif; }</style></head><body><main>${'<span>ая</span> '.repeat(8200)}</main></body></html>`);
+        const p8 = await open(pathToFileURL(many).href, 'desktop', { settle: 300, modalCheck: false });
+        const r8 = await findOverflow(p8, { coveredBy: true }); await p8.close();
+        const st8 = r8.coveredByStat || {};
+        check('overflow: coveredBy — предел: 6000 строк из 8000, остальные узлы не взяты, предел назван числом, проход короче 15 с', st8.lines === 6000 && st8.linesAll === 8000 && /строк больше 6000/.test(st8.capped || '') && /текстовых узлов больше 8000/.test(st8.capped || '') && st8.ms < 15000 && r8.coveredByCount === 0, JSON.stringify(st8));
       }
       takeWarnings(); takeNotes();
     }

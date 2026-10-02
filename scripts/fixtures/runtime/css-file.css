@@ -1,0 +1,5 @@
+﻿/* стенд runtime.mjs --css (случаи css-file, css-file-ff): таблица по ссылке на file://, в начале файла BOM */
+.a { color: red; }
+.b {
+  width: 10 px;
+}

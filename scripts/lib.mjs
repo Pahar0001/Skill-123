@@ -1603,8 +1603,10 @@ export async function contactSheet(files, outFile, { cols = 4, width = 360, gap 
 
 /* Переполнение по ширине: что торчит за край экрана. Выполняется в странице
    через evaluateWith, sig и eff — зависимости. */
-function overflowInPage({ tol, limit }) {
+function overflowInPage({ tol, limit, cov, covK, covSeen }) {
   const de = document.documentElement; const vw = de.clientWidth;
+  /* пределы проверки 5 (текст перекрыт соседним блоком): текстовых узлов, строк на узел, строк всего */
+  const COV_NODES = 8000, COV_PER_NODE = 24, COV_LINES = 6000;
   const csMemo = new Map(); const cs = (e) => { let s = csMemo.get(e); if (!s) { s = getComputedStyle(e); csMemo.set(e, s); } return s; };
   const opMemo = new Map(); const op = (e) => { if (!opMemo.has(e)) opMemo.set(e, eff(e)); return opMemo.get(e); };
   const parentOf = (e) => { if (e.parentElement) return e.parentElement; const r = e.getRootNode && e.getRootNode(); return r && r !== document && r.host ? r.host : null; };
@@ -1711,6 +1713,433 @@ function overflowInPage({ tol, limit }) {
     addClipCut(n, par, box, clip, tr, 'метка');
     return true;
   };
+  /* 5. текст перекрыт соседним блоком (WARN coveredBy; только по просьбе — findOverflow({ coveredBy: true })).
+     Откуда: подпись автора на фото лежала под карточкой внахлёст (zel-ugolok, 01.10) — на листах не замечено, проверка 4
+     молчала (карточка — не картинка), поймал только a11y контрастом 1.05. Проверка 4 остаётся как была.
+     Как: findOverflow прокручивает страницу по-настоящему шагами в 0,75 окна (скрипты страницы успевают отработать — у
+     параллакса и «умной» прокрутки нет устаревших сдвигов; закреплённое встаёт на место) и на каждом шаге зовёт этот код
+     (cov: 'step'). Здесь — только строки текста, видные в окне сейчас: строка — прямоугольник Range.getClientRects() от
+     4×4 px, точки — середина по высоте, 15 %, 50 % и 85 % ширины (у строки уже 24 px — одна середина, у строки от
+     240 px — ещё 32,5 % и 67,5 %; у вертикального
+     письма — те же доли по высоте, середина по ширине: подписи авторов на фото у сайта, откуда правило, вертикальные). В точке
+     elementFromPoint: сверху сам текст (его элемент, потомок или предок) — видно, дальше не смотрим. Иначе
+     elementsFromPoint: всё, что выше текста и ему не предок и не потомок, — «чужое»; кандидат — если чужое в этой точке
+     НЕПРОЗРАЧНО ПО СТИЛЯМ и не слой по замыслу. Одна находка — пара «блок текста — кто перекрыл»; lines из of — сколько
+     проверенных строк блока задето (перекрыта часть строк — тоже находка).
+     Непрозрачно по стилям (solid, opaqueAt): итоговая opacity от 0.9, mix-blend-mode normal и
+       наверняка (2) · фон-цвет с альфой от 0.9 — в своей коробке элемента (точка внутри его getClientRects);
+                     · градиент без единой прозрачной точки (альфа всех цветов от 0.9) на всю коробку;
+                     · файл .jpg / .jpeg в фоне с background-size cover или 100% 100% (у JPEG прозрачности нет);
+       возможно (1)  · любой другой файл в фоне (png, webp, avif, svg, data:, узор-плитка) — прозрачность пикселей по
+                       стилям не узнать;
+                     · img, video, canvas, iframe, object, embed от 40 px (пара, которую уже назвала проверка 4, второй
+                       раз не идёт);
+                     · точка вне своей коробки элемента (растянутый ::before / ::after) и у псевдоэлемента плотный фон:
+                       где лежит псевдоэлемент, по стилям не узнать.
+     Не кандидат: прозрачная накладка, растянутая ссылка a::after без фона, блок без фона, градиент-затухание («читать
+     дальше»), полупрозрачная подложка (альфа ниже 0.9), svg-элемент (рисунок — дело проверки 4).
+     Сверка снимком (findOverflow, первые COV_VERIFY кандидатов сверху страницы): страница прокручена к кандидату, вырезка
+     у точки строки (полторы высоты строки в ширину, не шире строки и самого перекрывающего) как есть и с невидимым
+     элементом текста (visibility: hidden на миг — правилом в своей сконструированной таблице стилей: DOM и атрибут style
+     не трогаются, идущие переходы не обрываются; как — у шага hide ниже). Ничего не изменилось —
+     буквы и правда не видны: находка, proof «снимок». Изменилось от 0,5 % пикселей — текст просвечивает (прозрачный PNG,
+     узор, маска): не находка, счётчик refuted. Перекрывающего в точке уже нет (состояние сменилось: параллакс, слайд
+     ушёл) — не находка, счётчик gone. Не сверено (кандидатов больше предела, нет sharp, снимок не вышел, переход так и
+     идёт): «наверняка» остаётся находкой с proof «стили», «возможно» — не находка (счётчик unsure): лучше пропустить
+     спорное.
+     Признак «ошибка вёрстки, а не слой по замыслу». Слой по замыслу узнаётся по ПЕРЕКРЫВАЮЩЕМУ (от него вверх до общего с
+     текстом предка) — и тогда не находка:
+       · закреплён: position fixed или sticky (шапка, нижняя панель, кнопка чата, липкие секции стопкой) — строка под
+         таким слоем перепроверяется на соседнем шаге, где слой с неё уже съехал; обёртка-страница на position: fixed
+         (GSAP ScrollSmoother: закрывает окно и держит от трети элементов) слоем не считается;
+       · окно или меню: dialog[open], [popover], aria-modal, role dialog / alertdialog / menu / menubar / listbox /
+         tooltip; либо блок вне потока (position absolute или fixed — сам или его предок до общего с текстом), в классе
+         или id которого есть слово окна, и это не кнопка и не ссылка. Слова: dropdown, submenu, megamenu, popover,
+         popup, tooltip, tippy, offcanvas, snackbar, cookie, consent, gdpr, lightbox, fancybox, datepicker, flatpickr,
+         autocomplete, autosuggest, select2 — по началу слова; modal, dialog, drawer, toast, suggest, suggestion — только
+         словом целиком (dialogue и suggested — не окна). «menu» в список не входит: у ресторана это раздел с блюдами.
+         Блок в потоке с таким словом (.modal-card, .cookie-card) и кнопка, открывающая окно (a.js-popup-open,
+         button.open-modal, миниатюра a.image-popup), — обычные блоки: легли на текст — находка;
+       · раскрыто кнопкой: position absolute и перед ним сосед с aria-expanded="true", или на его id ссылается
+         [aria-expanded="true"][aria-controls], или он — содержимое details[open], или лежит в nav / role=navigation;
+       · стопка: ветка текста и ветка перекрывающего под общим предком — два содержательных блока-близнеца (тот же тег,
+         в обоих есть текст, картинка или файл в фоне), и коробки совпадают от 0.85 (пересечение к объединению) —
+         слайды, вкладки, стороны карточки-перевёртыша, сложенные друг на друга (неактивный под активным); или обе ветки —
+         слайды одной ленты либо панели вкладок (класс со словом slide, carousel-item, tab-pane, tabpanel; role=tabpanel;
+         aria-roledescription со словом slide): соседние слайды ложатся друг на друга и не стопкой («веер», coverflow);
+         или колода: близнецы с тем же первым классом, обе вне потока или сдвинуты transform, коробки совпадают от 0.5
+         напрямую либо по цепочке таких же соседей (карточки, которые скрипт перекладывает по таймеру; отзывы колодой
+         со сдвигом). Пустая плашка по размеру блока текста — не стопка: находка;
+       · кнопка «Показать полностью»: перекрывающий — кнопка или ссылка внутри того же предка, который обрезает этот
+         текст по высоте (свёрнутое описание);
+       · движется без конца: у него или предка идёт бесконечная анимация сдвига, прозрачности, обрезки или размера
+         (бегущая строка, пульс).
+     Переход с концом (появление по прокрутке) у перекрывающего или у текста — не исключение, а отсрочка: после каждой
+     прокрутки проход ждёт конца конечных анимаций и переходов (settleAnimations: до COV_SETTLE мс на шаг, COV_SETTLE_ALL мс
+     на проход) — блок успевает доехать на своё место; не успокоилось — строка откладывается до соседнего шага, а не
+     дождалась и там — в «не проверено: в переходе».
+     По ТЕКСТУ — не находка: декор (aria-hidden, role presentation / none — правило decor выше), сам закреплён (fixed /
+     sticky: подвал, открывающийся из-под страницы), итоговая opacity до 0.05, прозрачный цвет букв, z-index меньше 0 у
+     него или предка (нарочно отправлен назад: слово-фон), сам в бесконечной анимации, текст svg, строка обрезана предком
+     или не ловит указатель (в точке его нет). Всё остальное — карточка, плашка, баннер, соседняя секция с фоном, которые
+     в обычном потоке или absolute легли на чужой текст, — находка.
+     Не видит: перекрывающее с pointer-events: none и текст с ним же (elementsFromPoint их не отдаёт); фон с альфой ниже
+     0.9 и opacity ниже 0.9 (мутная подложка — не «закрыто»); псевдоэлементы предков текста (::before секции поверх её
+     же текста) и фон псевдоэлемента внутри коробки перекрывающего (у самого блока фона нет, а его ::before с фоном лёг на
+     текст); содержательные блоки-близнецы одного размера, по ошибке вставшие стопкой, и близнецы вне потока, наехавшие
+     друг на друга больше чем наполовину (приняты за колоду); перекрытие внутри закреплённого контейнера (плашка легла
+     на цену в sticky-колонке товара: и текст, и перекрывающий закреплены — не проверяются); перекрытие уже промежутка
+     между точками строки (плашка на 20–30 % длинной строки); absolute-блок внутри nav, по ошибке свесившийся на
+     текст (любое absolute в nav считается меню); sticky-блок, который не прилип, а просто лёг на текст; открытое самодельное меню
+     без aria, слова окна и nav выйдет находкой, как и стрелка карусели с плотным фоном над текстом слайда и
+     слово-украшение без aria-hidden, уходящее под соседний блок, — решают глаза; текст под видео и холстом сверх проверки 4 (кадр
+     меняется — снимок «просвечивает»); сдвиг, который ведёт скрипт по кадрам через style (не переход и не анимация —
+     «движется» не узнаётся; спасает сверка: перекрывающего на месте уже нет — не находка); текст, который на всех шагах
+     оставался под закреплённым слоем (открытое меню на весь экран); строки сверх пределов — COV_NODES узлов,
+     COV_PER_NODE строк на узел (равномерно по абзацу), COV_LINES строк всего; теневой DOM и iframe. Перекрытое до
+     наведения (обложка карточки уезжает по :hover) — находка: ни по стилям, ни по снимку не отличить, решают глаза. */
+  if (cov) {
+    const S = window.__rwCov;
+    if (cov !== 'begin' && !S) return { coveredBy: [], coveredByCount: 0, coveredByStat: { lines: 0, linesAll: 0, error: 'состояние проверки на странице потеряно (документ сменился)' } };
+    if (cov !== 'begin') {
+      const vh = innerHeight; const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null;
+      const off = sc ? sc.scrollTop : scrollY;
+      const LAYER = 1; /* в точке сверху закреплённый слой: строку проверит соседний шаг */
+      const MOVING = 2; /* перекрывающий или сам текст всё ещё в переходе (ожидание после прокрутки не помогло): строку проверит соседний шаг */
+      const alphaOf = (c) => {
+        c = String(c || '').trim(); if (!c || c === 'transparent') return 0;
+        const m = c.match(/^rgba?\(([^)]+)\)$/); if (m && m[1].includes(',')) { const p = m[1].split(','); return p.length > 3 ? parseFloat(p[3]) : 1; }
+        const s = c.match(/\/\s*([\d.]+)(%?)\s*\)$/); return s ? (s[2] ? parseFloat(s[1]) / 100 : parseFloat(s[1])) : 1;
+      };
+      /* слои фона: запятые верхнего уровня (внутри url() и градиентов — не разделители) */
+      const layersOf = (v) => { const out = []; let d = 0, cur = ''; for (const ch of String(v || '')) { if (ch === '(') d++; else if (ch === ')') d--; if (ch === ',' && d === 0) { out.push(cur.trim()); cur = ''; } else cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
+      const fullSize = (z) => { z = String(z || 'auto').trim(); return z === 'cover' || /^100%( (100%|auto))?$/.test(z) || z === 'auto 100%'; };
+      /* фон по стилям: 2 — плотный наверняка, 1 — возможно (файл с неизвестной прозрачностью), 0 — нет */
+      const solid = (s) => {
+        if (/text/.test(`${s.backgroundClip || ''} ${s.webkitBackgroundClip || ''}`)) return 0;
+        if (alphaOf(s.backgroundColor) >= 0.9) return 2;
+        const imgs = layersOf(s.backgroundImage); if (!imgs.length || imgs[0] === 'none') return 0;
+        const sizes = layersOf(s.backgroundSize); let lvl = 0;
+        for (let k = 0; k < imgs.length; k++) {
+          const im = imgs[k]; const z = sizes[k % (sizes.length || 1)] || 'auto';
+          if (/gradient\(/i.test(im)) {
+            if (!(fullSize(z) || z === 'auto' || z === 'auto auto')) continue; /* полоска-подчёркивание, а не заливка */
+            const cols = im.match(/rgba?\([^)]*\)|(?:color|oklch|oklab|lab|lch|hsla?|hwb)\([^)]*\)|transparent/gi) || [];
+            if (cols.length && cols.every((c) => alphaOf(c) >= 0.9)) return 2;
+          } else if (/url\(/i.test(im)) {
+            if (/\.jpe?g(\?|#|"|'|\))/i.test(im) && (z === 'cover' || z === '100% 100%')) return 2; /* «100%» по ширине — по высоте картинка может кончиться раньше коробки */
+            lvl = 1;
+          }
+        }
+        return lvl;
+      };
+      /* движется сейчас: идущая анимация или переход сдвига, прозрачности, обрезки или размера у элемента или предка */
+      const GEO = /^(transform|translate|scale|rotate|opacity|visibility|clipPath|top|left|right|bottom|inset|width|height|maxHeight|maxWidth|margin|offset[A-Z])/; /* «offset» без хвоста — служебное поле кадра */
+      /* 'inf' — бесконечная (бегущая строка, пульс): не остановится, судить не о чем; 'fin' — переход или анимация с концом
+         (появление), которые не кончились и за ожидание после прокрутки: строку перепроверит соседний шаг (MOVING) */
+      const running = new Map();
+      for (const a of document.getAnimations()) {
+        try {
+          if (a.playState !== 'running' || !a.effect || !a.effect.target || a.effect.pseudoElement) continue;
+          if (!a.effect.getKeyframes().some((f) => Object.keys(f).some((p) => GEO.test(p)))) continue;
+          const inf = a.effect.getTiming().iterations === Infinity;
+          if (inf || !running.has(a.effect.target)) running.set(a.effect.target, inf ? 'inf' : 'fin');
+        } catch (e) { /* эффект без кадров */ }
+      }
+      const moving = (el) => { let v = ''; for (let e = el; e && e !== de; e = parentOf(e)) { const k = running.get(e); if (k === 'inf') return 'inf'; if (k) v = k; } return v; };
+      /* закреплённый слой над элементом (сам или предок): sticky или fixed; обёртка-страница на fixed — не слой */
+      const allEls = document.body.getElementsByTagName('*').length; const wrapMemo = new Map();
+      const pageWrap = (f) => {
+        if (wrapMemo.has(f)) return wrapMemo.get(f);
+        const r = f.getBoundingClientRect();
+        const on = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0)) / (innerWidth * vh);
+        const yes = on >= 0.9 && f.getElementsByTagName('*').length >= allEls / 3;
+        wrapMemo.set(f, yes); return yes;
+      };
+      const layerMemo = new Map();
+      const layerOf = (el) => {
+        if (layerMemo.has(el)) return layerMemo.get(el);
+        let v = null;
+        for (let e = el; e && e !== de; e = parentOf(e)) { const p = cs(e).position; if (p === 'sticky' || (p === 'fixed' && !pageWrap(e))) { v = e; break; } }
+        layerMemo.set(el, v); return v;
+      };
+      const UI_ROLE = /^(dialog|alertdialog|menu|menubar|listbox|tooltip)$/i;
+      /* слово окна в классе или id. Первая группа — корни, у которых продолжение не даёт другого слова (dropdown-menu,
+         tooltiptext, popupwindow, cookiebar, cookieconsent): хватает начала слова. Вторая — слова, у которых оно даёт
+         (dialogue — реплика, suggested — «рекомендуем», toaster, drawers): только слово целиком, с «s» и номером на конце.
+         Имя в camelCase сначала режется на слова (cookieBanner, ReactModal__Content, CybotCookiebotDialog) */
+      const UI_NAME = /(^|[^a-z0-9])((dropdown|drop-down|submenu|sub-menu|megamenu|mega-menu|popover|popup|pop-up|tooltip|tippy|offcanvas|off-canvas|snackbar|cookie|consent|gdpr|lightbox|fancybox|datepicker|flatpickr|autocomplete|autosuggest|select2)|(modal|dialog|drawer|toast|suggest|suggestion)s?\d*([^a-z0-9]|$))/;
+      const namesOf = (x) => `${typeof x.className === 'string' ? x.className : x.getAttribute('class') || ''} ${x.id || ''}`.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      /* кнопка или ссылка: слово окна в её классе значит «открывает окно» (a.btn.js-popup-open, button.open-modal,
+         миниатюра a.image-popup, a.fancybox), а не «я окно» */
+      const isBtn = (x) => /^(A|BUTTON|SUMMARY|INPUT)$/.test(x.tagName) || /^(button|link)$/i.test(x.getAttribute('role') || '');
+      /* окно, меню или раскрытое кнопкой — от перекрывающего вверх до общего с текстом предка (stop): выше него классы
+         общие для обоих (body.modal-open, обёртка .popup-page) и ничего не значат. Слово окна в классе — признак только у
+         блока, который и ведёт себя как слой: сам блок с этим словом или его предок вне потока (absolute, fixed), и это не
+         кнопка и не ссылка. Обычный блок в потоке с таким словом (div.promo-popup, .modal-card, карточка печенья
+         .cookie-card, .suggested-items, реплика .dialogue) и кнопка, которая окно открывает, — не окна: лёг на чужой
+         текст — находка (независимая проверка 02.10: такие кнопки и карточки проверка пропускала) */
+      const uiLayer = (e, stop) => {
+        let named = false;
+        for (let x = e; x && x !== stop && x !== de && x !== document.body; x = parentOf(x)) {
+          if ((x.tagName === 'DIALOG' && x.hasAttribute('open')) || x.hasAttribute('popover') || x.getAttribute('aria-modal') === 'true' || UI_ROLE.test(x.getAttribute('role') || '')) return true;
+          const pos = cs(x).position;
+          if (!named && !isBtn(x) && UI_NAME.test(namesOf(x))) named = true;
+          if (named && (pos === 'absolute' || pos === 'fixed')) return true;
+          if (pos !== 'absolute') continue;
+          const prev = x.previousElementSibling; const p = parentOf(x);
+          if (prev && prev.getAttribute('aria-expanded') === 'true') return true;
+          try { if (x.id && document.querySelector(`[aria-expanded="true"][aria-controls~="${CSS.escape(x.id)}"]`)) return true; } catch (er) { /* без CSS.escape */ }
+          if (p && p.tagName === 'DETAILS' && p.open) return true;
+          if (x.closest('nav, [role="navigation"], menu')) return true;
+        }
+        return false;
+      };
+      const lcaOf = (a, b) => { const up = new Set(); for (let x = a; x; x = parentOf(x)) up.add(x); for (let x = b; x; x = parentOf(x)) if (up.has(x)) return x; return de; };
+      const childToward = (root, el) => { let x = el; for (let p = parentOf(x); p && p !== root; p = parentOf(x)) x = p; return x; };
+      const iou = (a, b) => { const iw = Math.min(a.right, b.right) - Math.max(a.left, b.left), ih = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (iw <= 0 || ih <= 0) return 0; const i = iw * ih; return i / (a.width * a.height + b.width * b.height - i); };
+      const MEDIA = /^(img|video|canvas|iframe|object|embed)$/;
+      const opaqueAt = (e, x, y) => {
+        if (e instanceof SVGElement) return 0;
+        const s = cs(e);
+        if ((s.mixBlendMode && s.mixBlendMode !== 'normal') || op(e) < 0.9) return 0;
+        if (MEDIA.test(e.tagName.toLowerCase())) { const r = e.getBoundingClientRect(); return r.width >= 40 && r.height >= 40 ? 1 : 0; }
+        for (const r of e.getClientRects()) if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return solid(s);
+        /* точка вне коробки элемента: попали в его растянутый псевдоэлемент (или в вылезший текст). Где лежит псевдоэлемент,
+           по стилям не узнать — только «возможно», решает снимок */
+        let lvl = 0;
+        for (const ps of ['::before', '::after']) { const q = getComputedStyle(e, ps); if (q.content !== 'none' && q.display !== 'none' && parseFloat(q.opacity) >= 0.9) lvl = Math.max(lvl, solid(q)); }
+        return Math.min(1, lvl);
+      };
+      /* слайд ленты или панель вкладок: соседние слайды одной ленты ложатся друг на друга и не стопкой (coverflow, «веер») */
+      const SLIDE = /(^|[^a-z])(slide|carousel-item|carousel__item|tab-pane|tabpanel|tab-panel)([^a-z]|$)/i;
+      const slideLike = (e) => SLIDE.test(typeof e.className === 'string' ? e.className : e.getAttribute('class') || '') || /^tabpanel$/i.test(e.getAttribute('role') || '') || /slide/i.test(e.getAttribute('aria-roledescription') || '');
+      /* стопка — это два СОДЕРЖАТЕЛЬНЫХ блока-близнеца под общим предком, а не плашка поверх текста. Содержательный: в
+         блоке есть текст, картинка, видео, холст или файл в фоне. Пустая плашка точно по размеру блока текста (inset: 0 на
+         кнопке, заглушка-скелет, оставшаяся после загрузки) раньше сходила за слайд — совпадение коробок от 0.85 — и
+         молчала (независимая проверка 02.10) */
+      const fullMemo = new Map();
+      const hasContent = (b) => {
+        if (fullMemo.has(b)) return fullMemo.get(b);
+        const v = !!String(b.textContent || '').trim() || MEDIA.test(b.tagName.toLowerCase()) || !!b.querySelector('img, picture, video, canvas, svg, iframe, object, embed') || /url\(/i.test(cs(b).backgroundImage || '');
+        fullMemo.set(b, v); return v;
+      };
+      const firstClass = (b) => String(typeof b.className === 'string' ? b.className : b.getAttribute('class') || '').trim().split(/\s+/)[0] || '';
+      const offFlow = (b) => { const s = cs(b); return s.position === 'absolute' || s.position === 'fixed' || s.transform !== 'none'; };
+      /* ветки текста (A) и перекрывающего (B) под общим предком — стопка по замыслу:
+           · обе — слайды одной ленты или панели вкладок (по имени или роли);
+           · близнецы один на другом: тот же тег, обе содержательные, коробки совпадают от 0.85 (слайды и вкладки
+             inset: 0, стороны карточки-перевёртыша);
+           · колода: тот же тег и тот же первый класс (или обе без класса), обе вне потока (absolute, fixed) или сдвинуты
+             transform, обе содержательные, коробки совпадают от 0.5 — карточки одного родителя с z-index, которые
+             скрипт перекладывает по таймеру: нижние закрыты верхней по замыслу (stripe.com на телефоне, 02.10: девять
+             ложных мест — три заголовка, три описания и три сниппета под верхней карточкой). Колода со сдвигом из трёх
+             и больше карточек: нижняя с верхней совпадают меньше чем наполовину, но связаны цепочкой таких же
+             соседей, где каждая пара совпадает от 0.5 (отзывы «колодой» со сдвигом 30 px).
+         Карточки в потоке, наехавшие друг на друга (кучей, отрицательным полем), — не колода: находка */
+      const twin = (A, c) => c.tagName === A.tagName && firstClass(c) === firstClass(A) && offFlow(c) && hasContent(c);
+      const stackMemo = new Map();
+      const stacked = (A, B) => {
+        let m = stackMemo.get(A); if (!m) stackMemo.set(A, m = new Map());
+        if (m.has(B)) return m.get(B);
+        let v = false;
+        if (slideLike(A) && slideLike(B)) v = true;
+        else if (A.tagName === B.tagName && hasContent(A) && hasContent(B)) {
+          const ra = A.getBoundingClientRect(), rb = B.getBoundingClientRect(); const k = iou(ra, rb);
+          if (k >= 0.85) v = true;
+          else if (offFlow(A) && twin(A, B)) {
+            if (k >= 0.5) v = true;
+            else {
+              /* цепочка: от A по близнецам-соседям, пока каждая следующая совпадает с предыдущей от 0.5 */
+              const rest = [...(parentOf(A) || A).children].filter((c) => c !== A && c !== B && twin(A, c)).slice(0, 40).map((c) => c.getBoundingClientRect());
+              const front = [ra];
+              while (front.length && !v) { const cur = front.pop(); if (iou(cur, rb) >= 0.5) { v = true; break; } for (let i = rest.length - 1; i >= 0; i--) if (iou(cur, rest[i]) >= 0.5) front.push(rest.splice(i, 1)[0]); }
+            }
+          }
+        }
+        m.set(B, v); return v;
+      };
+      /* кнопка «Показать полностью» поверх свёрнутого текста: текст обрезан предком по высоте (max-height + overflow
+         hidden), и перекрывающий — кнопка или ссылка внутри того же обрезающего предка. Нижние видимые строки под ней —
+         приём, а не ошибка (описания товаров, отзывы; независимая проверка 02.10). Предок этот текст не обрезает (карточка
+         с overflow: hidden ради скругления, текст в ней целиком) — исключения нет: кнопка, наехавшая на текст карточки,
+         остаётся находкой */
+      const foldMemo = new Map();
+      const foldOf = (par) => {
+        if (foldMemo.has(par)) return foldMemo.get(par);
+        let v = null; const pb = par.getBoundingClientRect().bottom;
+        for (let x = parentOf(par); x && x !== document.body && x !== de; x = parentOf(x)) { if (/hidden|clip/.test(cs(x).overflowY) && pb > x.getBoundingClientRect().bottom + 2) { v = x; break; } }
+        foldMemo.set(par, v); return v;
+      };
+      const moreBtn = (e, par) => { const b = e.closest('a, button, summary, [role="button"]'); if (!b || b.contains(par)) return false; const f = foldOf(par); return !!f && f.contains(b); };
+      const textMemo = new Map();
+      const textOk = (par) => {
+        if (textMemo.has(par)) return textMemo.get(par);
+        let v = !decor(par) && op(par) > 0.05 && !layerOf(par);
+        if (v) { const s = cs(par); const fill = s.webkitTextFillColor; if (alphaOf(fill && !/^currentcolor$/i.test(fill) ? fill : s.color) <= 0.05 && !/text/.test(`${s.backgroundClip || ''} ${s.webkitBackgroundClip || ''}`)) v = false; }
+        if (v) for (let x = par; x && x !== document.body && x !== de; x = parentOf(x)) if (parseInt(cs(x).zIndex, 10) < 0) { v = false; break; }
+        textMemo.set(par, v); return v;
+      };
+      /* кто закрыл текст par в точке: { el, lvl }, MOVING (кандидат есть, но он или текст ещё в переходе), LAYER (сверху
+         закреплённый слой) или null (видно либо судить не о чем) */
+      const coverAt = (par, x, y) => {
+        const top = document.elementFromPoint(x, y);
+        if (!top || top === par || par.contains(top) || top.contains(par)) return null;
+        const list = document.elementsFromPoint(x, y);
+        let it = list.indexOf(par); if (it < 0) it = list.findIndex((e) => par.contains(e));
+        if (it <= 0 || !textOk(par)) return null;
+        const pm = moving(par); if (pm === 'inf') return null;
+        let best = null, layer = false, mov = false;
+        for (let k = 0; k < it; k++) {
+          const e = list[k];
+          if (e === de || e === document.body || e.contains(par) || par.contains(e)) continue;
+          const lvl = opaqueAt(e, x, y); if (!lvl) continue;
+          if (layerOf(e)) { layer = true; continue; }
+          const m = S.pairs.get(par); if (m && m.has(e)) continue; /* уже в «текст перекрыт картинкой» */
+          const em = moving(e); if (em === 'inf') continue;
+          const root = lcaOf(par, e);
+          if (uiLayer(e, root) || moreBtn(e, par)) continue;
+          const A = childToward(root, par), B = childToward(root, e);
+          if (A !== B && stacked(A, B)) continue; /* стопка слайдов, вкладок, колода карточек; соседние слайды ленты */
+          if (em || pm) { mov = true; continue; }
+          const r = e.getBoundingClientRect(); const area = r.width * r.height;
+          if (!best || lvl > best.lvl || (lvl === best.lvl && area > best.area)) best = { el: e, lvl, area };
+        }
+        return best || (mov ? MOVING : layer ? LAYER : null);
+      };
+      const lineOf = (it, j) => {
+        range.selectNodeContents(it.n);
+        const rects = [...range.getClientRects()].filter((q) => q.width >= 4 && q.height >= 4);
+        const N = Math.min(rects.length, COV_PER_NODE); if (j >= N) return null;
+        return rects[N === rects.length ? j : Math.round(j * (rects.length - 1) / (N - 1))];
+      };
+      /* точки строки: вдоль неё на 15, 50 и 85 % длины (короче 24 px — одна середина), у строки от 240 px — ещё на 32,5 и
+         67,5 %: плашка, закрывшая слова между 20 и 45 % длинной строки, проходила между тремя точками (независимая
+         проверка 02.10) — эти две идут последними: место находки, которую видели прежние три точки, остаётся прежним;
+         поперёк — посередине. У вертикального письма (writing-mode vertical-* / sideways-*: подпись автора сбоку фото)
+         строка идёт сверху вниз; вертикальная строка выше 0,3 окна — одна середина: её точки в окно разом не попали бы
+         ни на одном шаге */
+      const pointsOf = (q, vert) => {
+        const len = vert ? q.height : q.width;
+        const fr = len < 24 || (vert && q.height > vh * 0.3) ? [0.5] : len < 240 ? [0.15, 0.5, 0.85] : [0.15, 0.5, 0.85, 0.325, 0.675];
+        return fr.map((f) => (vert ? { f, x: q.left + q.width / 2, y: q.top + q.height * f } : { f, x: q.left + q.width * f, y: q.top + q.height / 2 }));
+      };
+      if (cov === 'step' && !S.full) {
+        const idOf = (e) => { let k = S.ids.get(e); if (!k) { k = S.nextId++; S.ids.set(e, k); } return k; };
+        for (const it of S.nodes) {
+          if (S.full) break;
+          if (it.done.size >= it.total || it.y1 - off < -vh || it.y0 - off > vh * 2) continue;
+          const n = it.n; const par = n.isConnected ? n.parentElement : null; if (!par) continue;
+          for (let j = 0; j < it.total; j++) {
+            if (it.done.has(j)) continue;
+            const q = lineOf(it, j); if (!q) break;
+            const pts = pointsOf(q, it.vert);
+            if (pts.some((p) => p.y < 1 || p.y > vh - 1)) continue; /* не все точки строки в окне по высоте: другой шаг */
+            const inx = pts.filter((p) => p.x >= 1 && p.x <= vw - 1);
+            if (!inx.length) { it.side.add(j); continue; } /* строка за краем окна вбок: слайд карусели, закрытое меню */
+            let by = null, bp = null, layer = false, mov = false;
+            for (const p of inx) { S.points++; const c = coverAt(par, p.x, p.y); if (c === LAYER) layer = true; else if (c === MOVING) mov = true; else if (c && (!by || c.lvl > by.lvl)) { by = c; bp = p; } }
+            if (!by && mov) { it.mov.add(j); continue; } /* переход ещё идёт: соседний шаг увидит строку после него */
+            if (!by && layer) { it.lay.add(j); continue; } /* под шапкой или нижней панелью: соседний шаг увидит строку без неё */
+            it.done.add(j); S.lines++;
+            if (by) {
+              const key = `${idOf(it.blk)}|${idOf(by.el)}`; const bf = bp.f;
+              let f = S.found.get(key);
+              if (!f) { f = { key, sig: sig(par), text: clean(n.textContent), by: sig(by.el), x: Math.round(bp.x + scrollX), y: Math.round(bp.y + off), lines: 0, of: S.blkLines.get(it.blk) || it.total, lvl: by.lvl, proof: null, ref: { it, j, f: bf, el: by.el } }; S.found.set(key, f); }
+              f.lines++; if (by.lvl > f.lvl) { f.lvl = by.lvl; f.ref = { it, j, f: bf, el: by.el }; }
+            }
+            if (S.lines >= COV_LINES) { S.full = `строк больше ${COV_LINES}`; break; }
+          }
+        }
+      }
+      /* кандидат, который находкой не стал: refuted — на снимке текст виден, gone — перекрывающего на месте уже нет, unsure —
+         «возможно» без сверки; первые десять — в coveredByStat.dropped, чтобы было видно, что именно снято */
+      const drop = (f, why) => { if (S.dropped.length < 10) S.dropped.push({ sig: f.sig, text: f.text, by: f.by, x: f.x, y: f.y, why }); };
+      /* сверка снимком: probe — где вырезка у точки находки и лежит ли перекрывающий там до сих пор; hide / show — спрятать
+         и вернуть элемент текста; mark — итог сверки (seen: true — текст просвечивает, находка снимается) */
+      /* Сверка прячет элемент текста, не трогая страницу: правило в своей сконструированной таблице
+         (document.adoptedStyleSheets) по структурному селектору элемента (:root > :nth-child(…) > …). DOM не меняется
+         вовсе — ни атрибута style, ни меток: MutationObserver страницы не видит ничего. Раньше текст прятался через
+         par.style.setProperty — браузер при этом пересобирал атрибут style из разобранных объявлений, и выброшенные из
+         него пропадали (style="color: #333; colr: red; width: 10 px" → "color: rgb(51, 51, 51);"): шаг --css после --scroll
+         в одном запуске терял FAIL, а transition: none обрывал идущий переход цвета (независимая проверка 02.10, стенд
+         side.html). Теперь transition-property не трогается: на время сверки у элемента, его потомков и их псевдоэлементов
+         нулевые transition-duration и transition-delay — visibility меняется сразу (и у текста с transition: all), новых
+         переходов и событий transition* нет, а идущие переходы и анимации идут дальше (переход отменяется, когда меняется
+         конечное значение его свойства или само свойство уходит из transition-property; смена длительности его не
+         задевает). Возврат в два приёма: сначала видимость (длительность ещё нулевая — перехода visibility нет), потом
+         длительность. Опыт 02.10 в Chrome 154 и Firefox: событий transition* — 0, записей MutationObserver — 0, атрибут
+         style прежний до знака, переход цвета 30 с не оборван. Правило не взяло верх (у страницы своё visibility:
+         visible !important сильнее), сконструированных таблиц нет или элемент селектором не находится (теневой DOM) —
+         сверки нет: кандидат остаётся «по стилям» */
+      const QUIET = 'transition-duration:0s!important;transition-delay:0s!important';
+      const selOf = (el) => { const parts = []; let x = el; for (; x && x !== de; x = x.parentElement) { let i = 1; for (let s = x.previousElementSibling; s; s = s.previousElementSibling) i++; parts.unshift(`:nth-child(${i})`); } return x === de && parts.length ? `:root > ${parts.join(' > ')}` : null; };
+      const unhide = () => {
+        const h = S.hide; if (!h) return; S.hide = null;
+        try { h.sheet.replaceSync(`${h.all}{${QUIET}}`); void getComputedStyle(de).visibility; if (h.el.isConnected) void getComputedStyle(h.el).visibility; } catch (er) { /* таблица уже снята страницей */ }
+        try { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((x) => x !== h.sheet); } catch (er) { /* список таблиц заменён страницей */ }
+      };
+      if (cov === 'show') { unhide(); return true; }
+      if (cov === 'probe' || cov === 'hide' || cov === 'mark') {
+        if (!S.order) S.order = [...S.found.values()].sort((a, b) => a.y - b.y);
+        const f = S.order[covK]; if (!f) return null;
+        const par = f.ref.it.n.isConnected ? f.ref.it.n.parentElement : null;
+        if (cov === 'mark') { if (covSeen) { S.found.delete(f.key); if (covSeen === 'gone') S.gone++; else S.refuted++; drop(f, covSeen === 'gone' ? 'gone' : 'refuted'); } else f.proof = 'снимок'; return true; }
+        if (!par) return null;
+        if (cov === 'hide') {
+          unhide();
+          const sel = selOf(par); let hit = null;
+          try { hit = sel ? document.querySelector(sel) : null; } catch (er) { /* селектор не разобрался */ }
+          if (hit !== par) return { ok: false, why: 'элемент текста не находится структурным селектором (теневой DOM)' };
+          const all = `${sel},${sel} *,${sel}::before,${sel}::after,${sel} *::before,${sel} *::after`;
+          try {
+            const sheet = new CSSStyleSheet(); sheet.replaceSync(`${all}{${QUIET}}${sel}{visibility:hidden!important}`);
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+            S.hide = { sheet, all, el: par };
+          } catch (er) { return { ok: false, why: 'сконструированные таблицы стилей недоступны' }; }
+          if (getComputedStyle(par).visibility === 'hidden') return { ok: true };
+          unhide();
+          return { ok: false, why: 'visibility элемента текста перебита стилями страницы' };
+        }
+        const q = lineOf(f.ref.it, f.ref.j); if (!q) return null;
+        const vert = f.ref.it.vert;
+        const pt = pointsOf(q, vert).find((p) => p.f === f.ref.f) || pointsOf(q, vert)[0];
+        const x = pt.x, cy = pt.y;
+        if (cy < 1 || cy > vh - 1 || x < 1 || x > vw - 1) return null;
+        const c = coverAt(par, x, cy); if (c === MOVING) return { moving: true };
+        if (!c || c === LAYER || c.el !== f.ref.el) return { gone: true };
+        /* вырезка — полторы высоты строки в ширину (не меньше 24 px): у крупного заголовка в 24 px поместился бы один пробел
+           между словами, и «спрятали текст — ничего не изменилось» вышло бы ложным подтверждением. У вертикального письма —
+           то же, повёрнутое: полторы ширины строки в высоту */
+        const w = vert ? Math.max(4, q.width * 0.7) : Math.min(q.width, Math.max(24, q.height * 1.5));
+        const h = vert ? Math.min(q.height, Math.max(24, q.width * 1.5)) : Math.max(4, q.height * 0.7);
+        let L = Math.max(q.left, x - w / 2), R = Math.min(q.right, x + w / 2), T = Math.max(q.top, cy - h / 2), B = Math.min(q.bottom, cy + h / 2);
+        /* и не шире самого перекрывающего: рядом с его краем текст виден по праву, а находку это сняло бы (точка в его
+           коробке; у растянутого псевдоэлемента коробки не узнать — вырезка как есть) */
+        const er = c.el.getBoundingClientRect();
+        if (x >= er.left && x <= er.right && cy >= er.top && cy <= er.bottom) { L = Math.max(L, er.left); R = Math.min(R, er.right); T = Math.max(T, er.top); B = Math.min(B, er.bottom); }
+        if (R - L < 8 || B - T < 4) { L = x - 12; R = x + 12; T = cy - h / 2; B = cy + h / 2; }
+        L = Math.max(0, L); T = Math.max(0, T);
+        return { clip: { x: Math.round(L) + Math.round(scrollX), y: Math.round(T) + Math.round(scrollY), width: Math.max(4, Math.round(R - L)), height: Math.max(4, Math.round(B - T)) } };
+      }
+      if (cov === 'end') {
+        unhide(); /* таблица сверки не должна пережить проход, даже если шаг show не дошёл */
+        /* не сверено снимком: «наверняка» — находка по стилям, «возможно» — не находка */
+        for (const f of [...S.found.values()]) if (!f.proof) { if (f.lvl >= 2) f.proof = 'стили'; else { S.found.delete(f.key); S.unsure++; drop(f, 'unsure'); } }
+      }
+      const found = [...S.found.values()].sort((a, b) => a.y - b.y);
+      /* непроверенные строки: под закреплённым слоем на всех шагах (under), в переходе и после повтора шага (moving), за
+         краем окна вбок (aside); остальные в окно не попали */
+      let under = 0, aside = 0, mv = 0;
+      for (const it of S.nodes) for (let j = 0; j < it.total; j++) if (!it.done.has(j)) { if (it.lay.has(j)) under++; else if (it.mov.has(j)) mv++; else if (it.side.has(j)) aside++; }
+      const res = {
+        coveredBy: found.slice(0, limit).map(({ sig: s, text, by, x, y, lines, of, proof }) => ({ sig: s, text, by, x, y, lines, of, proof })), coveredByCount: found.length,
+        coveredByStat: { lines: S.lines, linesAll: S.linesAll, points: S.points, nodes: S.nodes.length, nodesCut: S.nodesCut ? COV_NODES : 0, full: S.full || null, refuted: S.refuted, gone: S.gone, unsure: S.unsure, dropped: S.dropped, under, moving: mv, aside },
+      };
+      if (cov === 'end') delete window.__rwCov;
+      return res;
+    }
+  }
   /* 1. элементы, частично вылезающие за край экрана (целиком за краем — спрятанное меню, не в счёт).
      Попутно — что раздвигает страницу вправо (в том числе невидимое и целиком за краем):
      это причины, если документ шире экрана. */
@@ -1821,6 +2250,7 @@ function overflowInPage({ tol, limit }) {
      документа — такие точки пропускаются. Не видит: элементы с pointer-events:none (elementsFromPoint
      их не отдаёт — ни картинку, ни текст), прозрачные поля PNG (попадание по коробке, не по пикселям). */
   const covered = []; let coveredCount = 0;
+  const covPairs = new Map(); /* текст → картинки, уже названные здесь: проверка 5 эти пары не повторяет */
   {
     const sx0 = scrollX, sy0 = scrollY; const vh = innerHeight;
     const media = [];
@@ -1867,9 +2297,29 @@ function overflowInPage({ tol, limit }) {
         let it = list.indexOf(h.par); if (it < 0) it = list.findIndex((e) => h.par.contains(e));
         if (im < 0 || it < 0 || im > it) continue; /* не видно одного из двух (pointer-events:none) или картинка под текстом */
         coveredCount++;
+        if (cov === 'begin') { let m = covPairs.get(h.par); if (!m) covPairs.set(h.par, m = new Set()); m.add(h.m.el); }
         if (covered.length < limit) covered.push({ sig: sig(h.par), text: clean(h.n.textContent), by: sig(h.m.el), x: Math.round(h.x), y: Math.round(h.y) });
       }
     } finally { if (scrollX !== sx0 || scrollY !== sy0) window.scrollTo({ left: sx0, top: sy0, behavior: 'instant' }); }
+  }
+  /* 5, начало: строки текста, которые предстоит проверить шагами прокрутки (cov: 'step' — выше, перед проверкой 1).
+     Состояние — в window.__rwCov до последнего шага (cov: 'end'); DOM не меняется ни здесь, ни при сверке снимком (hide /
+     show прячут текст правилом в своей сконструированной таблице стилей) */
+  if (cov === 'begin') {
+    const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null; const off = sc ? sc.scrollTop : scrollY;
+    const nodes = []; let linesAll = 0, nodesCut = false;
+    const blkLines = new Map(); /* блок текста → сколько его строк в проверке: «строк 2 из 5» у находки */
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (!n.textContent.trim()) continue; const par = n.parentElement; if (!par || SKIP.test(par.tagName) || par instanceof SVGElement) continue;
+      range.selectNodeContents(n); const rects = [...range.getClientRects()].filter((q) => q.width >= 4 && q.height >= 4);
+      if (!rects.length) continue;
+      if (nodes.length >= COV_NODES) { nodesCut = true; break; }
+      const total = Math.min(rects.length, COV_PER_NODE); linesAll += total;
+      const blk = blockOf(par) || par; blkLines.set(blk, (blkLines.get(blk) || 0) + total);
+      nodes.push({ n, blk, y0: Math.min(...rects.map((q) => q.top)) + off, y1: Math.max(...rects.map((q) => q.bottom)) + off, total, vert: /^(vertical|sideways)/.test(cs(par).writingMode || ''), done: new Set(), lay: new Set(), side: new Set(), mov: new Set() });
+    }
+    window.__rwCov = { nodes, blkLines, linesAll, nodesCut, pairs: covPairs, found: new Map(), ids: new WeakMap(), nextId: 1, lines: 0, points: 0, full: null, refuted: 0, gone: 0, unsure: 0, dropped: [], order: null };
   }
   /* только самые внешние нарушители: ребёнок торчащего блока торчит вместе с ним */
   const outer = out.filter((o) => !out.some((p) => p.el !== o.el && p.el.contains(o.el))).filter((o, i, a) => a.findIndex((x) => x.el === o.el) === i).map(({ el, ...rest }) => rest);
@@ -1891,6 +2341,79 @@ function overflowInPage({ tol, limit }) {
     covered, coveredCount, clipCut: cc.slice(0, limit), clipCutCount: cc.length, fieldCut: fieldCut.slice(0, limit), fieldCutCount: fieldCut.length,
     verdict: outer.length || sideScroll ? 'FAIL' : docWider || tw.length || pc.length || coveredCount || cc.length || fieldCut.length ? 'WARN' : 'OK',
   };
+}
+
+/* проход «текст перекрыт соседним блоком» для findOverflow({ coveredBy: true }): настоящая прокрутка шагами, на каждом —
+   проверка 5 из overflowInPage по строкам в окне; потом сверка первых COV_VERIFY кандидатов снимком (текст виден —
+   не находка); описание полей — у findOverflow */
+const COV_STEPS = 60, COV_MS = 12000, COV_PAUSE = 100, COV_VERIFY = 12, COV_SETTLE = 700, COV_SETTLE_ALL = 4000;
+/* доля пикселей вырезки, которые изменились, когда элемент текста спрятали: буквы были видны — меняется от нескольких
+   процентов; null — снимки разного размера или не разобрались */
+async function shotChanged(sharp, a, b) {
+  try {
+    const [A, B] = await Promise.all([a, b].map((buf) => sharp(Buffer.from(buf)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })));
+    if (A.info.width !== B.info.width || A.info.height !== B.info.height) return null;
+    let n = 0; const da = A.data, db = B.data;
+    for (let i = 0; i < da.length; i += 4) if (Math.abs(da[i] - db[i]) > 12 || Math.abs(da[i + 1] - db[i + 1]) > 12 || Math.abs(da[i + 2] - db[i + 2]) > 12) n++;
+    return n / (A.info.width * A.info.height);
+  } catch { return null; }
+}
+async function coveredByPass(page, arg, deps) {
+  const t0 = Date.now();
+  const step = (cov, extra = {}) => evaluateWith(page, overflowInPage, { ...arg, ...extra, cov }, deps);
+  let out = null, steps = 0, stepsAll = 0, capped = null, y0 = null; const verify = { tried: 0, shot: 0, why: null };
+  /* после прокрутки — дождаться конца конечных анимаций и переходов (появление по прокрутке: блок ещё едет на своё место,
+     и перекрытия либо ещё нет, либо оно мнимое): не дольше COV_SETTLE мс на шаг и COV_SETTLE_ALL мс на весь проход */
+  let settleLeft = COV_SETTLE_ALL;
+  const settle = async () => { if (settleLeft > 0) settleLeft -= await settleAnimations(page, Math.min(COV_SETTLE, settleLeft)); };
+  try {
+    y0 = await currentScroll(page); const m = await pageMetrics(page);
+    const vh = m.ih || 800; const px = Math.max(100, Math.round(vh * 0.75)); const maxY = Math.max(0, m.h - vh);
+    const ys = []; for (let y = 0; y < maxY; y += px) ys.push(y); ys.push(maxY);
+    stepsAll = ys.length;
+    for (const y of ys) {
+      if (steps >= COV_STEPS) { capped = `шагов прокрутки больше ${COV_STEPS} — ниже y ${y} не проверено`; break; }
+      if (Date.now() - t0 > COV_MS) { capped = `проход дольше ${COV_MS / 1000} с — ниже y ${y} не проверено`; break; }
+      await scrollToY(page, y); await sleep(COV_PAUSE); await settle();
+      out = await step('step'); steps++;
+      if (out.coveredByStat && out.coveredByStat.full) { capped = `${out.coveredByStat.full} — ниже y ${y} не проверено`; break; }
+    }
+    /* сверка снимком: вырезка у точки как есть и со спрятанным элементом текста. Изменилось от 0,5 % пикселей — буквы были
+       видны (прозрачный файл в фоне, маска): кандидат снимается. Между двумя снимками элемент текста невидим доли секунды;
+       show зовётся и при сбое снимка */
+    const cand = out ? out.coveredBy || [] : [];
+    const sharp = cand.length ? loadSharp() : null;
+    if (cand.length && !sharp) verify.why = 'нет sharp';
+    for (let k = 0; sharp && k < cand.length && k < COV_VERIFY; k++) {
+      verify.tried++;
+      await scrollToY(page, Math.max(0, cand[k].y - Math.round(vh / 2))); await sleep(COV_PAUSE); await settle();
+      const p = await step('probe', { covK: k }).catch(() => null);
+      if (!p || p.moving) continue; /* строки в окне уже нет или переход не кончился — останется «по стилям» */
+      if (p.gone) { await step('mark', { covK: k, covSeen: 'gone' }); continue; } /* перекрывающего на месте нет: состояние сменилось */
+      let a = null, b = null, hid = null;
+      try {
+        a = await page.screenshot({ clip: p.clip, captureBeyondViewport: false });
+        hid = await step('hide', { covK: k });
+        if (hid && hid.ok) b = await page.screenshot({ clip: p.clip, captureBeyondViewport: false });
+      } catch { /* снимок не вышел */ } finally { await step('show', { covK: k }).catch(() => null); }
+      /* текст не спрятался (правило перебито стилями страницы, таблиц нет) — второго снимка нет: кандидат остаётся «по стилям» */
+      if (hid && !hid.ok && !verify.why) verify.why = hid.why || 'текст не спрятался';
+      const ch = a && b ? await shotChanged(sharp, a, b) : null;
+      if (ch == null) continue;
+      verify.shot++;
+      await step('mark', { covK: k, covSeen: ch >= 0.005 });
+    }
+    out = await step('end');
+    await scrollToY(page, y0); await sleep(COV_PAUSE);
+  } catch (e) {
+    /* проход оборвался: таблица сверки (если шаг show не дошёл) и состояние проверки со страницы убираются */
+    await page.evaluate(() => { const S = window.__rwCov; const h = S && S.hide; if (h) { try { document.adoptedStyleSheets = document.adoptedStyleSheets.filter((x) => x !== h.sheet); } catch (er) { /* список заменён */ } } delete window.__rwCov; }).catch(() => {});
+    if (y0 != null) await scrollToY(page, y0).catch(() => {});
+    return { coveredBy: [], coveredByCount: 0, coveredByStat: { lines: 0, linesAll: 0, steps, stepsAll, ms: Date.now() - t0, capped: null, error: String((e && e.message) || e).split('\n')[0].slice(0, 160) } };
+  }
+  const st = out.coveredByStat || {};
+  if (st.nodesCut) capped = `${capped ? `${capped}; ` : ''}текстовых узлов больше ${st.nodesCut} — остальные не проверены`;
+  return { coveredBy: out.coveredBy || [], coveredByCount: out.coveredByCount || 0, coveredByStat: { ...st, steps, stepsAll, ms: Date.now() - t0, capped, verify } };
 }
 
 /**
@@ -1935,12 +2458,32 @@ function overflowInPage({ tol, limit }) {
  * предком) — не fieldCut.
  * Прозрачное (итоговая opacity ≤ 0.05) в outer не считается; поэтому звать
  * после scrollThrough, когда блоки появления уже показаны.
+ * coveredBy: true — ещё и «текст перекрыт соседним блоком» (по умолчанию выключено: discover и перепроверка после клика
+ * зовут findOverflow без него и получают прежний ответ поле в поле). Страница прокручивается по-настоящему шагами в 0,75
+ * окна (пауза COV_PAUSE мс — скрипты страницы успевают отработать), на каждом шаге проверяются строки текста, видные в
+ * окне: кто в точках строки лежит выше текста и непрозрачен по стилям — правило, исключения и «не видит» — у проверки 5
+ * в overflowInPage. Первые COV_VERIFY кандидатов сверяются снимком (на миг элемент текста невидим — правилом в своей
+ * сконструированной таблице стилей: DOM, атрибуты style и идущие переходы страницы не трогаются; следов прохода на
+ * странице не остаётся, кроме самой прокрутки). Прокрутка потом возвращается на место. Пределы: COV_STEPS шагов и COV_MS мс на проход (в
+ * странице — 8000 текстовых узлов, 24 строки на узел, 6000 строк). Поля: coveredBy [{ sig, text, by, x, y, lines, of,
+ * proof }] — sig и text — перекрытый текст, by — кто перекрыл, x/y — точка на странице, lines из of — сколько проверенных
+ * строк блока задето, proof — «снимок» (без текста место выглядит так же) или «стили» (снимком не сверено);
+ * coveredByCount — сколько пар «блок текста — перекрывающий»; coveredByStat { lines, linesAll, points, nodes, nodesCut,
+ * full, refuted, gone, unsure, dropped, under, moving, aside, steps, stepsAll, ms, capped, verify { tried, shot, why }, error } —
+ * сколько строк проверено из найденных, что снято сверкой (refuted — текст виден сквозь блок, gone — перекрывающего на
+ * месте уже нет, unsure — «возможно» без сверки; dropped — первые десять снятых: { sig, text, by, x, y, why }), почему строки остались непроверенными (under — под закреплённым слоем
+ * на всех шагах, moving — в переходе, aside — за краем окна вбок) и какой предел сработал (capped — текст для протокола
+ * или null). На verdict и summary новые поля НЕ влияют: это отдельная строка у того, кто просил (runtime --scroll), со
+ * своим WARN; прежние covered / coveredCount — как были.
  * Возвращает { verdict, vw, docScrollWidth, docWider, sideScroll, wideCauses[],
  * bodyOverflowX, htmlOverflowX, count, outer[], textWider[], panelCut[], covered[], clipCut[], fieldCut[],
  * summary } — summary готовая строка для протокола.
  */
-export async function findOverflow(page, { tolerance = 1, limit = 20 } = {}) {
-  const r = await evaluateWith(page, overflowInPage, { tol: tolerance, limit }, { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN });
+export async function findOverflow(page, { tolerance = 1, limit = 20, coveredBy = false } = {}) {
+  const deps = { sig: SIG_FN, eff: EFFECTIVE_OPACITY_FN };
+  if (coveredBy) await page.evaluate(detectScrollerInPage).catch(() => null); /* кто прокручивается: документ или свой контейнер */
+  const r = await evaluateWith(page, overflowInPage, { tol: tolerance, limit, cov: coveredBy ? 'begin' : null }, deps);
+  if (coveredBy) Object.assign(r, await coveredByPass(page, { tol: tolerance, limit }, deps));
   const fmt = (o) => `${o.sig}${o.fixed ? ' [fixed]' : o.sticky ? ' [sticky]' : ''} ${o.left}…${o.right}px${o.text ? ` «${o.text}»` : ''}`;
   r.summary = r.outer.length
     ? `за краем экрана ${r.vw}px: ${r.outer.slice(0, 5).map(fmt).join(' | ')}${r.count > 5 ? ` и ещё ${r.count - 5}` : ''} (scrollWidth документа ${r.docScrollWidth})`

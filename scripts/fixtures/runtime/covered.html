@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Стенд runtime.mjs — текст перекрыт соседним блоком</title>
+<!--
+  Стенд runtime.mjs --scroll (node runtime.mjs --selftest, случаи covered, covered-320, covered-ff; он же — для
+  fixtures/lib/selftest.mjs, случай overflow). Строка «текст перекрыт соседним блоком»: подпись автора на фото лежала
+  под карточкой внахлёст (zel-ugolok, 01.10) — проверка картинок молчала, поймал только a11y контрастом 1.05.
+  Находки (WARN, 8 мест; у каждой proof «снимок» — без текста место выглядит так же):
+    figcaption.credit  подпись на фото под карточкой div.card (карточка поднята отрицательным полем, фон-цвет)
+    p.note             строка под баннером div.banner с фоном-картинкой (плотный PNG, background-size: cover): по стилям
+                       «возможно», сверка снимком подтверждает — буквы не видны
+    p.long             пять строк, плашка div.plate закрыла две нижние — «строк 2 из 5»
+    p.g                строка под блоком div.grad с плотным градиентом (ни одной прозрачной точки)
+    p.pseudo           строка под растянутым a.cover::after с плотным фоном (точка вне коробки самой ссылки): по стилям
+                       «возможно» — где лежит псевдоэлемент, не узнать; подтверждает снимок
+    p.lt               строка под блоком div.late, который въезжает анимацией каждый раз, когда входит в окно (как AOS
+                       без once): в момент шага блок ещё едет на место — проход ждёт конца анимации и находит
+    div.pile__card p   две карточки веером без признака ленты: текст первой наполовину под второй (контроль к слайдам
+                       веером ниже: та же раскладка, но не слайды, — находка)
+    figcaption.vcredit вертикальная подпись сбоку фото (writing-mode: vertical-rl), карточка div.vcard закрыла её верхнюю
+                       треть, середина видна: точки строки идут сверху вниз (на сайте, откуда правило, подписи такие)
+  Не находки (слой по замыслу или не закрыто):
+    header.top         липкая шапка: при прокрутке текст проходит под ней; строка, оказавшаяся под шапкой на одном шаге,
+                       проверяется на соседнем
+    ul.drop            открытое меню: position absolute в nav, кнопка с aria-expanded="true" — поверх абзаца p.um
+    dialog#dlg         открытый (немодальный) dialog поверх абзаца p.ud; div.win с role="dialog" — поверх p.uw
+    a.tile__link       прозрачная растянутая ссылка (a::after на всю плитку) над p.tile__text; у a.btn-link свой
+                       плотный фон, но растянутый ::after прозрачен — тоже не находка
+    div.slide          три слайда стопкой (position absolute, inset 0, плотный фон): текст нижних под верхним
+    div.fan__slide     три слайда веером (каждый следующий лежит на половине предыдущего): соседние слайды одной ленты
+    div.own            текст на собственном фоне (и фон из ::before предка)
+    span.badge         значок поверх картинки: текст сверху
+    div.scrim          полупрозрачная подложка (альфа 0.5) над текстом
+    div.fade           градиент-затухание «читать дальше» (от прозрачного к белому) над нижними строками
+    b.ghost            слово-фон под карточкой: aria-hidden; i.back — слово-фон с z-index −1 без aria-hidden
+    div.sweep          блок с бесконечной анимацией сдвига над текстом (движется)
+    p.fading           текст с opacity 0 под соседним блоком (ждёт появления)
+    div.pattern        узор-плитка из полупрозрачного PNG (альфа 0.5) над p.up и div.veil — тот же PNG на всю коробку над
+                       p.uv: по стилям «возможно», на снимке буквы видны — сняты сверкой (в JSON stat.refuted: 2)
+    img.pic            картинка 80×80 над абзацем p.ui — это «текст перекрыт картинкой» (1 место), второй раз не идёт
+    div.bar            нижняя панель position fixed
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; font: 16px/24px Arial, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  header.top { position: sticky; top: 0; z-index: 20; height: 56px; background: #fff; border-bottom: 1px solid #ddd; display: flex; align-items: center; padding: 0 24px; }
+  main { width: 600px; max-width: calc(100% - 32px); margin: 0 auto; padding: 24px 0 160px; }
+  section { position: relative; margin: 0 0 96px; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  p { margin: 0; }
+  /* находки */
+  .shot { position: relative; margin: 0; height: 200px; background: #7a8f6a; }
+  .credit { position: absolute; left: 12px; bottom: 8px; color: #fff; font-size: 13px; line-height: 18px; }
+  .card { position: relative; margin: -40px 0 0 0; width: 280px; max-width: 100%; padding: 16px; background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, .2); }
+  .banner { position: relative; margin-top: -24px; height: 80px; background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMwCXMwCXNggFAAFfYDKTQP00YAAAAASUVORK5CYII=") center / cover no-repeat; }
+  .rel { position: relative; }
+  .plate { position: absolute; left: 0; bottom: 0; width: 280px; max-width: 100%; height: 48px; background: #223; }
+  .grad { position: relative; margin-top: -24px; height: 60px; background: linear-gradient(90deg, #334, #556); }
+  .cover { position: static; }
+  .cover::after { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 24px; background: #445; }
+  .late { position: relative; margin-top: -24px; padding: 8px 16px; background: #fff; border: 1px solid #ccc; }
+  .late.in { animation: latein .35s ease-out both; }
+  @keyframes latein { from { transform: translateY(48px); } to { transform: translateY(0); } }
+  .pile { display: flex; }
+  .pile__card { position: relative; flex: 0 0 60%; margin-right: -30%; padding: 16px; background: #fff; border: 1px solid #ccc; }
+  .pile__card:last-child { margin-right: 0; flex-basis: 70%; }
+  .vcredit { position: absolute; left: 8px; top: 8px; writing-mode: vertical-rl; color: #fff; font-size: 13px; line-height: 18px; }
+  .vcard { position: absolute; left: 0; top: 0; width: 200px; max-width: 100%; height: 70px; padding: 8px; background: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, .2); }
+  /* не находки */
+  .fan { display: flex; }
+  .fan__slide { position: relative; flex: 0 0 50%; margin-right: -25%; padding: 16px; background: #fff; border: 1px solid #ccc; }
+  .fan__slide:last-child { margin-right: 0; }
+  nav.menu { position: relative; }
+  .drop { position: absolute; left: 0; top: 28px; width: 260px; margin: 0; padding: 12px 16px; list-style: none; background: #fff; border: 1px solid #ccc; z-index: 5; }
+  dialog#dlg { position: absolute; left: 0; top: 30px; margin: 0; width: 300px; max-width: 100%; padding: 16px; background: #fff; border: 1px solid #999; z-index: 5; }
+  .win { position: absolute; left: 0; top: 30px; width: 300px; max-width: 100%; padding: 16px; background: #fff; border: 1px solid #999; z-index: 5; }
+  .tile { position: relative; padding: 16px; border: 1px solid #ccc; }
+  .tile__link::after, .btn-link::after { content: ""; position: absolute; inset: 0; }
+  .btn-link { background: #223; color: #fff; padding: 4px 10px; }
+  .slides { position: relative; height: 120px; }
+  .slide { position: absolute; inset: 0; padding: 16px; background: #fff; border: 1px solid #ccc; }
+  .own { position: relative; padding: 16px; background: #223; color: #fff; }
+  .own2 { position: relative; padding: 16px; color: #fff; z-index: 0; }
+  .own2::before { content: ""; position: absolute; inset: 0; background: #445; z-index: -1; }
+  .pic-wrap { position: relative; width: 200px; height: 120px; background: #7a8f6a; }
+  .badge { position: absolute; left: 8px; top: 8px; padding: 2px 8px; background: #c00; color: #fff; font-size: 13px; }
+  .scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); }
+  .fade { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: linear-gradient(rgba(250, 248, 244, 0), #faf8f4); }
+  .ghost-wrap { position: relative; height: 140px; }
+  .ghost, .back { position: absolute; left: 0; top: 0; font-size: 64px; line-height: 1; font-style: normal; color: #e8e2d6; }
+  .back { z-index: -1; }
+  .over { position: relative; margin-top: 30px; width: 300px; max-width: 100%; padding: 16px; background: #fff; border: 1px solid #ccc; }
+  .sweep { position: absolute; left: 0; top: 30px; width: 240px; height: 40px; background: #223; animation: sweep 2s linear infinite alternate; }
+  @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(40px); } }
+  .fading { opacity: 0; }
+  .lid { position: relative; margin-top: -24px; height: 40px; background: #fff; border: 1px solid #ccc; }
+  .veil { position: relative; margin-top: -24px; height: 60px; background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==") center / cover no-repeat; }
+  .pattern { position: relative; margin-top: -24px; height: 40px; background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="); }
+  .pic { display: block; margin-top: -24px; width: 80px; height: 80px; position: relative; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; height: 48px; background: #223; color: #fff; display: flex; align-items: center; padding: 0 24px; z-index: 30; }
+</style>
+</head>
+<body>
+<header class="top">Стенд: текст перекрыт соседним блоком</header>
+<main>
+  <section id="s-card">
+    <h2>Подпись на фото под карточкой</h2>
+    <figure class="shot"><figcaption class="credit">Фото: И. Петров</figcaption></figure>
+    <div class="card">Карточка товара поднята на фото и закрыла подпись автора.</div>
+  </section>
+  <section id="s-banner">
+    <h2>Строка под баннером с фоном-картинкой</h2>
+    <p class="note">Доставка по городу в день заказа</p>
+    <div class="banner"></div>
+  </section>
+  <section id="s-long">
+    <h2>Перекрыта часть строк</h2>
+    <div class="rel"><p class="long">Первая строка абзаца видна<br>Вторая строка абзаца видна<br>Третья строка абзаца видна<br>Четвёртая строка под плашкой<br>Пятая строка под плашкой</p>
+    <div class="plate"></div></div>
+  </section>
+  <section id="s-grad">
+    <h2>Строка под плотным градиентом</h2>
+    <p class="g">Часы работы: с десяти до восьми</p>
+    <div class="grad"></div>
+  </section>
+  <section id="s-pseudo">
+    <h2>Строка под растянутым псевдоэлементом с фоном</h2>
+    <div class="rel"><p class="pseudo">Эта строка закрыта полосой ссылки</p>
+    <a class="cover" href="#s-card">Ссылка с полосой</a></div>
+  </section>
+  <section id="s-late">
+    <h2>Блок въезжает анимацией и остаётся на строке</h2>
+    <p class="lt">Строка под блоком, который въезжает при прокрутке</p>
+    <div class="late">Блок с плотным фоном въехал и лёг на строку выше.</div>
+  </section>
+  <section id="s-pile">
+    <h2>Карточки веером (не слайды)</h2>
+    <div class="pile"><div class="pile__card"><p>Текст первой карточки наполовину ушёл под вторую.</p></div><div class="pile__card"><p>Вторая карточка лежит сверху.</p></div></div>
+  </section>
+  <section id="s-vert">
+    <h2>Вертикальная подпись под карточкой</h2>
+    <div class="rel"><figure class="shot"><figcaption class="vcredit">Фото: А. Сидоров, архив</figcaption></figure>
+    <div class="vcard">Карточка закрыла верх вертикальной подписи.</div></div>
+  </section>
+
+  <section id="s-menu">
+    <h2>Открытое меню</h2>
+    <nav class="menu"><button type="button" aria-expanded="true" aria-controls="drop">Разделы</button>
+      <ul class="drop" id="drop"><li>Каталог</li><li>Доставка</li><li>Контакты</li></ul></nav>
+    <p class="um">Абзац под открытым меню: меню лежит поверх по замыслу.</p>
+    <p>Вторая строка под меню.</p><p>Третья строка под меню.</p><p>Четвёртая строка под меню.</p>
+  </section>
+  <section id="s-dialog">
+    <h2>Открытый диалог</h2>
+    <p class="ud">Абзац под открытым диалогом: окно лежит поверх по замыслу.</p>
+    <p>Вторая строка под диалогом.</p><p>Третья строка под диалогом.</p>
+    <dialog id="dlg" open>Выберите город доставки</dialog>
+  </section>
+  <section id="s-win">
+    <h2>Окно с role="dialog"</h2>
+    <p class="uw">Абзац под окном с ролью диалога.</p>
+    <p>Вторая строка под окном.</p><p>Третья строка под окном.</p>
+    <div class="win" role="dialog" aria-label="Город">Выберите город доставки</div>
+  </section>
+  <section id="s-tile">
+    <h2>Растянутая ссылка</h2>
+    <div class="tile"><h3><a class="tile__link" href="#s-card">Плитка целиком — ссылка</a></h3><p class="tile__text">Описание плитки под прозрачным псевдоэлементом ссылки.</p></div>
+    <div class="tile"><p class="tile__text">Описание второй плитки под растянутой кнопкой.</p><a class="btn-link" href="#s-card">Подробнее</a></div>
+  </section>
+  <section id="s-slides">
+    <h2>Слайды стопкой</h2>
+    <div class="slides"><div class="slide"><p>Первый слайд под остальными.</p></div><div class="slide"><p>Второй слайд под третьим.</p></div><div class="slide"><p>Третий слайд сверху.</p></div></div>
+  </section>
+  <section id="s-fan">
+    <h2>Слайды веером</h2>
+    <div class="fan"><div class="fan__slide"><p>Первый слайд веера уходит под второй.</p></div><div class="fan__slide"><p>Второй слайд веера уходит под третий.</p></div><div class="fan__slide"><p>Третий слайд веера сверху.</p></div></div>
+  </section>
+  <section id="s-own">
+    <h2>Текст на собственном фоне</h2>
+    <div class="own"><p>Светлый текст на своём тёмном блоке.</p></div>
+    <div class="own2"><p>Светлый текст на фоне из псевдоэлемента предка.</p></div>
+  </section>
+  <section id="s-badge">
+    <h2>Значок поверх картинки</h2>
+    <div class="pic-wrap"><span class="badge">Новинка</span></div>
+  </section>
+  <section id="s-scrim">
+    <h2>Полупрозрачная подложка и затухание</h2>
+    <p class="us">Текст под подложкой с альфой 0.5 читается.</p>
+    <p>Вторая строка под подложкой.</p><p>Третья строка, над ней градиент-затухание.</p>
+    <div class="scrim"></div><div class="fade"></div>
+  </section>
+  <section id="s-ghost">
+    <h2>Слова-фон под карточкой</h2>
+    <div class="ghost-wrap"><b class="ghost" aria-hidden="true">МЕНЮ</b><div class="over">Карточка поверх слова-фона с aria-hidden.</div></div>
+    <div class="ghost-wrap" style="z-index: 0"><i class="back">БАР</i><div class="over">Карточка поверх слова-фона с z-index −1.</div></div>
+  </section>
+  <section id="s-move">
+    <h2>Движется и ждёт появления</h2>
+    <p class="swept">Над этой строкой ходит блок с бесконечной анимацией.</p>
+    <div class="sweep"></div>
+    <p class="fading">Эта строка ещё прозрачна и ждёт появления.</p>
+    <div class="lid">Крышка над прозрачной строкой.</div>
+  </section>
+  <section id="s-pattern">
+    <h2>Полупрозрачная картинка в фоне</h2>
+    <p class="up">Строка под блоком с узором-плиткой.</p>
+    <div class="pattern"></div>
+    <p class="uv" style="margin-top: 48px">Строка под полупрозрачной картинкой в фоне.</p>
+    <div class="veil"></div>
+  </section>
+  <section id="s-img">
+    <h2>Картинка над текстом</h2>
+    <p class="ui">Строка под картинкой — это проверка картинок.</p>
+    <img class="pic" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGMwCXMwCXNggFAAFfYDKTQP00YAAAAASUVORK5CYII=">
+  </section>
+</main>
+<div class="bar">Нижняя панель</div>
+<script>
+  /* блок .late въезжает каждый раз, когда его раздел входит в окно: в момент шага проверки анимация ещё идёт */
+  (function () {
+    var sec = document.getElementById('s-late'), el = sec && sec.querySelector('.late');
+    if (!el || !('IntersectionObserver' in window)) return;
+    new IntersectionObserver(function (es) { es.forEach(function (e) { el.classList.toggle('in', e.isIntersecting); }); }).observe(sec);
+  })();
+</script>
+</body>
+</html>
