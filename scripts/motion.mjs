@@ -7,15 +7,18 @@
  *                   [--out <папка прогона>] [--tag <имя>] [--time 6000] [--time-cap 20000] [--hover 14]
  *                   [--clicks 6] [--no-hover] [--no-mouse] [--no-scroll] [--no-clicks] [--no-crops] [--debug]
  *   node motion.mjs compare <motion.json донора> <адрес нашего сайта | наш motion.json> [ещё пары…]
- *                   [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport …]
- *   node motion.mjs selftest            проверка распознавания на стенде fixtures/motion/index.html
+ *                   [--out <папка прогона>] [--tag <имя>] [--decisions <файл>] [--viewport desktop[,mobile]]
+ *   node motion.mjs selftest [--no-browser]   проверка распознавания на стенде fixtures/motion/index.html и сверки
+ *                   на готовых протоколах; --no-browser — только сверка (без браузера, секунды)
  *   node motion.mjs --help
  *
  * Несколько страниц и экранов за один запуск (один браузер): адреса подряд или --pages от первого
  * адреса — «тип=путь» (тип — имя протокола) или просто пути через запятую; --viewport списком.
  *   node motion.mjs https://donor.com --pages "home=/,product=/sets/x,collection=/c/y" --viewport desktop,mobile --tag donor
  *   → motion/donor-home.json, donor-home-mobile.json, donor-product.json, … и сводка по всем.
- * Одна страница и один экран — имя --tag как есть (или <страница>-<экран>), как раньше.
+ * Одна страница и один экран — имя --tag как есть (или <страница>-<экран>), как раньше. Адрес и та же страница в
+ * --pages (https://site.ru и "home=/") — одна страница, имя с типом: <--tag>-home; разные страницы с одним именем —
+ * отказ с обоими адресами (дать им типы в --pages).
  * --time — базовое окно «время» (мс); медленную петлю (период длиннее окна: покачивание Framer 7–13 с) окно
  * продлевает кусками по 2 с, пока не увидит два разворота, но не дольше --time-cap (1000–60000, по умолчанию
  * 20000). Не уложилась — строка «окно N с короче периода», а не пропуск. Без медленных петель — ровно --time.
@@ -78,28 +81,111 @@
  * analysis.md), вырезки <out>/motion/<tag>/mNN.png и cNN.png (открытое кликом). По умолчанию <out> —
  * папка прогона по первому адресу (runs/<slug>). --debug — ещё <tag>.series.json: все шаги и ряды
  * значений менявшихся элементов, а в json — разбор каждого клика (clicks.tried[].diff).
+ * У строки — place: где элемент на странице (y — верх в документе при прокрутке 0, h, screen — номер экрана, of — из
+ * скольких, first — виден ли в первом экране; fixed — закреплён на экране: места на странице у него нет). По нему compare
+ * сверяет место движения. Протоколы, снятые до 02.10, place не имеют.
  *
  * compare: для каждого движения донора ищется такое же у нас (тот же вид, похожие числа):
  *   OK — есть и совпадает; ОТЛИЧАЕТСЯ — вид тот же, числа другие (какие); НЕТ — не найдено.
+ *   ЕСТЬ, ДРУГИМ ВИДОМ — тот же приём, записанный у нас другим видом; числа донора и наши — в строке (в json — cross):
+ *     · от прокрутки: «привязано к прокрутке» ↔ «параллакс» ↔ «появление» (строки одного нашего элемента — параллакс со
+ *       сдвигом и «появление» с поворотом — считаются одним движением: m03+m04; один элемент — тот же i, та же подпись
+ *       и то же место). Условия: у нас есть каждое свойство донора; у нас нет своего проявления (прозрачность, шторка,
+ *       размытие), которого нет у донора; место то же; у каждого свойства конец ±25% и размах 60–167% донорского, в ту
+ *       же сторону; отрезок прокрутки расходится не больше чем вдвое. Закреплённый на экране элемент (fixed, sticky —
+ *       кнопка «наверх») в такие пары не идёт: его проявление при прокрутке — не проявление раздела;
+ *     · по времени: «бегущая строка» ↔ «петля» со сдвигом по кругу (один сдвиг по оси в одну сторону, путь ≥ 200 px —
+ *       так бегущую строку писала Tilda до 02.10; парение туда-обратно, пульс, вращение и петли на JS — не строка): та
+ *       же ось и сторона, скорость ±25%;
+ *     · наведение по роли: элемент записан у донора другим видом, а по смыслу тот же — кнопка Zero Block a.tn-atom
+ *       записана «ссылкой», у нас a.btn — «кнопка». Кнопка — вид «кнопка» или ссылка с залитым до наведения фоном;
+ *       пункт меню, плашка-метка без вида, карточка и логотип кнопкой не становятся. У нас есть каждое свойство донора,
+ *       цвет идёт тем же ходом (яркость меняется в ту же сторону на столько же, ±25% хода; прозрачный остаётся
+ *       прозрачным), длительность ±25%; сами цвета не сверяются — палитра у нас своя. Из нескольких наших кнопок —
+ *       ближайшая по цвету. Закреплённая кнопка (в шапке) — пара только закреплённой.
+ *     ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ — то же, но числа врозь или у нас меняется ещё что-то, чего нет у донора (поворот,
+ *     разворот, сдвиг по другой оси): приём тот же, движение другое. У прокрутки — только при сверенном месте; и числа
+ *     врозь, и лишние свойства сразу — уже НЕТ с подсказкой «похожее у нас …: почему не засчитано».
+ *   Место на странице — то же, если верх элемента у донора и у нас не дальше одного экрана друг от друга, считая от
+ *     начала страницы; ниже первого экрана — ещё и если совпала доля высоты страницы (±15%) или расстояние от конца
+ *     страницы (до одного экрана): страницы донора и наша разной длины. Место другое — не пара (НЕТ, в строке «место
+ *     другое: у донора экран 2 из 11, у нас экран 13 из 13»): и у пар другим видом, и у пары одного вида, когда
+ *     движение стоит в одном месте (привязка к прокрутке, параллакс, бегущая строка, петля; у нашей строки ×N место не
+ *     сверяется — она стоит в нескольких). Появления, наведение одного вида, вход и мышь места не сверяют.
+ *   Место не сверено (в протоколе нет place: снят до 02.10) — пара другим видом засчитывается по одним числам, и то
+ *     лишь когда они — примета этого движения: все числа рядом, набор свойств тот же и совпало хотя бы два свойства, не
+ *     считая проявления «из ничего» (прозрачность 0 → 1 совпадает у чего угодно). Строка остаётся «ЕСТЬ, ДРУГИМ ВИДОМ»
+ *     с пометкой «место на странице не сверено» (в json — placeChecked: false), а вердикт без решения на эту строку —
+ *     не лучше WARN: переснять донора или сверить пару глазами и подтвердить решением. Бегущая строка без сверенного
+ *     места: скорость врозь до трёх раз — «ОТЛИЧАЕТСЯ», другая сторона или больше чем втрое — НЕТ.
+ *   Одно наше движение закрывает одно движение донора: делят одно наше только полные совпадения того же вида (одна
+ *   анимация карточек на все одинаковые появления донора) и строки одного элемента донора. У движения, которое стоит в
+ *   одном месте (привязка к прокрутке, параллакс, бегущая строка, петля), и полных совпадений на одном нашем — не
+ *   больше, чем у нас элементов (×N нашей строки): три ленты донора на трёх разделах и одна наша — одна OK, две НЕТ.
+ *   Пара с разницей или другим видом занимает наше движение целиком; остальным — следующее похожее или НЕТ («похожее у
+ *   нас mNN, но оно уже пара для mMM донора»).
  *   По клику пара — тот же подвид (меню, аккордеон, вкладки, раскрытие); высота панели не сравнивается
- *   (она от содержимого), свойства донора, которых у нас нет, — разница. Наведение на элемент другого вида
- *   (у донора логотип, у нас ссылка) — пара, если переход тот же: каждое свойство с теми же «от → до» и
- *   длительность ±25%. Лента вбок: путь ленты не сравнивается (он от числа разделов), только куда едет.
+ *   (она от содержимого), свойства донора, которых у нас нет, — разница. Вход при загрузке и движение от прокрутки
+ *   без единого общего свойства с нашим — не пара вовсе (НЕТ, а не «отличается»). Наведение на элемент другого вида
+ *   (у донора логотип, у нас ссылка) с тем же переходом буквально — каждое свойство с теми же «от → до» и длительность
+ *   ±25% — пара OK. Бегущая строка со строкой — сторона и скорость ±25%. Петля со сдвигом по кругу обычной петле не
+ *   пара. Лента вбок: путь ленты не сравнивается (он от числа разделов), только куда едет. Закреплённый элемент и
+ *   элемент в потоке страницы — не пара и при одном виде (появление, привязка, параллакс).
  *   НЕ ПРОВЕРЯЛОСЬ — у нас этот вид не снимался (--no-clicks, --no-hover, --no-mouse, --no-scroll; протокол
  *   без phases и без clicks): строка INFO, в вердикт не входит.
  *   Решение «почему нет / чем заменено» — в <out>/motion-decisions.json:
- *     { "m04": "у нас другой первый экран (вариант B), стопки картинок нет", "reveal:div.card": "…" }
+ *     { "reveal:div.card": "…", "m04": "у нас другой первый экран (вариант B), стопки картинок нет" }
+ *   Решение — текст; значение не строкой (false, 0) решением не считается. Ключ — «вид:подпись» (надёжнее: от номеров
+ *   не зависит; в md у строки без решения он готов для вставки), номер строки, «вид:<родитель> > *» или вид.
+ *   Ключ с экраном — "reveal:div.card:desktop", "m04:mobile", "loop:mobile" (экран — строчными, как в протоколе
+ *   донора): номера mNN у desktop и mobile свои, один файл на оба экрана пишется ключами с экраном. Сначала ищется ключ
+ *   с экраном, потом без — ключ без экрана действует на любой экран, как раньше.
+ *   Решение по номеру и пересъёмка донора. Номер mNN — порядок строк протокола, он плавает от съёмки к съёмке (донор,
+ *   снятый дважды за сутки без правок сайта, поменял местами m04 и m05). При первом применении решения по номеру
+ *   сверка запоминает отпечаток строки донора — вид, подпись, число элементов, набор свойств — в файле-спутнике
+ *   <out>/motion-decisions.prints.json (раздел на страницу донора и экран). Дальше под номером должно стоять то же
+ *   движение: подпись та же, вид тот же или из той же группы (привязка, параллакс и появление; строка и петля), у того
+ *   же вида — есть общее свойство. Движение другое — решение НЕ применяется, WARN: «решение «m04» не применено: оно
+ *   записано для «…», а сейчас под этим номером «…». То движение теперь m05. Перенесите на ключ по виду и подписи —
+ *   "entrance:span.t-submit__text:desktop" — или на новый номер». Переписанный текст решения — новое решение: оно
+ *   привязывается заново (заметкой «было — стало»). У прогона, начатого до отпечатков, первый отпечаток берётся из
+ *   прежнего протокола сверки этого прогона (<out>/motion/*.json той же страницы донора и экрана: к чему номер
+ *   относился, когда решение писали) — если текст решения с тех пор не менялся; так сдвиг номеров виден уже в первой
+ *   сверке после пересъёмки донора. Нет ни отпечатка, ни прежнего протокола (файл решений перенесён в другую папку
+ *   прогона) — решение привязывается к нынешней строке с заметкой, к чему: сверить глазами.
+ *   Замечания о решениях (INFO, в md — раздел «Решения — замечания», в json — decisionNotes): записано и с экраном, и
+ *   без, с разным текстом; решения по номеру без экрана; значения не строкой; пустые; экран в ключе другим регистром
+ *   («m01:Desktop»); ключ вида, который перестал закрывать (движение теперь записано другим видом: «loop» → «marquee»);
+ *   ключи, которые ничего не закрыли; решения, которые не понадобились (пара нашлась сама); к чему привязаны решения
+ *   по номеру. Об одном ключе — одно сообщение.
+ *   Ключи, начинающиеся с «_» ("_about"), — служебные. WARN (вердикт не лучше WARN): решение по номеру не применено —
+ *   под номером другое движение; пара без сверки места и без решения; одно решение по номеру без экрана закрыло в
+ *   одном запуске на разных экранах разные движения; экраны протоколов разные (донор mobile, наш desktop); решение по
+ *   номеру без экрана, а рядом лежит протокол донора другого экрана (donor-home-mobile.json), где под этим номером
+ *   другое движение, — при файле решений по умолчанию (он один на прогон); при своём файле через --decisions — заметкой.
  *   Петли одинаковых соседей (стопка картинок Framer, у каждой свой период) — одна строка ×N с parent
  *   и members; решение на всю группу — ключ loop:<родитель> > * (loop:div.framer-Nsiv9.framer-x6zctv > *),
  *   ключ вид:подпись любого участника тоже подходит. Голый loop:<родитель> — про сам родитель.
  *   Каким ключом закрыта строка — столбец «ключ решения» (в json — decisionKey).
  *   Движения, которых у донора нет, печатаются как «своё» — проверить, что это задумано (банк идей).
- *   Вердикт: FAIL — есть НЕТ без решения; WARN — есть ОТЛИЧАЕТСЯ; иначе OK. Протокол годится
- *   доказательством для state.mjs (визуал/runtime движения). Несколько пар подряд — протоколы
- *   compare-<тип донора>, итог — худший вердикт.
+ *   Вердикт: FAIL — есть НЕТ без решения; WARN — есть ОТЛИЧАЕТСЯ без решения или предупреждение; иначе OK
+ *   («ЕСТЬ, ДРУГИМ ВИДОМ» со сверенным местом вердикт не портит). Протокол годится доказательством для state.mjs
+ *   (визуал/runtime движения): steps[] — status (уровень OK, WARN, FAIL, INFO), match (статус словом), ours (наши номера
+ *   пары), cross (пара другим видом), placeChecked: false (место не сверено), decisionKey; counts — сколько каких
+ *   (unplaced — пар без сверки места); decisionPrints — файл отпечатков. Несколько пар подряд — протоколы
+ *   compare-<тип донора>, итог — худший вердикт. --viewport desktop,mobile — каждая пара на каждом экране за один
+ *   запуск: протокол донора другого экрана берётся рядом по имени (donor-home.json ↔ donor-home-mobile.json), наш
+ *   адрес снимается на этом экране (наш протокол — тоже сосед по имени); протоколы compare и compare-mobile.
  * selftest: стенд с каждым видом движения, у блоков data-expect; FAIL, если вид не найден или найден вид
  * из data-expect-not (на этом блоке его быть не должно: пружина входа — не петля). Плюс сверка без браузера
- * (fixtures/motion/compare-*.json: лента scrollLeft ↔ transform, наведение на элементе другого вида, --no-clicks).
+ * (fixtures/motion/compare-*.json: лента scrollLeft ↔ transform, наведение на элементе другого вида, --no-clicks;
+ * compare-cross-*.json: пары другим видом, наведение по роли, отказы от ложных пар — место другое, появление карточек
+ * вместо ленты, парение вместо строки, одно наше на два и три донорских, числа врозь; допуски чисел по одному; место
+ * тремя мерками и граница первого экрана; закреплённый элемент; пара без сверки места; число носителей; отпечатки
+ * решений по номеру и пересъёмка донора со сдвигом; ключи решений с экраном, имена страниц, compare --viewport
+ * desktop,mobile; compare-traps.json — 33 ловушки независимой проверки 02.10, из них три ограничения — заметкой INFO).
+ * Плюс две бегущие строки одной подписи с разной скоростью
+ * (fixtures/motion/marquee-two.html) — две строки протокола; место на странице (place) у строк стенда.
  * Плюс окно выбора, которое уводит со страницы (fixtures/motion/dismiss.html): страница открыта заново, итог нажатия —
  * в windows, вердикт OK; окно при загрузке без переменной (fixtures/lib/modal-city.html) — WARN в вердикте и windows.
  * Плюс проход кликов на телефоне с видимым окном ×1.25 (страница шире экрана): точка нажатия попадает. Плюс Tilda-донор
@@ -111,6 +197,8 @@
  * «привязано к прокрутке» — верно по атрибутам Tilda: петля». Переносятся только пункты, которые играют у донора на
  * этом экране (plays); остальное — заметкой «не переносить на этом экране» (на ширине < 1200 Tilda снимает появления,
  * кроме data-animate-mobile=y). Служебное Tilda (проявление #allrecords, t-mbfix, полоса T360) — не движение.
+ * Бегущая строка Zero Block (SBS loop без обратного хода, один сдвиг по оси на 200 px и больше) — «бегущая строка» со
+ * скоростью в px/с, а не «петля (парение)», как было до 02.10.
  * По клику ещё хуки Tilda: #menuopen — меню, #popup:<имя> — окно (clicks.mjs находит пару «ссылка → окно» в разметке).
  *
  * Код выхода: 0 — снято (и compare без FAIL); 1 — FAIL сверки, неверные аргументы, не открылась страница.
@@ -118,6 +206,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import {
   parseArgs, launch, preparePage, gotoRetry, waitForOverlay, sleep, resolveViewport, evaluateWith, SIG_FN,
   scrollToY, writeJson, readJson, ensureDir, runDir, pageSlug, loadSharp, closeConsent, consentNote, unmangle,
@@ -129,7 +218,7 @@ import { tildaSnapshot } from './tilda.mjs';
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { pos, opt } = parseArgs(process.argv.slice(2), {
-  flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'no-clicks', 'debug'],
+  flags: ['help', 'h', 'no-hover', 'no-mouse', 'no-scroll', 'no-crops', 'no-clicks', 'no-browser', 'debug'],
   optional: ['viewport', 'out', 'tag', 'time', 'time-cap', 'hover', 'clicks', 'decisions', 'pages'],
   commands: ['compare', 'selftest'], strict: true,
 });
@@ -1443,7 +1532,7 @@ function mergeTilda(final, snap, byI) {
 /* ---------- сборка ---------- */
 function describeTrigger(it) {
   if (it.tilda || it.source === 'атрибуты Tilda') {
-    if (it.kind === 'loop') return `время, ${it.start || 'само'}${it.scroll && it.scroll.at ? ` (${it.scroll.at})` : ''}`;
+    if (it.kind === 'loop' || it.kind === 'marquee') return `время, ${it.start || 'само'}${it.scroll && it.scroll.at ? ` (${it.scroll.at})` : ''}`;
     if (it.kind === 'hover') return `наведение${it.hover && it.hover.trigger && it.hover.trigger.length ? ` на ${it.hover.trigger.slice(0, 2).join(', ')}` : ''}${it.hover && it.hover.reverse === false ? ', без обратного хода' : ''}`;
   }
   if (it.kind === 'reveal') return `прокрутка: ${it.scroll.at}${it.cause ? `; ${it.cause}` : ''}`;
@@ -1680,10 +1769,12 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     /* бесконечные анимации (CSS/WAAPI): по ключевым кадрам */
     const seenLoop = new Set();
     for (const a of animsTop.filter((x) => x.iterations === 'infinite' && !x.timeline)) {
-      const key = `${a.target}|${a.name}|${a.pseudo}`; if (seenLoop.has(key)) continue; seenLoop.add(key);
       const el = byI.get(a.i) || { i: a.i, sig: a.target, text: '', rows: [], u: [] };
       const p0 = el.u && el.u.length ? propsOf(el.u.find(Boolean)) : null;
       const c = classifyLoop(a, kf[a.name], p0);
+      /* одна подпись и одни @keyframes — одна строка; у бегущей строки — ещё и одна скорость: две ленты .mq__track с
+         одними кадрами и разной длительностью (113 и 164 px/с у «Зелёного уголка») — две строки, а не одна */
+      const key = `${a.target}|${a.name}|${a.pseudo}${c.kind === 'marquee' ? `|${c.timing.speed}` : ''}`; if (seenLoop.has(key)) continue; seenLoop.add(key);
       const frames = kf[a.name] && kf[a.name].length ? kf[a.name].map((q) => `${q.at}: ${q.css}`).join(' · ') : '';
       items.push({ ...c, trigger: 'time', props: [{ prop: `${a.pseudo ? a.pseudo + ' ' : ''}кадры`, from: frames ? '' : kfText(a.first), to: frames || kfText(a.last) }],
         timing: { ...c.timing, easing: easeName(kfEase(a.first) || a.easing), period: Number(a.duration) || c.timing.period }, source: a.kind === 'CSSAnimation' ? `css @keyframes ${a.name}` : 'element.animate', i: a.i, el, pseudo: a.pseudo });
@@ -1835,7 +1926,7 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     const final = [];
     for (const it of merged) {
       const r1 = (x) => String(x).replace(/-?\d+\.\d+/g, (m) => String(Math.round(Number(m) * 10) / 10)); /* 0.51 и 0.5 — одно и то же движение */
-      const key = `${it.kind}|${it.sub || ''}|${pattern(it.el.sig)}|${it.props.map((p) => p.prop + ':' + r1(p.from) + '>' + r1(p.to)).join(';')}|${it.el.parent || ''}`;
+      const key = `${it.kind}|${it.sub || ''}|${pattern(it.el.sig)}|${it.props.map((p) => p.prop + ':' + r1(p.from) + '>' + r1(p.to)).join(';')}|${it.el.parent || ''}${it.kind === 'marquee' && it.timing && it.timing.speed ? `|${it.timing.speed}` : ''}`;   /* бегущие строки с разной скоростью — разные строки */
       const same = final.find((f) => f._key === key
         || (f.kind === it.kind && it.kind === 'reveal' && pattern(f.el.sig) === pattern(it.el.sig) && f.el.parent === it.el.parent)
         || (f.kind === 'reveal' && it.kind === 'reveal' && f.sub === it.sub && f.props.map((p) => p.prop + p.from + p.to).join() === it.props.map((p) => p.prop + p.from + p.to).join() && (f.timing.duration || 0) === (it.timing.duration || 0))
@@ -1854,6 +1945,35 @@ async function inventory(url, vpSpec, { out, tag, timeMs = 6000, capMs = LOOP.ca
     for (let q = final.length - 1; q >= 0; q--) if (!final[q].props.length) final.splice(q, 1);
     /* Tilda: пункты из атрибутов вместо замеров на тех же элементах; не играющее на этом экране — не движение донора */
     if (tsnap) { const mt = mergeTilda(final, tsnap, byI); final.splice(0, final.length, ...mt.items); result.tilda = mt.stat; result.notes.push(...mt.notes); if (mt.stat.addedRows || mt.stat.measuredReplaced || mt.stat.service || mt.stat.off) say(mt.info); }
+    /* место каждой строки на странице — compare сверяет его у пар разных видов (лента первого экрана ↔ параллакс в
+       подвале — не пара): верх элемента в документе при прокрутке 0, высота, номер экрана из скольких, first — виден
+       ли в первом экране (≥ 25% своей высоты или высоты окна). У закреплённого (fixed, sticky) — fixed: место
+       не сравнивается. Документ заменён кликом — по первому замеру элемента */
+    {
+      const refs = final.map((it) => ({ i: Number.isInteger(it.i) && it.i >= 0 ? it.i : -1, hover: typeof it.hover === 'number' ? it.hover : -1, sel: !(Number.isInteger(it.i) && it.i >= 0) && typeof it.hover !== 'number' ? it.cropSel || '' : '' }));
+      /* страница — в начало: после холстов и кликов она стоит где-то внизу, а у слоя параллакса и ленты по прокрутке
+         верх зависит от прокрутки */
+      if (!(clicks && clicks.replaced)) { await scrollToY(page, 0).catch(() => {}); await sleep(250); }
+      const got = clicks && clicks.replaced ? null : await page.evaluate((list) => {
+        const sc = window.__rwScroller && window.__rwScroller.isConnected ? window.__rwScroller : null; const sy = sc ? sc.scrollTop : scrollY;
+        const docH = sc ? sc.scrollHeight : Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+        return { docH, boxes: list.map((r) => {
+          let el = null; try { el = r.sel ? document.querySelector(r.sel) : r.hover >= 0 ? (window.__moHover || [])[r.hover] : r.i >= 0 ? (window.__moEls || [])[r.i] : null; } catch (e) { el = null; }
+          if (!el || !el.isConnected) return null;
+          const b = el.getBoundingClientRect(); let fixed = false;
+          for (let e = el; e && e !== document.documentElement; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') { fixed = true; break; } }
+          return { y: Math.round(b.top + sy), h: Math.round(b.height), fixed };
+        }) };
+      }, refs).catch(() => null);
+      const docH = got && got.docH ? got.docH : 0;
+      final.forEach((it, q) => {
+        let b = got && got.boxes ? got.boxes[q] : null;
+        if (!b && it.el && it.el.rows && it.el.rows.length) b = { y: it.el.rows[0][1][0], h: it.el.rows[0][1][3], fixed: it.el.position === 'fixed' || it.el.position === 'sticky' };
+        if (!b) return;
+        const seen = Math.min(b.y + b.h, vh) - Math.max(b.y, 0);
+        it.place = { y: b.y, h: b.h, screen: Math.max(1, Math.floor(Math.max(0, b.y) / vh) + 1), of: Math.max(1, Math.ceil((docH || b.y + b.h) / vh)), first: b.h > 0 ? seen >= Math.min(b.h, vh) * 0.25 : b.y >= 0 && b.y < vh, ...(b.fixed ? { fixed: true } : {}) };
+      });
+    }
     /* номера, рецепты, вырезки */
     let k = 0; let tildaCrops = 0;
     const cropDir = path.join(out, 'motion', tag);
@@ -1935,11 +2055,212 @@ const FAMILY = (it) => {
   return it.kind;
 };
 function nums(it) { const out = {}; for (const p of it.props || []) { const a = parseFloat(String(p.from).replace(',', '.')), b = parseFloat(String(p.to).replace(',', '.')); out[p.prop] = [a, b]; } return out; }
-/* Появление, исчезание и привязка к прокрутке — одно и то же изменение, снятое по-разному: если отрезок не
-   укладывается в проход (блок у конца короткой страницы), привязанное к прокрутке видно как скачок — «появление».
-   Пара между ними — только когда у нас есть все свойства донора и числа близки. */
-const SCROLL_GROUP = new Set(['reveal:in', 'reveal:out', 'scroll-linked']);
 const kindRu = (it) => `${KIND_RU[it.kind] || it.kind}${it.sub ? ` (${it.sub})` : ''}`;
+
+/* === Пары между разными видами движения (02.10: «Зелёный уголок» ↔ generationx5.tech, 10 решений руками) ===
+   Один приём записывается разными видами — от того, как сделан и как попал в замер:
+   · от прокрутки — «привязано к прокрутке» (у Tilda — из атрибутов SBS), «параллакс» (сдвиг на долю прокрутки по
+     замеру) и «появление» (отрезок уложился в один-два шага прохода): лента первого экрана с числами донора
+     записана у нас параллаксом на широком экране и появлением на телефоне;
+   · по времени — «бегущая строка» и «петля» со сдвигом по кругу (так бегущую строку пишет Tilda: SBS loop);
+   · наведение — кнопка Zero Block a.tn-atom записана «ссылкой» (полей у неё нет), у нас a.btn — «кнопка».
+   Каждая такая пара — возможность «найти» движение, которого у нас нет, в постороннем. Поэтому пара — только при
+   настоящем сходстве: тот же запуск (прокрутка ↔ прокрутка, время ↔ время, наведение ↔ наведение), у нас есть все
+   свойства донора и нет своего проявления (прозрачность, шторка, размытие), место на странице то же (первый экран ↔
+   первый экран), числа рядом. Статус такой пары — «ЕСТЬ, ДРУГИМ ВИДОМ» с числами обоих, а не OK; числа разошлись —
+   «ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ». Одно наше движение закрывает одно движение донора (assignPairs). */
+const CROSS = {
+  end: 0.25,      /* конечное значение свойства: ±25%, как у пары одного вида */
+  span: 0.6,      /* размах «из → в»: от 60% до 167% донорского — замер застаёт движение не с первого пикселя (у ленты
+                     первого экрана «из» 11.7 px, а не 0), поэтому «из» само не сверяется */
+  range: 2,       /* отрезок прокрутки: расходится больше чем вдвое — разница (замер кратен шагу прохода, четверть экрана) */
+  speed: 1.25,    /* скорость бегущей строки: ±25% */
+  lum: 0.25,      /* наведение: яркость цвета (0…1) у конца, когда другой конец прозрачный, — не дальше 0.25; ход яркости
+                     между двумя цветами — ±25% хода (roleHover); сами цвета не сверяются — палитра у нас своя */
+  line: 200,      /* петля «по кругу» — путь за период не меньше 200 px (как у CSS-строки в classifyLoop) */
+  near: 1,        /* место: верх элемента у донора и у нас не дальше одного экрана друг от друга — считая от начала страницы
+                     или (ниже первого экрана) от её конца: подвал ↔ подвал у страниц разной длины */
+  part: 0.15,     /* … или та же доля высоты страницы, ±15% (ниже первого экрана): середина ↔ середина; у страницы в 12
+                     экранов это ±1.8 экрана — разделы донора и наши по высоте не совпадают */
+  wild: 3,        /* бегущая строка без сверенного места: скорость врозь больше чем втрое — уже не «та же строка с разницей» */
+  proof: 2,       /* место не сверено — пара держится на одних числах: совпасть должны хотя бы два свойства, не считая
+                     проявления (прозрачность 0 → 1 одинакова у чего угодно) */
+};
+const sizeOf = (proto) => { const m = /(\d+)\s*[×x]\s*(\d+)/.exec((proto && proto.size) || ''); return m ? { w: Number(m[1]), h: Number(m[2]) } : null; };
+/* Закреплённый на экране элемент (fixed, sticky): кнопка «наверх», шапка, плавающая кнопка. Места на странице у него
+   нет, и его проявление при прокрутке — не проявление раздела: в протоколах до 02.10 — scroll.fixed, с 02.10 — place.fixed */
+const fixedEl = (it) => !!((it.place && it.place.fixed) || (it.scroll && it.scroll.fixed));
+/* Место движения на странице. place пишет инвентарь с 02.10 (верх элемента в документе, высота, номер экрана из
+   скольких); vh — высота окна протокола. → { first — виден в первом экране, top — верх в экранах от начала страницы,
+   part — он же долей высоты страницы, tail — экранов до конца страницы, text }. В протоколах старше места нет: у
+   появления известно только visAtStart («виден с начала»), у остального — ничего (null). У закреплённого — null. */
+const placeNums = (p, vh) => { const top = Number.isFinite(p.y) && vh > 0 ? p.y / vh : p.screen - 0.5; const of = Math.max(1, p.of || p.screen); return { top, part: top / of, tail: of - top }; };
+function placeOf(it, vh) {
+  const p = it.place;
+  if (p && !p.fixed && Number.isFinite(p.screen)) return { first: !!p.first, ...placeNums(p, vh), text: p.first ? 'первый экран' : p.screen === 1 ? `низ первого экрана (верх на ${p.y} px, видно меньше четверти)` : `экран ${p.screen} из ${p.of}` };
+  if (!p && it.kind === 'reveal' && typeof it.visAtStart === 'boolean' && !(it.scroll && it.scroll.fixed)) return { first: it.visAtStart, top: null, text: it.visAtStart ? 'первый экран (виден с начала)' : 'ниже первого экрана' };
+  return null;
+}
+/* То же ли место у движения донора и нашего. Страницы разной длины (донор — 11 экранов, наша — 13), поэтому мерок три:
+   расстояние от начала страницы, доля её высоты и расстояние от конца — место то же, если сошлась любая. Первый экран —
+   только по расстоянию от начала: с ним «та же доля страницы» — это второй-третий экран длинной страницы. Допуск в
+   экран закрывает и границу первого экрана: блок с верхом на 760 px у донора и на 740 px у нас (окно 900) — одно место,
+   хотя «виден в первом экране на четверть» у них разное (ловушка t3d); лента 2-го экрана и листик в подвале — разное
+   (t3a). → null — сверить нечем (места нет у одного из двух); { far } — сверено: то же (false) или другое (true) */
+function placeGap(a, b) {
+  if (!a || !b) return null;
+  if (Number.isFinite(a.top) && Number.isFinite(b.top)) {
+    if (Math.abs(a.top - b.top) <= CROSS.near) return { far: false };
+    if (a.first || b.first) return { far: true };
+    return { far: !(Math.abs(a.part - b.part) <= CROSS.part || Math.abs(a.tail - b.tail) <= CROSS.near) };
+  }
+  /* у одного — только «виден с начала» (появление в протоколе до 02.10) */
+  if (a.first && b.first) return { far: false };
+  if (a.first !== b.first) { const k = Number.isFinite(a.top) ? a : Number.isFinite(b.top) ? b : null; return { far: !(k && !k.first && k.top < CROSS.near) }; }
+  return null;                                                         /* оба ниже первого экрана, а где именно — неизвестно */
+}
+/* один ли это элемент: строки одного i с той же подписью и тем же местом. Один номер i у разных элементов бывает у
+   протокола, собранного из двух проходов; подпись сверяется по шаблону (класс состояния .is-in появляется по ходу) */
+const sameSpot = (a, b) => pattern(a.target) === pattern(b.target) && (!a.place || !b.place || (Math.abs(a.place.y - b.place.y) <= 8 && Math.abs(a.place.h - b.place.h) <= 8));
+/* Движение от прокрутки для сверки между видами: строки одного элемента (тот же i, по одной штуке) — одно движение.
+   Лента первого экрана у нас записана двумя строками одного div.hero__ribbon: параллакс (сдвиг, масштаб) и
+   «появление» (поворот); у донора это одна строка scroll-linked с четырьмя свойствами. «Лента вбок» и «при
+   прокрутке вверх» — свои приёмы, в пары другого вида не идут. Закреплённый на экране элемент — тоже: кнопка «наверх»
+   (прозрачность 0 → 1 при прокрутке, места на странице нет) закрывала проявление заголовка раздела у донора — числа у
+   «0 → 1» совпадают всегда (ловушки t6b–t6d; такая кнопка есть в протоколах двух наших сайтов из трёх). */
+const FADE = new Set([NAMES.op, NAMES.blur, NAMES.clip, 'видимость']);
+const scrollKind = (it) => (it.kind === 'scroll-linked' || it.kind === 'parallax' || (it.kind === 'reveal' && it.sub !== 'при прокрутке вверх')) && it.sub !== 'лента вбок';
+function scrollUnits(items, vh) {
+  const units = []; const byI = new Map();
+  for (const it of items) {
+    if (!scrollKind(it) || fixedEl(it)) continue;
+    const one = Number.isInteger(it.i) && it.i >= 0 && (it.count || 1) === 1;
+    let u = one ? byI.get(it.i) : null;
+    if (u && !sameSpot(u.parts[0], it)) u = null;                  /* тот же i, а подпись или место другие — другой элемент (t5a) */
+    if (!u) { u = { parts: [], props: new Map() }; units.push(u); if (one && !byI.has(it.i)) byI.set(it.i, u); }
+    u.parts.push(it);
+    for (const p of it.props || []) if (!u.props.has(p.prop)) u.props.set(p.prop, { from: p.from, to: p.to, a: parseFloat(String(p.from).replace(',', '.')), b: parseFloat(String(p.to).replace(',', '.')) });
+  }
+  for (const u of units) {
+    u.ids = u.parts.map((x) => x.id);
+    u.range = (u.parts.map((x) => x.scroll && x.scroll.rangePx).find((r) => Number.isFinite(r) && r > 0)) || null;
+    u.place = u.parts.map((x) => placeOf(x, vh)).find(Boolean) || null;
+    u.many = u.parts.some((x) => (x.count || 1) > 1);              /* строка ×N: место записано у первого из N */
+    u.kinds = [...new Set(u.parts.map(kindRu))];
+  }
+  return units;
+}
+/* числа одного свойства у пары разных видов (донор a → b, у нас c → e): '' — рядом, 'side' — в другую сторону, 'num' — другие */
+function crossNum(a, b, c, e) {
+  const sd = b - a, so = e - c;
+  if (Math.abs(sd) < 1e-9 && Math.abs(so) < 1e-9) return '';
+  if (Math.sign(sd) !== Math.sign(so)) return 'side';
+  const endOk = Math.abs(e - b) <= Math.max(Math.abs(b) * CROSS.end, Math.abs(sd) * 0.1, 0.05);
+  const r = Math.abs(so) / Math.abs(sd);
+  return endOk && r >= CROSS.span && r <= 1 / CROSS.span ? '' : 'num';
+}
+/* Пара «от прокрутки» между видами: du — движение донора, u — наше (scrollUnits). → null — не похоже;
+   { no } — похоже, но парой не засчитано (почему — в строку «НЕТ» подсказкой); { exact, diffs, notes } — пара. */
+function crossScroll(du, u, ctx) {
+  const names = [...du.props.keys()];
+  if (!names.length || !names.every((k) => Number.isFinite(du.props.get(k).a) && Number.isFinite(du.props.get(k).b))) return null;   /* «кадры …», «видимость» — сверять нечем */
+  if (!names.every((k) => u.props.has(k) && Number.isFinite(u.props.get(k).a) && Number.isFinite(u.props.get(k).b))) return null;     /* у нас нет свойства донора */
+  const extra = [...u.props.keys()].filter((k) => !du.props.has(k));
+  if (extra.some((k) => FADE.has(k))) return null;                 /* у нас блок проявляется, у донора — нет: это появление, а не лента */
+  const diffs = [], near = []; let same = 0, far = 0;
+  for (const k of names) {
+    const a = du.props.get(k), b = u.props.get(k); const bad = crossNum(a.a, a.b, b.a, b.b);
+    if (bad === 'side' && FADE.has(k)) return null;                 /* появляется ↔ исчезает — разные движения */
+    if (bad) { diffs.push(`${k}${bad === 'side' ? ' — в другую сторону' : ''}: у донора ${a.from} → ${a.to}, у нас ${b.from} → ${b.to}`); const r = Math.abs(b.b - b.a) / Math.max(1e-9, Math.abs(a.b - a.a)); if (bad === 'side' || r > 5 || r < 0.2) far++; }
+    else { same++; near.push(`${k} ${a.from} → ${a.to} / у нас ${b.from} → ${b.to}`); }
+  }
+  if (du.range && u.range) { if (Math.max(du.range, u.range) / Math.min(du.range, u.range) > CROSS.range) diffs.push(`отрезок прокрутки: у донора ${du.range} px, у нас ${u.range} px`); else near.push(`отрезок ${du.range} px / у нас ${u.range} px`); }
+  else if (du.range && ctx.vhO && du.range > ctx.vhO) diffs.push(`отрезок прокрутки: у донора ${du.range} px, у нас движение уложилось в один-два шага прохода (не больше ${Math.round(ctx.vhO / 2)} px)`);
+  else if (u.range && ctx.vhD && u.range > ctx.vhD) diffs.push(`отрезок прокрутки: у донора движение уложилось в один-два шага прохода (не больше ${Math.round(ctx.vhD / 2)} px), у нас ${u.range} px`);
+  const who = `${u.ids.join('+')} ${u.kinds.map((k) => `«${k}»`).join(' + ')}`;
+  /* подсказка к «НЕТ» — кроме совсем другого (weak): ни одного числа рядом, все — в другую сторону или впятеро врозь */
+  const many = (x) => (x.many ? ' (первый из нескольких ×N)' : '');
+  const gap = placeGap(du.place, u.place);
+  if (gap && gap.far) return { no: `${who} — место другое: у донора ${du.place.text}${many(du)}, у нас ${u.place.text}${many(u)}`, bad: diffs.length, weak: !same && far === names.length };
+  const placed = !!gap;
+  /* числа другие И у нас меняется ещё что-то — это уже не «тот же приём с другими числами»: вращение фигур на 259°
+     «отличалось» бы от любого параллакса с лёгким поворотом (сдвиг Y −80 px, поворот 16°) */
+  if (diffs.length && extra.length) return { no: `${who} — свойства донора у нас есть, но числа другие (${diffs.join('; ')}) и меняется ещё ${extra.join(', ')}: другое движение или сильно переделанное — записать решение`, bad: diffs.length, weak: !same && far === names.length };
+  /* место не сверено (протокол без place): парой — только точное повторение, иначе любой параллакс страницы «похож» */
+  if (!placed && (diffs.length || extra.length)) return { no: `${who} — те же свойства, но ${diffs.length ? `числа другие (${diffs.join('; ')})` : `у нас ещё ${extra.join(', ')}`}, а место на странице не сверено: ${noPlaceWhy(du.place, u.place)} — переснять или записать решение`, bad: diffs.length, weak: !same && far === names.length };
+  /* место не сверено, числа рядом: пара держится на одних числах, и они должны быть приметой именно этого движения.
+     Одна прозрачность 0 → 1 (или одно любое свойство) совпадает у чего угодно: проявление заголовка донора «нашлось» бы
+     в любом нашем блоке, который проявляется. Лента первого экрана — четыре свойства сразу — примета */
+  const proof = names.filter((k) => !plainFade(k, du.props.get(k)));
+  if (!placed && proof.length < CROSS.proof) return { no: `${who} — совпало только ${names.map((k) => `«${k} ${du.props.get(k).from} → ${du.props.get(k).to}»`).join(', ')}, а место на странице не сверено (${noPlaceWhy(du.place, u.place)}): ${proof.length ? 'одно свойство' : 'проявление «из ничего»'} совпадает у чего угодно — переснять или записать решение`, bad: 0, weak: false };
+  /* лишнее у нас (поворот, разворот, сдвиг по другой оси) — приём тот же, движение другое: картинка донора растёт до
+     1.5, наш листик растёт до 1.45, но ещё и улетает на 600 px с разворотом на 180° (t6a) — «отличается», а не «есть» */
+  if (extra.length) diffs.push(`у нас меняется ещё ${extra.map((k) => `${k} ${u.props.get(k).from} → ${u.props.get(k).to}`).join('; ')} — у донора этого нет`);
+  const notes = [`тот же приём другим видом: у донора ${du.kinds.map((k) => `«${k}»`).join(' + ')}, у нас ${u.kinds.map((k) => `«${k}»`).join(' + ')}${u.parts.length > 1 ? ' (строки одного элемента)' : ''}`];
+  if (near.length) notes.push(`${diffs.length ? 'рядом только' : 'числа рядом'}: ${near.join('; ')}`);
+  notes.push(placed ? `место: у донора ${du.place.text}${many(du)}, у нас ${u.place.text}${many(u)}` : `место на странице не сверено — ${noPlaceWhy(du.place, u.place)}`);
+  return { exact: !diffs.length, diffs, notes, placed };
+}
+/* проявление «из ничего в полное» (прозрачность 0 → 1, шторка 0 → 100%, размытие до нуля, видимость) — одно и то же у
+   любого блока, приметой движения не служит; частичное (плашка донора тускнеет 0.9 → 0.51 и уменьшается — пара у
+   figurki) — служит */
+function plainFade(k, v) {
+  if (!FADE.has(k)) return false;
+  if (!Number.isFinite(v.a) || !Number.isFinite(v.b)) return true;
+  const lo = Math.min(v.a, v.b), hi = Math.max(v.a, v.b);
+  return lo <= 0.05 && (k === NAMES.blur || hi >= 0.95);
+}
+/* почему место не сверено — словами для строки сверки */
+function noPlaceWhy(pd, po) {
+  if (pd && po) return `у появления в протоколе ${!Number.isFinite(pd.top) && !Number.isFinite(po.top) ? 'донора и нашего сайта' : !Number.isFinite(pd.top) ? 'донора' : 'нашего сайта'} (снят до 02.10) известно только «ниже первого экрана»`;
+  return `в протоколе ${!pd && !po ? 'донора и нашего сайта' : !pd ? 'донора' : 'нашего сайта'} нет места элемента (снят до 02.10 или элемент закреплён на экране)`;
+}
+/* Бегущая строка: скорость и сторона. У «бегущей строки» — из timing.speed («113 px/с влево»); у «петли» — только
+   если она по кругу: один сдвиг по оси в одну сторону и прыжок в начало (direction normal, два кадра), путь за период
+   ≥ 200 px — так Tilda пишет бегущую строку (SBS loop, translate −2254.8 px за 20 с; tilda.mjs до 02.10 называл её
+   «петля (парение)»). Парение значка (ходит туда-обратно), пульс, вращение и петли на JS (по разворотам) — не строка. */
+function runLine(it) {
+  const t = it.timing || {};
+  if (it.kind === 'marquee') { const m = /([\d.]+)\s*px\/с\s+(влево|вправо|вверх|вниз)/.exec(t.speed || ''); return m ? { v: Number(m[1]), dir: m[2] } : { v: null, dir: '' }; }
+  if (it.kind !== 'loop' || it.source === 'js') return null;
+  const P = it.props || [];
+  if (P.length !== 1 || !/^сдвиг [XY]$/.test(P[0].prop) || (t.direction && t.direction !== 'normal') || (it.keyframes && it.keyframes.length !== 2)) return null;
+  const a = parseFloat(P[0].from), b = parseFloat(P[0].to); const T = t.period || t.duration;
+  if (!Number.isFinite(a) || !Number.isFinite(b) || Math.abs(b - a) < CROSS.line || !(T > 0)) return null;
+  return { v: round(Math.abs(b - a) / (T / 1000)), dir: /X$/.test(P[0].prop) ? (b < a ? 'влево' : 'вправо') : (b < a ? 'вверх' : 'вниз') };
+}
+/* разница двух бегущих строк: сторона и скорость (и у пары одного вида — master скорость не сверял вовсе) */
+function lineDiffs(a, b) {
+  const diffs = [];
+  if (a.dir && b.dir && a.dir !== b.dir) diffs.push(`строка едет в другую сторону: у донора ${a.dir}, у нас ${b.dir}`);
+  if (a.v && b.v && Math.max(a.v, b.v) / Math.min(a.v, b.v) > CROSS.speed) diffs.push(`скорость: у донора ${a.v} px/с, у нас ${b.v} px/с`);
+  return diffs;
+}
+const lineAxis = (dir) => (dir === 'вверх' || dir === 'вниз' ? 'Y' : dir ? 'X' : '');
+/* Место и «дикая» разница у двух строк (и между видами, и у пары одного вида). → { no } — парой не засчитано (почему);
+   { placed } — место сверено и то же (true) или сверить нечем (false).
+   · лента вбок и лента вверх — разные приёмы (бегущая строка разделов и столбец отзывов), не пара вовсе (null);
+   · место известно у обоих и другое — не пара: строка под первым экраном донора и карусель логотипов в подвале;
+   · место не сверено, а строка едет в другую сторону или скорость врозь больше чем втрое — не пара: «та же строка с
+     разницей» без места — любая карусель страницы (t4a: 113 px/с влево ↔ 30 px/с вправо давало WARN с кодом 0). */
+function linePlace(d, o, a, b, ctx) {
+  if (lineAxis(a.dir) && lineAxis(b.dir) && lineAxis(a.dir) !== lineAxis(b.dir)) return null;
+  const pd = placeOf(d, ctx.vhD), po = placeOf(o, ctx.vhO); const gap = placeGap(pd, po);
+  if (gap && gap.far) return { no: `${o.id} «${kindRu(o)}» \`${o.target}\` — место другое: у донора ${pd.text}, у нас ${po.text}`, bad: 0 };
+  const wild = (a.dir && b.dir && a.dir !== b.dir) || (a.v && b.v && Math.max(a.v, b.v) / Math.min(a.v, b.v) > CROSS.wild);
+  if (!gap && wild) return { no: `${o.id} «${kindRu(o)}» \`${o.target}\` — строка есть, но ${lineDiffs(a, b).join('; ')}, а место на странице не сверено (${noPlaceWhy(pd, po)}): без места так «отличается» любая карусель страницы — переснять или записать решение`, bad: 2 };
+  return { placed: !!gap, pd, po };
+}
+function crossLine(d, o, ctx) {
+  if (d.kind === o.kind) return null;
+  const a = runLine(d), b = runLine(o); if (!a || !b || !a.v || !b.v) return null;
+  const at = linePlace(d, o, a, b, ctx); if (!at || at.no) return at;
+  const diffs = lineDiffs(a, b);
+  const ring = (x) => `«${kindRu(x)}»${x.kind === 'loop' ? ' со сдвигом по кругу' : ''}`;
+  const notes = [`тот же приём другим видом: у донора ${ring(d)}, у нас ${ring(o)}`, ...(diffs.length ? [] : [`числа рядом: скорость ${a.v} px/с ${a.dir} / у нас ${b.v} px/с ${b.dir}`]),
+    at.placed ? `место: у донора ${at.pd.text}, у нас ${at.po.text}` : `место на странице не сверено — ${noPlaceWhy(at.pd, at.po)}`];
+  return { exact: !diffs.length, diffs, notes, placed: at.placed };
+}
 const COMP_RU = { logo: 'логотип', card: 'карточка', nav: 'пункт меню', button: 'кнопка', link: 'ссылка' };
 /* Наведение с тем же переходом: каждое свойство донора у нас с теми же «от → до», длительность та же (±25%, у обоих
    или ни у кого). Подпись и вид элемента не важны: у донора — «логотип» a.sidebar-logo, у нас — «ссылка» a.rail__item,
@@ -1952,18 +2273,98 @@ function sameHover(d, o) {
   if (!!a !== !!b || (a && b && Math.max(a, b) / Math.min(a, b) > 1.25)) return '';
   return `${d.props.map((p) => `${p.prop} ${p.from} → ${p.to}`).join('; ')}${a ? `, ${a} мс${b !== a ? ` / у нас ${b} мс` : ''}` : ''}`;
 }
-function similar(d, o) {
+/* Роль элемента наведения — по смыслу, а не по тегу: кнопка Zero Block a.tn-atom записана «ссылкой» (полей у неё нет,
+   размеры заданы), у нас a.btn — «кнопка». Кнопка — только то, что кнопкой и является: вид «кнопка» или ссылка с
+   залитым до наведения фоном. Любая плашка с фоном кнопкой не становится: пункт меню остаётся пунктом меню, метка без
+   вида — ничем (раньше кнопку донора закрывали пункт меню с фоном и плашка-метка — ловушки t2b, t2c). */
+const clearColor = (c) => /rgba\([^)]*,\s*0\)|transparent|прозрачн/i.test(String(c));
+const rgbOf = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(String(c)); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null; };
+const lumOf = (c) => { const v = rgbOf(c); return v ? (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255 : null; };
+function hoverRole(it) {
+  if (it.component === 'card' || it.component === 'logo') return it.component;        /* карточка и логотип — свои роли при любом фоне */
+  const bg = (it.props || []).find((p) => p.prop === 'фон');
+  const filled = !!(bg && rgbOf(bg.from) && !clearColor(bg.from));
+  /* из остальных видов (кнопка, ссылка, пункт меню, без вида) залитая ссылка — кнопка; пункт меню и элемент без вида — нет */
+  return filled && it.component && it.component !== 'nav' ? 'button' : it.component || '';
+}
+/* Наведение на элементе другого вида с той же ролью (кнопка ↔ кнопка): у нас есть каждое свойство донора, цвет идёт
+   тем же ходом — яркость меняется в ту же сторону и на столько же (±0.25), прозрачный остаётся прозрачным, — прочее
+   («нет → масштаб 1.04») совпадает буквально, длительность ±25%. Сами цвета не сверяются: палитра у нас своя
+   (у донора салатовая #D7FF1E → тёмная #1E5B28, у нас #D3F34A → #1F5530). Что-то не сошлось — не пара вовсе:
+   «наведение есть у другого элемента» парой не считается. Место — то же, когда известно у обоих: кнопка первого экрана
+   донора и плашка фильтра каталога в третьем экране — не пара (t2a; у плашки вид тоже «кнопка»). Закреплённый элемент
+   (кнопка в шапке) — пара только закреплённому. → { far — насколько цвета далеки (0…1), note, placed } или null;
+   { no } — роль и переход те же, а место другое (подсказкой в строку «НЕТ») */
+function roleHover(d, o, ctx = {}) {
+  const role = hoverRole(d);
+  if (!role || role !== hoverRole(o) || d.sub !== o.sub || !(d.props || []).length) return null;
+  if (fixedEl(d) !== fixedEl(o)) return null;
+  let far = 0, n = 0; const said = [];
+  for (const p of d.props) {
+    const q = (o.props || []).find((x) => x.prop === p.prop); if (!q) return null;
+    const c = [p.from, p.to, q.from, q.to];
+    if (c.every(rgbOf)) {
+      if (clearColor(p.from) !== clearColor(q.from) || clearColor(p.to) !== clearColor(q.to)) return null;
+      const l = c.map((x) => (clearColor(x) ? null : lumOf(x)));
+      /* ход яркости — ±25% от хода (не меньше 0.02): кнопка, что темнеет на 0.06, и та, что на 0.03, — разные переходы
+         (фикстура: #D30052 → #96003C у донора и → #B30046 у нас — не пара) */
+      if (l[0] !== null && l[1] !== null) { const hd = l[1] - l[0], ho = l[3] - l[2]; if (Math.abs(hd - ho) > Math.max(0.02, 0.25 * Math.max(Math.abs(hd), Math.abs(ho)))) return null; }
+      else for (const k of [0, 1]) if (l[k] !== null && Math.abs(l[k] - l[k + 2]) > CROSS.lum) return null;
+      for (const k of [0, 1]) if (l[k] !== null) { far += Math.hypot(...rgbOf(c[k]).map((v, j) => v - rgbOf(c[k + 2])[j])) / 441.7; n++; }
+      said.push(`${p.prop} ${rgbHex(p.from)} → ${rgbHex(p.to)} / у нас ${rgbHex(q.from)} → ${rgbHex(q.to)}`);
+    } else if (normV(p.from) !== normV(q.from) || normV(p.to) !== normV(q.to)) return null;
+    else said.push(`${p.prop} ${p.from} → ${p.to}`);
+  }
+  const a = (d.timing || {}).duration, b = (o.timing || {}).duration;
+  if (!!a !== !!b || (a && b && Math.max(a, b) / Math.min(a, b) > 1.25)) return null;
+  const pd = placeOf(d, ctx.vhD), po = placeOf(o, ctx.vhO); const gap = placeGap(pd, po);
+  if (gap && gap.far) return { no: `${o.id} «${COMP_RU[o.component] || o.component || '?'}» \`${o.target}\` — наведение то же по роли и ходу цвета, но место другое: у донора ${pd.text}, у нас ${po.text}` };
+  const pinned = fixedEl(d) && fixedEl(o);                          /* оба закреплены на экране — место сравнивать не с чем, и не нужно */
+  return { far: n ? far / n : 0, note: `${said.join('; ')}${a ? `, ${a} мс${b !== a ? ` / у нас ${b} мс` : ''}` : ''}`, placed: !!gap || pinned,
+    place: gap ? `место: у донора ${pd.text}, у нас ${po.text}` : pinned ? 'оба закреплены на экране' : `место на странице не сверено — ${noPlaceWhy(pd, po)}` };
+}
+/* виды, у которых движение стоит в одном месте страницы и место — часть движения: лента раздела, бегущая строка,
+   парящий значок. Появление и наведение заданы классом на все такие элементы страницы, вход при загрузке и мышь — на
+   всю страницу: у них место пары одного вида не сверяется */
+const SPOT_KINDS = new Set(['scroll-linked', 'parallax', 'marquee', 'loop']);
+function similar(d, o, ctx = {}) {
   const fd = FAMILY(d), fo = FAMILY(o);
   const cross = fd !== fo;
   /* наведение на элемент другого вида — пара, только если переход тот же целиком; такая пара сильнее той же по виду, но с разницей */
-  if (cross && d.kind === 'hover' && o.kind === 'hover') { const same = sameHover(d, o); return same ? { score: 0.9, diffs: [], notes: [`у донора наведение на «${COMP_RU[d.component] || d.component || '?'}», у нас — на «${COMP_RU[o.component] || o.component || '?'}»: переход тот же (${same})`] } : { score: 0 }; }
-  if (cross && !(SCROLL_GROUP.has(fd) && SCROLL_GROUP.has(fo))) return { score: 0 };
+  if (cross && d.kind === 'hover' && o.kind === 'hover') {
+    const same = sameHover(d, o);
+    if (same) return { score: 0.9, diffs: [], notes: [`у донора наведение на «${COMP_RU[d.component] || d.component || '?'}», у нас — на «${COMP_RU[o.component] || o.component || '?'}»: переход тот же (${same})`] };
+    /* тот же переход своими цветами на элементе той же роли; из нескольких наших кнопок — ближайшая по цвету. Это пара
+       другим видом («ЕСТЬ, ДРУГИМ ВИДОМ», cross), а не полное совпадение: цвета свои, элемент записан иначе */
+    const rh = roleHover(d, o, ctx);
+    if (rh && rh.no) return { score: 0, no: rh.no };
+    return rh ? { score: 0.85 - 0.05 * Math.min(1, rh.far), diffs: [], own: true, placed: rh.placed, notes: [`тот же приём другим видом: у донора наведение записано на «${COMP_RU[d.component] || d.component || '?'}», у нас — на «${COMP_RU[o.component] || o.component || '?'}»: по роли это ${COMP_RU[hoverRole(d)] || hoverRole(d)} у обоих, свойства и ход яркости те же, цвета свои (${rh.note})`, rh.place] } : { score: 0 };
+  }
+  /* разные виды — не здесь: пары «от прокрутки» и «бегущая строка ↔ петля по кругу» собирает compare (crossScroll, crossLine) */
+  if (cross) return { score: 0 };
   const diffs = [], notes = []; let score = 1;
+  /* закреплённый на экране элемент и элемент в потоке страницы — разное и при одном виде: кнопка «наверх», что
+     проявляется после первого экрана, — не появление раздела (то же правило, что у пар другого вида) */
+  if (['reveal', 'scroll-linked', 'parallax'].includes(d.kind) && fixedEl(d) !== fixedEl(o)) return { score: 0 };
+  /* петля со сдвигом по кругу — бегущая строка (Tilda до 02.10 писала её «петлёй (парение)»): обычной петле того же
+     подвида она не пара — раньше строка донора «совпадала» с любым парящим значком у нас (петли сверялись по подвиду,
+     без свойств). Две такие петли — сверяются как строки: сторона и скорость */
+  if (d.kind === 'loop') {
+    const a = runLine(d), b = runLine(o);
+    if (!!a !== !!b) return { score: 0 };
+    if (a && b) { const at = linePlace(d, o, a, b, ctx); if (!at || at.no) return { score: 0, no: at ? at.no : '' }; for (const x of lineDiffs(a, b)) { diffs.push(x); score -= 0.15; } }
+  }
+  if (d.kind === 'marquee') { const a = runLine(d), b = runLine(o); if (a && b) { const at = linePlace(d, o, a, b, ctx); if (!at || at.no) return { score: 0, no: at ? at.no : '' }; } }
   /* лента вбок: путь (сколько px проехать) — от длины ленты, то есть от числа разделов; язык движения — что едет и куда */
   const ribbon = d.sub === 'лента вбок' && o.sub === 'лента вбок';
   if (ribbon) { const sl = (x) => /scrollLeft/.test(x.source || ''); if (sl(d) !== sl(o)) notes.push(`лента едет у донора ${sl(d) ? 'прокруткой контейнера (scrollLeft)' : 'сдвигом transform'}, у нас — ${sl(o) ? 'прокруткой контейнера (scrollLeft)' : 'сдвигом transform'}`); }
   if (d.kind === 'hover' && d.sub !== o.sub) { diffs.push(`наведение: у донора «${d.sub}», у нас «${o.sub}»`); score -= 0.3; }
   const nd = nums(d), no = nums(o);
+  /* вход при загрузке и движение от прокрутки без единого общего свойства — другое движение, а не «то же с разницей»:
+     служебный переход рамки кнопки Tilda (column-rule-width, 200 мс) «отличался» от входа нашего заголовка (opacity,
+     1000 мс), въезд значка слева — от смены фона точки слайдера. Раньше это было незаметно (WARN при любой паре); когда
+     одно наше движение стало закрывать одно донорское, такой «паре» доставалось наше движение, а настоящей — НЕТ */
+  if (['entrance', 'reveal', 'scroll-linked', 'parallax'].includes(d.kind) && !ribbon && Object.keys(nd).length && !Object.keys(nd).some((k) => k in no)) return { score: 0 };
   for (const [prop, [a, b]] of Object.entries(nd)) {
     if (!(prop in no)) {
       if (['reveal', 'scroll-linked', 'parallax', 'entrance', 'click'].includes(d.kind)) { const pr = (d.props || []).find((x) => x.prop === prop); diffs.push(`нет «${prop}» (${pr ? `${pr.from} → ${pr.to}` : `${a} → ${b}`})`); score -= 0.25; }
@@ -1984,12 +2385,20 @@ function similar(d, o) {
   }
   const dt = d.timing || {}, ot = o.timing || {};
   if (dt.duration && ot.duration && (ot.duration > dt.duration * 1.6 || ot.duration < dt.duration / 1.6)) { diffs.push(`длительность: ${dt.duration} → у нас ${ot.duration} мс`); score -= 0.1; }
-  if (cross) {
-    const keys = Object.keys(nd);
-    if (!keys.length || diffs.length || !keys.every((k) => k in no)) return { score: 0 };
-    return { score: 0.6, diffs: [], notes: [`у донора снято как «${kindRu(d)}», у нас — «${kindRu(o)}»: числа те же (вид зависит от того, уложился ли отрезок в проход прокрутки)`] };
-  }
+  /* бегущая строка: сторона и скорость (раньше строка со строкой была парой при любых числах: 40 и 400 px/с — «OK») */
+  if (d.kind === 'marquee') { const ld = lineDiffs(runLine(d), runLine(o)); for (const x of ld) { diffs.push(x); score -= 0.15; } }
   if (!ribbon && d.scroll && o.scroll && Number.isFinite(d.scroll.startPct) && Number.isFinite(o.scroll.startPct) && (Math.abs(d.scroll.startPct - o.scroll.startPct) > 20 || Math.abs(d.scroll.endPct - o.scroll.endPct) > 20)) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.startPct}% → ${d.scroll.endPct}%, у нас ${o.scroll.startPct}% → ${o.scroll.endPct}%`); score -= 0.1; }
+  /* длина отрезка в пикселях — когда проценты её не выдали (их нет или начало и конец те же): 200 px против 3000 — не одно и то же */
+  else if (!ribbon && d.kind === 'scroll-linked' && d.scroll && o.scroll && d.scroll.rangePx > 0 && o.scroll.rangePx > 0 && Math.max(d.scroll.rangePx, o.scroll.rangePx) / Math.min(d.scroll.rangePx, o.scroll.rangePx) > CROSS.range) { diffs.push(`отрезок прокрутки: у донора ${d.scroll.rangePx} px, у нас ${o.scroll.rangePx} px`); score -= 0.1; }
+  /* место у пары одного вида — когда известно у обоих: лента первого экрана донора и такая же привязка к прокрутке в
+     нашем подвале — не пара (t1d), как и у пар другого вида. Наша строка ×N стоит в нескольких местах (место записано
+     у первого из N) — её место не сверяется; у строки донора ×N (соседи одного блока) сверяется по первому.
+     Подсказкой в строку «НЕТ» это идёт, когда числа рядом (лента с числами донора стоит у нас в
+     другом разделе); числа другие и место другое — просто не пара. Бегущая строка — в linePlace выше */
+  if (SPOT_KINDS.has(d.kind) && d.kind !== 'marquee' && d.sub !== 'лента вбок' && o.sub !== 'лента вбок' && (o.count || 1) === 1) {
+    const pd = placeOf(d, ctx.vhD), po = placeOf(o, ctx.vhO); const gap = placeGap(pd, po);
+    if (gap && gap.far) return { score: 0, no: diffs.length ? '' : `${o.id} «${kindRu(o)}» \`${o.target}\` — вид тот же, но место другое: у донора ${pd.text}${(d.count || 1) > 1 ? ' (первый из нескольких ×N)' : ''}, у нас ${po.text}` };
+  }
   return { score: Math.max(0.05, score), diffs, notes };
 }
 /* Что у нас не снималось (--no-clicks, --no-hover, --no-mouse, --no-scroll): строка донора этого вида без пары —
@@ -2005,40 +2414,247 @@ function uncheckedWhy(ours, d) {
 }
 /* Решение по строке донора: первый найденный ключ — номер, «вид:подпись», «вид:подпись» любого участника группы
    (старые решения на картинку стопки работают), «вид:<родитель> > *» — на всю группу детей, вид. Голый
-   «loop:<родитель>» — решение про сам родитель (у shapefest он качается своей строкой), детей не закрывает. */
-function decisionFor(d, dec) {
-  const keys = [d.id, `${d.kind}:${pattern(d.target)}`, ...(d.members || []).map((m) => `${d.kind}:${pattern(m)}`), ...(d.parent ? [`${d.kind}:${d.parent} > *`] : []), d.kind];
-  const k = keys.find((x) => x && Object.prototype.hasOwnProperty.call(dec, x) && dec[x]); return k ? { key: k, text: String(dec[k]) } : null;
+   «loop:<родитель>» — решение про сам родитель (у shapefest он качается своей строкой), детей не закрывает.
+   Ключ с экраном — «m07:mobile», «reveal:div.card:desktop» (как у bgdecor: «margin-object:desktop»): номера mNN у
+   протоколов desktop и mobile свои, и один motion-decisions.json на оба экрана путал решения («Зелёный уголок»,
+   01.10: m06 — наведение на широком экране и меню на телефоне; обходились двумя файлами и --decisions). У каждого
+   ключа сначала ищется вариант с экраном протокола донора, потом без экрана — тот действует на любой экран, как
+   раньше. Пустое решение ("" или пробелы) решением не считается. */
+const decText = (dec, k) => (k && Object.prototype.hasOwnProperty.call(dec, k) && typeof dec[k] !== 'object' ? String(dec[k] ?? '').trim() : '');
+/* подпись без блока Tilda («#rec1689… [data-elem-id="…"]» → « [data-elem-id="…"]») начинается с пробела — ключ годится и без него */
+const decBases = (d) => [...new Set([d.id, `${d.kind}:${pattern(d.target)}`, `${d.kind}:${pattern(d.target).trim()}`, ...(d.members || []).map((m) => `${d.kind}:${pattern(m)}`), ...(d.parent ? [`${d.kind}:${d.parent} > *`] : []), d.kind])].filter(Boolean);
+/* Решение — это текст «почему нет / чем заменено». Значение не строкой (false, 0, true, число) решением не считается:
+   { "m01": false } закрывало строку словом «false» (в master ложное значение решением не было). → { dec — только
+   строки, odd — ключи с такими значениями } */
+function decisionsOf(raw) {
+  const dec = {}, odd = [];
+  for (const [k, v] of Object.entries(raw || {})) { if (k.startsWith('_') || (v && typeof v === 'object')) continue; if (typeof v === 'string') dec[k] = v; else odd.push(`«${k}» (${JSON.stringify(v)})`); }
+  return { dec, odd };
 }
-/* одно наше движение может закрывать несколько одинаковых у донора (одна анимация карточек на весь каталог) */
-function compare(donor, ours, decisions) {
-  const rows = []; const used = new Set();
-  for (const d of donor.items) {
-    let best = null;
-    for (const o of ours.items) { const s = similar(d, o); if (s.score > 0 && (!best || s.score > best.s.score || (s.score === best.s.score && !used.has(o.id) && used.has(best.o.id)))) best = { o, s }; }
-    const hit = decisionFor(d, decisions); const dec = hit ? hit.text : ''; const key = hit ? hit.key : '';
-    const why = best || dec ? '' : uncheckedWhy(ours, d);
-    if (best) { used.add(best.o.id); rows.push({ d, o: best.o, status: best.s.diffs.length ? 'ОТЛИЧАЕТСЯ' : 'OK', diffs: best.s.diffs, notes: best.s.notes || [], decision: dec, key }); }
-    else rows.push({ d, o: null, status: dec ? 'РЕШЕНО' : why ? 'НЕ ПРОВЕРЯЛОСЬ' : 'НЕТ', diffs: [], notes: why ? [why] : [], decision: dec, key });
+/* === Отпечаток строки донора для решения по номеру ===
+   Номера mNN — порядок строк в протоколе, и он плавает: донор generationx5.tech, снятый 01.10 и 02.10 без единой правки
+   сайта, поменял местами m04 и m05 (порядок входов при загрузке), а новая строка в начале сдвигает все номера. Старое
+   решение «m04: формы нет» закрыло бы «проявление блоков», а «вращение не берём» — ленту блока оптовикам. Проверка по
+   времени файла (была до 02.10) снималась первой же правкой файла решений и поднимала ложную тревогу, когда донора
+   пересняли без сдвига. Поэтому сверяется само движение: при первом применении решения по номеру запоминается отпечаток
+   строки — то, что между съёмами не плавает (по пяти парам съёмов одной страницы, 28.09–02.10: подпись элемента, число
+   элементов, набор свойств и подписи текста совпали у всех строк; вид менялся только у бегущей строки Tilda — «петля» →
+   «бегущая строка», когда её научились узнавать). Под номером другое движение — решение не применяется, WARN называет
+   оба движения и ключ по виду и подписи, который от номеров не зависит.
+   Тот же ли это элемент и запуск: подпись по шаблону та же, вид тот же или из той же группы (от прокрутки: привязка,
+   параллакс, появление; по времени: строка, петля — замер мог назвать иначе), у того же вида — есть общее свойство. */
+const KIND_GROUP = (k) => (['scroll-linked', 'parallax', 'reveal'].includes(k) ? 'scroll' : k === 'marquee' || k === 'loop' ? 'time' : k);
+const printOf = (d, text) => ({ decision: text, kind: d.kind, ...(d.sub ? { sub: d.sub } : {}), target: d.target, count: d.count || 1, props: (d.props || []).map((p) => p.prop), what: `${kindRu(d)} ${d.target}${d.count > 1 ? ` ×${d.count}` : ''}${d.text ? ` «${String(d.text).slice(0, 24)}»` : ''}` });
+function printMatch(p, d) {
+  if (pattern(p.target) !== pattern(d.target) || KIND_GROUP(p.kind) !== KIND_GROUP(d.kind)) return false;
+  if (p.kind !== d.kind) return true;
+  const a = p.props || [], b = (d.props || []).map((x) => x.prop);
+  return !a.length || !b.length || a.some((x) => b.includes(x));
+}
+/* Привязка задним числом — для решений по номеру, записанных до отпечатков (прогоны старше 02.10). Чему номер
+   соответствовал, когда решение писали, видно в прежнем протоколе сверки той же страницы донора и экрана
+   (<out>/motion/*.json: steps[].what — «m04 вход при загрузке span.t-submit__text», decisionKey, в конце details — текст
+   решения). Отпечаток берётся оттуда, если текст решения с тех пор не менялся; из нескольких протоколов — из самого
+   свежего. Иначе первая же сверка после пересъёмки донора привязала бы старые решения к новым номерам — а пересъёмку
+   советует сама сверка («место на странице не сверено»), и именно при ней generationx5.tech поменял местами m04 и m05.
+   → { prints: { ключ: отпечаток }, from: [имена файлов] } */
+function printsFromHistory(dir, donor, screen, decisionsRaw, have) {
+  const { dec } = decisionsOf(decisionsRaw);
+  const want = Object.keys(dec).filter((k) => /^m\d+(:[\w-]+)?$/.test(k) && !have[k] && dec[k].trim() && (!k.includes(':') || k.endsWith(`:${screen}`)));
+  const prints = {}, from = new Set();
+  if (!want.length || !donor.url || !fs.existsSync(dir)) return { prints, from: [] };
+  const old = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => ({ f, p: readJson(path.join(dir, f)) }))
+    .filter(({ p }) => p && !Array.isArray(p) && Array.isArray(p.steps) && !p.items && p.donor === donor.url && (p.donorViewport || p.viewport || 'desktop') === screen)
+    .sort((a, b) => String(b.p.takenAt || '').localeCompare(String(a.p.takenAt || '')));
+  const kinds = Object.entries(KIND_RU).sort((a, b) => b[1].length - a[1].length);
+  for (const k of want) for (const { f, p } of old) {
+    const text = dec[k].trim(); const s = p.steps.find((x) => x && x.decisionKey === k && String(x.details || '').endsWith(text)); if (!s) continue;
+    const m = /^m\d+ (.+)$/.exec(String(s.what || '')); const kd = m ? kinds.find(([, ru]) => m[1].startsWith(`${ru} `)) : null; if (!kd) continue;
+    const rest = m[1].slice(kd[1].length + 1); const cm = / ×(\d+)$/.exec(rest);
+    prints[k] = { decision: text, kind: kd[0], target: cm ? rest.slice(0, cm.index) : rest, count: cm ? Number(cm[1]) : 1, props: [], what: m[1], from: `прежний протокол сверки ${f}${p.takenAt ? ` от ${String(p.takenAt).slice(0, 10)}` : ''}` };
+    from.add(f); break;
   }
-  const extra = ours.items.filter((o) => !used.has(o.id));
-  const miss = rows.filter((r) => r.status === 'НЕТ').length, diff = rows.filter((r) => r.status === 'ОТЛИЧАЕТСЯ' && !r.decision).length;
-  const unchecked = rows.filter((r) => r.status === 'НЕ ПРОВЕРЯЛОСЬ').length;
-  const verdict = miss ? 'FAIL' : diff ? 'WARN' : 'OK';
-  return { rows, extra, verdict, miss, diff, unchecked };
+  return { prints, from: [...from] };
 }
+/* prints — отпечатки этого донора и экрана { ключ: отпечаток }; stale — сюда складываются решения по номеру, под
+   которым теперь другое движение (не применены). Решение, текст которого переписан, — новое: привязывается заново. */
+function decisionFor(d, dec, screen = '', prints = null, stale = null) {
+  for (const b of decBases(d)) for (const k of screen ? [`${b}:${screen}`, b] : [b]) {
+    const text = decText(dec, k); if (!text) continue;
+    const p = b === d.id && prints ? prints[k] : null;
+    if (p && p.decision === text && !printMatch(p, d)) { if (stale) stale.push({ key: k, print: p, d }); continue; }
+    return { key: k, text, byId: b === d.id, bare: k === b, shadow: k !== b && decText(dec, b) && decText(dec, b) !== decText(dec, k) ? b : '', bind: b === d.id && !(p && p.decision === text), rebind: b === d.id && !!p && p.decision !== text ? p : null };
+  }
+  return null;
+}
+/* Назначение пар. Каждое движение донора идёт к самому похожему нашему (при равном сходстве — к ещё не занятому, как
+   было); на одном нашем остаются:
+   · все полные совпадения того же вида — одна анимация карточек закрывает все одинаковые появления донора (как было);
+   · иначе одна пара — самая похожая. Пара с разницей и пара другим видом занимают наше движение целиком: одно наше
+     не закрывает два разных донорских. Раньше одна наша лента ступеней «отличалась» сразу от трёх лент донора, и
+     вращение фигур на 259°, которого у нас нет, выходило WARN «отличается», а не FAIL «нет» («Зелёный уголок»).
+     Исключение — строки одного элемента донора (тот же i: параллакс и поворот одной ленты).
+   · у движения, которое стоит в одном месте (лента раздела, бегущая строка, петля — SPOT_KINDS), и полных совпадений
+     на одном нашем — не больше, чем у нас элементов (×N нашей строки): три ленты донора на трёх разделах и одна наша с
+     теми же числами — это одна лента, а не три (раньше — три OK; ловушка t1a). Группа одинаковых соседей донора — одна
+     строка ×N, ей хватает одной нашей. Появления, наведение, вход и мышь делят наше без счёта, как было: анимация
+     задана классом на все такие элементы, и число в ×N у них — сколько элементов попало в замер, а не сколько их есть.
+   Вытесненное движение донора идёт к следующему похожему; не нашлось — «НЕТ» с подсказкой, что его вытеснило. */
+function assignPairs(donorItems, cands) {
+  const held = new Map(), cur = new Map(), order = new Map(donorItems.map((d, k) => [d, k]));
+  const on = (o) => { if (!held.has(o)) held.set(o, new Set()); return held.get(o); };
+  const sameEl = (a, b) => Number.isInteger(a.i) && a.i >= 0 && a.i === b.i && (a.count || 1) === 1 && (b.count || 1) === 1 && sameSpot(a, b);
+  const room = (o) => (SPOT_KINDS.has(o.kind) ? Math.max(1, o.count || 1) : Infinity);
+  const queue = [...donorItems];
+  while (queue.length) {
+    const d = queue.shift(); if (cur.has(d)) continue;
+    const list = (cands.get(d) || []).filter((c) => !c.out); if (!list.length) continue;
+    const tier = list.filter((c) => c.score === list[0].score);
+    const c = tier.find((x) => x.os.every((o) => !on(o).size)) || tier[0];
+    cur.set(d, c); for (const o of c.os) on(o).add(c);
+    for (const o of c.os) {
+      const H = [...on(o)]; if (H.length < 2) continue;
+      const full = H.filter((x) => x.share).sort((a, b) => order.get(a.d) - order.get(b.d)).slice(0, room(o));
+      const lead = full.length ? full : [H.reduce((b, x) => (x.score > b.score || (x.score === b.score && order.get(x.d) < order.get(b.d)) ? x : b))];
+      for (const x of H) {
+        if (lead.includes(x) || lead.some((l) => sameEl(l.d, x.d))) continue;
+        x.out = lead[0]; cur.delete(x.d); for (const q of x.os) on(q).delete(x); queue.push(x.d);   /* каждый кандидат вытесняется один раз — очередь конечна */
+      }
+    }
+  }
+  return cur;
+}
+/* Сверка: строки донора → пары у нас. screen — экран протокола донора для ключей решений («m07:mobile»). */
+function compare(donor, ours, decisionsRaw, { screen = '', prints = null } = {}) {
+  const ctx = { vhD: (sizeOf(donor) || {}).h, vhO: (sizeOf(ours) || {}).h };
+  const { dec: decisions, odd } = decisionsOf(decisionsRaw);
+  const dU = scrollUnits(donor.items, ctx.vhD), oU = scrollUnits(ours.items, ctx.vhO); const unitOf = new Map(); for (const u of dU) for (const p of u.parts) unitOf.set(p, u);
+  const sameKind = (a, b) => a.parts.length === 1 && b.parts.length === 1 && FAMILY(a.parts[0]) === FAMILY(b.parts[0]);   /* пара одного вида — в similar */
+  const cands = new Map(), almost = new Map();
+  for (const d of donor.items) {
+    const list = [], no = [];
+    /* пара по роли (наведение на элементе другого вида, цвета свои) — пара другим видом: видна словом в статусе и полем cross */
+    for (const o of ours.items) { const s = similar(d, o, ctx); if (s.score > 0) list.push({ d, os: [o], score: s.score, diffs: s.diffs || [], notes: s.notes || [], status: s.own ? 'ЕСТЬ, ДРУГИМ ВИДОМ' : (s.diffs || []).length ? 'ОТЛИЧАЕТСЯ' : 'OK', cross: !!s.own, placed: s.own ? !!s.placed : true, share: !(s.diffs || []).length && !s.own }); else if (s.no) no.push({ text: s.no, bad: 0, os: [o] }); }
+    /* пары другим видом: точная — сильнее любой пары с разницей, но слабее полного совпадения того же вида */
+    const add = (c, os) => { if (!c) return; if (c.no) { if (!c.weak) no.push({ text: c.no, bad: c.bad || 0, os }); return; } list.push({ d, os, score: c.exact ? 0.95 : Math.max(0.05, 0.9 - 0.15 * c.diffs.length), diffs: c.diffs, notes: c.notes, status: c.exact ? 'ЕСТЬ, ДРУГИМ ВИДОМ' : 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ', share: false, cross: true, placed: !!c.placed }); };
+    const du = unitOf.get(d);
+    if (du) for (const u of oU) if (!sameKind(du, u)) add(crossScroll(du, u, ctx), u.parts);
+    for (const o of ours.items) add(crossLine(d, o, ctx), [o]);
+    cands.set(d, list.map((c, k) => [c, k]).sort((a, b) => b[0].score - a[0].score || a[1] - b[1]).map((x) => x[0]));
+    almost.set(d, no);
+  }
+  const cur = assignPairs(donor.items, cands);
+  const on = new Set([...cur.values()].flatMap((c) => c.os));   /* наши движения, занятые парами */
+  const rows = []; const used = new Set(); const stale = [];
+  for (const d of donor.items) {
+    const c = cur.get(d) || null;
+    const hit = decisionFor(d, decisions, screen, prints, stale); const dec = hit ? hit.text : ''; const key = hit ? hit.key : '';
+    /* unplaced — пара другим видом с числами рядом, а место на странице не сверено: строка остаётся «ЕСТЬ», но вердикт
+       без решения по ней — не лучше WARN (см. ниже) */
+    if (c) { for (const o of c.os) used.add(o.id); rows.push({ d, o: c.os[0], os: c.os, status: c.status, diffs: c.diffs, notes: [...c.notes], decision: dec, key, hit, cross: !!c.cross, unplaced: !!c.cross && !c.placed && c.status === 'ЕСТЬ, ДРУГИМ ВИДОМ' }); continue; }
+    const why = dec ? '' : uncheckedWhy(ours, d);
+    /* пары нет, а похожее у нас есть: что его заняло или почему не засчитано — чтобы «НЕТ» не читалось как «не искали» */
+    const hints = []; const lost = (cands.get(d) || []).filter((x) => x.out);
+    const busy = (x) => (x.os.some((o) => on.has(o)) ? 1 : 0);
+    const near = [...(almost.get(d) || [])].sort((a, b) => busy(a) - busy(b) || a.bad - b.bad)[0];   /* сначала не занятое парой, потом с меньшей разницей */
+    if (near) { const by = busy(near) ? [...cur.values()].find((x) => x.os.some((o) => near.os.includes(o))) : null; hints.push(`похожее у нас: ${near.text}${by ? `; к тому же оно уже пара для ${by.d.id} донора` : ''}`); }
+    else if (lost.length) hints.push(`похожее у нас — ${lost[0].os.map((o) => o.id).join('+')} \`${lost[0].os[0].target}\`${lost[0].diffs.length ? ` (с разницей: ${lost[0].diffs.slice(0, 2).join('; ')})` : ''}, но оно уже пара для ${lost[0].out.d.id} донора: одно наше движение не закрывает два разных донорских`);
+    rows.push({ d, o: null, os: [], status: dec ? 'РЕШЕНО' : why ? 'НЕ ПРОВЕРЯЛОСЬ' : 'НЕТ', diffs: [], notes: why ? [why] : dec ? [] : hints, decision: dec, key, hit });
+  }
+  /* решение по номеру, под которым теперь другое движение, не применено — сказать об этом и в самой строке */
+  for (const s of stale) { const r = rows.find((x) => x.d === s.d); if (r) r.notes.push(`решение «${s.key}» не применено: оно записано для «${s.print.what}»`); }
+  const extra = ours.items.filter((o) => !used.has(o.id));
+  const miss = rows.filter((r) => r.status === 'НЕТ').length, diff = rows.filter((r) => /^ОТЛИЧАЕТСЯ/.test(r.status) && !r.decision).length;
+  const unchecked = rows.filter((r) => r.status === 'НЕ ПРОВЕРЯЛОСЬ').length, other = rows.filter((r) => r.status === 'ЕСТЬ, ДРУГИМ ВИДОМ').length;
+  /* предупреждения сверки — в вердикт (не лучше WARN); заметки о решениях — без вердикта */
+  const warnings = [], notes = [];
+  if (donor.viewport && ours.viewport && donor.viewport !== ours.viewport) warnings.push(`экраны разные: донор снят на ${donor.viewport}, наш сайт — на ${ours.viewport}. Движение на телефоне и на широком экране своё (числа сдвигов, выключенные появления) — сверять протоколы одного экрана`);
+  /* пара другим видом засчитана по одним числам — место на странице не сверено: «есть», которое никто не перепроверит,
+     хуже «нет». Строка остаётся «ЕСТЬ, ДРУГИМ ВИДОМ» (числа и правда совпали, и не одно), а вердикт — не лучше WARN,
+     пока донора не пересняли или пару не подтвердили решением (оба протокола без места: лента первого экрана донора и
+     параллакс с теми же числами в нашем подвале неразличимы — ловушка t6e) */
+  const loose = rows.filter((r) => r.unplaced && !r.decision);
+  if (loose.length) warnings.push(`место на странице не сверено у ${loose.length === 1 ? 'пары' : 'пар'} ${loose.map((r) => `${r.d.id} → ${oursOf(r)}`).join(', ')}: числа совпали, но где стоит элемент, в протоколе не записано (снят до 02.10) — та же ли это часть страницы, сверка не знает. Пересните донора и наш сайт (motion.mjs <адрес>) или сверьте пару глазами и подтвердите решением на ключ строки`);
+  const hits = rows.filter((r) => r.hit);
+  const idle = hits.filter((r) => (r.status === 'OK' || r.status === 'ЕСТЬ, ДРУГИМ ВИДОМ') && !r.unplaced);
+  if (idle.length) notes.push(`решения не понадобились — пара нашлась сама: ${idle.map((r) => `«${r.key}»`).join(', ')} (можно убрать из файла)`);
+  const held = hits.filter((r) => r.unplaced);
+  if (held.length) notes.push(`решения подтверждают пары, у которых место на странице не сверено: ${held.map((r) => `«${r.key}»`).join(', ')} — после пересъёмки донора (протокол с местом элементов) станут не нужны`);
+  for (const r of hits.filter((x) => x.hit.shadow)) notes.push(`решение записано дважды с разным текстом: «${r.key}» и «${r.hit.shadow}» — на экране ${screen} действует ключ с экраном, ключ без экрана остаётся остальным экранам`);
+  const bare = hits.filter((r) => r.hit.byId && r.hit.bare);
+  if (bare.length) notes.push(bareNote(bare.map((r) => r.key), screen));
+  /* решения по номеру: первое применение — отпечаток строки в файл-спутник (пишет команда compare), и сказать, к чему
+     привязано; под номером другое движение — WARN, решение не применено */
+  const binds = hits.filter((r) => r.hit.bind).map((r) => ({ key: r.key, print: printOf(r.d, r.decision), was: r.hit.rebind }));
+  const fresh = binds.filter((b) => !b.was), again = binds.filter((b) => b.was);
+  if (prints && fresh.length) notes.push(`решения по номеру привязаны к движениям донора (отпечатки — ${PRINTS_FILE} в папке прогона): ${fresh.map((b) => `${b.key} — ${b.print.what}`).join('; ')}. Сверьте список: если донора пересняли уже после того, как решение записали, номер мог сдвинуться до привязки. Дальше сверка следит сама: под номером другое движение — решение не применит; надёжнее ключ по виду и подписи («${stableKey(hits.find((r) => r.key === fresh[0].key).d, screen)}»)`);
+  if (again.length) notes.push(`текст решения по номеру переписан — привязано заново: ${again.map((b) => `${b.key} — теперь «${b.print.what}»${b.was.what !== b.print.what ? `, было «${b.was.what}»` : ''}`).join('; ')}`);
+  for (const s of stale) {
+    const now = donor.items.find((x) => x !== s.d && printMatch(s.print, x));
+    warnings.push(`решение «${s.key}» не применено: оно записано для «${s.print.what}», а сейчас под этим номером «${kindRu(s.d)} ${s.d.target}${s.d.count > 1 ? ` ×${s.d.count}` : ''}» — донора пересняли, номера mNN сдвинулись. ${now ? `То движение теперь ${now.id}` : 'Того движения в протоколе донора теперь нет'}. Перенесите решение на ключ по виду и подписи — "${stableKey(now || s.print, screen)}" (от номеров не зависит)${now ? ` — или на новый номер "${now.id}${screen ? `:${screen}` : ''}"` : ''}; если оно про нынешнее движение — перепишите текст решения, оно привяжется заново`);
+  }
+  const bases = new Set(donor.items.flatMap(decBases)); const usedKeys = new Set(hits.map((r) => r.key)); const staleKeys = new Set(stale.map((s) => s.key));
+  const empty = [], dead = [], miscase = [], renamed = [];
+  for (const [k, v] of Object.entries(decisions || {})) {
+    if (k.startsWith('_') || (v && typeof v === 'object')) continue;                  /* служебные ключи («_about») — не решения */
+    if (!String(v ?? '').trim()) { empty.push(k); continue; }
+    if (usedKeys.has(k) || staleKeys.has(k)) continue;
+    const cut = k.lastIndexOf(':'); const tail = cut > 0 ? k.slice(cut + 1) : ''; const head = cut > 0 ? k.slice(0, cut) : '';
+    const keyed = /^m\d+$/.test(head) || KIND_RU[head] || /^[\w-]+:/.test(head);
+    /* экран в ключе — строчными, как в протоколе: «m01:Desktop» принимался за ключ другого экрана и пропадал молча */
+    if (tail && keyed && tail !== tail.trim().toLowerCase() && resolveViewport(tail)) { miscase.push(`«${k}» → «${head}:${tail.trim().toLowerCase()}»`); continue; }
+    if (tail && tail !== screen && resolveViewport(tail) && keyed) continue;   /* ключ другого экрана */
+    const base = tail && tail === screen ? head : k;
+    if (bases.has(base)) continue;                                                       /* подходящая строка есть — ключ просто заслонён более точным */
+    /* ключ по виду, а движение у донора теперь записано другим видом той же группы: решение «loop» закрывало бегущие
+       строки Tilda, пока они писались петлёй; с 02.10 это «бегущая строка» — ключ молча перестал работать */
+    const kd = base.split(':')[0]; const sg = base.includes(':') ? base.slice(kd.length + 1) : '';
+    const twin = KIND_RU[kd] ? donor.items.find((x) => x.kind !== kd && KIND_GROUP(x.kind) === KIND_GROUP(kd) && KIND_GROUP(kd) !== kd && (!sg || pattern(x.target) === sg || pattern(x.target).trim() === sg)) : null;
+    if (twin) renamed.push(`«${k}» — вида «${KIND_RU[kd]}» с такой подписью у донора нет, а «${KIND_RU[twin.kind]}» есть (${twin.id}): ключ «${twin.kind}${sg ? `:${sg}` : ''}${tail && tail === screen ? `:${screen}` : ''}»`);
+    else dead.push(k);
+  }
+  if (odd.length) notes.push(`решение — это текст «почему нет / чем заменено»; значения не строкой решением не считаются: ${odd.join(', ')}`);
+  if (empty.length) notes.push(`пустые решения не засчитаны: ${empty.map((k) => `«${k}»`).join(', ')}`);
+  if (miscase.length) notes.push(`экран в ключе пишется строчными, как в протоколе, — ключи не применены: ${miscase.join(', ')}`);
+  if (renamed.length) notes.push(`ключи решений по виду, которые ничего не закрыли, — движение у донора записано другим видом (замер или разбор назвал его иначе; бегущая строка Tilda до 02.10 писалась «петлёй»): ${renamed.join('; ')}`);
+  if (dead.length) notes.push(`ключи решений, которые ничего не закрыли — такого номера, вида или подписи у донора на этом экране нет: ${dead.map((k) => `«${k}»`).join(', ')}${dead.some((k) => /^m\d+:/.test(k)) ? ` (экран в ключе — как в протоколе: ${screen || 'desktop'})` : ''}`);
+  const verdict = miss ? 'FAIL' : diff || warnings.length ? 'WARN' : 'OK';
+  return { rows, extra, verdict, miss, diff, unchecked, other, warnings, notes, binds, stale, unplaced: loose.length, bareKeys: bare.map((r) => r.key) };
+}
+/* файл-спутник с отпечатками решений по номеру — в папке прогона, рядом с motion-decisions.json */
+const PRINTS_FILE = 'motion-decisions.prints.json';
+/* ключ решения, который от номеров не зависит: «вид:подпись[:экран]» */
+const stableKey = (d, screen) => `${d.kind}:${pattern(d.target).trim()}${screen ? `:${screen}` : ''}`;
+const bareNote = (keys, screen) => `решения по номеру без экрана: ${keys.join(', ')} — действуют на любой экран, а номера mNN у desktop и mobile свои; в общем файле на оба экрана пишите с экраном («${keys[0]}:${screen || 'desktop'}»)`;
 /* статус строки сверки для консоли и протокола: «не проверялось» — INFO (как у runtime), в вердикт не идёт */
-const rowLevel = (r) => (r.status === 'НЕТ' ? 'FAIL' : r.status === 'ОТЛИЧАЕТСЯ' && !r.decision ? 'WARN' : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'INFO' : 'OK');
+const rowLevel = (r) => (r.status === 'НЕТ' ? 'FAIL' : /^ОТЛИЧАЕТСЯ/.test(r.status) && !r.decision ? 'WARN' : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'INFO' : 'OK');
+const oursOf = (r) => (r.os && r.os.length ? r.os.map((o) => o.id).join('+') : '');
 function mdCompare(c, donor, ours) {
-  const L = [`# Сверка движения: донор → наш сайт`, '', `Донор: ${donor.url} (${donor.viewport}) · наш: ${ours.url} (${ours.viewport}) · вердикт **${c.verdict}** (нет без решения: ${c.miss}, отличается: ${c.diff}${c.unchecked ? `, не проверялось: ${c.unchecked} — у нас не снималось, в вердикт не входит` : ''})`, '',
+  const vp = donor.viewport || 'desktop';
+  const L = [`# Сверка движения: донор → наш сайт`, '', `Донор: ${donor.url} (${donor.viewport}) · наш: ${ours.url} (${ours.viewport}) · вердикт **${c.verdict}** (нет без решения: ${c.miss}, отличается: ${c.diff}${c.other ? `, тот же приём другим видом: ${c.other}` : ''}${c.unplaced ? `, из них без сверки места: ${c.unplaced} — переснять донора` : ''}${c.unchecked ? `, не проверялось: ${c.unchecked} — у нас не снималось, в вердикт не входит` : ''})`, '',
+    ...(c.warnings.length ? [...c.warnings.map((w) => `- **WARN** ${w}`), ''] : []),
     '| донор | вид | у донора | у нас | статус | разница / решение | ключ решения |', '|---|---|---|---|---|---|---|'];
   for (const r of c.rows) {
     const d = r.d; const dWhat = `\`${d.target}\`${d.count > 1 ? ` ×${d.count}` : ''}: ${d.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 90)}`;
-    const hint = !r.key && r.status !== 'OK' && d.parent && d.count > 1 ? `на группу — \`${d.kind}:${d.parent} > *\`` : '—';   /* строка ×N без решения: каким ключом закрыть */
-    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${r.o ? `${r.o.id} \`${r.o.target}\`` : '—'} | ${r.status} | ${[...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} | ${r.key ? `\`${r.key.replace(/\|/g, '/')}\`` : hint} |`);
+    /* строка без решения, которой оно нужно: готовый ключ для вставки — по виду и подписи, он от номеров mNN не зависит
+       (донора переснимут — номера сдвинутся); у строки ×N — ключ на группу */
+    const need = !r.key && (r.status === 'НЕТ' || /^ОТЛИЧАЕТСЯ/.test(r.status) || r.unplaced);
+    const hint = !r.key && r.status !== 'OK' && d.parent && d.count > 1 ? `на группу — \`${d.kind}:${d.parent} > *\`` : need ? `для решения — \`${stableKey(d, vp).replace(/\|/g, '/')}\`` : '—';
+    /* пара другим видом — у нашего движения назван и вид: «m03+m04 div.hero__ribbon — параллакс + появление»; у наведения — на чём оно */
+    const oKind = (o) => (o.kind === 'hover' ? `наведение на «${COMP_RU[o.component] || o.component || '?'}»` : kindRu(o));
+    const oWhat = r.o ? `${oursOf(r)} \`${r.o.target}\`${r.cross ? ` — ${[...new Set(r.os.map(oKind))].join(' + ')}` : ''}` : '—';
+    L.push(`| ${d.id} | ${KIND_RU[d.kind] || d.kind}${d.sub ? ` (${d.sub})` : ''} | ${dWhat.replace(/\|/g, '/')} | ${oWhat.replace(/\|/g, '/')} | ${r.status} | ${[...r.diffs, ...(r.notes || []), r.decision ? `решение: ${r.decision}` : ''].filter(Boolean).join('; ').replace(/\|/g, '/') || '—'} | ${r.key ? `\`${r.key.replace(/\|/g, '/')}\`` : hint} |`);
   }
-  L.push('', `## Своё (у донора нет) — ${c.extra.length}`, '', ...(c.extra.length ? c.extra.map((o) => `- ${o.id} ${KIND_RU[o.kind] || o.kind}${o.sub ? ` (${o.sub})` : ''} — \`${o.target}\`: ${o.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 100)}`) : ['- нет']),
-    '', 'Решения «почему нет / чем заменено» — `motion-decisions.json` в папке прогона: { "m04": "почему", "reveal:div.card": "почему" }; на группу петель (строка ×N) — "loop:<родитель> > *".', 'Своё — сверить с банком идей (`ideas.mjs list`): задумано ли, записать удачное.');
+  L.push('', `## Своё (у донора нет) — ${c.extra.length}`, '', ...(c.extra.length ? c.extra.map((o) => `- ${o.id} ${KIND_RU[o.kind] || o.kind}${o.sub ? ` (${o.sub})` : ''} — \`${o.target}\`: ${o.props.map((p) => `${p.prop} ${p.from}→${p.to}`).join('; ').slice(0, 100)}`) : ['- нет']));
+  if (c.notes.length) L.push('', '## Решения — замечания', '', ...c.notes.map((n) => `- ${n}`));
+  L.push('', '## Как читать', '',
+    '- **OK** — такое же движение у нас есть: вид тот же, числа рядом (у наведения одного вида сверяется, какие свойства меняются и за сколько, а сами цвета — нет: палитра у нас своя). Делать ничего не нужно.',
+    '- **ЕСТЬ, ДРУГИМ ВИДОМ** — приём у нас повторён, но записан иначе: у донора «привязано к прокрутке», у нас «параллакс» или «появление»; у донора «петля» со сдвигом по кругу, у нас «бегущая строка»; наведение у донора записано на «ссылку», у нас — на «кнопку» (переход тот же, цвета свои). Числа донора и наши стоят рядом в строке, место на странице то же. Делать ничего не нужно — кроме случая, когда в строке «место на странице не сверено»: числа совпали, а где стоит элемент, в протоколе нет (снят до 02.10). Тогда вердикт не лучше WARN: переснять донора или сверить пару глазами и подтвердить решением.',
+    '- **ОТЛИЧАЕТСЯ** — движение у нас есть, числа другие (какие — в строке). Поправить числа или записать решение, почему так. «ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ» — то же, но приём у нас записан другим видом; сюда же — «у нас меняется ещё …»: числа донора на месте, но у нас добавлен поворот или сдвиг, которого у донора нет.',
+    '- **НЕТ** — такого движения у нас нет. Сделать его (рецепты — `reference/motion.md`) или записать решение «почему нет / чем заменено». Если в строке «похожее у нас …» — похожее есть, но парой не засчитано: причина там же (место на странице другое, числа врозь, оно уже пара другому движению донора).',
+    '- **РЕШЕНО** — пары нет, причина записана в файле решений. **НЕ ПРОВЕРЯЛОСЬ** — у нас этот вид не снимался.',
+    '', `Решения «почему нет / чем заменено» — \`motion-decisions.json\` в папке прогона: { "reveal:div.card": "почему", "m04": "почему" }; на группу петель (строка ×N) — "loop:<родитель> > *". Ключ по виду и подписи надёжнее номера: в столбце «ключ решения» у строки без решения он готов для вставки. Один файл на оба экрана — ключ с экраном: "reveal:div.card:${vp}", "m04:${vp}" (номера mNN у desktop и mobile свои); ключ без экрана действует на любой экран.`,
+    `Номер mNN — порядок строк протокола, при пересъёмке донора он сдвигается. Поэтому при первом применении решения по номеру сверка запоминает, какое движение оно закрыло (\`${PRINTS_FILE}\` рядом с решениями), и к другому движению под тем же номером решение не применит — скажет WARN с обоими движениями и готовым ключом.`, 'Своё — сверить с банком идей (`ideas.mjs list`): задумано ли, записать удачное.');
   return L.join('\n') + '\n';
 }
 
@@ -2082,8 +2698,319 @@ if (cmd === 'selftest') {
     const flip = JSON.parse(JSON.stringify(co)); flip.items[0].props[0].to = '1234 px';
     C(/^ОТЛИЧАЕТСЯ/.test(st(compare(cd, flip, {}), 'm01')), 'лента вбок в другую сторону — ОТЛИЧАЕТСЯ', st(compare(cd, flip, {}), 'm01'));
   }
-  const url = pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'index.html')).href;
   const out = path.resolve(String(opt.out || path.join(process.env.TEMP || process.env.TMPDIR || '.', 'motion-selftest')));
+  /* пары между разными видами движения — fixtures/motion/compare-cross-*.json («Зелёный уголок» ↔ generationx5.tech, 01.10):
+     три пары другим видом (привязано к прокрутке ↔ параллакс + появление одного элемента, ↔ появление, петля по кругу ↔
+     бегущая строка), наведение по роли, а не по первому элементу, и отказы — сверка не должна находить движение, которого
+     у нас нет, в постороннем: место другое, появление карточек вместо ленты, парение вместо строки, одно наше на два и
+     три донорских, числа врозь — «ОТЛИЧАЕТСЯ». Плюс ключи решений с экраном и имена страниц (адрес и --pages) */
+  {
+    const xd = readJson(path.join(HERE, 'fixtures', 'motion', 'compare-cross-donor.json')), xo = readJson(path.join(HERE, 'fixtures', 'motion', 'compare-cross-ours.json'));
+    const C = (ok, what, got) => { cn++; if (!ok) cbad++; console.log(`${ok ? 'OK  ' : 'FAIL'} сверка: ${what}${ok ? '' : ` — получено: ${got}`}`); };
+    const st = (c, id) => { const r = c.rows.find((x) => x.d.id === id); return r ? `${r.status}${r.os && r.os.length ? ` ${oursOf(r)}` : ''}` : 'нет строки'; };
+    const row = (c, id) => c.rows.find((x) => x.d.id === id); const say = (c, id) => { const r = row(c, id); return `${st(c, id)} — ${[...r.diffs, ...r.notes].join('; ').slice(0, 260)}`; };
+    const clone = (x) => JSON.parse(JSON.stringify(x)); const it = (p, id) => p.items.find((x) => x.id === id);
+    const only = (p, ids) => ({ ...clone(p), items: clone(p).items.filter((x) => ids.includes(x.id)) });
+    const noPlace = (p) => { const q = clone(p); for (const x of q.items) delete x.place; return q; };
+    const x1 = compare(xd, xo, {}, { screen: 'desktop' });
+    const n1 = row(x1, 'm01').notes.join('; ');
+    C(st(x1, 'm01') === 'ЕСТЬ, ДРУГИМ ВИДОМ m01+m02' && rowLevel(row(x1, 'm01')) === 'OK' && /привязано к прокрутке/.test(n1) && /параллакс/.test(n1) && /87\.6 px \/ у нас 11\.7 px → 88 px/.test(n1) && /отрезок 600 px \/ у нас 675 px/.test(n1) && /место: у донора первый экран, у нас первый экран/.test(n1),
+      'привязано к прокрутке ↔ параллакс + появление одного элемента — «ЕСТЬ, ДРУГИМ ВИДОМ» (не OK), числа обоих, отрезок и место в строке', say(x1, 'm01'));
+    C(st(x1, 'm02') === 'ЕСТЬ, ДРУГИМ ВИДОМ m05' && /скорость 113 px\/с влево \/ у нас 113 px\/с влево/.test(row(x1, 'm02').notes.join('; ')), 'петля со сдвигом по кругу (бегущая строка Tilda) ↔ бегущая строка — «ЕСТЬ, ДРУГИМ ВИДОМ», скорости рядом', say(x1, 'm02'));
+    C(st(x1, 'm03') === 'НЕТ' && /место другое/.test(row(x1, 'm03').notes.join('; ')), 'вторая строка донора (164 px/с, третий экран) — НЕТ: наша одна строка стоит в первом экране и уже пара первой', say(x1, 'm03'));
+    C(st(x1, 'm04') === 'ЕСТЬ, ДРУГИМ ВИДОМ m07' && row(x1, 'm04').cross === true && rowLevel(row(x1, 'm04')) === 'OK' && !row(x1, 'm04').unplaced && /по роли это кнопка у обоих/.test(row(x1, 'm04').notes.join('; ')) && /место: у донора первый экран, у нас первый экран/.test(row(x1, 'm04').notes.join('; ')),
+      'наведение по роли и набору свойств: кнопка донора («ссылка» с заливкой) ↔ наша кнопка, а не значок шапки, что наведён первым, — «ЕСТЬ, ДРУГИМ ВИДОМ» (cross), а не обычное OK; место сверено', say(x1, 'm04'));
+    C(st(x1, 'm05') === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m04' && rowLevel(row(x1, 'm05')) === 'WARN' && /сдвиг Y: у донора 0 px → -180 px, у нас 0 px → -60 px/.test(row(x1, 'm05').diffs.join('; ')), 'числа втрое врозь (сдвиг −180 и −60 px) — «ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ» (WARN) с числами обоих, а не «есть»', say(x1, 'm05'));
+    C(st(x1, 'm06') === 'НЕТ' && st(x1, 'm07') === 'НЕТ', 'вращение на 259° (у нас только параллакс с поворотом 16°) и парение значка (у нас только бегущая строка) — НЕТ', `${st(x1, 'm06')}; ${st(x1, 'm07')}`);
+    C(x1.verdict === 'FAIL' && x1.other === 3 && x1.diff === 1 && x1.miss === 3 && x1.unplaced === 0 && !x1.extra.some((o) => o.id === 'm01' || o.id === 'm02'), 'вердикт FAIL (нет: 3), другим видом: 3 (лента, строка, наведение), отличается: 1; обе строки ленты — в паре, а не в «своём»', `${x1.verdict}, другим видом ${x1.other}, отличается ${x1.diff}, нет ${x1.miss}, без сверки места ${x1.unplaced}, своё ${x1.extra.map((o) => o.id).join(' ')}`);
+    /* у нас появление (отрезок уложился в шаг прохода — так лента снята на телефоне): та же пара */
+    const rv = only(xo, ['m05', 'm07']); rv.items.unshift({ id: 'm09', kind: 'reveal', trigger: 'scroll', target: 'div.hero__ribbon', count: 1, i: 48, visAtStart: true, props: [{ prop: 'сдвиг Y', from: '-19.3 px', to: '-54 px' }, { prop: 'сдвиг X', from: '31.4 px', to: '88 px' }, { prop: 'масштаб', from: '1.17', to: '1.48' }, { prop: 'поворот', from: '1.8°', to: '5°' }], scroll: { at: 'верх блока между 8% и -17% высоты экрана', atPct: -4 }, timing: {} });
+    const x2 = compare(xd, rv, {});
+    C(st(x2, 'm01') === 'ЕСТЬ, ДРУГИМ ВИДОМ m09' && /«появление»/.test(row(x2, 'm01').notes.join('; ')), 'привязано к прокрутке ↔ появление (без прозрачности, виден с начала) — «ЕСТЬ, ДРУГИМ ВИДОМ»', say(x2, 'm01'));
+    /* ложная пара: те же числа, но у нас это параллакс в подвале, а у донора — первый экран */
+    const foot = only(xo, ['m05']); foot.items.push({ ...clone(it(xo, 'm01')), id: 'm09', target: 'img.foot__ribbon', i: 600, props: [...it(xo, 'm01').props, ...it(xo, 'm02').props], place: { y: 9800, h: 500, screen: 11, of: 12, first: false } });
+    const x3 = compare(xd, foot, {});
+    C(st(x3, 'm01') === 'НЕТ' && /место другое: у донора первый экран, у нас экран 11 из 12/.test(row(x3, 'm01').notes.join('; ')), 'у донора лента первого экрана, у нас такой же параллакс в подвале — НЕТ, в строке — «место другое»', say(x3, 'm01'));
+    /* протоколы без place (сняты до 02.10): точное повторение — пара с пометкой, числа врозь — НЕТ с подсказкой */
+    const x4 = compare(noPlace(xd), noPlace(xo), {});
+    C(st(x4, 'm01') === 'ЕСТЬ, ДРУГИМ ВИДОМ m01+m02' && /место на странице не сверено/.test(row(x4, 'm01').notes.join('; ')), 'протокол донора без place: точное повторение — пара с пометкой «место на странице не сверено»', say(x4, 'm01'));
+    /* …и вердикт такой сверки не лучше WARN: «есть» по одним числам никто не перепроверит. Решение на строку — подтверждение */
+    const x4w = compare(noPlace(only(xd, ['m01', 'm02', 'm04'])), noPlace(only(xo, ['m01', 'm02', 'm05', 'm07'])), {}), x4d = compare(noPlace(only(xd, ['m01', 'm02', 'm04'])), noPlace(only(xo, ['m01', 'm02', 'm05', 'm07'])), { m01: 'есть: лента первого экрана', m02: 'есть: строка', m04: 'есть: .btn:hover' });
+    C(x4w.verdict === 'WARN' && x4w.unplaced === 3 && x4w.miss === 0 && x4w.diff === 0 && x4w.rows.every((r) => r.status === 'ЕСТЬ, ДРУГИМ ВИДОМ' && r.unplaced && rowLevel(r) === 'OK') && x4w.warnings.some((w) => /место на странице не сверено у пар m01 → m01\+m02, m02 → m05, m04 → m07/.test(w)) && x4d.verdict === 'OK' && x4d.unplaced === 0 && x4d.notes.some((n) => /решения подтверждают пары, у которых место на странице не сверено: «m01», «m02», «m04»/.test(n)) && !x4d.notes.some((n) => /не понадобились/.test(n)),
+      'три пары другим видом без сверки места (лента, строка, наведение): строки «ЕСТЬ, ДРУГИМ ВИДОМ», вердикт WARN с названными парами; решение на строку подтверждает пару — вердикт OK, и оно не «лишнее»', `${x4w.verdict}, без места ${x4w.unplaced}: ${(x4w.warnings[0] || 'предупреждения нет').slice(0, 140)}; с решениями: ${x4d.verdict} · ${x4d.notes.join(' | ').slice(0, 200)}`);
+    C(st(x4, 'm05') === 'НЕТ' && /похожее у нас: m04/.test(row(x4, 'm05').notes.join('; ')) && /место на странице не сверено/.test(row(x4, 'm05').notes.join('; ')), 'протокол без place и числа врозь — НЕТ (не «отличается»): без места похожим окажется любой параллакс; в строке — что похоже и почему не засчитано', say(x4, 'm05'));
+    /* у нас только появление карточек внизу страницы — ленте донора не пара (у нас проявление, свойств донора нет) */
+    const cards = only(xo, ['m08']); const x5 = compare(xd, cards, {}), x5n = compare(noPlace(xd), noPlace(cards), {});
+    C(st(x5, 'm01') === 'НЕТ' && st(x5, 'm05') === 'НЕТ' && st(x5n, 'm01') === 'НЕТ' && st(x5n, 'm05') === 'НЕТ', 'у донора ленты по прокрутке, у нас только появление карточек в подвале — НЕТ (и с place, и без)', `${st(x5, 'm01')}; ${st(x5, 'm05')}; без place: ${st(x5n, 'm01')}; ${st(x5n, 'm05')}`);
+    /* лента донора едет вверх на 100 px, у нас карточки появляются со сдвигом на те же 100 px в том же месте страницы:
+       числа рядом, но у нас блок проявляется (прозрачность 0 → 1), у донора — нет: появление, а не лента */
+    const up = { ...clone(xd), items: [{ ...clone(it(xd, 'm05')), id: 'm01', count: 1, props: [{ prop: 'сдвиг Y', from: '100 px', to: '0 px' }] }] };
+    const x5b = compare(up, cards, {});
+    C(st(x5b, 'm01') === 'НЕТ', 'лента донора со сдвигом Y 100 → 0 px и наше появление карточек с тем же сдвигом и прозрачностью 0 → 1 в том же месте — НЕТ', say(x5b, 'm01'));
+    /* бегущая строка донора ↔ у нас только парение или пульс; парение донора ↔ у нас только строка — уже в x1 (m07) */
+    const float = { ...clone(xo), items: [{ ...clone(it(xd, 'm07')), id: 'm01', target: 'img.hero__badge' }, { id: 'm02', kind: 'loop', sub: 'пульс', trigger: 'time', target: 'span.dot', count: 1, props: [{ prop: 'кадры', from: '', to: '50%: transform: scale(1.2)' }], timing: { period: 1600 }, source: 'css @keyframes pulse' }] };
+    const x6 = compare(only(xd, ['m02', 'm03']), float, {});
+    C(st(x6, 'm02') === 'НЕТ' && st(x6, 'm03') === 'НЕТ', 'у донора бегущая строка, у нас парящий значок и пульс — НЕТ', `${st(x6, 'm02')}; ${st(x6, 'm03')}`);
+    /* петля донора не по кругу: тот же длинный путь туда-обратно (alternate) и короткий сдвиг в одну сторону — не строка */
+    const swing = { ...clone(xd), items: [{ ...clone(it(xd, 'm02')), id: 'm01', timing: { ...it(xd, 'm02').timing, direction: 'alternate' } }, { ...clone(it(xd, 'm02')), id: 'm02', props: [{ prop: 'сдвиг X', from: '0 px', to: '-40 px' }], keyframes: undefined }] };
+    const x6b = compare(swing, only(xo, ['m05']), {});
+    C(st(x6b, 'm01') === 'НЕТ' && st(x6b, 'm02') === 'НЕТ', 'петля донора туда-обратно на 2254 px и петля в одну сторону на 40 px — бегущей строке не пара', `${st(x6b, 'm01')}; ${st(x6b, 'm02')}`);
+    /* скорость: вдвое — «ОТЛИЧАЕТСЯ» и между видами, и у двух бегущих строк (раньше строка со строкой — OK при любых числах) */
+    const fast = clone(xo); it(fast, 'm05').timing.speed = '240 px/с влево';
+    const x7 = compare(only(xd, ['m02']), fast, {});
+    const mm = compare({ ...clone(xd), items: [{ ...clone(it(xo, 'm05')), id: 'm01', timing: { speed: '40 px/с влево' } }] }, { ...clone(xo), items: [{ ...clone(it(xo, 'm05')), timing: { speed: '400 px/с влево' } }] }, {});
+    C(st(x7, 'm02') === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m05' && /скорость: у донора 113 px\/с, у нас 240 px\/с/.test(row(x7, 'm02').diffs.join('; ')) && st(mm, 'm01') === 'ОТЛИЧАЕТСЯ m05' && /скорость: у донора 40 px\/с, у нас 400 px\/с/.test(row(mm, 'm01').diffs.join('; ')), 'скорость строки вдвое и больше — «ОТЛИЧАЕТСЯ»: 113 и 240 px/с между видами, 40 и 400 px/с у двух бегущих строк', `${say(x7, 'm02')} · ${say(mm, 'm01')}`);
+    /* отрезок прокрутки: 600 px у донора и 3000 px у нас при тех же числах свойств — «ОТЛИЧАЕТСЯ» */
+    const far = only(xo, ['m04']); Object.assign(it(far, 'm04'), { props: clone(it(xd, 'm05').props), scroll: { ...it(far, 'm04').scroll, rangePx: 3000 } });
+    const x8 = compare(only(xd, ['m05']), far, {});
+    C(st(x8, 'm05') === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m04' && /отрезок прокрутки: у донора 600 px, у нас 3000 px/.test(row(x8, 'm05').diffs.join('; ')), 'отрезок прокрутки 600 px против 3000 px — «ОТЛИЧАЕТСЯ»', say(x8, 'm05'));
+    /* одно наше движение — одно донорское: три ленты донора с одними числами на трёх разделах и один наш параллакс */
+    const three = { ...clone(xd), items: [1, 2, 3].map((q) => ({ ...clone(it(xd, 'm05')), id: `m0${q}`, target: `#rec${q} [data-elem-id="9"]`, count: 1, props: [{ prop: 'сдвиг Y', from: '0 px', to: '-60 px' }, { prop: 'масштаб', from: '1', to: '1.14' }] })) };
+    const x9 = compare(three, only(xo, ['m04']), {});
+    const got9 = x9.rows.map((r) => r.status);
+    C(got9.filter((s) => s === 'ЕСТЬ, ДРУГИМ ВИДОМ').length === 1 && got9.filter((s) => s === 'НЕТ').length === 2 && x9.rows.filter((r) => r.status === 'НЕТ').every((r) => /одно наше движение не закрывает два разных донорских/.test(r.notes.join('; '))), 'три ленты донора на трёх разделах и один наш параллакс — закрыта одна, две — НЕТ с причиной', got9.join(' / '));
+    /* то же у пары одного вида с разницей: наше движение, которое «отличается» от двух донорских, остаётся парой одному */
+    const two = { ...clone(xd), items: [{ ...clone(it(xd, 'm06')), id: 'm01', props: [{ prop: 'поворот', from: '0°', to: '259°' }] }, { ...clone(it(xd, 'm06')), id: 'm02', target: '#rec2 [data-elem-id="8"]', props: [{ prop: 'поворот', from: '0°', to: '90°' }] }] };
+    const oneSl = { ...clone(xo), items: [{ id: 'm01', kind: 'scroll-linked', trigger: 'scroll', target: 'img.sec__ribbon', count: 1, i: 364, props: [{ prop: 'поворот', from: '0°', to: '-14°' }], scroll: { rangePx: 900, startPct: 56, endPct: -11 } }] };
+    const x10 = compare(two, oneSl, {}).rows.map((r) => r.status);
+    C(x10.filter((s) => s === 'ОТЛИЧАЕТСЯ').length === 1 && x10.filter((s) => s === 'НЕТ').length === 1, 'пара одного вида с разницей: одно наше «отличается» только от одного донорского, второе — НЕТ (раньше — два WARN)', x10.join(' / '));
+    /* наведение: роль другая (у нас тот же переход фона, но на карточке) — не пара; из двух наших кнопок — ближайшая по цвету */
+    const card = { ...clone(xo), items: [{ ...clone(it(xo, 'm07')), id: 'm01', component: 'card', target: 'a.cat' }] };
+    const chips = { ...clone(xo), items: [{ ...clone(it(xo, 'm07')), id: 'm01', target: 'a.chip.chip--on', props: [{ prop: 'фон', from: 'rgb(226, 248, 205)', to: 'rgb(31, 85, 48)' }, { prop: 'цвет', from: 'rgb(31, 85, 48)', to: 'rgb(255, 255, 255)' }, { prop: 'рамка', from: 'rgb(31, 85, 48)', to: 'rgb(255, 255, 255)' }] }, { ...clone(it(xo, 'm07')), id: 'm02' }] };
+    const xh1 = compare(only(xd, ['m04']), card, {}), xh2 = compare(only(xd, ['m04']), chips, {});
+    C(st(xh1, 'm04') === 'НЕТ' && st(xh2, 'm04') === 'ЕСТЬ, ДРУГИМ ВИДОМ m02', 'наведение на кнопку донора: у нас тот же переход на карточке — НЕТ; из двух наших кнопок — ближайшая по цвету (a.btn), а не первая', `${st(xh1, 'm04')}; ${st(xh2, 'm04')}`);
+    /* вход при загрузке без единого общего свойства — другое движение (служебный переход рамки кнопки Tilda и вход нашего
+       заголовка); с общим свойством — «отличается», как было (стрелка слайдера донора и точка слайдера у нас: фон) */
+    const ent = (id, target, props, duration) => ({ id, kind: 'entrance', trigger: 'load', target, count: 1, props: props.map((p) => ({ prop: p, from: '', to: '' })), timing: { duration } });
+    const x12 = compare({ ...clone(xd), items: [ent('m01', 'span.tn-atom__button-border', ['column-rule-width', 'outline-width'], 200), ent('m02', 'div.slider-arrow', ['background-color', 'border-top-color'], 200)] },
+      { ...clone(xo), items: [ent('m01', 'h2.h-caps.is-in', ['opacity', 'transform'], 1000), ent('m02', 'button.mh-hero__dot', ['background-color'], 300)] }, {});
+    C(st(x12, 'm01') === 'НЕТ' && st(x12, 'm02') === 'ОТЛИЧАЕТСЯ m02', 'вход при загрузке без единого общего свойства — НЕТ (раньше — «отличается»); с общим свойством — ОТЛИЧАЕТСЯ, как было', `${st(x12, 'm01')}; ${st(x12, 'm02')}`);
+    /* === доводка 02.10 после независимой проверки: ловушки, на которых сверка находила движение в постороннем, и условия,
+       поломку которых selftest не замечал (мутационная проверка: 13 из 21) === */
+    {
+      const mk = (kind, id, target, props, place, more = {}) => ({ id, kind, trigger: 'scroll', target, count: 1, props: props.map(([prop, from, to]) => ({ prop, from, to })), timing: {}, ...(place ? { place } : {}), ...more });
+      const at = (y, of = 12, h = 300) => ({ y, h, screen: Math.floor(y / 900) + 1, of, first: Math.min(y + h, 900) - Math.max(y, 0) >= Math.min(h, 900) * 0.25 });
+      const D = (...items) => ({ ...clone(xd), items }), O = (...items) => ({ ...clone(xo), items });
+      const one = (d, o, dec = {}) => { const c = compare(D(d), O(...[o].flat()), dec, { screen: 'desktop' }); const r = c.rows[0]; return { c, r, s: `${r.status}${r.os.length ? ` ${oursOf(r)}` : ''}`, t: [...r.diffs, ...r.notes].join('; ') }; };
+      const Y = [['сдвиг Y', '0 px', '-100 px'], ['масштаб', '1', '1.2']];
+      const dS = (place, props = Y, more = {}) => mk('scroll-linked', 'm01', '#rec1 [data-elem-id="1"]', props, place, { scroll: { rangePx: 600 }, ...more });
+      const oP = (place, props = Y, more = {}) => mk('parallax', 'm01', 'img.sec__pic', props, place, { i: 40, scroll: { rangePx: 600 }, ...more });
+      /* числа пары другим видом: размах и конец значения — каждый допуск своим случаем */
+      const nSpan = one(dS(at(3000)), oP(at(3000), [['сдвиг Y', '-70 px', '-100 px'], ['масштаб', '1', '1.2']])), nEnd = one(dS(at(3000)), oP(at(3000), [['сдвиг Y', '0 px', '-140 px'], ['масштаб', '1', '1.2']])), nOk = one(dS(at(3000)), oP(at(3000), [['сдвиг Y', '-20 px', '-110 px'], ['масштаб', '1', '1.2']]));
+      C(nSpan.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && nEnd.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && nOk.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01', 'допуски чисел у пары другим видом: размах втрое меньше донорского (−70 → −100 против 0 → −100) и конец на 40% дальше (−140 против −100) — «ОТЛИЧАЕТСЯ»; размах 90% и конец +10% — «ЕСТЬ»', `размах: ${nSpan.s}; конец: ${nEnd.s}; рядом: ${nOk.s}`);
+      const nSide = one(dS(at(3000)), oP(at(3000), [['сдвиг Y', '0 px', '100 px'], ['масштаб', '1', '1.2']]));
+      C(nSide.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && /сдвиг Y — в другую сторону: у донора 0 px → -100 px, у нас 0 px → 100 px/.test(nSide.t), 'сдвиг в другую сторону (−100 и +100 px) — «ОТЛИЧАЕТСЯ» со словами «в другую сторону»', `${nSide.s} — ${nSide.t.slice(0, 160)}`);
+      const fOut = one(dS(at(3000), [['прозрачность', '1', '0'], ['масштаб', '1', '1.2']]), oP(at(3000), [['прозрачность', '0', '1'], ['масштаб', '1', '1.2']]));
+      C(fOut.s === 'НЕТ', 'у донора блок исчезает (прозрачность 1 → 0), у нас появляется (0 → 1) — разные движения, не пара', fOut.s);
+      const rail = one(dS(at(3000), [['сдвиг X', '0 px', '-500 px'], ['масштаб', '1', '1.2']], { sub: 'лента вбок' }), oP(at(3000), [['сдвиг X', '0 px', '-500 px'], ['масштаб', '1', '1.2']]));
+      C(rail.s === 'НЕТ', '«лента вбок» донора и наш параллакс с тем же сдвигом X — не пара: лента вбок в пары другого вида не идёт', rail.s);
+      const long = one(dS(at(3000), Y, { scroll: { rangePx: 3000 } }), mk('reveal', 'm01', 'img.sec__pic', Y, at(3000), { i: 40 }));
+      C(long.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && /у нас движение уложилось в один-два шага прохода/.test(long.t), 'отрезок донора 3000 px (больше экрана) против нашего «появления» (отрезок — шаг прохода) — «ОТЛИЧАЕТСЯ»', `${long.s} — ${long.t.slice(0, 160)}`);
+      const sameRange = one(dS(at(3000), Y, { scroll: { rangePx: 200 } }), mk('scroll-linked', 'm01', 'img.sec__pic', Y, at(3000), { i: 40, scroll: { rangePx: 3000 } }));
+      C(sameRange.s === 'ОТЛИЧАЕТСЯ m01' && /отрезок прокрутки: у донора 200 px, у нас 3000 px/.test(sameRange.t), 'пара одного вида: отрезок прокрутки 200 px против 3000 px (процентов в протоколе нет) — «ОТЛИЧАЕТСЯ»', `${sameRange.s} — ${sameRange.t.slice(0, 140)}`);
+      /* лишние свойства у нас — «ОТЛИЧАЕТСЯ», а не «ЕСТЬ» */
+      const more = one(dS(at(300), [['масштаб', '1', '1.5']]), oP(at(300), [['сдвиг Y', '0 px', '-600 px'], ['поворот', '0°', '180°'], ['масштаб', '1', '1.45']]));
+      C(more.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && rowLevel(more.r) === 'WARN' && /у нас меняется ещё сдвиг Y 0 px → -600 px; поворот 0° → 180° — у донора этого нет/.test(more.t), 'числа донора на месте (масштаб 1 → 1.5 и 1.45), но у нас ещё сдвиг на 600 px и разворот на 180° — «ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ» (WARN), а не «ЕСТЬ»', `${more.s} — ${more.t.slice(0, 200)}`);
+      /* место: три мерки (от начала, доля страницы, от конца), первый экран — только по расстоянию от начала */
+      const pMid = one(dS(at(4500, 11)), oP(at(5850, 13))), pTail = one(dS(at(3240, 5)), oP(at(10800, 13))), pHero = one(dS(at(40, 11)), oP(at(1260, 13))), pFar = one(dS(at(2700, 11)), oP(at(9000, 13))), pEdge = one(dS(at(760, 11, 600)), oP(at(740, 13, 600)));
+      C(pMid.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && pTail.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && pEdge.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && /место: у донора низ первого экрана \(верх на 760 px/.test(pEdge.t),
+        'место то же: середина страницы по доле высоты (экран 6 из 11 ↔ 7 из 13), конец страницы по расстоянию от конца (4 из 5 ↔ 13 из 13), граница первого экрана (верх на 760 и 740 px)', `середина: ${pMid.s}; конец: ${pTail.s}; граница: ${pEdge.s} — ${pEdge.t.slice(-110)}`);
+      C(pHero.s === 'НЕТ' && /место другое: у донора первый экран, у нас экран 2 из 13/.test(pHero.t) && pFar.s === 'НЕТ' && /место другое: у донора экран 4 из 11, у нас экран 11 из 13/.test(pFar.t),
+        'место другое: первый экран донора ↔ второй экран у нас (полтора экрана ниже; «та же доля страницы» первому экрану не мерка), 4-й экран из 11 ↔ 11-й из 13 — НЕТ', `первый экран: ${pHero.s} — ${pHero.t.slice(0, 120)}; середина и конец: ${pFar.s} — ${pFar.t.slice(0, 120)}`);
+      /* «появление» из протокола до 02.10: места нет, известно только «виден с начала» — первый экран сверяется и так */
+      const rvOld = (vis) => mk('reveal', 'm01', 'img.sec__pic', Y, null, { i: 40, visAtStart: vis });
+      const vTop = one(dS(at(40, 11)), rvOld(true)), vLow = one(dS(at(40, 11)), rvOld(false)), vEdge = one(dS(at(760, 11, 600)), rvOld(true)), vDeep = one(dS(at(4000, 11)), rvOld(false));
+      C(vTop.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && !vTop.r.unplaced && vLow.s === 'НЕТ' && /место другое: у донора первый экран, у нас ниже первого экрана/.test(vLow.t) && vEdge.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && !vEdge.r.unplaced && vDeep.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && vDeep.r.unplaced && /известно только «ниже первого экрана»/.test(vDeep.t),
+        'наше «появление» без места (протокол до 02.10): «виден с начала» ↔ первый экран донора и его граница — место то же; «не виден с начала» ↔ первый экран — НЕТ; оба ниже первого экрана — место не сверено', `виден: ${vTop.s}${vTop.r.unplaced ? ' (не сверено)' : ''}; не виден: ${vLow.s}; граница: ${vEdge.s}${vEdge.r.unplaced ? ' (не сверено)' : ''}; оба ниже: ${vDeep.s}${vDeep.r.unplaced ? ' (не сверено)' : ''}`);
+      /* место у пары одного вида; наша строка ×N стоит в нескольких местах — её место не сверяется */
+      const sFar = one(dS(at(40, 11)), mk('scroll-linked', 'm01', 'img.foot__pic', Y, at(10300, 13), { i: 40, scroll: { rangePx: 600 } })), sMany = one(dS(at(40, 11)), mk('scroll-linked', 'm01', 'img.bit', Y, at(10300, 13), { i: 40, count: 3, scroll: { rangePx: 600 } }));
+      C(sFar.s === 'НЕТ' && /вид тот же, но место другое: у донора первый экран, у нас экран 12 из 13/.test(sFar.t) && sMany.s === 'OK m01', 'пара одного вида: лента первого экрана донора ↔ такая же привязка в нашем подвале — НЕТ «место другое»; наша строка ×3 (место — у первого из трёх) — пара, как было', `${sFar.s} — ${sFar.t.slice(0, 140)}; ×3: ${sMany.s}`);
+      /* место не сверено: пара — только по примете (два свойства, не считая проявления «из ничего») */
+      const bare = (x) => { const q = clone(x); delete q.place; return q; };
+      const fade = [['прозрачность', '0', '1']];
+      const w1 = one(bare(dS(null, fade)), mk('reveal', 'm01', 'h2.lead', fade, null, { i: 40 })), w2 = one(dS(at(4300), fade), mk('reveal', 'm01', 'h2.lead', fade, at(4400), { i: 40 })), w3 = one(bare(dS(null, [['сдвиг Y', '0 px', '-80 px']])), oP(null, [['сдвиг Y', '0 px', '-80 px']]));
+      const w4 = one(mk('reveal', 'm01', 'div.framer-153kav9', [['прозрачность', '0.9', '0.51'], ['масштаб', '1.4', '1.11']], null, { sub: 'исчезает' }), mk('scroll-linked', 'm01', 'picture.custom__bg', [['прозрачность', '0.9', '0.5'], ['масштаб', '1.4', '1.1']], null, { i: 40, scroll: { rangePx: 675 } }));
+      C(w1.s === 'НЕТ' && /совпало только «прозрачность 0 → 1», а место на странице не сверено[^;]*проявление «из ничего» совпадает у чего угодно/.test(w1.t) && w2.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && !w2.r.unplaced && w3.s === 'НЕТ' && /одно свойство совпадает у чего угодно/.test(w3.t),
+        'место не сверено: совпала одна прозрачность 0 → 1 или одно свойство — НЕТ с причиной («совпадает у чего угодно»); та же прозрачность при сверенном месте — пара', `без места: ${w1.s} — ${w1.t.slice(0, 150)}; с местом: ${w2.s}; одно свойство: ${w3.s}`);
+      C(w4.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && w4.r.unplaced && w4.c.verdict === 'WARN', 'место не сверено, совпали два свойства, одно — частичное проявление 0.9 → 0.51 (плашка у figurki): пара, вердикт WARN', `${w4.s}, без сверки места: ${w4.r.unplaced}, вердикт ${w4.c.verdict}`);
+      /* закреплённый на экране элемент — не пара элементу в потоке страницы: ни другим видом, ни своим */
+      const top = mk('reveal', 'm01', 'a.grow', fade, { y: 829, h: 54, screen: 1, of: 13, first: true, fixed: true }, { i: 559, scroll: { atPct: 92, fixed: true } });
+      const f1 = one(dS(at(4300), fade), top), f2 = one(mk('reveal', 'm01', 'h2.about__lead', fade, at(4300)), top), f3 = one(mk('reveal', 'm01', 'button#toTop', fade, null, { scroll: { fixed: true } }), top);
+      const f4 = one(dS(at(300)), oP({ y: 300, h: 200, screen: 1, of: 13, first: true, fixed: true }));           /* и с приметными числами: плавающая картинка — не лента раздела */
+      C(f1.s === 'НЕТ' && f2.s === 'НЕТ' && f3.s === 'OK m01' && f4.s === 'НЕТ', 'закреплённая кнопка «наверх» (прозрачность 0 → 1) не закрывает проявление заголовка раздела — ни «привязано к прокрутке», ни «появление»; закреплённая картинка с числами ленты — тоже не пара; такая же кнопка донора — пара', `другим видом: ${f1.s}; тем же: ${f2.s}; закреплённый ↔ закреплённый: ${f3.s}; закреплённая картинка: ${f4.s}`);
+      /* наведение по роли: длительность, набор свойств, прозрачный и залитый фон, закреплённость */
+      const hD = it(xd, 'm04'), hO = it(xo, 'm07');
+      const hov = (o, d = hD) => one({ ...clone(d), id: 'm01' }, { ...clone(o), id: 'm01' });
+      const hSlow = hov({ ...hO, timing: { duration: 600, easing: 'ease' } }), hLess = hov({ ...hO, props: hO.props.filter((p) => p.prop !== 'рамка') });
+      const dark = { ...clone(hD), props: [{ prop: 'фон', from: 'rgb(20, 20, 20)', to: 'rgb(200, 200, 200)' }] }, ghost = { ...clone(hO), props: [{ prop: 'фон', from: 'rgba(0, 0, 0, 0)', to: 'rgb(190, 190, 190)' }] };
+      const hGhost = hov(ghost, dark), hFill = hov({ ...clone(hO), props: [{ prop: 'фон', from: 'rgb(30, 30, 30)', to: 'rgb(190, 190, 190)' }] }, dark);
+      C(hSlow.s === 'НЕТ' && hLess.s === 'НЕТ' && hGhost.s === 'НЕТ' && hFill.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01', 'наведение по роли: длительность втрое (200 и 600 мс), у нас не меняется рамка, у нас кнопка-призрак (фон из прозрачного) — НЕТ; тёмная залитая кнопка, что светлеет так же, — пара', `длительность: ${hSlow.s}; без рамки: ${hLess.s}; призрак: ${hGhost.s}; залитая: ${hFill.s}`);
+      const pin = (y) => ({ y, h: 44, screen: Math.floor(y / 900) + 1, of: 12, first: y < 900, fixed: true });
+      const hHead = hov({ ...hO, place: pin(12) }), hBoth = hov({ ...hO, place: pin(9000) }, { ...hD, place: pin(4000) }), hLow = hov({ ...hO, place: at(2137, 13, 48) }), hNav = hov({ ...hO, component: 'nav' }), hNone = hov({ ...hO, component: '' });
+      C(hHead.s === 'НЕТ' && hBoth.s === 'ЕСТЬ, ДРУГИМ ВИДОМ m01' && !hBoth.r.unplaced && /оба закреплены на экране/.test(hBoth.t) && hLow.s === 'НЕТ' && /наведение то же по роли и ходу цвета, но место другое: у донора первый экран, у нас экран 3 из 13/.test(hLow.t) && hNav.s === 'НЕТ' && hNone.s === 'НЕТ',
+        'наведение по роли: кнопка в закреплённой шапке ↔ кнопка первого экрана — НЕТ; обе закреплены (sticky на 4000 и 9000 px) — пара, место не сравнивается; та же кнопка в третьем экране — НЕТ «место другое»; пункт меню и метка без вида с тем же фоном — НЕТ', `шапка: ${hHead.s}; обе закреплены: ${hBoth.s}; третий экран: ${hLow.s} — ${hLow.t.slice(0, 110)}; пункт меню: ${hNav.s}; без вида: ${hNone.s}`);
+      /* бегущая строка: сторона, ось, скорость — и что из этого без сверенного места уже не «отличается» */
+      const lD = it(xd, 'm02'), lO = it(xo, 'm05');
+      const ln = (speed, { place = 'same', d = lD } = {}) => { const o = { ...clone(lO), id: 'm01', timing: { ...lO.timing, speed } }; const dd = { ...clone(d), id: 'm01' }; if (place === 'none') { delete o.place; delete dd.place; } return one(dd, o); };
+      const lSide = ln('113 px/с вправо'), lNoSide = ln('113 px/с вправо', { place: 'none' }), lTwice = ln('240 px/с влево', { place: 'none' }), lWild = ln('500 px/с влево', { place: 'none' }), lUp = ln('113 px/с вверх');
+      C(lSide.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && /строка едет в другую сторону: у донора влево, у нас вправо/.test(lSide.t) && lTwice.s === 'ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ m01' && lNoSide.s === 'НЕТ' && /а место на странице не сверено/.test(lNoSide.t) && lWild.s === 'НЕТ' && /скорость: у донора 113 px\/с, у нас 500 px\/с, а место на странице не сверено/.test(lWild.t) && lUp.s === 'НЕТ',
+        'бегущая строка другим видом: в другую сторону на том же месте — «ОТЛИЧАЕТСЯ»; без сверенного места скорость вдвое — «ОТЛИЧАЕТСЯ», а другая сторона или скорость больше чем втрое — НЕТ с причиной; строка вверх против строки вбок — НЕТ', `сторона: ${lSide.s}; без места — сторона: ${lNoSide.s}, вдвое: ${lTwice.s}, вчетверо: ${lWild.s} — ${lWild.t.slice(0, 120)}; вверх: ${lUp.s}`);
+      const mq = { ...clone(lO), id: 'm01', target: '#rec1 [data-elem-id="7"]' };
+      const mSide = ln('113 px/с вправо', { d: mq }), mFar = one({ ...mq, place: at(973, 11, 38) }, { ...clone(lO), id: 'm01', place: at(10900, 13, 80) }), mWild = ln('500 px/с влево', { d: mq, place: 'none' });
+      const jsLoop = one({ id: 'm01', kind: 'loop', sub: 'колебание', trigger: 'time', target: 'div.jsline', count: 1, source: 'js', props: [{ prop: 'сдвиг X', from: '-300 px', to: '300 px' }], timing: { period: 4000 } }, { ...clone(lO), id: 'm01', timing: { ...lO.timing, speed: '150 px/с вправо' } });
+      C(mSide.s === 'ОТЛИЧАЕТСЯ m01' && /строка едет в другую сторону/.test(mSide.t) && mFar.s === 'НЕТ' && /место другое: у донора экран 2 из 11, у нас экран 13 из 13/.test(mFar.t) && mWild.s === 'НЕТ' && jsLoop.s === 'НЕТ',
+        'две бегущие строки: в другую сторону на том же месте — «ОТЛИЧАЕТСЯ»; строка под первым экраном донора и карусель в нашем подвале — НЕТ «место другое»; без места скорость вчетверо — НЕТ; петля на JS (ходит туда-обратно) строке не пара', `сторона: ${mSide.s}; подвал: ${mFar.s} — ${mFar.t.slice(0, 110)}; без места вчетверо: ${mWild.s}; петля на JS: ${jsLoop.s}`);
+      /* число носителей: движение, которое стоит в одном месте, закрывает столько движений донора, сколько у нас элементов */
+      const tri = (kind, props) => D(...[1, 2, 3].map((q) => mk(kind, `m0${q}`, `#rec${q} [data-elem-id="${q}"]`, props, null, { scroll: { rangePx: 600, startPct: 50, endPct: -17 } })));
+      const cap = (kind, props, count) => compare(tri(kind, props), O(mk(kind, 'm01', 'img.sec__pic', props, null, { i: 40, count, scroll: { rangePx: 600, startPct: 50, endPct: -17 } })), {}).rows.map((r) => r.status).join(' / ');
+      const c1 = cap('scroll-linked', Y, 1), c3 = cap('scroll-linked', Y, 3), cr = cap('reveal', [['прозрачность', '0', '1'], ['сдвиг Y', '100 px', '0 px']], 1);
+      C(c1 === 'OK / НЕТ / НЕТ' && c3 === 'OK / OK / OK' && cr === 'OK / OK / OK', 'три привязки к прокрутке донора на трёх разделах с одними числами ↔ одна наша — одна OK, две НЕТ (раньше три OK); наша строка ×3 закрывает три; появления делят одно наше, как было', `одна наша: ${c1}; ×3: ${c3}; появления: ${cr}`);
+      /* ловушки независимой проверки — выжимки протоколов в fixtures/motion/compare-traps.json; ограничения — заметкой */
+      const traps = readJson(path.join(HERE, 'fixtures', 'motion', 'compare-traps.json')) || { cases: [] };
+      const seen = {};
+      for (const t of traps.cases) {
+        const c = compare(t.donor, t.ours, t.decisions || {}, { screen: t.donor.viewport || 'desktop' }); seen[t.name] = c;
+        const got = c.rows.map((r) => r.status).join(' / ');
+        if (t.limit) { console.log(`INFO сверка, ограничение ${t.name}: ${t.title} — ${got} (${t.limit})`); continue; }
+        C(got === t.expect.join(' / ') && c.verdict === t.verdict, `ловушка ${t.name}: ${t.title} — ${t.expect.join(' / ')}, вердикт ${t.verdict}`, `${got}, вердикт ${c.verdict} — ${[...c.rows[0].diffs, ...c.rows[0].notes].join('; ').slice(0, 200)}`);
+      }
+      C(traps.cases.length >= 33, 'фикстура ловушек на месте (compare-traps.json, 33 случая)', `случаев ${traps.cases.length}`);
+      const tn = (name) => (seen[name] ? seen[name].notes.join(' | ') : 'ловушки нет');
+      C(/значения не строкой решением не считаются: «m01» \(false\), «m02» \(0\)/.test(tn('t7a-decision-false-zero')) && /экран в ключе пишется строчными[^|]*«m01:Desktop» → «m01:desktop»/.test(tn('t7b-decision-typos')) && /ничего не закрыли[^|]*«m1:desktop», «M02», «m02 »/.test(tn('t7b-decision-typos')) && /«loop» — вида «петля» с такой подписью у донора нет, а «бегущая строка» есть \(m01\): ключ «marquee»/.test(tn('t8b-kind-key-new-donor')),
+        'решения: false и 0 — не решения (названы); экран в ключе другим регистром («m01:Desktop») — сказано, как писать; ключ вида «loop» после того, как строки стали «бегущей строкой», — подсказан ключ «marquee»', `${tn('t7a-decision-false-zero').slice(0, 120)} · ${tn('t7b-decision-typos').slice(0, 200)} · ${tn('t8b-kind-key-new-donor').slice(0, 160)}`);
+      /* решения по номеру: отпечаток строки донора вместо времени файла. Донор переснят, в начале новая строка — номера +1 */
+      const dec = { m03: 'второй строки нет: один ряд разделов', m06: 'фигур раздела отзывов у нас нет', 'loop:[data-elem-id="1765713300901"]': 'парящего значка нет' };
+      const b1 = compare(xd, xo, dec, { screen: 'desktop', prints: {} });
+      const prints = Object.fromEntries(b1.binds.map((b) => [b.key, b.print]));
+      C(b1.binds.map((b) => b.key).join(' ') === 'm03 m06' && b1.stale.length === 0 && prints.m03.kind === 'loop' && prints.m03.target === it(xd, 'm03').target && prints.m06.props.join() === 'поворот' && b1.notes.some((n) => /решения по номеру привязаны к движениям донора[^|]*m03 — петля \(парение\) #rec1689764921[^|]*m06 — привязано к прокрутке #rec1690088711[^|]*×3/.test(n)) && row(b1, 'm07').key === 'loop:[data-elem-id="1765713300901"]',
+        'первое применение решения по номеру — отпечаток строки донора (вид, подпись, число элементов, свойства) и заметка, к чему привязано; ключ по виду и подписи отпечатка не требует (и пишется без пробела в начале)', `${b1.binds.map((b) => `${b.key}: ${b.print.what}`).join('; ')} · ${b1.notes.join(' | ').slice(0, 200)}`);
+      const shifted = clone(xd); shifted.items.unshift({ id: 'm00', kind: 'entrance', trigger: 'load', target: 'div.promo-banner', count: 1, props: [{ prop: 'opacity', from: '', to: '' }], timing: { duration: 400 } }); shifted.items.forEach((x, q) => { x.id = `m${String(q + 1).padStart(2, '0')}`; });
+      const b2 = compare(shifted, xo, dec, { screen: 'desktop', prints });
+      const wb = b2.warnings.join(' | ');
+      C(b2.stale.map((s2) => s2.key).join(' ') === 'm03 m06' && !row(b2, 'm03').decision && !row(b2, 'm06').decision && row(b2, 'm04').status === 'НЕТ' && row(b2, 'm07').status === 'НЕТ' && row(b2, 'm08').status === 'РЕШЕНО' && b2.binds.length === 0
+        && /решение «m03» не применено: оно записано для «петля \(парение\) #rec1689764921 \[data-elem-id="1765713841547"\]», а сейчас под этим номером «петля \(парение\) #rec1689728881 \[data-elem-id="1765713300876"\]»[^|]*То движение теперь m04[^|]*"loop:\[data-elem-id="1765713841547"\]:desktop" \(от номеров не зависит\) — или на новый номер "m04:desktop"/.test(wb) && /решение «m03» не применено: оно записано для/.test(row(b2, 'm03').notes.join('; ')) && b2.verdict === 'FAIL',
+        'донор переснят, номера сдвинулись на один: решения по номеру к другому движению НЕ применены — WARN с обоими движениями, новым номером и ключом по виду и подписи; строки без решения остаются «НЕТ»; ключ по виду и подписи работает как работал', `не применены: ${b2.stale.map((s2) => s2.key).join(' ') || '—'}; m03: ${row(b2, 'm03').decision || 'без решения'}; m04: ${row(b2, 'm04').status}; m08: ${row(b2, 'm08').status} · ${wb.slice(0, 330)}`);
+      /* донор переснят без сдвига — тревоги нет (проверка по времени файла её поднимала); вид строки сменился петля → бегущая строка — то же движение */
+      const again = clone(xd); again.takenAt = new Date(Date.now() + 3600e3).toISOString(); Object.assign(it(again, 'm03'), { kind: 'marquee', sub: undefined, props: [{ prop: 'сдвиг X', from: '0 px', to: '-3286.8 px' }], timing: { ...it(again, 'm03').timing, speed: '164 px/с влево' } });
+      const b3 = compare(again, xo, dec, { screen: 'desktop', prints });
+      C(b3.stale.length === 0 && b3.binds.length === 0 && row(b3, 'm03').decision === dec.m03 && row(b3, 'm06').status === 'РЕШЕНО' && !b3.warnings.some((w) => /не применено|сдвин/.test(w)) && !b3.notes.some((n) => /привязаны к движениям/.test(n)),
+        'донор переснят без сдвига номеров (и бегущая строка Tilda теперь «бегущая строка», а не «петля») — решения по номеру применены, тревоги нет', `не применены: ${b3.stale.length}; m03: ${row(b3, 'm03').status} ${row(b3, 'm03').key || ''}; m06: ${row(b3, 'm06').status} · ${b3.warnings.join(' | ').slice(0, 160) || 'предупреждений нет'}`);
+      /* решение переписали под нынешнее движение (другой текст под тем же номером) — привязывается заново */
+      const b4 = compare(shifted, xo, { ...dec, m03: 'первая строка у нас есть' }, { screen: 'desktop', prints });
+      C(b4.stale.map((s2) => s2.key).join(' ') === 'm06' && row(b4, 'm03').decision === 'первая строка у нас есть' && b4.binds.length === 1 && b4.binds[0].key === 'm03' && b4.notes.some((n) => /текст решения по номеру переписан — привязано заново: m03 — теперь «петля \(парение\) #rec1689728881[^|]*было «петля \(парение\) #rec1689764921/.test(n)),
+        'текст решения под номером переписан — это новое решение: привязано заново к нынешнему движению, с заметкой «было — стало»; соседнее старое решение по-прежнему не применено', `не применены: ${b4.stale.map((s2) => s2.key).join(' ') || '—'}; m03: ${row(b4, 'm03').decision || 'без решения'}; ${b4.notes.join(' | ').slice(0, 260)}`);
+    }
+    /* то же у видов без «места» (вход при загрузке): пара с разницей наше движение не делит — два входа донора «отличаются» от одного нашего по очереди */
+    const x13 = compare({ ...clone(xd), items: [ent('m01', 'div.slider-arrow', ['background-color', 'border-top-color'], 200), ent('m02', 'div.slider-count', ['background-color', 'outline-color'], 200)] }, { ...clone(xo), items: [ent('m01', 'button.mh-hero__dot', ['background-color'], 300)] }, {}).rows.map((r) => r.status).join(' / ');
+    C(x13 === 'ОТЛИЧАЕТСЯ / НЕТ', 'два входа при загрузке донора «отличаются» от одного нашего — пара одному, второму НЕТ', x13);
+    /* экраны разные: донор снят на телефоне, наш — на широком экране */
+    const x11 =compare({ ...clone(only(xd, ['m02'])), viewport: 'mobile' }, only(xo, ['m05']), {}, { screen: 'mobile' });
+    C(x11.verdict === 'WARN' && x11.warnings.some((w) => /экраны разные: донор снят на mobile, наш сайт — на desktop/.test(w)), 'протокол донора mobile против нашего desktop — предупреждение и вердикт не лучше WARN', `${x11.verdict}: ${x11.warnings.join('; ') || 'предупреждений нет'}`);
+    /* решения: ключ с экраном сильнее ключа без экрана и действует только на своём экране; ключ без экрана — на любом */
+    const dec = { _about: 'служебный ключ — не решение', 'm03:desktop': 'второй строки нет: один ряд разделов', m03: 'на телефоне блока нет', 'scroll-linked:desktop': 'фигур раздела отзывов у нас нет', m07: 'парящего значка нет', 'm06:mobile': 'для телефона', m99: 'лишний', 'm05:tablet': 'для планшета', 'reveal:div.nope': 'не та подпись', m01: 'есть: лента первого экрана', 'm02:desktop': '   ' };
+    const xdD = compare(xd, xo, dec, { screen: 'desktop' }), xdM = compare(xd, xo, dec, { screen: 'mobile' });
+    const k = (c, id) => `${row(c, id).status} ${row(c, id).key || '—'}`;
+    C(k(xdD, 'm03') === 'РЕШЕНО m03:desktop' && row(xdD, 'm03').decision === 'второй строки нет: один ряд разделов' && k(xdM, 'm03') === 'РЕШЕНО m03' && row(xdM, 'm03').decision === 'на телефоне блока нет', 'ключ с экраном «m03:desktop» — для desktop, там же ключ без экрана «m03» — для остальных экранов', `desktop: ${k(xdD, 'm03')}; mobile: ${k(xdM, 'm03')}`);
+    C(k(xdD, 'm06') === 'РЕШЕНО scroll-linked:desktop' && k(xdM, 'm06') === 'РЕШЕНО m06:mobile' && k(xdD, 'm07') === 'РЕШЕНО m07' && k(xdM, 'm07') === 'РЕШЕНО m07', 'вид с экраном («scroll-linked:desktop») и номер с экраном («m06:mobile») — каждый на своём экране; ключ без экрана — на обоих', `desktop: ${k(xdD, 'm06')}, ${k(xdD, 'm07')}; mobile: ${k(xdM, 'm06')}, ${k(xdM, 'm07')}`);
+    const nD = xdD.notes.join(' | ');
+    C(/записано дважды с разным текстом: «m03:desktop» и «m03»/.test(nD) && /по номеру без экрана: m01, m07/.test(nD) && /не понадобились — пара нашлась сама: «m01»/.test(nD), 'конфликт ключей и решения по номеру без экрана — понятной заметкой; решение при найденной паре — «не понадобилось»', nD.slice(0, 400));
+    C(/пустые решения не засчитаны: «m02:desktop»/.test(nD) && /ничего не закрыли[^|]*«m99», «reveal:div\.nope»/.test(nD) && !/m05:tablet|m06:mobile|_about/.test(nD.split('ничего не закрыли')[1] || '') && row(xdD, 'm02').status === 'ЕСТЬ, ДРУГИМ ВИДОМ', 'пустое решение не засчитано; ключи несуществующего номера и подписи названы; ключи других экранов и служебные — молча', nD.slice(0, 500));
+    const xE = compare(xd, xo, { m06: '   ', m07: '' }, { screen: 'desktop' });
+    C(st(xE, 'm06') === 'НЕТ' && st(xE, 'm07') === 'НЕТ' && xE.miss === 3, 'пустое решение (пробелы, пустая строка) строку не закрывает — остаётся НЕТ', `${st(xE, 'm06')}; ${st(xE, 'm07')}; нет ${xE.miss}`);
+    /* старый файл решений прошлого прогона (ключи — номера без экрана) на новой сверке: закрывает те же строки, что и раньше */
+    const old = { m03: 'есть: вторая бегущая строка', m06: 'вращение не берём' }; const xOld = compare(xd, xo, old, { screen: 'desktop' });
+    C(k(xOld, 'm03') === 'РЕШЕНО m03' && k(xOld, 'm06') === 'РЕШЕНО m06' && xOld.rows.filter((r) => r.key).length === 2, 'файл решений без экранов работает как раньше: номер закрывает свою строку и только её', xOld.rows.filter((r) => r.key).map((r) => `${r.d.id}←${r.key}`).join(', '));
+    /* имена страниц: адрес и та же страница в --pages — один протокол с именем типа */
+    const p1 = planPages(['https://x.ru'], 'home=/', ['desktop'], 'site'), p2 = planPages(['https://x.ru/'], 'home=/,about=/about', ['desktop', 'mobile'], 'site'), p3 = planPages(['https://x.ru/a-b', 'https://x.ru/a/b'], null, ['desktop'], ''), p4 = planPages(['https://x.ru'], null, ['desktop'], 'site');
+    C(!p1.error && p1.runs.map((r) => r.tag).join(' ') === 'site-home' && !p2.error && p2.runs.map((r) => r.tag).join(' ') === 'site-home site-home-mobile site-about site-about-mobile' && p4.runs.map((r) => r.tag).join(' ') === 'site',
+      'адрес и --pages "home=/" — одна страница с именем site-home (было: «Два протокола с одним именем»); с двумя страницами и экранами — четыре имени; один адрес без --pages — имя --tag как есть', `${p1.error || p1.runs.map((r) => r.tag).join(' ')} · ${p2.error || p2.runs.map((r) => r.tag).join(' ')} · ${p4.error || p4.runs.map((r) => r.tag).join(' ')}`);
+    C(!!p3.error && /разные страницы с одним именем/.test(p3.error) && p3.error.includes('https://x.ru/a-b') && p3.error.includes('https://x.ru/a/b'), 'разные страницы с одним именем — отказ называет оба адреса', p3.error || p3.runs.map((r) => r.tag).join(' '));
+    const p5 = planPages(['https://x.ru'], 'home=/,home=/about.html', ['desktop'], 'site');
+    C(!!p5.error && /Тип «home» в --pages дан двум страницам: https:\/\/x\.ru\/? и https:\/\/x\.ru\/about\.html/.test(p5.error) && !/Задайте им типы/.test(p5.error), 'один тип на две страницы в --pages — отказ так и говорит («тип home дан двум страницам»), а не «задайте типы»', p5.error || p5.runs.map((r) => r.tag).join(' '));
+    /* командная строка: --viewport desktop,mobile за один запуск и один файл решений; одно решение по номеру без экрана,
+       закрывшее на двух экранах разные движения, — WARN; статус словом и пары — в md и json */
+    {
+      const dir = path.join(out, 'motion', 'cross-cli'); ensureDir(dir);
+      /* отпечатки и протоколы прошлого прогона selftest — убрать: каждый прогон первый (прежний протокол сверки — тоже источник отпечатков) */
+      fs.rmSync(path.join(dir, PRINTS_FILE), { force: true }); fs.rmSync(path.join(dir, 'motion'), { recursive: true, force: true });
+      const mob = (p, drop) => ({ ...clone(p), viewport: 'mobile', size: '390×844@2', items: clone(p).items.filter((x) => !drop.includes(x.id)).map((x, q) => ({ ...x, id: `m${String(q + 1).padStart(2, '0')}` })) });
+      writeJson(path.join(dir, 'donor-home.json'), xd); writeJson(path.join(dir, 'donor-home-mobile.json'), mob(xd, ['m01', 'm02']));     /* на телефоне номера сдвинуты: m01 — вторая строка */
+      writeJson(path.join(dir, 'ours-home.json'), xo); writeJson(path.join(dir, 'ours-home-mobile.json'), mob(xo, []));
+      const decF = path.join(dir, 'decisions.json');
+      writeJson(decF, { m03: 'одна бегущая строка', 'm06:desktop': 'фигур нет', m07: 'значка нет', 'm01:mobile': 'на телефоне одна строка', 'm02:mobile': 'кнопка та же', 'm05:desktop': 'числа смягчены', 'm04:mobile': 'фигур нет', 'm05:mobile': 'значка нет' });
+      const run = (...a) => spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'compare', ...a, '--out', dir, '--decisions', decF], { encoding: 'utf8' });
+      const r1 = run(path.join(dir, 'donor-home.json'), path.join(dir, 'ours-home.json'), '--viewport', 'desktop,mobile');
+      const j1 = readJson(path.join(dir, 'motion', 'compare.json')), j2 = readJson(path.join(dir, 'motion', 'compare-mobile.json'));
+      /* отпечатки решений по номеру — сразу после первого запуска (проверка ниже) */
+      const book = readJson(path.join(dir, PRINTS_FILE)); const pd = book && book.donors && book.donors['https://generationx5.tech/ · desktop'], pm = book && book.donors && book.donors['https://generationx5.tech/ · mobile'];
+      const s1 = j1 && j1.steps.find((s) => /^m01 /.test(s.what)), s4 = j1 && j1.steps.find((s) => /^m04 /.test(s.what));
+      C(!!j1 && !!j2 && j1.viewport === 'desktop' && j2.viewport === 'mobile' && j2.donorViewport === 'mobile' && !!s1 && s1.match === 'ЕСТЬ, ДРУГИМ ВИДОМ' && s1.status === 'OK' && s1.cross === true && s1.ours.join('+') === 'm01+m02' && j1.counts.otherKind === 3 && j1.counts.unplaced === 0 && !!s4 && s4.match === 'ЕСТЬ, ДРУГИМ ВИДОМ' && s4.cross === true && s4.ours.join() === 'm07',
+        'compare --viewport desktop,mobile: два протокола (compare, compare-mobile) с соседями по имени; в json — match «ЕСТЬ, ДРУГИМ ВИДОМ», cross, ours, counts; пара наведения по роли — тоже cross', `код ${r1.status}; ${j1 ? `${j1.viewport}: ${s1 ? `${s1.status} ${s1.match} ${s1.ours.join('+')}` : 'нет m01'}` : 'compare.json нет'}; ${j2 ? j2.viewport : 'compare-mobile.json нет'} ${(r1.stderr || '').trim().slice(0, 160)}`);
+      const md = fs.existsSync(path.join(dir, 'motion', 'compare.md')) ? fs.readFileSync(path.join(dir, 'motion', 'compare.md'), 'utf8') : '';
+      C(/\| ЕСТЬ, ДРУГИМ ВИДОМ \|/.test(md) && /m01\+m02 `div\.hero__ribbon` — параллакс \+ появление/.test(md) && /## Как читать/.test(md) && /тот же приём другим видом: 3/.test(md) && /m07 `a.btn` — наведение на «кнопка»/.test(md) && /палитра у нас своя/.test(md) && /кроме случая, когда в строке «место на странице не сверено»/.test(md) && /motion-decisions.prints.json/.test(md),
+        'md сверки: статус «ЕСТЬ, ДРУГИМ ВИДОМ», наши строки пары с видами (у наведения — на чём оно), раздел «Как читать»: про цвета у OK, про «место не сверено» и про отпечатки решений', md.slice(0, 200));
+      C(/WARN решение «m03» без экрана закрыло разные движения: desktop — петля \(парение\)[^\n]*mobile — привязано к прокрутке/.test(r1.stdout) && j1.verdict === 'WARN' && (j1.warnings || []).some((w) => /«m03:desktop», «m03:mobile»/.test(w)),
+        'одно решение по номеру без экрана («m03») закрыло на desktop и mobile разные движения — WARN с подсказкой ключей с экраном, вердикт WARN', `${j1 ? j1.verdict : '—'}; ${(r1.stdout.split('\n').find((l) => /без экрана закрыло/.test(l)) || 'строки нет').slice(0, 300)}`);
+      /* запуск одного экрана, а рядом лежит протокол донора другого экрана с другим движением под тем же номером: общий файл
+         решений (по умолчанию, один на прогон) — WARN; свой файл через --decisions — заметкой */
+      writeJson(path.join(dir, 'motion-decisions.json'), { m03: 'одна бегущая строка', 'm05:desktop': 'числа смягчены', 'm06:desktop': 'фигур нет', 'm07:desktop': 'значка нет' });
+      const r4 = spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'compare', path.join(dir, 'donor-home.json'), path.join(dir, 'ours-home.json'), '--out', dir, '--tag', 'solo'], { encoding: 'utf8' });
+      const j4 = readJson(path.join(dir, 'motion', 'solo.json'));
+      const r5 = run(path.join(dir, 'donor-home.json'), path.join(dir, 'ours-home.json'), '--tag', 'solo-own'); const j5 = readJson(path.join(dir, 'motion', 'solo-own.json'));
+      const sib = /у экрана mobile \(donor-home-mobile\.json\) под этими номерами другие движения — m03: здесь петля \(парение\)[^;]*, там привязано к прокрутке/;
+      C(!!j4 && j4.verdict === 'WARN' && (j4.warnings || []).some((w) => sib.test(w) && /Файл решений один на прогон/.test(w)) && !!j5 && !(j5.warnings || []).some((w) => sib.test(w)) && (j5.decisionNotes || []).some((w) => sib.test(w)),
+        'один экран в запуске, рядом протокол донора другого экрана с другим движением под тем же номером: общий файл решений — WARN, свой (--decisions) — заметкой', `общий: ${j4 ? j4.verdict : '—'} ${((j4 && j4.warnings) || ['предупреждения нет'])[0].slice(0, 160)}; свой: ${j5 ? j5.verdict : '—'}, заметок ${((j5 && j5.decisionNotes) || []).filter((w) => sib.test(w)).length} ${(r4.stderr || r5.stderr || '').trim().slice(0, 120)}`);
+      /* об одном ключе — одно сообщение: m03 закрыл разные движения на двух экранах (WARN выше) — про соседний экран и в
+         общей заметке «по номеру без экрана» о нём уже не повторяется (было три сообщения про один ключ) */
+      const about = (j, key) => [...((j && j.warnings) || []), ...((j && j.decisionNotes) || [])].filter((w) => new RegExp(`(^|[^\\w:])${key}([^\\w:]|$)`).test(w.replace(/«|»/g, ' ')) && /без экрана/.test(w));
+      C(about(j1, 'm03').length === 1 && about(j2, 'm03').length === 1 && (j1.decisionNotes || []).some((n) => /^решения по номеру без экрана: m07 —/.test(n)),
+        'про ключ «m03» без экрана — одно сообщение на экран (WARN «закрыло разные движения»), а не три; остальные ключи без экрана — общей заметкой', `desktop: ${about(j1, 'm03').length}, mobile: ${about(j2, 'm03').length}; ${((j1 && j1.decisionNotes) || []).find((n) => /^решения по номеру без экрана/.test(n)) || 'общей заметки нет'}`.slice(0, 260));
+      /* строке без решения — готовый ключ для вставки (по виду и подписи, с экраном), группе ×N — ключ на группу */
+      spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'compare', path.join(dir, 'donor-home.json'), path.join(dir, 'ours-home.json'), '--out', dir, '--tag', 'plain', '--decisions', path.join(dir, 'нет-такого-файла.json')], { encoding: 'utf8' });
+      const mdP = fs.existsSync(path.join(dir, 'motion', 'plain.md')) ? fs.readFileSync(path.join(dir, 'motion', 'plain.md'), 'utf8') : '';
+      C(/\| НЕТ \|[^\n]*\| для решения — `loop:\[data-elem-id="1765713841547"\]:desktop` \|/.test(mdP) && /\| ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ \|[^\n]*\| для решения — `scroll-linked:\[data-elem-id="1765716990801"\]:desktop` \|/.test(mdP), 'md: у строки «НЕТ» и «ОТЛИЧАЕТСЯ» без решения — готовый ключ по виду и подписи с экраном (от номеров не зависит)', (mdP.split('\n').find((l) => /\| НЕТ \|/.test(l)) || 'строки НЕТ нет').slice(-120));
+      /* решения по номеру и пересъёмка донора: первый запуск (r1) записал отпечатки в файл-спутник; донор переснят со сдвигом
+         номеров — решение к другому движению не применено, WARN; время файла решений роли не играет (его «правили после») */
+      C(!!pd && !!pm && Object.keys(pd).sort().join(' ') === 'm03 m05:desktop m06:desktop m07' && pd.m03.kind === 'loop' && pd.m03.decision === 'одна бегущая строка' && !!pd.m03.bound && pm.m03.kind === 'scroll-linked' && j1.decisionPrints === path.join(dir, PRINTS_FILE) && /INFO решения: решения по номеру привязаны к движениям донора/.test(r1.stdout),
+        'первое применение решений по номеру: файл-спутник motion-decisions.prints.json в папке прогона — отпечатки по странице донора и экрану, заметка в выводе', `${pd ? Object.keys(pd).join(' ') : 'раздела desktop нет'}; mobile: ${pm ? Object.keys(pm).join(' ') : 'нет'}`);
+      const shiftD = clone(xd); shiftD.takenAt = new Date(Date.now() + 3600e3).toISOString(); shiftD.items.unshift({ id: 'm00', kind: 'entrance', trigger: 'load', target: 'div.promo-banner', count: 1, props: [{ prop: 'opacity', from: '', to: '' }], timing: { duration: 400 } }); shiftD.items.forEach((x, q) => { x.id = `m${String(q + 1).padStart(2, '0')}`; });
+      writeJson(path.join(dir, 'donor-shifted.json'), shiftD); const nowT = new Date(Date.now() + 7200e3); fs.utimesSync(decF, nowT, nowT);
+      const r2 = run(path.join(dir, 'donor-shifted.json'), path.join(dir, 'ours-home.json'), '--tag', 'shifted'); const j3 = readJson(path.join(dir, 'motion', 'shifted.json'));
+      const s3 = (id) => (j3 ? j3.steps.find((s) => new RegExp(`^${id} `).test(s.what)) : null);
+      C(!!j3 && r2.status === 1 && j3.verdict === 'FAIL' && (j3.warnings || []).filter((w) => /^решение «m0[37]» не применено: оно записано для/.test(w)).length === 2 && !s3('m03').decisionKey && s3('m03').match === 'ЕСТЬ, ДРУГИМ ВИДОМ' && s3('m04').match === 'НЕТ' && !s3('m07').decisionKey && s3('m07').match === 'НЕТ' && /WARN решение «m03» не применено[^\n]*То движение теперь m04[^\n]*"loop:\[data-elem-id="1765713841547"\]:desktop"/.test(r2.stdout),
+        'донор переснят, номера сдвинулись (файл решений при этом «правили позже»): решения «m03» и «m07» к другим движениям не применены — WARN с ключом по виду и подписи, строки без решения — НЕТ, код 1', `код ${r2.status}, ${j3 ? j3.verdict : '—'}; m03: ${s3('m03') ? `${s3('m03').match} ${s3('m03').decisionKey || 'без решения'}` : '—'}; m07: ${s3('m07') ? `${s3('m07').match} ${s3('m07').decisionKey || 'без решения'}` : '—'}; ${((j3 && j3.warnings) || ['предупреждений нет'])[0].slice(0, 200)}`);
+      /* донор переснят без сдвига — решения применены, предупреждения нет (проверка по времени файла давала ложный WARN) */
+      const later = clone(xd); later.takenAt = new Date(Date.now() + 3600e3).toISOString(); writeJson(path.join(dir, 'donor-later.json'), later);
+      const r6 = run(path.join(dir, 'donor-later.json'), path.join(dir, 'ours-home.json'), '--tag', 'later'); const j6 = readJson(path.join(dir, 'motion', 'later.json'));
+      C(!!j6 && r6.status === 0 && j6.verdict === 'OK' && !(j6.warnings || []).length && j6.steps.filter((s) => s.match === 'РЕШЕНО').length === 3 && !/не применено|сдвин/.test(r6.stdout), 'донор переснят без сдвига номеров — решения по номеру применены, предупреждения нет, вердикт OK', `код ${r6.status}, ${j6 ? j6.verdict : '—'}; ${((j6 && j6.warnings) || []).join(' | ').slice(0, 200) || 'предупреждений нет'}`);
+      /* привязка задним числом: прогон старше 02.10 — отпечатков нет, но лежит прежний протокол сверки (как писал master:
+         what, decisionKey, текст решения в конце details). Донор переснят со сдвигом — уже первая сверка новой версией не
+         применяет старые решения к другим движениям; решение, текст которого с тех пор переписан, привязывается к нынешней строке */
+      {
+        const hd = path.join(out, 'motion', 'cross-history'); fs.rmSync(hd, { recursive: true, force: true }); ensureDir(path.join(hd, 'motion'));
+        writeJson(path.join(hd, 'motion', 'cmp.json'), { url: xo.url, donor: xd.url, viewport: 'desktop', takenAt: '2026-10-01T17:21:08.295Z', verdict: 'OK', steps: [
+          { status: 'OK', what: 'm03 петля #rec1689764921 [data-elem-id="1765713841547"]', decisionKey: 'm03', details: 'у нас нет; одна бегущая строка' },
+          { status: 'OK', what: 'm06 привязано к прокрутке #rec1690088711 [data-elem-id="1765719257106"] ×3', decisionKey: 'm06', details: 'у нас нет; фигур нет' },
+          { status: 'OK', what: 'm07 петля #rec1689728881 [data-elem-id="1765713300901"]', decisionKey: 'm07', details: 'у нас нет; прежний текст' }] });
+        /* чужие протоколы рядом — не источник: сверка другой страницы донора и сверка другого экрана (обе свежее, и под теми же
+           номерами с тем же текстом у них — как раз нынешние строки) */
+        writeJson(path.join(hd, 'motion', 'cmp-about.json'), { url: xo.url, donor: 'https://generationx5.tech/about', viewport: 'desktop', takenAt: '2026-10-02T09:00:00.000Z', verdict: 'OK', steps: [{ status: 'OK', what: 'm03 петля #rec1689728881 [data-elem-id="1765713300876"]', decisionKey: 'm03', details: 'у нас нет; одна бегущая строка' }] });
+        writeJson(path.join(hd, 'motion', 'cmp-mobile.json'), { url: xo.url, donor: xd.url, viewport: 'mobile', takenAt: '2026-10-02T09:00:00.000Z', verdict: 'OK', steps: [{ status: 'OK', what: 'm06 привязано к прокрутке #rec1689903121 [data-elem-id="1765716990801"] ×2', decisionKey: 'm06', details: 'у нас нет; фигур нет' }] });
+        writeJson(path.join(hd, 'motion-decisions.json'), { m03: 'одна бегущая строка', m06: 'фигур нет', m07: 'переписано: нынешнее m07 не берём' });
+        writeJson(path.join(hd, 'donor-shifted.json'), shiftD); writeJson(path.join(hd, 'ours-home.json'), xo);
+        const rh = spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'compare', path.join(hd, 'donor-shifted.json'), path.join(hd, 'ours-home.json'), '--out', hd], { encoding: 'utf8' });
+        const jh = readJson(path.join(hd, 'motion', 'compare.json')), bh = readJson(path.join(hd, PRINTS_FILE)); const sh = (id) => (jh ? jh.steps.find((s) => new RegExp(`^${id} `).test(s.what)) : null);
+        const ph = bh && bh.donors && bh.donors['https://generationx5.tech/ · desktop'];
+        C(!!jh && rh.status === 1 && (jh.warnings || []).filter((w) => /^решение «m0[36]» не применено: оно записано для/.test(w)).length === 2 && !sh('m03').decisionKey && !sh('m06').decisionKey && sh('m07').decisionKey === 'm07' && sh('m07').match === 'РЕШЕНО'
+          && (jh.decisionNotes || []).some((n) => /отпечатки решений по номеру \(m03, m06\) взяты из прежнего протокола сверки этого прогона \(cmp\.json\)/.test(n)) && !!ph && ph.m06.kind === 'scroll-linked' && ph.m06.count === 3 && /cmp\.json от 2026-10-01/.test(ph.m06.from) && ph.m07.decision === 'переписано: нынешнее m07 не берём' && !ph.m07.from,
+          'прогон без отпечатков, но с прежним протоколом сверки: отпечатки «m03» и «m06» взяты из него — после пересъёмки донора со сдвигом решения не применены уже в первой сверке (WARN, код 1); решение с переписанным текстом («m07») привязано к нынешней строке', `код ${rh.status}; ${jh ? `m03: ${sh('m03').decisionKey || 'без решения'}, m06: ${sh('m06').decisionKey || 'без решения'}, m07: ${sh('m07').decisionKey || 'без решения'} ${sh('m07').match}` : 'протокола нет'}; ${((jh && jh.decisionNotes) || []).find((n) => /прежнего протокола/.test(n)) || 'заметки нет'} ${(rh.stderr || '').trim().slice(0, 160)}`.slice(0, 420));
+      }
+      const r3 = spawnSync(process.execPath, [fileURLToPath(import.meta.url), 'compare', path.join(dir, 'donor-later.json'), path.join(dir, 'ours-home.json'), '--viewport', 'desktop,mobile', '--out', dir], { encoding: 'utf8' });
+      C(r3.status === 1 && /нет протокола донора для экрана mobile/.test(r3.stderr), '--viewport desktop,mobile без протокола донора для второго экрана — отказ с подсказкой, что снять', `код ${r3.status}; ${(r3.stderr || r3.stdout).trim().slice(0, 200)}`);
+    }
+  }
+  if (opt['no-browser']) { console.log(`${cbad ? 'FAIL' : 'OK'}: сверка ${cn - cbad}/${cn} (без браузера: распознавание на стенде, Tilda-донор и клики ×1.25 не проверялись)`); process.exit(cbad ? 1 : 0); }
+  const url = pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'index.html')).href;
   const res = await inventory(url, vpList(opt.viewport)[0], { out, tag: 'selftest', ...phases, crops: false });
   writeJson(path.join(out, 'motion', 'selftest.json'), res);
   const html = fs.readFileSync(path.join(HERE, 'fixtures', 'motion', 'index.html'), 'utf8');
@@ -2159,6 +3086,26 @@ if (cmd === 'selftest') {
     const okM = !!(mres && mres.verdict === 'WARN' && mres.windows && mres.windows.modal && mres.windows.warnings.some((x) => /на странице открыто окно/.test(x))); if (!okM) wrong++;
     console.log(`${okM ? 'OK  ' : 'FAIL'} окно при загрузке — WARN в вердикте и протоколе (windows): ${mres ? `${mres.verdict}, ${(mres.windows && mres.windows.modal && mres.windows.modal.sig) || 'окна нет'}` : merr}`);
   }
+  /* две бегущие строки одной подписи с разной скоростью (fixtures/motion/marquee-two.html: три ленты .mq__track с одними
+     @keyframes, две — 20 с на круг, одна — 12 с) — две строки протокола со своими скоростями, а не одна; место (place)
+     записано — первый экран */
+  {
+    let mres = null, merr = '';
+    try { mres = await inventory(pathToFileURL(path.join(HERE, 'fixtures', 'motion', 'marquee-two.html')).href, 'desktop', { out, tag: 'selftest-marquee', timeMs: 1500, capMs: 1500, doHover: false, doMouse: false, doClicks: false, doScroll: false, crops: false, quiet: true }); }
+    catch (e) { merr = String(e.message || e).slice(0, 120); }
+    const mq = mres ? mres.items.filter((i) => i.kind === 'marquee') : []; const sp = mq.map((i) => parseFloat((i.timing || {}).speed)).sort((a, b) => a - b);
+    const okQ = mq.length === 2 && sp[0] > 0 && Math.abs(sp[1] / sp[0] - 20 / 12) < 0.05 && mq.every((i) => i.place && i.place.first === true && i.place.screen === 1); if (!okQ) wrong++;
+    console.log(`${okQ ? 'OK  ' : 'FAIL'} две бегущие строки одной подписи с разной скоростью — две строки, место — первый экран: ${mq.map((i) => `${i.id} ${i.target} ${(i.timing || {}).speed}${i.place ? ` · экран ${i.place.screen} из ${i.place.of}${i.place.first ? ', первый' : ''}` : ' · place нет'}`).join('; ') || merr || 'строк нет'}`);
+  }
+  /* место на странице (place) у строк стенда: первый экран у блока в шапке, не первый — у самой нижней строки */
+  {
+    const placed = res.items.filter((i) => i.place && !i.place.fixed); const top = placed.find((i) => i.expect === 'typewriter' || i.expect === 'entrance' || i.expect === 'hover');
+    /* место нужно сверке у движений от прокрутки и по времени — у них оно должно быть у каждой строки */
+    const lack = res.items.filter((i) => ['scroll-linked', 'parallax', 'reveal', 'marquee', 'loop', 'pinned'].includes(i.kind) && !i.place);
+    const low = [...placed].sort((a, b) => b.place.y - a.place.y)[0];
+    const okP = !lack.length && placed.length >= 15 && !!top && top.place.first === true && top.place.screen === 1 && !!low && low.place.first === false && low.place.screen > 1 && low.place.of >= low.place.screen; if (!okP) wrong++;
+    console.log(`${okP ? 'OK  ' : 'FAIL'} место на странице (place) в протоколе: с местом ${placed.length} из ${res.items.length} (закреплённые — отдельно)${lack.length ? `, без места: ${lack.map((i) => `${i.id} ${i.kind}`).join(', ')}` : ''}; ${top ? `${top.id} ${top.target} — экран ${top.place.screen}${top.place.first ? ', первый' : ''}` : 'строки первого экрана нет'}; ${low ? `${low.id} ${low.target} — экран ${low.place.screen} из ${low.place.of}${low.place.first ? ', первый' : ''}` : 'нижней строки нет'}`);
+  }
   const st = res.stats.steps;
   console.log(`\n${mdTable(res)}`);
   /* Tilda-донор: fixtures/motion/tilda.html (скрипты Tilda заменены маленькой имитацией с теми же именами файлов) —
@@ -2213,50 +3160,88 @@ if (cmd === 'selftest') {
 }
 
 /* страницы запуска: адреса подряд и --pages «тип=путь,…» или «путь,…» от первого адреса.
-   Имя протокола: одна страница и один экран — --tag как есть (или <страница>-<экран>); несколько —
-   <--tag>-<тип или страница>, у экрана не desktop — ещё -<экран> (donor-home, donor-product-mobile);
-   без --tag — <тип или страница>-<экран>. */
-function pagePlan() {
-  const urls = pos.filter((p) => /^(https?|file):/i.test(p));
-  const junk = pos.filter((p) => !/^(https?|file):/i.test(p));
-  if (junk.length) die(`Не адрес: ${junk.join(' ')} — адреса начинаются с http://, https:// или file:// (страницы от первого адреса — --pages)`);
-  const list = urls.map((u) => ({ url: u, type: null }));
-  if (opt.pages && opt.pages !== true) {
-    if (!urls.length) die('--pages считаются от первого адреса: node motion.mjs <адрес> --pages "home=/,product=/p/x"');
-    for (const part of String(opt.pages).split(',').map((x) => x.trim()).filter(Boolean)) {
+   Имя протокола: одна страница и один экран без типа — --tag как есть (или <страница>-<экран>); несколько страниц или
+   экранов, а также страница с типом из --pages — <--tag>-<тип или страница>, у экрана не desktop — ещё -<экран>
+   (donor-home, donor-product-mobile); без --tag — <тип или страница>-<экран>.
+   → { runs: [{ url, vp, tag, type }] } или { error } — без браузера, проверяется в selftest. */
+function planPages(args, pagesOpt, vps, prefix) {
+  const urls = args.filter((p) => /^(https?|file):/i.test(p));
+  const junk = args.filter((p) => !/^(https?|file):/i.test(p));
+  if (junk.length) return { error: `Не адрес: ${junk.join(' ')} — адреса начинаются с http://, https:// или file:// (страницы от первого адреса — --pages)` };
+  /* одна страница — один протокол: адрес и та же страница в --pages («https://x.ru» и "home=/") сводятся в одну, имя —
+     тип из --pages. Сравнение — по разобранному адресу (https://x.ru и https://x.ru/ — одно и то же; якорь не в счёт):
+     раньше адрес без косой и путь «/» считались двумя страницами — «Два протокола с одним именем site-home» */
+  const canon = (u) => { try { const x = new URL(u); x.hash = ''; return x.href; } catch (e) { return String(u); } };
+  const list = [];
+  for (const u of urls) if (!list.some((x) => canon(x.url) === canon(u))) list.push({ url: u, type: null });
+  if (pagesOpt && pagesOpt !== true) {
+    if (!urls.length) return { error: '--pages считаются от первого адреса: node motion.mjs <адрес> --pages "home=/,product=/p/x"' };
+    for (const part of String(pagesOpt).split(',').map((x) => x.trim()).filter(Boolean)) {
       const m = /^([\p{L}\w-]+)=(.+)$/u.exec(part);
       const href = new URL(unmangle(m ? m[2] : part), urls[0]).href;
-      const same = list.find((x) => x.url === href);
+      const same = list.find((x) => canon(x.url) === canon(href));
       if (same) { if (m) same.type = m[1]; continue; }
       list.push({ url: href, type: m ? m[1] : null });
     }
   }
-  if (!list.length) die('Нужно: node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop,mobile] [--out папка] (подробно: --help)');
-  const vps = vpList(opt.viewport); const prefix = opt.tag && opt.tag !== true ? String(opt.tag) : '';
-  const single = list.length === 1 && vps.length === 1;
+  if (!list.length) return { error: 'Нужно: node motion.mjs <адрес> [<адрес>…] [--pages "тип=путь,…"] [--viewport desktop,mobile] [--out папка] (подробно: --help)' };
+  const single = list.length === 1 && vps.length === 1 && !list[0].type;
   const runs = [];
   for (const p of list) for (const vp of vps) {
     const name = p.type || pageSlug(p.url);
     const tag = single ? (prefix || `${name}-${vp}`) : prefix ? `${prefix}-${name}${vp === 'desktop' ? '' : '-' + vp}` : `${name}-${vp}`;
-    if (runs.some((r) => r.tag === tag)) die(`Два протокола с одним именем ${tag}: задайте типы в --pages («тип=путь»)`);
+    const twin = runs.find((r) => r.tag === tag);
+    /* один тип на две страницы ("home=/,home=/about.html") — типы заданы, совет «задайте типы» тут мимо */
+    if (twin && twin.url !== p.url) { if (twin.type && twin.type === p.type) return { error: `Тип «${p.type}» в --pages дан двум страницам: ${twin.url} и ${p.url} — у каждой страницы свой тип (например "home=/,about=/about")` }; }
+    if (twin) return { error:`Два протокола с одним именем ${tag}: ${twin.url} и ${p.url} — разные страницы с одним именем. Задайте им типы в --pages («тип=путь», например "home=/,catalog=/catalog")` };
     runs.push({ url: p.url, vp, tag, type: p.type });
   }
-  return runs;
+  return { runs };
+}
+function pagePlan() {
+  const plan = planPages(pos, opt.pages, vpList(opt.viewport), opt.tag && opt.tag !== true ? String(opt.tag) : '');
+  if (plan.error) die(plan.error);
+  return plan.runs;
 }
 
 if (cmd === 'compare') {
   /* пары «протокол донора — наш адрес или протокол» подряд: compare d1.json url1 d2.json url2 … */
   if (pos.length < 2 || pos.length % 2) die('Нужно: node motion.mjs compare <motion.json донора> <адрес или motion.json нашего> [ещё пары…] (подробно: --help)');
   const pairs = []; for (let q = 0; q < pos.length; q += 2) pairs.push([pos[q], pos[q + 1]]);
+  /* --viewport списком (desktop,mobile): каждая пара сверяется на каждом экране — протокол донора этого экрана ищется
+     рядом по имени инвентаря (donor-home.json ↔ donor-home-mobile.json), наш адрес снимается на этом экране, а наш
+     протокол — тоже сосед по имени. Один запуск, один файл решений, ключи с экраном («m07:mobile»). */
+  const screens = opt.viewport && opt.viewport !== true ? vpList(opt.viewport) : null;
+  const sibling = (file, from, to) => {
+    if (from === to) return file;
+    const dir = path.dirname(file); const stem = path.basename(file, '.json').replace(new RegExp(`-${String(from).replace(/[^\w-]/g, '.')}$`), '');
+    return (to === 'desktop' ? [`${stem}.json`, `${stem}-desktop.json`] : [`${stem}-${to}.json`]).map((n) => path.join(dir, n)).find((f) => fs.existsSync(f)) || null;
+  };
+  const jobs = [];
+  for (const [donorFile, ourArg] of pairs) {
+    const d0 = readJson(path.resolve(donorFile)); if (!d0 || !Array.isArray(d0.items)) die(`Не читается протокол донора: ${donorFile}`);
+    const isUrl = /^(https?|file):/i.test(ourArg);
+    /* один экран в --viewport при протоколе донора другого экрана — как раньше: наш адрес снимается на этом экране, сверка скажет «экраны разные» */
+    if (!screens || screens.length < 2) { jobs.push({ donorFile, ourArg, vp: screens ? screens[0] : d0.viewport || 'desktop', isUrl, base: donorFile }); continue; }
+    for (const vp of screens) {
+      const df = sibling(path.resolve(donorFile), d0.viewport || 'desktop', vp);
+      if (!df) die(`--viewport ${screens.join(',')}: рядом с ${donorFile} нет протокола донора для экрана ${vp} (ждал ${path.basename(donorFile, '.json').replace(new RegExp(`-${d0.viewport}$`), '')}${vp === 'desktop' ? '' : `-${vp}`}.json) — снимите: motion.mjs <адрес донора> --viewport ${screens.join(',')} --tag donor`);
+      let oa = ourArg;
+      if (!isUrl) { const o0 = readJson(path.resolve(ourArg)); if (!o0 || !Array.isArray(o0.items)) die(`Не читается наш протокол: ${ourArg}`); oa = sibling(path.resolve(ourArg), o0.viewport || 'desktop', vp); if (!oa) die(`--viewport ${screens.join(',')}: рядом с ${ourArg} нет нашего протокола для экрана ${vp} — снимите наш сайт на этом экране или дайте адрес вместо файла`); }
+      jobs.push({ donorFile: df, ourArg: oa, vp, isUrl, base: donorFile, multi: true });
+    }
+  }
   const many = pairs.length > 1;
   let browser = null; let worst = 'OK'; const rank = { OK: 0, WARN: 1, FAIL: 2 };
+  const byNumber = new Map();          /* решения по номеру без экрана: ключ → что закрыто на каком экране (конфликт экранов) */
+  const tags = new Set();
   try {
-    for (const [donorFile, ourArg] of pairs) {
+    for (const job of jobs) {
+      const { donorFile, ourArg, vp } = job;
       const donor = readJson(path.resolve(donorFile)); if (!donor || !Array.isArray(donor.items)) die(`Не читается протокол донора: ${donorFile}`);
       let ours; let out;
-      if (/^(https?|file):/i.test(ourArg)) {
+      if (job.isUrl) {
         out = opt.out ? path.resolve(String(opt.out)) : runDir(opt, ourArg);
-        const vp = opt.viewport && opt.viewport !== true ? vpList(opt.viewport)[0] : donor.viewport || 'desktop';
         const tag = `${pageSlug(ourArg)}-${vp}`;
         if (!browser) browser = await launch();
         ours = await inventory(ourArg, vp, { out, tag, ...phases, browser });
@@ -2267,26 +3252,94 @@ if (cmd === 'compare') {
       }
       const decFile = path.resolve(String(opt.decisions && opt.decisions !== true ? opt.decisions : path.join(out, 'motion-decisions.json')));
       const decisions = readJson(decFile, {}) || {};
-      const c = compare(donor, ours, decisions);
-      const dname = path.basename(donorFile, '.json').replace(/^donor-/, '');
-      const tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
+      const screen = donor.viewport || vp;                          /* номера mNN — из протокола донора, экран ключа — его */
+      /* отпечатки решений по номеру — файл-спутник в папке прогона (рядом с motion-decisions.json), свой раздел у каждой
+         страницы донора и экрана: номера mNN у них свои. Файла нет или он не читается — как первый запуск */
+      const printsFile = path.join(out, PRINTS_FILE);
+      const kept = readJson(printsFile, null); const book = kept && typeof kept === 'object' && kept.donors && typeof kept.donors === 'object' ? kept : { donors: {} };
+      const page = `${donor.url || path.basename(donorFile)} · ${screen}`;
+      /* решения по номеру, у которых отпечатка ещё нет: сначала — из прежнего протокола сверки этого прогона (к чему
+         номер относился, когда решение писали), и только чего там нет — привяжется к нынешней строке */
+      const past = printsFromHistory(path.join(out, 'motion'), donor, screen, decisions, book.donors[page] || {});
+      const pastKeys = Object.keys(past.prints);
+      if (pastKeys.length) { book.donors[page] = { ...(book.donors[page] || {}) }; for (const k of pastKeys) book.donors[page][k] = { ...past.prints[k], bound: new Date().toISOString() }; }
+      const c = compare(donor, ours, decisions, { screen, prints: book.donors[page] || {} });
+      if (pastKeys.length) c.notes.push(`отпечатки решений по номеру (${pastKeys.join(', ')}) взяты из прежнего протокола сверки этого прогона (${past.from.join(', ')}): какое движение номер закрывал тогда — к такому решение и привязано`);
+      if (c.binds.length) {
+        book.donors[page] = { ...(book.donors[page] || {}) };
+        for (const b of c.binds) book.donors[page][b.key] = { ...b.print, bound: new Date().toISOString(), donorTakenAt: donor.takenAt || null };
+      }
+      if (c.binds.length || pastKeys.length) {
+        book._about = 'Отпечатки движений донора для решений по номеру (mNN) — пишет motion.mjs compare при первом применении решения. По ним сверка замечает, что донора пересняли и под номером теперь другое движение (тогда решение не применяется). Править руками не нужно; удалённая запись — решение привяжется заново к движению, которое сейчас под этим номером.';
+        writeJson(printsFile, book);
+      }
+      const dname = path.basename(job.base, '.json').replace(/^donor-/, '');
+      let tag = opt.tag && opt.tag !== true ? (many ? `${opt.tag}-${dname}` : String(opt.tag)) : many ? `compare-${dname}` : 'compare';
+      if (job.multi && vp !== 'desktop') tag += `-${vp}`;
+      if (tags.has(tag)) die(`Две сверки с одним именем ${tag}: дайте парам разные протоколы донора или --tag`);
+      tags.add(tag);
       /* наш снимок снят под окном или с неудачным SITE_REWORK_DISMISS (windows.warnings) — сверка не лучше WARN */
       const winW = (ours.windows && ours.windows.warnings) || [];
-      if (c.verdict === 'OK' && winW.length) c.verdict = 'WARN';
-      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, ...(ours.windows ? { windows: ours.windows } : {}), decisionsFile: fs.existsSync(decFile) ? decFile : null,
-        steps: c.rows.map((r) => ({ status: rowLevel(r), what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${r.o.id}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
+      const byId = c.rows.filter((r) => r.hit && r.hit.byId);
+      /* what — для сравнения (подпись по шаблону: класс состояния не в счёт), show — для сообщения (подпись целиком) */
+      const said = new Set();           /* номера без экрана, о которых уже сказано предупреждением: одно сообщение на ключ */
+      for (const r of byId.filter((x) => x.hit.bare)) { const l = byNumber.get(r.key) || []; l.push({ screen, what: `${kindRu(r.d)} ${pattern(r.d.target)}`, show: `${kindRu(r.d)} ${r.d.target}`, c, said }); byNumber.set(r.key, l); }
+      /* решение по номеру без экрана, а у протокола донора соседнего экрана (donor-home-mobile.json рядом) под этим номером
+         другое движение: общий файл решений закроет им там чужую строку («Зелёный уголок»: m06 — наведение на кнопку на
+         широком экране и меню на телефоне). Файл решений по умолчанию — один на прогон, то есть общий: WARN; заданный
+         через --decisions может быть своим на экран (так обходились раньше) — заметкой */
+      const bareId = byId.filter((x) => x.hit.bare); const sib = [];
+      for (const v of bareId.length ? ['desktop', 'laptop', 'tablet', 'mobile', 'mobile-s', 'android'].filter((x) => x !== screen) : []) {
+        const sf = sibling(path.resolve(donorFile), screen, v); const sd = sf && path.resolve(sf) !== path.resolve(donorFile) ? readJson(sf) : null;
+        if (!sd || !Array.isArray(sd.items) || (sd.viewport && sd.viewport !== v)) continue;
+        const clash = bareId.map((r) => ({ r, t: sd.items.find((x) => x.id === r.d.id) })).filter(({ r, t }) => t && (t.kind !== r.d.kind || pattern(t.target) !== pattern(r.d.target)));
+        if (!clash.length) continue;
+        sib.push({ v, sf, clash });
+      }
+      job.done = { c, donor, ours, out, tag, decFile, winW, sib, said, screen, printsFile };
+    }
+    /* одно решение по номеру без экрана закрыло на разных экранах разные движения — то, ради чего ключи с экраном */
+    for (const [key, l] of byNumber) {
+      const kinds = new Map(l.map((x) => [x.screen, x.what])); const show = new Map(l.map((x) => [x.screen, x.show]));
+      if (kinds.size > 1 && new Set(kinds.values()).size > 1) for (const x of l) { x.c.warnings.push(`решение «${key}» без экрана закрыло разные движения: ${[...show].map(([s, w]) => `${s} — ${w}`).join('; ')}. Номера mNN у экранов свои — запишите с экраном: ${[...kinds.keys()].map((s) => `«${key}:${s}»`).join(', ')}`); x.said.add(key); }
+    }
+    /* об одном ключе — одно сообщение: закрыл разные движения в этом запуске (выше) → про соседний экран и общую заметку
+       «по номеру без экрана» о нём уже не повторяем (было три сообщения про один m11) */
+    for (const job of jobs) {
+      const { c, winW, sib, said, screen } = job.done;
+      for (const { v, sf, clash: all } of sib) {
+        const clash = all.filter(({ r }) => !said.has(r.key)); if (!clash.length) continue;
+        const own = !!(opt.decisions && opt.decisions !== true);
+        const msg = `решения по номеру без экрана (${clash.map(({ r }) => r.key).join(', ')}): у экрана ${v} (${path.basename(sf)}) под этими номерами другие движения — ${clash.slice(0, 3).map(({ r, t }) => `${r.key}: здесь ${kindRu(r.d)} ${r.d.target}, там ${kindRu(t)} ${t.target}`).join('; ')}${clash.length > 3 ? ' …' : ''}. ${own ? 'Если этот файл решений пойдёт и на тот экран, они закроют там чужие строки' : 'Файл решений один на прогон — на том экране они закроют чужие строки'}: запишите с экраном («${clash[0].r.key}:${screen}»)`;
+        if (own) c.notes.push(msg); else c.warnings.push(msg);
+        for (const { r } of clash) said.add(r.key);
+      }
+      const at = c.notes.findIndex((n) => n.startsWith('решения по номеру без экрана: ')); const rest = c.bareKeys.filter((k) => !said.has(k));
+      if (at >= 0) { if (rest.length) c.notes[at] = bareNote(rest, screen); else c.notes.splice(at, 1); }
+      if (c.verdict === 'OK' && (winW.length || c.warnings.length)) c.verdict = 'WARN';
+    }
+    for (const job of jobs) {
+      const { c, donor, ours, out, tag, decFile, winW, printsFile } = job.done;
+      const proto = { url: ours.url, donor: donor.url, viewport: ours.viewport, donorViewport: donor.viewport, takenAt: new Date().toISOString(), verdict: c.verdict, ...(ours.windows ? { windows: ours.windows } : {}), decisionsFile: fs.existsSync(decFile) ? decFile : null, ...(fs.existsSync(printsFile) ? { decisionPrints: printsFile } : {}),
+        counts: { ok: c.rows.filter((r) => r.status === 'OK').length, otherKind: c.other, unplaced: c.unplaced, differs: c.rows.filter((r) => /^ОТЛИЧАЕТСЯ/.test(r.status)).length, missing: c.miss, decided: c.rows.filter((r) => r.status === 'РЕШЕНО').length, unchecked: c.unchecked },
+        ...(c.warnings.length ? { warnings: c.warnings } : {}), ...(c.notes.length ? { decisionNotes: c.notes } : {}),
+        /* status — уровень (OK, WARN, FAIL, INFO), match — статус сверки словом, ours — наши номера пары, cross — пара другим видом,
+           placeChecked: false — пара другим видом засчитана по числам, место на странице не сверено */
+        steps: c.rows.map((r) => ({ status: rowLevel(r), match: r.status, what: `${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''}`, ours: (r.os || []).map((o) => o.id), ...(r.cross ? { cross: true } : {}), ...(r.unplaced ? { placeChecked: false } : {}), ...(r.key ? { decisionKey: r.key } : {}), details: [r.o ? `у нас ${oursOf(r)}` : 'у нас нет', ...r.diffs, ...(r.notes || []), r.decision].filter(Boolean).join('; ') })),
         extra: c.extra.map((o) => ({ id: o.id, kind: o.kind, target: o.target })) };
       writeJson(path.join(out, 'motion', `${tag}.json`), proto);
       fs.writeFileSync(path.join(out, 'motion', `${tag}.md`), mdCompare(c, donor, ours));
-      if (many) console.log(`\n== ${donorFile} → ${ourArg}`);
-      for (const r of c.rows) console.log(`${rowLevel(r).padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? r.o.id : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'не проверялось' : 'нет'}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
+      if (jobs.length > 1) console.log(`\n== ${job.donorFile} → ${job.ourArg}${job.multi ? ` (${job.vp})` : ''}`);
+      for (const r of c.rows) console.log(`${rowLevel(r).padEnd(4)} ${r.d.id} ${KIND_RU[r.d.kind] || r.d.kind}${r.d.sub ? ` (${r.d.sub})` : ''} ${r.d.target}${r.d.count > 1 ? ` ×${r.d.count}` : ''} → ${r.o ? oursOf(r) : r.status === 'НЕ ПРОВЕРЯЛОСЬ' ? 'не проверялось' : 'нет'}${r.cross || /^ОТЛИЧАЕТСЯ/.test(r.status) ? ` — ${r.status}` : ''}${r.diffs.length ? ` — ${r.diffs.join('; ')}` : ''}${r.notes && r.notes.length ? ` — ${r.notes.join('; ')}` : ''}${r.decision ? ` — решение (${r.key}): ${r.decision}` : r.status === 'НЕТ' && r.d.parent && r.d.count > 1 ? ` — решение на группу: "${r.d.kind}:${r.d.parent} > *"` : ''}`);
       console.log(`своё (у донора нет): ${c.extra.length}${c.extra.length ? ' — ' + c.extra.slice(0, 8).map((o) => `${o.id} ${KIND_RU[o.kind] || o.kind}`).join(', ') : ''}`);
+      for (const n of c.notes) console.log(`INFO решения: ${n}`);
+      for (const w of c.warnings) console.log(`WARN ${w}`);
       if (winW.length) console.log(`WARN наш снимок — с предупреждениями окон и lib (${winW.length}): ${winW[0].slice(0, 160)}${winW.length > 1 ? ' …' : ''} — windows в json`);
-      console.log(`${c.verdict}: сверка движения${c.unchecked ? ` (не проверялось у нас: ${c.unchecked})` : ''} · ${path.join(out, 'motion', `${tag}.md`)}`);
+      console.log(`${c.verdict}: сверка движения${c.other ? ` (тот же приём другим видом: ${c.other}${c.unplaced ? `, из них без сверки места: ${c.unplaced}` : ''})` : ''}${c.unchecked ? ` (не проверялось у нас: ${c.unchecked})` : ''} · ${path.join(out, 'motion', `${tag}.md`)}`);
       if (rank[c.verdict] > rank[worst]) worst = c.verdict;
     }
   } finally { if (browser) await browser.close().catch(() => {}); }
-  if (many) console.log(`\n${worst}: пар ${pairs.length}`);
+  if (jobs.length > 1) console.log(`\n${worst}: пар ${jobs.length}`);
   process.exit(worst === 'FAIL' ? 1 : 0);
 }
 

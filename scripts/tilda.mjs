@@ -644,7 +644,14 @@ export function tildaMotion(snap) {
     }
     if (s.event === 'click') { items.push({ kind: 'click', sub: 'Tilda SBS', trigger: 'click', props, timing, keyframes: kf.frames, recipe: null, ...common }); continue; }
     const at = s.event === 'blockintoview' ? 'блок входит в окно' : `верх элемента на ${round(s.trg * 100)}% экрана${s.trgofst ? ` ${s.trgofst > 0 ? '+' : ''}${s.trgofst} px` : ''}`;
-    if (loop) items.push({ kind: 'loop', sub, trigger: 'time', start: `при входе в экран (${s.event})`, props, timing: { ...timing, period: kf.total }, keyframes: kf.frames, scroll: { at }, recipe: 'loop', ...common });
+    /* бегущая строка: петля без обратного хода с одним сдвигом по одной оси на 200 px и больше — лента текста едет и
+       прыгает в начало (generationx5.tech: translate −2254.8 px за 20 с, 113 px/с). До 02.10 она шла «петлёй
+       (парение)», и сверка motion.mjs не находила ей пару у нас — «бегущую строку». Порог пути — как у CSS-строки в
+       motion.mjs (classifyLoop); парение (значок ходит туда-обратно на 10–40 px, loopwithreverse) — по-прежнему петля */
+    const ch = changed(steps);
+    const run = loop && s.loop !== 'loopwithreverse' && steps.length === 2 && ch.length === 1 && (ch[0] === 'tx' || ch[0] === 'ty') ? val(steps[1], ch[0]) - val(steps[0], ch[0]) : 0;
+    if (Math.abs(run) >= 200 && kf.total > 0) items.push({ kind: 'marquee', trigger: 'time', start: `при входе в экран (${s.event})`, props, timing: { ...timing, period: kf.total, speed: `${round(Math.abs(run) / (kf.total / 1000))} px/с ${ch[0] === 'tx' ? (run < 0 ? 'влево' : 'вправо') : (run < 0 ? 'вверх' : 'вниз')}` }, keyframes: kf.frames, scroll: { at }, recipe: 'marquee', ...common });
+    else if (loop) items.push({ kind: 'loop', sub, trigger: 'time', start: `при входе в экран (${s.event})`, props, timing: { ...timing, period: kf.total }, keyframes: kf.frames, scroll: { at }, recipe: 'loop', ...common });
     else items.push({ kind: 'reveal', sub: steps.length > 2 ? `${sub === 'мигание' ? 'мигание' : 'многошаговое'}, ${steps.length} шагов` : sub, trigger: 'scroll', props, timing, keyframes: kf.frames, scroll: { at, atPct: s.event === 'blockintoview' ? null : round(s.trg * 100) }, recipe: steps.length > 2 ? 'keyframes' : 'reveal', ...common });
   }
   /* параллакс, мышь, фиксация */
@@ -951,6 +958,15 @@ async function selftest() {
     check('pages: якорь <a name> — «якорь», T1003 — из data-alias-record-type', anc.join(' ') === 'якорь T1003', anc.join(' '));
     /* SBS на группе Zero Block (romashka.media: 28 из 147) — ключ recid:g<id>, селектор по data-group-id */
     const gh = `<div id="allrecords" class="t-records" data-tilda-page-id="9"><div id="rec5" class="r t-rec" data-record-type="396"> <!-- T396 --><div class='t396'><div class="t396__artboard" data-artboard-recid="5" data-artboard-screens="320,640,1200" data-artboard-height="600"><div class="t396__group tn-group" data-group-id="777" data-group-top-value="100" data-group-left-value="40" data-animate-sbs-event="intoview" data-animate-sbs-loop="loop" data-animate-sbs-opts="[{'ti':0,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0},{'ti':3000,'mx':0,'my':-20,'sx':1,'sy':1,'op':1,'ro':0,'ea':'easeInOut'}]"><div class='t396__elem tn-elem' data-elem-id='1' data-elem-type='text'><div class='tn-atom'>Группа</div></div></div></div></div></div></div>`;
+    /* бегущая строка Zero Block: SBS loop без обратного хода, сдвиг X −2254.8 px за 20 с (generationx5.tech) —
+       «бегущая строка» 113 px/с влево, а не «петля (парение)»; тот же путь туда-обратно и короткий сдвиг — петля */
+    const lineHtml = (loopV, mx, ti) => `<div id="allrecords" class="t-records" data-tilda-page-id="9"><div id="rec6" class="r t-rec" data-record-type="396"> <!-- T396 --><div class='t396'><div class="t396__artboard" data-artboard-recid="6" data-artboard-screens="320,640,1200" data-artboard-height="600"><div class='t396__elem tn-elem' data-elem-id='2' data-elem-type='text' data-animate-sbs-event="intoview" data-animate-sbs-loop="${loopV}" data-animate-sbs-opts="[{'ti':0,'mx':0,'my':0,'sx':1,'sy':1,'op':1,'ro':0},{'ti':${ti},'mx':${mx},'my':0,'sx':1,'sy':1,'op':1,'ro':0}]"><div class='tn-atom'>СТАЖИРОВКА • СТАЖИРОВКА</div></div></div></div></div></div>`;
+    const lineOf = (loopV, mx, ti) => interpret(staticRaw(lineHtml(loopV, mx, ti), 'x'), WIDE).motion.find((m) => m.key === '6:2');
+    const say = (m) => (m ? `${m.kind}${m.sub ? ` (${m.sub})` : ''} ${m.timing.speed || `${m.timing.duration} мс`}` : 'нет');
+    const ln = lineOf('loop', -2254.8, 20000);
+    check('SBS loop со сдвигом X −2254.8 px за 20 с — бегущая строка 113 px/с влево, рецепт marquee', ln && ln.kind === 'marquee' && ln.timing.speed === '113 px/с влево' && ln.recipe === 'marquee' && ln.timing.period === 20000, say(ln));
+    const lr = lineOf('loopwithreverse', -2254.8, 20000), ls = lineOf('loop', -40, 3000);
+    check('тот же сдвиг туда-обратно (loopwithreverse) и короткий сдвиг на 40 px — петля (парение), не строка', lr && lr.kind === 'loop' && lr.sub === 'парение' && ls && ls.kind === 'loop' && ls.sub === 'парение', `${say(lr)}; ${say(ls)}`);
     const G = interpret(staticRaw(gh, 'x'), WIDE); const gm = G.motion.find((m) => /:g777$/.test(m.key || ''));
     check('группа Zero Block с SBS — ключ 5:g777, парение 3000 мс, селектор data-group-id', gm && gm.kind === 'loop' && gm.sub === 'парение' && gm.target === '#rec5 [data-group-id="777"]' && G.elems.some((e) => e.key === '5:1'), gm ? `${gm.key} ${gm.kind} (${gm.sub}) ${gm.timing.duration} мс → ${gm.target}` : 'нет');
   }

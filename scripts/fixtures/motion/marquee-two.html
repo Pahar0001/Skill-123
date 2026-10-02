@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Стенд motion: две бегущие строки одной подписи с разной скоростью</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- motion.mjs selftest: у «Зелёного уголка» две ленты .mq__track с одними @keyframes mq и разной длительностью
+     (113 и 164 px/с) — в протоколе была одна строка «бегущая строка», и вторая строка донора оставалась без пары.
+     Здесь три ленты: две с одной скоростью (одна строка протокола, как раньше) и одна быстрее (своя строка). -->
+<style>
+  body { margin: 0; font: 16px/1.4 system-ui, sans-serif; background: #f6f4ee; color: #16301f; }
+  .mq { overflow: hidden; padding: 24px 0; border-bottom: 1px solid #16301f; }
+  .mq__track { display: flex; width: max-content; animation: mq 20s linear infinite; }
+  .mq--fast .mq__track { animation-duration: 12s; }
+  .mq__track span { padding: 0 40px; font-size: 28px; font-weight: 700; white-space: nowrap; }
+  @keyframes mq { to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .mq__track { animation: none; } }
+</style>
+</head>
+<body>
+<div class="mq"><div class="mq__track">
+  <span>СИДЕРАТЫ</span><span>МЕДОНОСЫ</span><span>ГАЗОННЫЕ ТРАВЫ</span><span>КОРМОВЫЕ ТРАВЫ</span><span>СМЕСИ</span>
+  <span aria-hidden="true">СИДЕРАТЫ</span><span aria-hidden="true">МЕДОНОСЫ</span><span aria-hidden="true">ГАЗОННЫЕ ТРАВЫ</span><span aria-hidden="true">КОРМОВЫЕ ТРАВЫ</span><span aria-hidden="true">СМЕСИ</span>
+</div></div>
+<div class="mq mq--fast"><div class="mq__track">
+  <span>СИДЕРАТЫ</span><span>МЕДОНОСЫ</span><span>ГАЗОННЫЕ ТРАВЫ</span><span>КОРМОВЫЕ ТРАВЫ</span><span>СМЕСИ</span>
+  <span aria-hidden="true">СИДЕРАТЫ</span><span aria-hidden="true">МЕДОНОСЫ</span><span aria-hidden="true">ГАЗОННЫЕ ТРАВЫ</span><span aria-hidden="true">КОРМОВЫЕ ТРАВЫ</span><span aria-hidden="true">СМЕСИ</span>
+</div></div>
+<div class="mq"><div class="mq__track">
+  <span>СИДЕРАТЫ</span><span>МЕДОНОСЫ</span><span>ГАЗОННЫЕ ТРАВЫ</span><span>КОРМОВЫЕ ТРАВЫ</span><span>СМЕСИ</span>
+  <span aria-hidden="true">СИДЕРАТЫ</span><span aria-hidden="true">МЕДОНОСЫ</span><span aria-hidden="true">ГАЗОННЫЕ ТРАВЫ</span><span aria-hidden="true">КОРМОВЫЕ ТРАВЫ</span><span aria-hidden="true">СМЕСИ</span>
+</div></div>
+<p style="padding: 40px">Три ленты: две едут 20 с на круг, одна — 12 с.</p>
+</body>
+</html>

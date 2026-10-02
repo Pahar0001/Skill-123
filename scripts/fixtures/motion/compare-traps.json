@@ -1,0 +1,4347 @@
+{
+ "_about": "motion.mjs selftest, сверка без браузера — ловушки независимой проверки 02.10 (verify-motion/traps): пары протоколов, собранные из настоящих строк «Зелёного уголка», generationx5.tech и «Эпицентра», на которых сверка находила движение в постороннем или теряла пару на границе первого экрана. expect — статусы строк донора по порядку, verdict — вердикт; limit — ограничение, оставленное как в master (в счёт selftest не идёт, печатается заметкой).",
+ "cases": [
+  {
+   "name": "t1a-three-sl-one-sl",
+   "title": "три привязки к прокрутке донора на трёх разделах (экраны 2, 5 и 10 из 12) ↔ одна наша с теми же числами на экране 8 из 13 — ни одна не стоит там же",
+   "expect": [
+    "НЕТ",
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recA [data-elem-id=\"1\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 1043,
+       "h": 300,
+       "screen": 2,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m02",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recB [data-elem-id=\"2\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 4200,
+       "h": 300,
+       "screen": 5,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m03",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recC [data-elem-id=\"3\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 8100,
+       "h": 300,
+       "screen": 10,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "img.sec__ribbon",
+      "count": 1,
+      "i": 364,
+      "props": [
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "coefficient": null,
+       "startPct": 56,
+       "endPct": -11
+      },
+      "place": {
+       "y": 6650,
+       "h": 644,
+       "screen": 8,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t1b-three-sl-one-parallax",
+   "title": "то же, наш элемент записан параллаксом — итог тот же: вид замера вердикт не меняет",
+   "expect": [
+    "НЕТ",
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recA [data-elem-id=\"1\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 1043,
+       "h": 300,
+       "screen": 2,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m02",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recB [data-elem-id=\"2\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 4200,
+       "h": 300,
+       "screen": 5,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m03",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#recC [data-elem-id=\"3\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 8100,
+       "h": 300,
+       "screen": 10,
+       "of": 12,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.sec__ribbon",
+      "count": 1,
+      "i": 364,
+      "props": [
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "coefficient": null,
+       "startPct": 56,
+       "endPct": -11
+      },
+      "place": {
+       "y": 6650,
+       "h": 644,
+       "screen": 8,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t1c-four-mouse-one",
+   "title": "четыре строки мыши донора ↔ один наш предмет за мышью",
+   "limit": "у строк мыши числа и число носителей не сверяются (как в master): у «Зелёного уголка» восемь строк мыши донора — это четыре предмета, записанные дважды (замер и атрибуты Tilda), счёт носителей дал бы четыре ложных «НЕТ»",
+   "expect": [
+    "OK",
+    "OK",
+    "OK",
+    "OK"
+   ],
+   "verdict": "OK",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "mouse",
+      "sub": "параллакс",
+      "trigger": "mouse",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300754\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-20 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "20 px"
+       }
+      ],
+      "place": {
+       "y": 522,
+       "h": 359,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m02",
+      "kind": "mouse",
+      "sub": "параллакс",
+      "trigger": "mouse",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300855\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-10 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-10 px"
+       }
+      ],
+      "place": {
+       "y": 209,
+       "h": 517,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m03",
+      "kind": "mouse",
+      "sub": "параллакс",
+      "trigger": "mouse",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300883\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "10 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-20 px"
+       }
+      ],
+      "place": {
+       "y": 349,
+       "h": 284,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m04",
+      "kind": "mouse",
+      "sub": "параллакс",
+      "trigger": "mouse",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300889\"]",
+      "count": 3,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "15 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-15 px"
+       }
+      ],
+      "place": {
+       "y": 278,
+       "h": 364,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "mouse",
+      "sub": "параллакс",
+      "trigger": "mouse",
+      "target": "div.hero__obj.hero__obj--box",
+      "count": 1,
+      "i": 54,
+      "props": [
+       {
+        "prop": "сдвиг",
+        "from": "0",
+        "to": "до 13 px"
+       }
+      ],
+      "place": {
+       "y": 410,
+       "h": 165,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t1d-same-kind-place",
+   "title": "лента первого экрана донора ↔ такая же привязка к прокрутке в нашем подвале (вид один) — место другое",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 38,
+       "h": 1127,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "img.foot__ribbon",
+      "count": 1,
+      "i": 364,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 10300,
+       "h": 400,
+       "screen": 12,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t1e-cross-kind-place",
+   "title": "то же, наш элемент записан параллаксом",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 38,
+       "h": 1127,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.foot__ribbon",
+      "count": 1,
+      "i": 364,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 10300,
+       "h": 400,
+       "screen": 12,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2a-button-vs-chips",
+   "title": "наведение на кнопку первого экрана донора ↔ у нас только плашки фильтра каталога в третьем экране",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.chip.chip--on",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(226, 248, 205)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Весь каталог"
+     },
+     {
+      "id": "m02",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.chip",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(251, 249, 245)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Сидераты"
+     },
+     {
+      "id": "m03",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.chip.chip--mute",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(251, 249, 245)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(75, 102, 80)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(75, 102, 80)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2193,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Акции"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2b-button-vs-menu-item",
+   "title": "↔ у нас только пункт меню с фоном",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "nav",
+      "trigger": "hover",
+      "target": "a.menu__item",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(240, 240, 236)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Сидераты"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2c-button-vs-badge",
+   "title": "↔ у нас только плашка-метка без вида",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "",
+      "trigger": "hover",
+      "target": "span.badge",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(255, 240, 200)",
+        "to": "rgb(60, 60, 20)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(60, 60, 20)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(60, 60, 20)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Сидераты"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2d-button-vs-table-row",
+   "title": "↔ у нас только строка прайса, записанная тем же видом «ссылка»",
+   "limit": "наведение одного вида сверяет, что меняется, а не как: цвета, ход яркости и место не сверяются (как в master)",
+   "expect": [
+    "OK"
+   ],
+   "verdict": "OK",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "tr.price__row",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(255, 255, 255)",
+        "to": "rgb(40, 60, 45)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(40, 60, 45)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(40, 60, 45)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Сидераты"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2e-real-button-differs-chip-wins",
+   "title": "у нас главная кнопка лишь чуть темнеет, рядом плашка фильтра с полным переходом — плашка не пара",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.btn",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(211, 243, 74)",
+        "to": "rgb(190, 225, 60)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 535,
+       "h": 72,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "text": "Открыть каталог"
+     },
+     {
+      "id": "m02",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.chip",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(251, 249, 245)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 2137,
+       "h": 48,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      },
+      "text": "Сидераты"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2f-same-kind-any-colors",
+   "title": "кнопка ↔ кнопка одного вида: у донора инверсия, у нас едва заметное затемнение",
+   "limit": "наведение одного вида ход яркости не сверяет (как в master)",
+   "expect": [
+    "OK"
+   ],
+   "verdict": "OK",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "button.cta",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.btn",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(200, 0, 0)",
+        "to": "rgb(196, 0, 0)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(255, 255, 255)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(200, 0, 0)",
+        "to": "rgb(196, 0, 0)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 535,
+       "h": 72,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "text": "Открыть каталог"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t2g-button-vs-ghost",
+   "title": "↔ у нас только кнопка-призрак (фон из прозрачного)",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.tn-atom",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(215, 255, 30)",
+        "to": "rgb(30, 91, 40)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(33, 87, 50)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 643,
+       "h": 72,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "text": "Подать заявку"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "nav",
+      "trigger": "hover",
+      "target": "a.icobtn.top__user",
+      "count": 2,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgba(0, 0, 0, 0)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(31, 85, 48)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 12,
+       "h": 44,
+       "screen": 1,
+       "of": 13,
+       "first": true,
+       "fixed": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t3a-mid-vs-footer-parallax",
+   "title": "лента донора во 2-м экране из 11 ↔ наш листик в подвале (экран 13 из 13), числа рядом",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689764921 [data-elem-id=\"1765713841449\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 1043,
+       "h": 626,
+       "screen": 2,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.footer__leaf",
+      "count": 1,
+      "i": 900,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-12°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.45"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "startPct": 95,
+       "endPct": 20
+      },
+      "place": {
+       "y": 11200,
+       "h": 240,
+       "screen": 13,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t3b-ribbon-vs-decor-bits",
+   "title": "лента раздела донора «сдвиг Y 0 → −80 px» ↔ наши мелкие предметы-украшения с параллаксом и поворотом",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec5 [data-elem-id=\"77\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-80 px"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 3600,
+       "h": 620,
+       "screen": 5,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.bit.bit--r",
+      "count": 2,
+      "i": 86,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "-0.2 px",
+        "to": "-80 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0.1°",
+        "to": "16°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "coefficient": -0.089,
+       "startPct": 91,
+       "endPct": -8
+      },
+      "place": {
+       "y": 1122,
+       "h": 68,
+       "screen": 2,
+       "of": 13,
+       "first": false
+      }
+     },
+     {
+      "id": "m02",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.bit.bit--l",
+      "count": 5,
+      "i": 130,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-80 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-13.6°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 1125,
+       "coefficient": -0.076,
+       "startPct": 91,
+       "endPct": -9
+      },
+      "place": {
+       "y": 2051,
+       "h": 84,
+       "screen": 3,
+       "of": 13,
+       "first": false
+      }
+     },
+     {
+      "id": "m03",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.bit.bit--r",
+      "count": 2,
+      "i": 490,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-80 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "22°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 1125,
+       "coefficient": -0.076,
+       "startPct": 90,
+       "endPct": -10
+      },
+      "place": {
+       "y": 9027,
+       "h": 59,
+       "screen": 11,
+       "of": 13,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t3c-first-screen-edge",
+   "title": "лента первого экрана: у донора верх блока на 880 px (окно 900) — граница первого экрана, пара",
+   "expect": [
+    "ЕСТЬ, ДРУГИМ ВИДОМ"
+   ],
+   "verdict": "OK",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 880,
+       "h": 600,
+       "screen": 1,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "div.hero__ribbon",
+      "count": 1,
+      "i": 52,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "-7.2 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "сдвиг X",
+        "from": "11.7 px",
+        "to": "88 px"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1.06",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 675,
+       "coefficient": -0.071,
+       "startPct": 7,
+       "endPct": -50
+      },
+      "place": {
+       "y": 60,
+       "h": 987,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     },
+     {
+      "id": "m02",
+      "kind": "reveal",
+      "trigger": "scroll",
+      "target": "div.hero__ribbon",
+      "count": 1,
+      "i": 52,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0.7°",
+        "to": "4.4°"
+       }
+      ],
+      "scroll": {
+       "atPct": -5
+      },
+      "timing": {
+       "easing": "ease"
+      },
+      "place": {
+       "y": 60,
+       "h": 987,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "visAtStart": true,
+      "source": "скрипт (style меняется покадрово)"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t3d-first-threshold-20px",
+   "title": "один блок на границе первого экрана: у донора верх на 760 px, у нас на 740 px — пара",
+   "expect": [
+    "ЕСТЬ, ДРУГИМ ВИДОМ"
+   ],
+   "verdict": "OK",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689764921 [data-elem-id=\"1765713841449\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 760,
+       "h": 600,
+       "screen": 1,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.sec__ribbon",
+      "count": 1,
+      "i": 364,
+      "props": [
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.56"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "-14°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 900,
+       "coefficient": null,
+       "startPct": 56,
+       "endPct": -11
+      },
+      "place": {
+       "y": 740,
+       "h": 600,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4a-oldline-vs-logo-carousel",
+   "title": "бегущая строка донора (протокол до 02.10, места нет) 113 px/с влево ↔ карусель логотипов в подвале 30 px/с вправо",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "div.partners__track",
+      "count": 1,
+      "i": 700,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateX(50%);"
+       }
+      ],
+      "timing": {
+       "period": 60000,
+       "speed": "30 px/с вправо",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 10900,
+       "h": 80,
+       "screen": 13,
+       "of": 13,
+       "first": false
+      },
+      "source": "css @keyframes logos"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4b-newline-vs-logo-carousel",
+   "title": "то же со свежим протоколом донора (вид один, место известно и другое)",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000,
+       "speed": "113 px/с влево"
+      },
+      "place": {
+       "y": 973,
+       "h": 38,
+       "screen": 2,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "div.partners__track",
+      "count": 1,
+      "i": 700,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateX(50%);"
+       }
+      ],
+      "timing": {
+       "period": 60000,
+       "speed": "30 px/с вправо",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 10900,
+       "h": 80,
+       "screen": 13,
+       "of": 13,
+       "first": false
+      },
+      "source": "css @keyframes logos"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4c-line-vs-side-rail",
+   "title": "бегущая строка донора ↔ лента вбок по прокрутке",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "sub": "лента вбок",
+      "trigger": "scroll",
+      "target": "div.steps__rail",
+      "count": 1,
+      "i": 300,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254 px"
+       }
+      ],
+      "scroll": {
+       "rangePx": 2400
+      },
+      "place": {
+       "y": 3000,
+       "h": 600,
+       "screen": 4,
+       "of": 12,
+       "first": false
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4d-oldline-vs-vertical-ticker",
+   "title": "бегущая строка донора (вбок) ↔ вертикальная лента отзывов",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "ul.reviews__ticker",
+      "count": 1,
+      "i": 720,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateY(-50%);"
+       }
+      ],
+      "timing": {
+       "period": 40000,
+       "speed": "18 px/с вверх",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 7000,
+       "h": 400,
+       "screen": 8,
+       "of": 12,
+       "first": false
+      },
+      "source": "css @keyframes up"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4e-newline-vs-bubbles",
+   "title": "бегущая строка донора ↔ поднимающиеся пузырьки (петля со сдвигом вверх)",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000,
+       "speed": "113 px/с влево"
+      },
+      "place": {
+       "y": 973,
+       "h": 38,
+       "screen": 2,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "span.bubble",
+      "count": 6,
+      "i": 610,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-400 px"
+       }
+      ],
+      "timing": {
+       "period": 4000,
+       "duration": 4000,
+       "direction": "normal",
+       "iterations": "infinite"
+      },
+      "place": {
+       "y": 5000,
+       "h": 40,
+       "screen": 6,
+       "of": 12,
+       "first": false
+      },
+      "source": "css @keyframes rise"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t4f-two-lines-vs-one-carousel",
+   "title": "две бегущие строки донора (старый протокол) ↔ одна карусель логотипов",
+   "expect": [
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     },
+     {
+      "id": "m02",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689764921 [data-elem-id=\"1765713841547\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-3286.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "BIG IDEAS • BIG IMPACT •"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "div.partners__track",
+      "count": 1,
+      "i": 700,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateX(50%);"
+       }
+      ],
+      "timing": {
+       "period": 60000,
+       "speed": "30 px/с вправо",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 10900,
+       "h": 80,
+       "screen": 13,
+       "of": 13,
+       "first": false
+      },
+      "source": "css @keyframes logos"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t5a-same-i-different-elements",
+   "title": "лента донора ↔ у нас параллакс первого экрана и поворот ДРУГОГО элемента в подвале с тем же номером i — не склеивать",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 38,
+       "h": 1127,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "div.hero__ribbon",
+      "count": 1,
+      "i": 52,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "-7.2 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "сдвиг X",
+        "from": "11.7 px",
+        "to": "88 px"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1.06",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 675,
+       "coefficient": -0.071,
+       "startPct": 7,
+       "endPct": -50
+      },
+      "place": {
+       "y": 60,
+       "h": 987,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     },
+     {
+      "id": "m02",
+      "kind": "reveal",
+      "trigger": "scroll",
+      "target": "img.footer__stamp",
+      "count": 1,
+      "i": 52,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0.7°",
+        "to": "4.4°"
+       }
+      ],
+      "scroll": {
+       "atPct": -5
+      },
+      "timing": {
+       "easing": "ease"
+      },
+      "place": {
+       "y": 11000,
+       "h": 200,
+       "screen": 13,
+       "of": 13,
+       "first": false
+      },
+      "visAtStart": false,
+      "source": "скрипт (style меняется покадрово)"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t5b-control-no-rotation",
+   "title": "контроль: у нас только параллакс без поворота",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 38,
+       "h": 1127,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "div.hero__ribbon",
+      "count": 1,
+      "i": 52,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "-7.2 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "сдвиг X",
+        "from": "11.7 px",
+        "to": "88 px"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1.06",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 675,
+       "coefficient": -0.071,
+       "startPct": 7,
+       "endPct": -50
+      },
+      "place": {
+       "y": 60,
+       "h": 987,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t6a-extra-props",
+   "title": "картинка донора растёт до 1.5 ↔ наш листик растёт до 1.45, но ещё улетает на 600 px с разворотом на 180°",
+   "expect": [
+    "ОТЛИЧАЕТСЯ, ДРУГИМ ВИДОМ"
+   ],
+   "verdict": "WARN",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.5"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "place": {
+       "y": 38,
+       "h": 1127,
+       "screen": 1,
+       "of": 11,
+       "first": true
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.hero__leaf",
+      "count": 1,
+      "i": 77,
+      "props": [
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-600 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "180°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.45"
+       }
+      ],
+      "scroll": {
+       "rangePx": 675,
+       "coefficient": -0.071,
+       "startPct": 7,
+       "endPct": -50
+      },
+      "place": {
+       "y": 300,
+       "h": 120,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t6b-scrub-fade-vs-totop",
+   "title": "заголовок раздела донора проявляется по прокрутке ↔ у нас только закреплённая кнопка «наверх»",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "h2.about__lead",
+      "count": 1,
+      "i": 210,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "startPct": 90,
+       "endPct": 23
+      },
+      "place": {
+       "y": 4300,
+       "h": 180,
+       "screen": 5,
+       "of": 11,
+       "first": false
+      }
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "reveal",
+      "trigger": "scroll",
+      "target": "a.grow",
+      "count": 1,
+      "i": 559,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "atPct": 92,
+       "fixed": true,
+       "atPx": 900,
+       "ofPx": 10128
+      },
+      "timing": {
+       "duration": 300,
+       "easing": "ease",
+       "delay": 300
+      },
+      "place": {
+       "y": 829,
+       "h": 54,
+       "screen": 1,
+       "of": 13,
+       "first": true,
+       "fixed": true
+      },
+      "visAtStart": true,
+      "source": "скрипт (style меняется покадрово)"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t6c-parallax-fade-vs-totop",
+   "title": "то же, донор записан параллаксом",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "h2.about__lead",
+      "count": 1,
+      "i": 210,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "startPct": 90,
+       "endPct": 23,
+       "coefficient": -0.1
+      },
+      "place": {
+       "y": 4300,
+       "h": 180,
+       "screen": 5,
+       "of": 11,
+       "first": false
+      }
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "reveal",
+      "trigger": "scroll",
+      "target": "a.grow",
+      "count": 1,
+      "i": 559,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "atPct": 92,
+       "fixed": true,
+       "atPx": 900,
+       "ofPx": 10128
+      },
+      "timing": {
+       "duration": 300,
+       "easing": "ease",
+       "delay": 300
+      },
+      "place": {
+       "y": 829,
+       "h": 54,
+       "screen": 1,
+       "of": 13,
+       "first": true,
+       "fixed": true
+      },
+      "visAtStart": true,
+      "source": "скрипт (style меняется покадрово)"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t6d-scrub-fade-vs-epi-totop",
+   "title": "то же против целого протокола «Эпицентра» (button#toTop)",
+   "expect": [
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "h2.about__lead",
+      "count": 1,
+      "i": 210,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "startPct": 90,
+       "endPct": 23
+      },
+      "place": {
+       "y": 4300,
+       "h": 180,
+       "screen": 5,
+       "of": 11,
+       "first": false
+      }
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3000/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-09-29T00:32:10.162Z",
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "мигание",
+      "trigger": "time",
+      "target": "img.mh-hero__slide",
+      "count": 3,
+      "i": 63,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "timing": {},
+      "parent": "div.mh-hero__slides",
+      "members": [
+       "img.mh-hero__slide",
+       "img.mh-hero__slide",
+       "img.mh-hero__slide.is-active"
+      ],
+      "source": "js"
+     },
+     {
+      "id": "m02",
+      "kind": "reveal",
+      "trigger": "scroll",
+      "target": "button#toTop.to-top",
+      "count": 1,
+      "i": 365,
+      "props": [
+       {
+        "prop": "прозрачность",
+        "from": "0",
+        "to": "1"
+       }
+      ],
+      "scroll": {
+       "atPct": 92,
+       "fixed": true,
+       "atPx": 900,
+       "ofPx": 4805
+      },
+      "timing": {
+       "duration": 300,
+       "easing": "ease"
+      },
+      "visAtStart": true
+     },
+     {
+      "id": "m03",
+      "kind": "entrance",
+      "trigger": "load",
+      "target": "button.mh-hero__dot",
+      "count": 2,
+      "i": 80,
+      "props": [
+       {
+        "prop": "background-color",
+        "from": "",
+        "to": ""
+       }
+      ],
+      "timing": {
+       "duration": 300,
+       "easing": ""
+      },
+      "source": "переход background-color"
+     },
+     {
+      "id": "m04",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "link",
+      "trigger": "hover",
+      "target": "a.rail__item.rail__item--mosty",
+      "count": 4,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgba(0, 0, 0, 0)",
+        "to": "rgba(0, 0, 0, 0.3)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(255, 255, 255)",
+        "to": "rgba(0, 0, 0, 0)"
+       }
+      ],
+      "timing": {
+       "duration": 300,
+       "easing": "ease"
+      },
+      "text": "Мосты Ресторан"
+     },
+     {
+      "id": "m05",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.m-btn.m-btn--sm",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(211, 0, 82)",
+        "to": "rgb(179, 0, 70)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(211, 0, 82)",
+        "to": "rgb(179, 0, 70)"
+       }
+      ],
+      "timing": {
+       "duration": 300,
+       "easing": "ease"
+      },
+      "text": "Подробнее"
+     },
+     {
+      "id": "m06",
+      "kind": "hover",
+      "sub": "линия",
+      "component": "nav",
+      "trigger": "hover",
+      "target": "a.header__toplink",
+      "count": 2,
+      "props": [
+       {
+        "prop": "::after transform",
+        "from": "масштаб 0×1",
+        "to": "нет"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease"
+      },
+      "text": "УЛ. ЛУНАЧАРСКОГО, 10"
+     },
+     {
+      "id": "m07",
+      "kind": "hover",
+      "sub": "линия",
+      "component": "nav",
+      "trigger": "hover",
+      "target": "a.header__phone",
+      "count": 1,
+      "props": [
+       {
+        "prop": "цвет",
+        "from": "rgb(255, 229, 206)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(255, 229, 206)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "::before фон",
+        "from": "rgb(255, 229, 206)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "easing": "ease"
+      },
+      "text": "+7 (4855) 32-00-06"
+     },
+     {
+      "id": "m08",
+      "kind": "hover",
+      "sub": "линия",
+      "component": "button",
+      "trigger": "hover",
+      "target": "button.mh-hero__dot.is-active",
+      "count": 1,
+      "props": [
+       {
+        "prop": "::before фон",
+        "from": "rgba(255, 255, 255, 0.45)",
+        "to": "rgba(255, 255, 255, 0.8)"
+       }
+      ],
+      "timing": {
+       "duration": 300,
+       "easing": "ease"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t6e-no-place-anywhere",
+   "title": "оба протокола без места: лента первого экрана донора ↔ параллакс с теми же числами — пара, но вердикт не лучше WARN",
+   "expect": [
+    "ЕСТЬ, ДРУГИМ ВИДОМ"
+   ],
+   "verdict": "WARN",
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300865\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 600,
+       "coefficient": null,
+       "startPct": 50,
+       "endPct": -17
+      },
+      "source": "атрибуты Tilda"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T17:18:39.664Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "parallax",
+      "trigger": "scroll",
+      "target": "img.footer__ribbon",
+      "count": 1,
+      "i": 510,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "87.6 px"
+       },
+       {
+        "prop": "сдвиг Y",
+        "from": "0 px",
+        "to": "-54 px"
+       },
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "5°"
+       },
+       {
+        "prop": "масштаб",
+        "from": "1",
+        "to": "1.48"
+       }
+      ],
+      "scroll": {
+       "rangePx": 675,
+       "coefficient": -0.09,
+       "startPct": 106,
+       "endPct": 39
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "t7a-decision-false-zero",
+   "title": "решения со значениями false и 0 — не решения",
+   "expect": [
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "decisions": {
+    "m01": false,
+    "m02": 0
+   },
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1690088711 [data-elem-id=\"1765719257106\"]",
+      "count": 3,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "259°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 1200,
+       "coefficient": null,
+       "startPct": 100,
+       "endPct": -33
+      },
+      "place": {
+       "y": 8957,
+       "h": 125,
+       "screen": 10,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m02",
+      "kind": "hover",
+      "sub": "сдвиг/масштаб",
+      "component": "",
+      "trigger": "hover",
+      "target": "#rec1728885321 [data-elem-id=\"1790856442521000005\"]",
+      "count": 4,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "45°"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "linear"
+      },
+      "place": {
+       "y": 2712,
+       "h": 19,
+       "screen": 4,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ]
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "div.mq__track",
+      "count": 1,
+      "i": 66,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateX(-50%);"
+       }
+      ],
+      "timing": {
+       "period": 28500,
+       "speed": "113 px/с влево",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 807,
+       "h": 48,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "source": "css @keyframes mq",
+      "text": "СИДЕРАТЫ СМЕСИ СИДЕРАТОВ"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t7b-decision-typos",
+   "title": "опечатки в ключах решений",
+   "expect": [
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "decisions": {
+    "m1:desktop": "а",
+    "m01:Desktop": "б",
+    "M02": "в",
+    "m02 ": "г"
+   },
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "scroll-linked",
+      "trigger": "scroll",
+      "target": "#rec1690088711 [data-elem-id=\"1765719257106\"]",
+      "count": 3,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "259°"
+       }
+      ],
+      "scroll": {
+       "rangePx": 1200,
+       "coefficient": null,
+       "startPct": 100,
+       "endPct": -33
+      },
+      "place": {
+       "y": 8957,
+       "h": 125,
+       "screen": 10,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda"
+     },
+     {
+      "id": "m02",
+      "kind": "hover",
+      "sub": "сдвиг/масштаб",
+      "component": "",
+      "trigger": "hover",
+      "target": "#rec1728885321 [data-elem-id=\"1790856442521000005\"]",
+      "count": 4,
+      "props": [
+       {
+        "prop": "поворот",
+        "from": "0°",
+        "to": "45°"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "linear"
+      },
+      "place": {
+       "y": 2712,
+       "h": 19,
+       "screen": 4,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ]
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "div.mq__track",
+      "count": 1,
+      "i": 66,
+      "props": [
+       {
+        "prop": "кадры",
+        "from": "",
+        "to": "100%: transform: translateX(-50%);"
+       }
+      ],
+      "timing": {
+       "period": 28500,
+       "speed": "113 px/с влево",
+       "easing": "linear"
+      },
+      "place": {
+       "y": 807,
+       "h": 48,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "source": "css @keyframes mq",
+      "text": "СИДЕРАТЫ СМЕСИ СИДЕРАТОВ"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t8a-kind-key-old-donor",
+   "title": "решение ключом вида «loop» на протоколе донора до 02.10",
+   "expect": [
+    "РЕШЕНО",
+    "РЕШЕНО"
+   ],
+   "verdict": "OK",
+   "decisions": {
+    "loop": "бегущих строк не берём: на нашем первом экране уже есть движение"
+   },
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-01T12:48:47.563Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     },
+     {
+      "id": "m02",
+      "kind": "loop",
+      "sub": "парение",
+      "trigger": "time",
+      "target": "#rec1689764921 [data-elem-id=\"1765713841547\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-3286.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "BIG IDEAS • BIG IMPACT •"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.btn",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(211, 243, 74)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(22, 48, 31)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(22, 48, 31)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 535,
+       "h": 72,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "text": "Открыть каталог"
+     }
+    ]
+   }
+  },
+  {
+   "name": "t8b-kind-key-new-donor",
+   "title": "то же на переснятом доноре: строки стали «бегущая строка»",
+   "expect": [
+    "НЕТ",
+    "НЕТ"
+   ],
+   "verdict": "FAIL",
+   "decisions": {
+    "loop": "бегущих строк не берём: на нашем первом экране уже есть движение"
+   },
+   "donor": {
+    "url": "https://generationx5.tech/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:26:36.063Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "#rec1689728881 [data-elem-id=\"1765713300876\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-2254.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000,
+       "speed": "113 px/с влево"
+      },
+      "place": {
+       "y": 973,
+       "h": 38,
+       "screen": 2,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "СТАЖИРОВКА Х5 TECH • СТА"
+     },
+     {
+      "id": "m02",
+      "kind": "marquee",
+      "trigger": "time",
+      "target": "#rec1689764921 [data-elem-id=\"1765713841547\"]",
+      "count": 1,
+      "props": [
+       {
+        "prop": "сдвиг X",
+        "from": "0 px",
+        "to": "-3286.8 px"
+       }
+      ],
+      "timing": {
+       "duration": 20000,
+       "easing": "linear",
+       "iterations": "infinite",
+       "direction": "normal",
+       "period": 20000,
+       "speed": "164 px/с влево"
+      },
+      "place": {
+       "y": 1907,
+       "h": 38,
+       "screen": 3,
+       "of": 11,
+       "first": false
+      },
+      "source": "атрибуты Tilda",
+      "keyframes": [
+       {
+        "offset": 0
+       },
+       {
+        "offset": 1
+       }
+      ],
+      "text": "BIG IDEAS • BIG IMPACT •"
+     }
+    ]
+   },
+   "ours": {
+    "url": "http://localhost:3100/",
+    "viewport": "desktop",
+    "size": "1440×900@1",
+    "takenAt": "2026-10-02T00:48:28.960Z",
+    "phases": {
+     "scroll": true,
+     "hover": true,
+     "mouse": true,
+     "clicks": true
+    },
+    "clicks": {},
+    "items": [
+     {
+      "id": "m01",
+      "kind": "hover",
+      "sub": "цвет",
+      "component": "button",
+      "trigger": "hover",
+      "target": "a.btn",
+      "count": 1,
+      "props": [
+       {
+        "prop": "фон",
+        "from": "rgb(211, 243, 74)",
+        "to": "rgb(31, 85, 48)"
+       },
+       {
+        "prop": "цвет",
+        "from": "rgb(22, 48, 31)",
+        "to": "rgb(255, 255, 255)"
+       },
+       {
+        "prop": "рамка",
+        "from": "rgb(22, 48, 31)",
+        "to": "rgb(255, 255, 255)"
+       }
+      ],
+      "timing": {
+       "duration": 200,
+       "easing": "ease-in-out"
+      },
+      "place": {
+       "y": 535,
+       "h": 72,
+       "screen": 1,
+       "of": 13,
+       "first": true
+      },
+      "text": "Открыть каталог"
+     }
+    ]
+   }
+  }
+ ]
+}
