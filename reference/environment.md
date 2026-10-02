@@ -121,9 +121,9 @@ Start-Process node -ArgumentList '--watch','server.js' -WorkingDirectory D:\proj
 scripts/lib.mjs        браузер, экраны (mobile-s 320, android 360, ШxВ@DPR), прокрутка, снимки, переполнение, холсты, цвета
 scripts/discover.mjs   разведка: техника, содержимое, визуал, фактура, паспорт донора, подписные приёмы, медиа-слоты; Tilda — раздел «Tilda» (tilda.mjs), кегли × zoom, служебное и обрезанное артбордом вне языка, типы страниц по подписи блоков
 scripts/runtime.mjs    проверка в браузере: клики с эффектом, маски, выбор, смена окна, холсты и резкость, наведение, меню, CSS, видео
-scripts/texture.mjs    фактура числом: слои зерна, σ по фонам, кипение, рецепт, compare донор против сайта; крупная фактура (мятая бумага, камень, ткань) — плитка, шов, сила по секциям, рецепт --surface-*; selftest на fixtures/texture
+scripts/texture.mjs    фактура числом: слои зерна, σ по фонам, кипение, рецепт, compare донор против сайта; крупная фактура (мятая бумага, камень, ткань, доски) — плитка, её вид с уверенностью, шов, сила по секциям, рецепт --surface-*; selftest на fixtures/texture
 scripts/grain-tile.mjs своя детерминированная шумовая плитка (PNG, спрайт, WebP, GIF) и её проверка
-scripts/surface-tile.mjs  своя бесшовная плитка крупной фактуры: paper, stone, canvas; --like замер донора, --sheet лист стыков, --check готовый файл; selftest
+scripts/surface-tile.mjs  своя бесшовная плитка крупной фактуры: paper, pulp, stone, canvas; --like замер донора (вид, яркость, σ, размер, шаг ткани, направление волокон), --veins, --thread, --dir, --sheet лист стыков, --check готовый файл и его вид против донора; selftest
 scripts/bgdecor.mjs    фон образца и свой: рисунки, буквы-призраки, предметы на полях, узоры — бледность числом по трём снимкам, вырезки; compare с решениями decor-decisions.json; selftest на fixtures/bgdecor
 scripts/cliche.mjs     шаблонность: дефолты на живой странице против донора и журнала вкуса; Tilda — служебное вне индекса, кегли и радиусы × zoom; слова-пустышки — общий словарь copy-rules
 scripts/taste.mjs      журнал вкуса между прогонами: отвергнутое и принятое с картинками, область site|general
@@ -153,7 +153,7 @@ scripts/skill-audit.mjs  чужой навык до установки: audit (�
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
 scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, firecrawl (подставной сервер), fonts (выжимки ui-ux-pro-max, живые ответы CSS2, woff2 надписи), clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц), texture (зерно, вуаль, крупная фактура, ровный фон — плитки рисуются на лету), bgdecor (стенд-донор со всеми видами украшений и «наш сайт» для сверки); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
-templates/surface.css  слой крупной фактуры: плитка в фоне блока, multiply на светлых и цветных полях, color-burn на тёмных, выключена в печати
+templates/surface.css  слой крупной фактуры: плитка в фоне блока, multiply на светлых и цветных полях, color-burn на тёмных (своя плитка для тёмных — --surface-tile-dark), выключена в печати
 templates/render3d/    пререндер объёмных предметов в прозрачный WebP: stage.html (студия из софтбоксов, материалы, накопление кадров), render.mjs (съёмка, --palette, --n, --bg), scenes/ (образец — предметы магазина семян), tools/ (малые копии, обрезка по тени); README — порядок, планка качества, своя сцена
 templates/sketch2d/    наброски от руки в фон: sketch-kit.mjs (фигуры кодом) → svg3d.mjs rough; botanical.mjs — образец; README
 templates/run-tools/   разовые инструменты прогона (не скрипты навыка, вердиктов не дают): look, tops, slices, scroll-shots, states (+ states.example.json), contrast-at, gzip-proxy, img-variants, css-dead, strings, typo, run-env; README

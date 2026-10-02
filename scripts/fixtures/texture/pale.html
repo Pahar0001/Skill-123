@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: зерно бледной шум-плиткой в фоне блока</title>
+<!-- Стенд самопроверки texture.mjs (как massandra.ru): зерно положено не слоем поверх страницы, а бледной шум-плиткой
+     100×100 px в фон самих секций (speck.png: σ около 2.9, соседние пиксели не связаны). Слоем зерна такой файл не
+     считается (σ меньше 6), слоёв зерна на странице нет — но зерно настоящее. Это единственный случай, когда «зерно
+     есть» без единого слоя остаётся: в замере — поле paleNoise. Плитку рисует selftest во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{padding:70px 60px;min-height:700px;background:#f3f1ec url(speck.png) 0 0/auto repeat}
+  .dark{background-color:#2a2622;color:#f1f1f1}
+  h2{margin:0 0 18px;font-size:34px}
+</style>
+</head>
+<body>
+  <section><h2>Светлое поле с шум-плиткой</h2></section>
+  <section class="dark"><h2>Тёмное поле с той же плиткой</h2></section>
+  <section><h2>Ещё светлое</h2></section>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: имя файла похоже на фактуру, а фактуры нет</title>
+<!-- Стенд самопроверки texture.mjs: обманки. Первый экран — фотография с именем paper-texture-photo.jpg (слова
+     texture и paper в пути раньше делали любой фон «слоем зерна по имени»). Вторая секция — бледный орнамент
+     плиткой 128 px (ornament.png: знаки на ровном поле, повтор по обеим осям) — не фактура, а узор. Третья —
+     сетка в два тона (grid.png). Дальше ровные секции. Крупной фактуры и зерна на странице нет; картинки рисует
+     selftest во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{padding:70px 60px;min-height:640px}
+  .hero{background:#222 url(paper-texture-photo.jpg) center/cover no-repeat;color:#fff}
+  .orn{background:#fbfaf6 url(ornament.png) 0 0/auto repeat}
+  .grid{background:#f3f6f9 url(grid.png) 0 0/auto repeat}
+  .light{background-color:#f6f6f6}
+  .dark{background-color:#16202a;color:#f1f1f1}
+  h2{margin:0 0 18px;font-size:34px}
+</style>
+</head>
+<body>
+  <section class="hero"><h2>Фотография с именем «texture»</h2></section>
+  <section class="orn"><h2>Бледный орнамент плиткой</h2></section>
+  <section class="grid"><h2>Сетка в два тона</h2></section>
+  <section class="light"><h2>Ровная светлая секция</h2></section>
+  <section class="dark"><h2>Ровная тёмная секция</h2></section>
+</body>
+</html>

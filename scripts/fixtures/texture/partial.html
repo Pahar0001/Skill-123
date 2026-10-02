@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: фактура только в части страницы</title>
+<!-- Стенд самопроверки texture.mjs: плитка стоит в фоне одного блока из нескольких, и большая его часть закрыта
+     гладкими карточками; остальная страница ровная. Раньше сила считалась медианой по всем ровным участкам полосы
+     фона — здесь она нулевая, и вердикт выходил «нет» при видимой фактуре (tabasco.com). Вторая половина —
+     карточка шириной 760 px (кандидат — блок шире 60 % окна) с плиткой на белой странице (4rsmokehouse.com): участки на её границе наполовину под плиткой,
+     и их разброс — ступенька, а не фактура. Плитку (tile.webp) рисует selftest. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#fff}
+  section{padding:60px;min-height:620px;background-color:#fff}
+  main{padding:60px;min-height:900px;background:#fff url(tile.webp) 0 0/512px auto repeat}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin-top:300px}
+  .card{background:#fff;border-radius:12px;height:300px;padding:22px}
+  .paper{width:760px;height:520px;margin:40px auto;padding:30px;background:#fff url(tile-strong.webp) 0 0/512px auto repeat}
+  h2{margin:0 0 18px;font-size:34px}
+</style>
+</head>
+<body>
+  <section><h2>Ровная белая секция</h2></section>
+  <main>
+    <h2>Блок с фактурой в фоне</h2>
+    <div class="cards"><div class="card">Гладкая карточка</div><div class="card">Гладкая карточка</div><div class="card">Гладкая карточка</div></div>
+  </main>
+  <section><h2>Ещё ровная секция</h2></section>
+  <section><h2>Карточка с бумагой на белой странице</h2><div class="paper">Бумага только внутри карточки.</div></section>
+  <section><h2>И ещё ровная</h2></section>
+</body>
+</html>

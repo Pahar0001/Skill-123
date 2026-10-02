@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: мягкое зерно слоем — это зерно, а не крупная фактура</title>
+<!-- Стенд самопроверки texture.mjs (находка проверки 02.10.2026): слой поверх страницы с мягким зерном — серый шум
+     σ 10, размытый на 1.6 px (soft-noise.png), прозрачность 0.5. Соседние пиксели такого шума связаны (доля деталей
+     мельче 5 px около 0.24), и правка порогов 02.10 объявляла файл «крупной фактурой», а зерно на странице — «нет».
+     Ждём: зерно есть (слой один, вклад около 5), крупной фактуры нет. Плитку рисует selftest во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#f3efe6}
+  section{padding:70px 60px;min-height:700px}
+  .dark{background-color:#1d1f24;color:#f1f1f1}
+  .mid{background-color:#8a8f98}
+  h2{margin:0 0 18px;font-size:34px}
+  .veil{position:fixed;inset:0;pointer-events:none;z-index:9;background:url(soft-noise.png);opacity:.5}
+</style>
+</head>
+<body>
+  <div class="veil" aria-hidden="true"></div>
+  <section><h2>Светлое поле</h2></section>
+  <section class="dark"><h2>Тёмное поле</h2></section>
+  <section class="mid"><h2>Среднее поле</h2></section>
+</body>
+</html>

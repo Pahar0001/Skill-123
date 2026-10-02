@@ -77,7 +77,7 @@ godly.website перенаправляет на recent.design; siteinspire.com (
 ```
 node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <папка>/donor --no-design     # сводка, фактура, паспорт, медиа-слоты; дизайн-систему снимает extract ниже
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
-node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture   # зерно и крупная фактура (мятая бумага, прожилки): рецепты --grain-* и --surface-*
+node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture   # зерно и крупная фактура (мятая бумага, прожилки, ткань, доски): её вид с уверенностью, рецепты --grain-* и --surface-*
 node ~/.claude/skills/site-rework/scripts/bgdecor.mjs <донор> --pages "/,<путь>" --viewport desktop,mobile --out <папка> --tag donor   # фон: рисунки, предметы на полях, буквы-призраки → decor/donor.md, вырезки открыть глазами
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --pages "home=/,product=<путь>,collection=<путь>" --viewport desktop,mobile --out <папка> --tag donor   # всё движение числами: donor-home, donor-home-mobile, donor-product… одним запуском
@@ -215,8 +215,9 @@ node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion
   в `donor.ignore`.
 - `texture.mjs compare` — сила зерна по полосам фона ±20 %, lag1 ±0.15,
   кипит / не кипит, только при одинаковом DPR; крупная фактура — есть / нет,
-  сила на ровных участках по полосам ±30 %, наложение. FAIL — задача, а не
-  примечание. Подсказка назовёт причину: режим гасит на этом фоне или
+  вид плитки (у донора камень, у нас бумага — подсказка, не FAIL: решают
+  вырезки 1:1 рядом), сила на ровных участках по полосам ±30 %, наложение.
+  FAIL — задача, а не примечание. Подсказка назовёт причину: режим гасит на этом фоне или
   слой слишком слабый. Фактура по слову владельца там, где у донора её нет
   (или наоборот), — FAIL остаётся в протоколе, в отчёт — строкой с его словами.
 - `bgdecor.mjs compare` — вид украшения фона, который у донора есть, а у нас

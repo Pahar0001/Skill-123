@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: шум в самих фотографиях — зерна слоем нет</title>
+<!-- Стенд самопроверки texture.mjs (находка проверки 02.10.2026, как dinosaurbarbque.com): тёмные фотографии с шумом
+     матрицы (pit.jpg, σ шума около 4) во весь блок 1:1, поверх них — накладка с именем texture-black.png (гладкая
+     полупрозрачная картинка: по имени — «слой», по разбору — рисунок). Слоя зерна на странице нет. После того как
+     «слои по имени», признанные картинками, перестали считаться слоями, ровность плиток решал относительный порог —
+     и шум фотографий выходил «зерно есть» с рецептом слоя шума. Ждём: зерно «нет» с пометкой «в самих картинках»,
+     рецепт — «слой не нужен», крупной фактуры нет. Картинки рисует selftest во временную папку. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#eee;background:#141414}
+  section{position:relative;padding:40px 60px;height:640px}
+  .ph{background:#111 url(pit.jpg) center/cover no-repeat}
+  .ph::before{content:"";position:absolute;inset:0;background:url(texture-black.png) center/100% 100% no-repeat}
+  .plain{background:#f4f1ea;color:#222}
+  h2{margin:0;font-size:24px;position:relative}
+</style>
+</head>
+<body>
+  <section class="ph"><h2>Тёмная фотография с шумом матрицы</h2></section>
+  <section class="plain"><h2>Ровное светлое поле</h2></section>
+  <section class="ph"><h2>Ещё фотография</h2></section>
+  <section class="ph"><h2>И ещё</h2></section>
+</body>
+</html>

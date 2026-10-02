@@ -219,7 +219,7 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <url или дон
 node ~/.claude/skills/site-rework/scripts/copy.mjs snapshot <url> --out <папка> --tag before --pages /,<те же>
 node ~/.claude/skills/site-rework/scripts/copy.mjs lint <url> --out <папка> --tag base --pages <те же>
 node ~/.claude/skills/site-rework/scripts/motion.mjs <url или донор> --pages "home=/,<тип>=<путь>" --viewport desktop,mobile --out <папка> --tag <site|donor>
-node ~/.claude/skills/site-rework/scripts/texture.mjs <url или донор> --viewport desktop,mobile --out <папка>/texture   # фактура: зерно и крупная (мятая бумага, прожилки, камень, ткань)
+node ~/.claude/skills/site-rework/scripts/texture.mjs <url или донор> --viewport desktop,mobile --out <папка>/texture   # фактура: зерно и крупная (мятая бумага, прожилки, камень, ткань, доски) — с видом плитки для surface-tile.mjs
 node ~/.claude/skills/site-rework/scripts/bgdecor.mjs <url или донор> --pages "/,<путь>" --viewport desktop,mobile --out <папка> --tag <site|donor>   # фон: рисунки, предметы на полях, буквы-призраки, узоры
 ```
 Фон образца снимается всегда, а не «если заметил»: бледный рисунок или плитку с прожилками на снимке всей страницы
@@ -259,8 +259,8 @@ P0 сломано · P1 крупная проблема UX · P2 крупная 
   неразрывные пробелы — в исходном тексте и данных, `typeset.mjs` только меряет (`reference/typography.md`);
 - фото и видео — `media.mjs search` → лист-контакт глазами → `pick --seen --caption` → `credits`; заменённая
   под тем же именем картинка — метка версии в адресе (`photo.webp?v=<хэш>`);
-- фактура, 3D — `reference/engines.md`: зерно — `grain-tile.mjs` и `templates/grain.css`; крупная фактура (мятая
-  бумага, прожилки, камень, холст) — `surface-tile.mjs` и `templates/surface.css`; детали — `templates/decor-kit/`
+- фактура, 3D — `reference/engines.md`: зерно — `grain-tile.mjs` и `templates/grain.css`; крупная фактура (мятая и
+  зернистая бумага, камень с прожилками, ткань) — `surface-tile.mjs` и `templates/surface.css`; детали — `templates/decor-kit/`
   (README); наброски от руки в фон — `templates/sketch2d/`; предметы пререндером в прозрачный WebP —
   `templates/render3d/`; иконки, предметы и фоны с объёмом в SVG — `svg3d.mjs` (`reference/svg-3d.md`), на видных
   местах рядом с пререндером они слабее — туда только объёмные;

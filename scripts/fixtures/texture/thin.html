@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд texture.mjs: полупрозрачная плитка крупной фактуры</title>
+<!-- Стенд самопроверки texture.mjs: плитка thin.png — та же бумага, но полупрозрачная (альфа 0.5), лежит обычным
+     слоем фона поверх цвета поля (как у dogfish.com: бумага с альфой 0.6 в фоне body). Раньше такая плитка
+     отвергалась словом «полупрозрачная», и фактуры на странице «не было». Плитку рисует selftest. -->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Arial,sans-serif;color:#1d2a22;background:#ffffff url(thin.png) 0 0/512px auto repeat}
+  section{padding:70px 60px;min-height:640px}
+  .tint{background:#e9f0dc url(thin.png) 0 0/512px auto repeat}
+  h2{margin:0 0 18px;font-size:34px}
+  .card{background:#fff;border-radius:16px;padding:22px 26px;max-width:380px}
+</style>
+</head>
+<body>
+  <section><h2>Белое поле, полупрозрачная бумага</h2><div class="card">Карточка гладкая.</div></section>
+  <section class="tint"><h2>Цветное поле</h2></section>
+  <section><h2>Ещё белое поле</h2></section>
+</body>
+</html>
