@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд a11y: пилюли с рамкой цвета текста</title>
+<!-- Стенд a11y.mjs --selftest (pill-border). Метки-пилюли на серой карточке (градиент #7E8587 — фон «по снимку»):
+     чёрный текст 12px, рамка 1.2px того же чёрного. Строка текста (у Commissioner высота шрифта 1,2 кегля) при
+     line-height: 1 выше коробки и захватывает полосы рамки сверху и снизу: тёмные пиксели рамки попадали в
+     «худшие 10 % фона», ложный FAIL ≈4.4:1 при настоящем 5.6:1 (2026-10-03). Рамка самого элемента (.p-own),
+     обводка outline (.p-outline), кольцо box-shadow без размытия (.p-ring, как ring у Tailwind) и рамка
+     обёртки с тем же текстом (a.p-wrap > span) — не фон текста.
+     Контроль: тёмно-серый #333 на #7E8587 (3.4:1) — FAIL остаётся. Ждём: FAIL, измерено 6 из 6, ниже нормы 1
+     («Слабая»). Шрифт — файлом (fonts/), чтобы полосы рамки попадали в строку на любой системе. -->
+<style>
+@font-face { font-family: "Stand Commissioner"; src: url("fonts/commissioner-cyrillic.woff2") format("woff2"); font-weight: 500 700; font-display: block; }
+body { margin: 0; background: #fff; color: #111; font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+.card { padding: 24px; border-radius: 16px; background-image: linear-gradient(#7E8587, #7E8587); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.pill { display: inline-block; font: 600 12px/1 "Stand Commissioner", sans-serif; color: #000; padding: 0 8px; border-radius: 999px; text-decoration: none; }
+.p-own { border: 1.2px solid #000; }
+.p-outline { outline: 1.2px solid #000; }
+.p-wrap { display: inline-block; border: 1.2px solid #000; border-radius: 999px; padding: 0 8px; text-decoration: none; font: 600 12px/1 "Stand Commissioner", sans-serif; }
+.p-wrap span { display: inline-block; font: 600 12px/1 "Stand Commissioner", sans-serif; color: #000; }
+.p-ring { box-shadow: 0 0 0 1.2px #000; }
+.p-plain { border: 0; }
+.p-weak { color: #333; border: 1.2px solid #333; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Меню</h1>
+  <div class="card">
+    <span class="pill p-own">Новинка</span>
+    <span class="pill p-outline">Сезон</span>
+    <a class="p-wrap" href="#hit"><span>Хит</span></a>
+    <span class="pill p-ring">Постное</span>
+    <span class="pill p-plain">Острое</span>
+    <span class="pill p-weak">Слабая</span>
+  </div>
+</main>
+</body>
+</html>

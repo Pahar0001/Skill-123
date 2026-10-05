@@ -1,43 +1,91 @@
 #!/usr/bin/env node
 /**
- * Шрифты Google с кириллицей: подобрать по характеру и скачать к себе — файлы woff2 и fonts.css в папку сайта.
- * Google Fonts — источник по умолчанию: бесплатно, лицензии свободные (почти всё — SIL OFL 1.1, несколько
- * семейств — Apache 2.0 и Ubuntu Font Licence), кириллица есть у 293 семейств из 1934. На сайте — свои файлы,
- * а не CDN Google (reference/typography.md §16); надпись-логотип — подмножеством ровно под её знаки (--text).
+ * Шрифты с кириллицей: подобрать по образцу (числа отрисовки + лист для глаз), записать решение и скачать к себе —
+ * файлы woff2 и fonts.css в папку сайта. Порядок выбора по шагам — reference/fonts.md; источники шрифтов —
+ * scripts/fonts/sources.json (сейчас подключён Google Fonts: бесплатно, лицензии свободные — почти всё SIL OFL 1.1,
+ * несколько семейств Apache 2.0 и Ubuntu Font Licence; кириллица у 294 семейств из 1950). На сайте — свои файлы,
+ * а не CDN (reference/typography.md §16); надпись-логотип — подмножеством ровно под её знаки (--text).
  *
+ *   node fonts.mjs measure <адрес | файл шрифта | "Семейство"> [--selector h1] [--weight 700] [--run <папка прогона> | --out <файл.json>]
+ *   node fonts.mjs match <образец.json> [--sources google] [--n 8] [--category sans-serif] [--need "₽№«»"] [--refresh]
+ *   node fonts.mjs sheet <образец.json> "<Семейство>" ["google:Семейство:600" …] [--out <лист.png>]
+ *   node fonts.mjs decide "<Семейство>" --run <папка прогона> --why "<почему>" [--source google] [--weight 700]
  *   node fonts.mjs pick [--category serif|sans-serif|display|handwriting|monospace] [--like "<характер по-русски>"]
  *                       [--need "₽№«»—"] [--weights 400,700] [--italic] [--variable] [--n 10]
  *   node fonts.mjs pairs [слова по-английски: luxury, editorial, tech…]
  *   node fonts.mjs get "<Семейство>" --out <папка сайта> [--weights 400,700 | --weights 300..800] [--italic]
- *                      [--subsets cyrillic,latin,latin-ext] [--text "Надпись"] [--need "₽№"]
- *   node fonts.mjs --selftest
+ *                      [--subsets cyrillic,latin,latin-ext] [--text "Надпись"] [--need "₽№"] [--root <корень сайта>]
+ *   node fonts.mjs selftest   (или --selftest)
  *   node fonts.mjs --help   (или -h)
  *
- * pick   кандидаты только с подмножеством cyrillic (данные ui-ux-pro-max, google-fonts.csv); шрифты-заглушки
- *        Symbols (Flow Circular и др.) не предлагаются. Таблица: семейство, категория, начертания, оси,
- *        подмножества, место по популярности, характер (с --like), пометки, ссылка specimen; под ней — команда
- *        get для первого. Порядок: сначала те, у кого есть подмножества под --need, потом больше совпавших слов
- *        характера и их вес, потом без пометок, потом популярнее. Пометки опускают шрифт ниже:
- *        «ИИ-набор» — Inter, Manrope, Onest, Montserrat… (cliche.mjs overused-font; брать, только если это язык
- *        донора — typography.md §5); «CJK» — японский, китайский или корейский шрифт, кириллица в нём довеском;
- *        «декоративный» (Rubik Glitch, Rubik Wet Paint…), «церковнославянский», «пиксельный» — если их не просили.
- * pairs  пары «заголовки → текст» из typography.csv (74 пары, признака языка в данных нет): годятся только
- *        те, где кириллица есть у обоих шрифтов; отброшенные — по шрифту без кириллицы. Слова после pairs
- *        отбирают пары по названию, настроению и назначению (данные по-английски). Под таблицей — команды get
- *        для первой пары.
- * get    CSS2 API Google Fonts с User-Agent современного Chrome (иначе приходит не woff2) → файлы в
- *        <папка>/fonts/ и <папка>/fonts/fonts.css: @font-face с unicode-range и font-display: swap, раздел на
- *        семейство между метками fonts.mjs. Повторный get того же семейства заменяет свой раздел и удаляет свои
- *        прежние файлы, которых больше нет; чужие разделы и свой CSS вне меток не трогает. Переменный шрифт
- *        (Google отдаёт один файл на все веса) — один @font-face с диапазоном веса из самого файла (ось wght).
- *        Затем проверка по таблице знаков (cmap) скачанных файлов — по объединению подмножеств, как их получит
- *        страница: кириллица (66 букв с Ёё), знаки ₽№«»„“—–… и --need; с --text — каждый знак надписи.
- *        Не прошло по правилу — ничего не записывается. Итог: файлы с размерами, строки подключения и команда
- *        проверки отрисовкой. Сеть — только здесь: fonts.googleapis.com и fonts.gstatic.com.
+ * measure  числа шрифта образца по отрисовке в Chrome (холст 200 px, пиксели): x/cap — высота строчных к
+ *          заглавным (x к H); ширина — средняя ширина знака по краскам к высоте H, строчных a–z и прописных A–Z
+ *          (узкий 0.4/0.5, широкий 0.8/1.0), и шаг набора к кеглю (знак с полями); контраст —
+ *          тонкий штрих к толстому (перекладина H к ножке, верх O к боку; 1 — моноширинный штрих, 0.3 — дидона);
+ *          круглота — ширина O к высоте; штрих — толщина ножки H к высоте H (насколько тёмный вес); засечки —
+ *          ширина низа и верха ножек H, I, n к самой ножке (1 — рубленый, от 1.35 — засечки); концы — ширина
+ *          у края ножки I, l к ножке (прямой срез ~1, скругление меньше); раскрытие — просвет «c» к высоте x;
+ *          cap/кегль;
+ *          у кириллицы — высота Й/Ё над строкой и хвосты Д/Ц/Щ (зазор при line-height 0.9 и 1.0). Образец:
+ *          адрес — элемент --selector (по умолчанию h1) на живой странице: его шрифт, вес, трекинг, кегль,
+ *          интерлиньяж, регистр — как на образце, плюс есть ли у шрифта кириллица и полоса для листа (образец
+ *          как есть, PNG); файл шрифта (woff2/woff/ttf/otf) — сам файл, вес --weight (по умолчанию 400);
+ *          «Семейство» — из подключённых источников («google:Inter Tight», «Inter Tight:700»). Латинский
+ *          образец годится: числа снимаются с латиницы. Протокол: --run → <папка>/fonts/sample.json, --out —
+ *          свой путь, иначе ~/.claude/site-rework/cache/fonts/samples/<имя>/sample.json.
+ * match    кандидаты из подключённых источников (--sources, по умолчанию все включённые в sources.json) —
+ *          только с кириллицей и только с лицензией источника, где разрешены веб и свои файлы. Каждый
+ *          качается подмножеством знаков пробы (латиница, 66 букв с Ёё, ₽№«»„“—–…, знаки листа) в кэш
+ *          ~/.claude/site-rework/cache/fonts/<источник>/ и меряется тем же способом в весе образца (ближайшем
+ *          у кандидата). Отсев называется, а не молчит: нет кириллицы по данным источника — числом; нет букв
+ *          в самом файле, нет знаков --need (по умолчанию ₽№«»), лицензия — списком с расстоянием. Расстояние —
+ *          взвешенная разница чисел в долях обычного разброса (у образца капсом — ширина прописных весомее,
+ *          x/cap легче), разные засечки — штраф +1. Таблица: место, расстояние, числа и разница с образцом,
+ *          зазор Й/Ё при line-height 0.9, пометки («ИИ-набор», CJK, декоративный); под ней — команды sheet и
+ *          decide. Протокол — match.json рядом с образцом. Первый прогон Google — до минуты-двух (291 файл по
+ *          10–35 КБ), дальше секунды из кэша (числа — в cache/fonts/metrics.json). Второй проход: у первых 24 —
+ *          соседние веса ±100 и ±200, берётся вес с меньшим расстоянием (в таблице «600*»). Трекинг в таблице —
+ *          воздух между буквами как у образца; кегль × — во сколько раз крупнее для той же высоты прописных.
+ * sheet    лист для глаз (PNG): образец как есть (у адреса — полоса со страницы донора, кириллица чужим
+ *          шрифтом видна сразу) и кандидаты в весе образца, в том же кегле, с трекингом «воздух как у
+ *          образца» — строка «САЙТЫ, СЕРВИСЫ · ЁЖ 20 000 ₽»,
+ *          она же строчными, абзац и капс с Й/Ё в две строки при line-height 0.9 и 1.0 с зазором числом.
+ *          Подписи — название, источник, лицензия, расстояние и главные разницы. Кандидаты — именами
+ *          («Inter Tight», «google:Golos Text:600»); без имён — первые --n из match.json. --out по умолчанию —
+ *          sheet.png рядом с образцом. Открыть глазами (Read) обязательно.
+ * decide   записать выбор: <папка прогона>/fonts/decision.json — образец и его числа, кандидаты из match.json,
+ *          выбор с числами и местом, источник, лицензия и её адрес (у Google сверяется по репозиторию
+ *          google/fonts: папка ofl, apache или ufl), --why словами, команда get. Без --why — отказ.
+ * pick     кандидаты только с подмножеством cyrillic (данные ui-ux-pro-max, google-fonts.csv); шрифты-заглушки
+ *          Symbols (Flow Circular и др.) не предлагаются. Таблица: семейство, категория, начертания, оси,
+ *          подмножества, место по популярности, характер (с --like), пометки, ссылка specimen; под ней — команда
+ *          get для первого. Порядок: сначала те, у кого есть подмножества под --need, потом больше совпавших слов
+ *          характера и их вес, потом без пометок, потом популярнее. Пометки опускают шрифт ниже:
+ *          «ИИ-набор» — Inter, Manrope, Onest, Montserrat… (cliche.mjs overused-font; брать, только если это язык
+ *          донора — typography.md §5); «CJK» — японский, китайский или корейский шрифт, кириллица в нём довеском;
+ *          «декоративный» (Rubik Glitch, Rubik Wet Paint…), «церковнославянский», «пиксельный» — если их не просили.
+ *          По образцу точнее — measure и match; pick — когда образца нет, только слова.
+ * pairs    пары «заголовки → текст» из typography.csv (74 пары, признака языка в данных нет): годятся только
+ *          те, где кириллица есть у обоих шрифтов; отброшенные — по шрифту без кириллицы. Слова после pairs
+ *          отбирают пары по названию, настроению и назначению (данные по-английски). Под таблицей — команды get
+ *          для первой пары. Контраст пары — по ролям (typography.md §5): гротеск и антиква, геометрический и
+ *          гуманистический, высота строчных близкая (x/cap из measure); два похожих гротеска — не пара, тогда одна
+ *          гарнитура с разными весами. Порядок выбора по образцу — reference/fonts.md §4.
+ * get      CSS2 API Google Fonts с User-Agent современного Chrome (иначе приходит не woff2) → файлы в
+ *          <папка>/fonts/ и <папка>/fonts/fonts.css: @font-face с unicode-range и font-display: swap, раздел на
+ *          семейство между метками fonts.mjs. Повторный get того же семейства заменяет свой раздел и удаляет свои
+ *          прежние файлы, которых больше нет; чужие разделы и свой CSS вне меток не трогает. Переменный шрифт
+ *          (Google отдаёт один файл на все веса) — один @font-face с диапазоном веса из самого файла (ось wght).
+ *          Затем проверка по таблице знаков (cmap) скачанных файлов — по объединению подмножеств, как их получит
+ *          страница: кириллица (66 букв с Ёё), знаки ₽№«»„“—–… и --need; с --text — каждый знак надписи.
+ *          Не прошло по правилу — ничего не записывается. Итог: файлы с размерами, строки подключения (пути
+ *          от корня сайта: --root или найденный выше --out каталог с index.html, package.json или .git; не
+ *          нашёлся — путь от --out с пометкой) и команда проверки отрисовкой. Сеть — только fonts.googleapis.com
+ *          и fonts.gstatic.com.
  *
  * Флаги:
- *   --category <кат>   pick: serif, sans-serif (или sans), display, handwriting, monospace (или mono); несколько —
- *                      через запятую.
+ *   --category <кат>   pick, match: serif, sans-serif (или sans), display, handwriting, monospace (или mono); несколько —
+ *                      через запятую. match без него — все категории (рукописные и декоративные уйдут вниз сами).
  *   --like <слова>     pick: характер по-русски (или по-английски); «не …» и «без …» — исключить. Слова:
  *                      строгий, гротеск (без засечек), геометричный, гуманистический, тёплый, текстовый, рукописный
  *                      (от руки), каллиграфический, антиква (с засечками), книжный, классический, узкий, широкий,
@@ -51,13 +99,15 @@
  *   --need <знаки>     pick: какие знаки нужны; у каждого — подмножество Google: ₽ — latin-ext, № и Ё —
  *                      cyrillic, «»„“—–… — latin. Нет подмножества — пометка, шрифт ниже; есть ли сам знак в
  *                      шрифте, скажет только файл — get. get: знаки к проверке сверх ₽№«»„“—–…
+ *                      match: знаки, без которых кандидат уходит в отсев с пометкой (по умолчанию ₽№«»).
  *   --weights <веса>   pick: нужные веса (все). get: веса через запятую (400,700) или диапазон переменного
  *                      шрифта (300..800); по умолчанию 400 и 700 — те, что есть (иначе ближайший к 400).
  *                      Веса сверяются с данными до сети и с ответом Google после: Google молча выбрасывает то,
  *                      чего у шрифта нет (900 у Manrope, 700 у Yeseva One), — это WARN «не отдал».
  *   --italic           pick: нужен курсив (с --weights — у каждого веса). get: курсив тех же весов.
  *   --variable         pick: только переменные шрифты (есть оси).
- *   --n <число>        pick: сколько строк, по умолчанию 10 (-n — то же).
+ *   --n <число>        pick: сколько строк, по умолчанию 10 (-n — то же). match: сколько кандидатов, по умолчанию 8;
+ *                      sheet без имён — столько первых из match.json.
  *   --subsets <имена>  get: подмножества, по умолчанию cyrillic,latin,latin-ext: браузер качает файл, только когда
  *                      на странице есть его знаки, а без latin-ext знак ₽ рисуется системным шрифтом. Нет cyrillic
  *                      в ответе Google — отказ (код 2), нет другого — WARN.
@@ -65,8 +115,20 @@
  *                      один файл на вес, килобайт-два. Надпись сменилась — скачать заново; несколько надписей
  *                      одним шрифтом — одной строкой («Зёрна Кофе с собой»). У него свой раздел «<Семейство> ·
  *                      надпись» с unicode-range знаков надписи: полному разделу не мешает.
- *   --out <папка>      get: папка сайта; файлы — в <папка>/fonts/.
- *   --selftest         без сети: разбор CSV (кавычки, запятые и переводы строк в полях, BOM, CRLF), фильтры pick
+ *   --out <путь>       get: папка сайта; файлы — в <папка>/fonts/. measure: файл протокола (.json). sheet: файл листа (.png).
+ *   --root <папка>     get: корень сайта — строки подключения печатаются путями от него («/assets/fonts/…»).
+ *   --selector <css>   measure: какой элемент страницы-образца мерить, по умолчанию h1 (первый видимый).
+ *   --weight <вес>     measure: вес файла или семейства (по умолчанию 400; у адреса — вес элемента). decide: вес
+ *                      выбора, по умолчанию — как у кандидата в match.json.
+ *   --run <папка>      measure: протокол в <папка прогона>/fonts/sample.json. decide: обязателен — туда decision.json.
+ *   --sources <имена>  match: источники из sources.json через запятую (google, …), по умолчанию все включённые.
+ *   --source <имя>     decide: источник выбора, если семейства нет в match.json; по умолчанию google.
+ *   --why <текст>      decide: почему выбран этот шрифт — словами, для владельца и следующего агента.
+ *   --refresh          match: заново скачать список семейств источника (у Google — раз в 30 дней и так).
+ *   --selftest         (или команда selftest) без сети: числа measure на сохранённых шрифтах OFL (засечки, контраст,
+ *                      ширина, круглота; страница с @font-face — те же числа, что у файла), match на своём сервере
+ *                      (Google-метаданные и CSS2 text= — имитация; отсев без кириллицы и без ₽; образец сам себе
+ *                      первый), sheet (PNG, зазор Й/Ё), decide (decision.json), путь preload у get; разбор CSV (кавычки, запятые и переводы строк в полях, BOM, CRLF), фильтры pick
  *                      и карта характера, pairs, адрес CSS2 (пробелы, веса, курсив, диапазон, text= с кириллицей),
  *                      разбор сохранённых ответов CSS2 (fixtures/fonts), fonts.css (переменный шрифт, слияние
  *                      разделов), таблица знаков WOFF2 (живой файл надписи и синтетические), get целиком на своём
@@ -77,6 +139,9 @@
  * скачанному файлу cyrillic и вариант для поднятого сайта (serve.mjs) — ровно то, что сайт грузит.
  * У подмножества надписи этой пробы нет: букв пробы в нём нет, хватает таблицы знаков.
  *
+ * Кэш: FONTS_CACHE_DIR или ~/.claude/site-rework/cache/fonts (файлы кандидатов, числа, список Google — из
+ * FONTS_META_URL, по умолчанию https://fonts.google.com/metadata/fonts; без сети и кэша — google-fonts.csv
+ * ui-ux-pro-max). Реестр источников: FONTS_SOURCES или scripts/fonts/sources.json. Браузер — один на команду.
  * Данные: FONTS_DATA_DIR или ~/.claude/skills/ui-ux-pro-max/data (google-fonts.csv, typography.csv,
  * google-font-licenses.json — лицензия в шапке раздела fonts.css). Без данных pick и pairs — FAIL, get идёт
  * без сверки весов. FONTS_API_BASE — другой адрес с тем же CSS2 API (самопроверка поднимает свой; файлы тогда
@@ -91,9 +156,10 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, ensureDir, closestFlag } from './lib.mjs';
+import { parseArgs, ensureDir, closestFlag, launch, openPage } from './lib.mjs';
 import { loadEnv } from './media/net.mjs';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -101,8 +167,8 @@ const HERE = path.dirname(SELF);
 const HELP = fs.readFileSync(SELF, 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 /* «-n 5», как у привычных утилит: parseArgs знает только «--», поэтому -n становится --n до разбора */
 const ARGV = process.argv.slice(2).map((a) => (a === '-n' ? '--n' : a));
-const VALUE_FLAGS = ['category', 'like', 'need', 'weights', 'n', 'subsets', 'text', 'out'];
-const { pos, opt } = parseArgs(ARGV, { flags: ['help', 'h', 'italic', 'variable', 'selftest'], optional: VALUE_FLAGS, commands: ['pick', 'pairs', 'get', 'selftest'], strict: true });
+const VALUE_FLAGS = ['category', 'like', 'need', 'weights', 'n', 'subsets', 'text', 'out', 'root', 'selector', 'weight', 'run', 'sources', 'source', 'why'];
+const { pos, opt } = parseArgs(ARGV, { flags: ['help', 'h', 'italic', 'variable', 'selftest', 'refresh'], optional: VALUE_FLAGS, commands: ['measure', 'match', 'sheet', 'decide', 'pick', 'pairs', 'get', 'selftest'], strict: true });
 /* «-h» parseArgs кладёт в позиционные */
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 loadEnv();
@@ -769,6 +835,18 @@ function droppedStyles(blocks, spec, italic) {
   return out;
 }
 
+/** Корень сайта для путей подключения: --root, иначе ближайшая папка от --out вверх (до 6 уровней) с index.html, package.json или .git. */
+export function siteRoot(out, rootOpt = null) {
+  if (rootOpt) return { root: path.resolve(rootOpt), how: null };
+  let d = path.resolve(out);
+  for (let i = 0; i <= 6; i++) {
+    const mark = ['index.html', 'package.json', '.git'].find((n) => fs.existsSync(path.join(d, n)));
+    if (mark) return { root: d, how: `найден по ${mark}` };
+    const up = path.dirname(d); if (up === d) break; d = up;
+  }
+  return null;
+}
+
 async function cmdGet() {
   const famArg = pos.join(' ').trim();
   if (!famArg) throw new Fail(`нужно семейство: ${SKILL_CMD} get "Manrope" --out <папка сайта> (-h — справка)`);
@@ -927,18 +1005,897 @@ async function cmdGet() {
   console.log('Знаки (таблица cmap файлов):');
   for (const l of lines) console.log(l);
   const pre = files.find((f) => f.subset === 'cyrillic' && f.style === 'normal') || files.find((f) => f.style === 'normal') || files[0];
-  console.log('Подключить:');
-  console.log(`  <link rel="preload" href="${rel(path.join(dir, pre.name))}" as="font" type="font/woff2" crossorigin>`);
-  console.log(`  <link rel="stylesheet" href="${rel(cssFile)}">`);
+  /* пути подключения — от корня сайта (--root или найденного выше --out), иначе от --out с пометкой */
+  const root = siteRoot(out, opt.root !== undefined ? String(opt.root) : null);
+  const inRoot = root && !path.relative(root.root, dir).startsWith('..') && !path.isAbsolute(path.relative(root.root, dir));
+  if (root && !inRoot) warn(`--root ${root.root} не содержит папку шрифтов ${dir} — пути печатаю от --out`);
+  const href = (p) => (inRoot ? `/${path.relative(root.root, p).replace(/\\/g, '/')}` : rel(p));
+  console.log(inRoot ? `Подключить (пути от корня сайта ${root.root}${root.how ? `, ${root.how}` : ''}):` : `Подключить (пути от папки --out ${out}: корень сайта не найден — нет index.html, package.json или .git выше; страница не в этой папке — поправить путь или --root <корень сайта>):`);
+  console.log(`  <link rel="preload" href="${href(path.join(dir, pre.name))}" as="font" type="font/woff2" crossorigin>`);
+  console.log(`  <link rel="stylesheet" href="${href(cssFile)}">`);
   console.log(`  font-family: '${files[0].family}', ${fallbackStack(font)};`);
   if (text === null && files.some((f) => f.subset === 'cyrillic')) {
     const cyrFile = files.find((f) => f.subset === 'cyrillic' && f.style === 'normal') || files.find((f) => f.subset === 'cyrillic');
     const probe = spec.range ? [spec.range[0], spec.range[1]] : spec.list;
     console.log('Проверка отрисовкой (Chrome, навык design-reference):');
     console.log(`  ${CYR_CHECK} "${path.join(dir, cyrFile.name)}" --chars "№Ёё"`);
-    console.log(`  на поднятом сайте (serve.mjs) — все подмножества, как их грузит страница: ${CYR_CHECK} --css http://localhost:<порт>/${rel(cssFile)} ${probe.map((x) => `"${files[0].family}:${x}"`).join(' ')}`);
+    console.log(`  на поднятом сайте (serve.mjs) — все подмножества, как их грузит страница: ${CYR_CHECK} --css http://localhost:<порт>${href(cssFile).startsWith('/') ? '' : '/'}${href(cssFile)} ${probe.map((x) => `"${files[0].family}:${x}"`).join(' ')}`);
   } else if (text !== null) console.log('Проверка отрисовкой cyrillic-check здесь не годится: в подмножестве надписи нет букв его пробы — хватает таблицы знаков выше; на странице — глазами.');
   console.log(`${warns.length ? 'WARN' : 'OK'}: ${family}${text !== null ? ' (надпись)' : ''} — ${files.length} ${files.length === 1 ? 'файл' : files.length < 5 ? 'файла' : 'файлов'}, ${kb(total)}; ${text !== null ? 'все знаки надписи на месте' : subsets.includes('cyrillic') ? 'кириллица на месте' : 'без кириллицы (--subsets)'}${warns.length ? `; предупреждений ${warns.length}` : ''}`);
+  return 0;
+}
+
+/* ---------- подбор по образцу: реестр источников, кэш, числа отрисовки ---------- */
+
+const CACHE_DIR = process.env.FONTS_CACHE_DIR ? path.resolve(process.env.FONTS_CACHE_DIR) : path.join(os.homedir(), '.claude', 'site-rework', 'cache', 'fonts');
+const SOURCES_FILE = process.env.FONTS_SOURCES ? path.resolve(process.env.FONTS_SOURCES) : path.join(HERE, 'fonts', 'sources.json');
+const GOOGLE_META_URL = process.env.FONTS_META_URL || 'https://fonts.google.com/metadata/fonts';
+/* версия способа замера: сменили формулы — числа в кэше пересчитываются */
+const METRIC_V = 4;
+const NBSP = ' ';
+export const SHEET = {
+  caps: `САЙТЫ, СЕРВИСЫ · ЁЖ 20${NBSP}000${NBSP}₽`,
+  lower: `сайты, сервисы · ёж 20${NBSP}000${NBSP}₽`,
+  para: `Делаем сайты и сервисы для бизнеса: от первого экрана до формы заявки. Съешь же ещё этих мягких французских булок да выпей чаю — 1${NBSP}024 заказа, 98${NBSP}% в срок, «под ключ» за 20${NBSP}000${NBSP}₽, договор №${NBSP}17.`,
+  jo: ['ЗДЕСЬ ЦЕНЫ', 'ЙОГА И ЁЛКИ'],
+};
+const LATIN = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+/** знаки, которые качаются у кандидата (text= у Google): замер, проверка кириллицы и знаков, лист */
+export const GLYPHS = uniq([...(LATIN + CYR_LETTERS + RU_SIGNS + ' ·,.:;!?-()%/' + NBSP + SHEET.caps + SHEET.lower + SHEET.para + SHEET.jo.join(''))]).join('');
+const NEED_DEFAULT = '₽№«»';
+const SOURCE_LABEL = (s) => (s && s.name) || '?';
+
+/** Реестр источников (scripts/fonts/sources.json): [{ id, name, url, enabled, list, files, license, web, selfHost, cyrillic }] */
+export function loadSources(file = SOURCES_FILE) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Fail(`реестр источников не прочитан: ${file} (${e.code || e.message})`); }
+  const list = Array.isArray(j.sources) ? j.sources : [];
+  const bad = list.filter((s) => !s || !s.id || !s.name || !s.list || !s.files || !s.license);
+  if (bad.length) throw new Fail(`${file}: у источника нет id, name, list, files или license — формат в reference/fonts.md`);
+  return { file, list, base: path.dirname(file) };
+}
+/** Разрешает ли источник сайт: веб и свои файлы. Иначе — причина. */
+const sourceBlock = (s) => (s.web !== true ? 'лицензия источника не разрешает веб (web не true)' : s.selfHost !== true ? 'лицензия не разрешает свои файлы на сайте (selfHost не true)' : null);
+
+/* ---------- файлы шрифтов: таблица знаков у woff2, woff, ttf, otf ---------- */
+
+/** Буфер файла шрифта → Set кодов со знаком. WOFF2, WOFF (zlib), TTF и OTF; иначе — исключение. */
+export function fontCodes(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) throw new Error('не шрифт: файл короче заголовка');
+  const sig = buf.toString('latin1', 0, 4);
+  if (sig === 'wOF2') return woff2Info(buf).codes;
+  if (sig === 'wOFF') {
+    const n = buf.readUInt16BE(12);
+    for (let i = 0; i < n; i++) {
+      const o = 44 + i * 20; if (o + 20 > buf.length) break;
+      if (buf.toString('latin1', o, o + 4) !== 'cmap') continue;
+      const off = buf.readUInt32BE(o + 4), comp = buf.readUInt32BE(o + 8), orig = buf.readUInt32BE(o + 12);
+      const raw = buf.subarray(off, off + comp);
+      return cmapCodes(comp < orig ? zlib.inflateSync(raw) : raw);
+    }
+    throw new Error('в WOFF нет таблицы cmap');
+  }
+  if (sig === '\0\x01\0\0' || sig === 'OTTO' || sig === 'true') {
+    const n = buf.readUInt16BE(4);
+    for (let i = 0; i < n; i++) {
+      const o = 12 + i * 16; if (o + 16 > buf.length) break;
+      if (buf.toString('latin1', o, o + 4) === 'cmap') return cmapCodes(buf.subarray(buf.readUInt32BE(o + 8), buf.readUInt32BE(o + 8) + buf.readUInt32BE(o + 12)));
+    }
+    throw new Error('в шрифте нет таблицы cmap');
+  }
+  throw new Error(`не шрифт (начало «${sig.replace(/[^\x20-\x7e]/g, '?')}»)`);
+}
+const fontMime = (buf) => ({ wOF2: 'font/woff2', wOFF: 'font/woff', OTTO: 'font/otf' }[buf.toString('latin1', 0, 4)] || 'font/ttf');
+const FONT_EXT = /\.(woff2?|ttf|otf)$/i;
+const sha = (buf) => crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16);
+/** Что из нужного есть в файле: { cyrMissing: 'Ёё…', signsMissing: '₽…' } */
+function glyphCheck(codes, need = NEED_DEFAULT) {
+  return { cyrMissing: [...CYR_LETTERS].filter((c) => !codes.has(cp(c))).join(''), signsMissing: charsOf(need).filter((c) => !codes.has(cp(c))).join('') };
+}
+
+/* ---------- список семейств источника ---------- */
+
+/** Метаданные Google (fonts.google.com/metadata/fonts) → [{ family, category, stroke, cls, subsets, weights, italic, wght, popularity, open }] */
+export function googleIndexFrom(meta) {
+  const t = String(meta).replace(/^\)\]\}'?\s*/, '');
+  const j = JSON.parse(t);
+  const list = j.familyMetadataList || j.families || [];
+  const cat = (c) => Object.keys(CATEGORIES).find((k) => CATEGORIES[k] === c) || String(c || '').toLowerCase();
+  return list.map((f) => {
+    const keys = Object.keys(f.fonts || {});
+    const weights = keys.filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b);
+    const ax = (f.axes || []).find((a) => a.tag === 'wght');
+    return { family: f.family, category: cat(f.category), stroke: String(f.stroke || '').toLowerCase(), cls: (f.classifications || []).map((x) => String(x).toLowerCase()), subsets: (f.subsets || []).filter((x) => x !== 'menu'), weights, italic: keys.some((k) => /i$/.test(k)), wght: ax ? [ax.min, ax.max] : null, popularity: f.popularity || 9999, open: f.isOpenSource !== false, added: f.dateAdded || '' };
+  }).filter((f) => f.family);
+}
+/** Список Google: кэш до 30 дней → сеть → кэш любой давности → google-fonts.csv ui-ux-pro-max. { list, from } */
+async function googleIndex({ refresh = false } = {}) {
+  const file = path.join(CACHE_DIR, 'google', 'index.json');
+  let cached = null; try { cached = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* нет кэша */ }
+  const fresh = cached && cached.url === GOOGLE_META_URL && Date.now() - Date.parse(cached.fetched) < 30 * 86400e3;
+  if (fresh && !refresh) return { list: cached.families, from: `кэш ${cached.fetched.slice(0, 10)}` };
+  try {
+    const r = await request(GOOGLE_META_URL);
+    if (r.status !== 200) throw new NetFail(`HTTP ${r.status}`, new URL(GOOGLE_META_URL).host);
+    const families = googleIndexFrom(r.body);
+    if (families.length < 1) throw new NetFail('пустой список', new URL(GOOGLE_META_URL).host);
+    ensureDir(path.dirname(file));
+    fs.writeFileSync(file, JSON.stringify({ url: GOOGLE_META_URL, fetched: new Date().toISOString(), families }));
+    return { list: families, from: `метаданные ${new URL(GOOGLE_META_URL).host}` };
+  } catch (e) {
+    if (!(e instanceof NetFail) && !(e instanceof SyntaxError)) throw e;
+    if (cached) return { list: cached.families, from: `кэш ${cached.fetched.slice(0, 10)} (сеть: ${e.netCode || e.message})`, warn: `список Google не обновлён (${e.netCode || e.message}) — взят кэш от ${cached.fetched.slice(0, 10)}` };
+    const d = loadFonts();
+    if (d) return { list: d.list.map((f) => ({ family: f.family, category: f.cat, stroke: f.stroke, cls: f.cls, subsets: f.subsets, weights: f.normal, italic: f.italic.length > 0, wght: f.axes.wght || null, popularity: f.popularity, open: true, added: f.added })), from: 'google-fonts.csv ui-ux-pro-max', warn: `метаданные Google недоступны (${e.netCode || e.message}) — взят снимок ui-ux-pro-max` };
+    throw new Fail(e instanceof NetFail ? netMessage(e) : `метаданные Google не разобраны: ${e.message}`);
+  }
+}
+/** Семейства источника: { list: [{ family, category, weights, wght, subsets?, cyr: true|false|null, open, entry }], from, warn } */
+async function sourceFamilies(src, { refresh = false } = {}) {
+  if (src.list.kind === 'google-metadata') {
+    const g = await googleIndex({ refresh });
+    return { ...g, list: g.list.map((f) => ({ ...f, cyr: f.subsets.includes('cyrillic'), entry: f })) };
+  }
+  if (src.list.kind === 'inline') {
+    const fams = Array.isArray(src.families) ? src.families : [];
+    return { from: `${fams.length} в sources.json`, list: fams.map((f) => { const ws = Object.keys(f.files || {}).map(Number).filter(Number.isFinite); return { family: f.family, category: f.category || '', stroke: '', cls: [], subsets: f.subsets || [], weights: (f.weights || ws).slice().sort((a, b) => a - b), wght: f.wght || null, popularity: 9999, open: f.open !== false, cyr: f.cyrillic === undefined ? null : !!f.cyrillic, entry: f }; }) };
+  }
+  throw new Fail(`источник ${src.id}: list.kind «${src.list.kind}» не знаю — есть google-metadata и inline (reference/fonts.md)`);
+}
+/** Вес кандидата ближе всего к весу образца: у переменного — сам вес, если внутри оси. */
+export function nearestWeight(f, w) {
+  if (f.wght && w >= f.wght[0] && w <= f.wght[1]) return w;
+  const all = f.weights && f.weights.length ? f.weights : f.wght ? [f.wght[0], f.wght[1]] : [400];
+  return all.reduce((a, b) => (Math.abs(b - w) < Math.abs(a - w) || (Math.abs(b - w) === Math.abs(a - w) && b > a) ? b : a));
+}
+
+/* ---------- файл кандидата: скачать в кэш ---------- */
+
+/** Файл семейства в весе w: из кэша или источника. → { buf, file, url, weight } */
+async function acquireFace(src, fam, w, { base = path.dirname(SOURCES_FILE) } = {}) {
+  const dir = ensureDir(path.join(CACHE_DIR, slugOf(src.id)));
+  const key = `${slugOf(fam.family)}-${w}`;
+  const kind = src.files.kind;
+  /* у Google имя файла — по набору знаков: сменили GLYPHS — качается заново */
+  const tag = kind === 'google-css2' ? `-${sha(Buffer.from(GLYPHS)).slice(0, 6)}` : '';
+  const hit = fs.readdirSync(dir).find((n) => n.startsWith(`${key}${tag}.`) && FONT_EXT.test(n));
+  if (hit) return { buf: fs.readFileSync(path.join(dir, hit)), file: path.join(dir, hit), url: null, weight: w, cached: true };
+  let url, buf;
+  if (kind === 'google-css2') {
+    const cssUrl = buildCss2Url({ family: fam.family, spec: { list: [w] }, text: GLYPHS });
+    const r = await request(cssUrl);
+    if (r.status !== 200) throw new Error(`CSS2 HTTP ${r.status}`);
+    const b = parseCss2(r.body).find((x) => x.url);
+    if (!b) throw new Error('в ответе CSS2 нет файла');
+    url = b.url;
+    if (!FILE_ORIGINS.has(new URL(url).origin)) throw new Error(`файл не с fonts.gstatic.com: ${url}`);
+  } else if (kind === 'direct') {
+    const f = fam.entry && fam.entry.files && (fam.entry.files[String(w)] || fam.entry.files[w]);
+    if (!f) throw new Error(`в sources.json нет файла веса ${w}`);
+    if (!/^https?:/i.test(f)) {
+      const p = path.resolve(base, f);
+      if (!fs.existsSync(p)) throw new Error(`нет файла ${p}`);
+      buf = fs.readFileSync(p); url = p;
+    } else url = f;
+  } else if (kind === 'css') {
+    const cssUrl = String(src.files.url).replace(/\{family\}/g, encodeURIComponent(fam.family)).replace(/\{slug\}/g, encodeURIComponent((fam.entry && fam.entry.slug) || slugOf(fam.family))).replace(/\{weight\}/g, String(w));
+    const r = await request(cssUrl);
+    if (r.status !== 200) throw new Error(`CSS HTTP ${r.status}`);
+    const blocks = parseCss2(r.body).filter((x) => x.url && x.style === 'normal');
+    const b = blocks.find((x) => { const [a, z = a] = x.weight.split(/\s+/).map(Number); return w >= a && w <= z; }) || blocks[0];
+    if (!b) throw new Error('в CSS источника нет @font-face');
+    url = new URL(b.url, cssUrl).href;
+  } else throw new Error(`files.kind «${kind}» не знаю — есть google-css2, direct, css`);
+  if (!buf) {
+    const hosts = src.files.fileHosts;
+    if (Array.isArray(hosts) && hosts.length && kind !== 'google-css2' && !hosts.includes(new URL(url).origin)) throw new Error(`файл не с ${hosts.join(', ')}: ${url}`);
+    const r = await request(url, { binary: true });
+    if (r.status !== 200) throw new Error(`файл HTTP ${r.status}`);
+    buf = r.body;
+  }
+  if (!buf.length) throw new Error('файл пустой');
+  const ext = { 'font/woff2': 'woff2', 'font/woff': 'woff', 'font/otf': 'otf' }[fontMime(buf)] || 'ttf';
+  const file = path.join(dir, `${key}${tag}.${ext}`);
+  fs.writeFileSync(file, buf);
+  return { buf, file, url, weight: w, cached: false };
+}
+
+/* ---------- замер в браузере ---------- */
+
+/**
+ * Числа шрифта по отрисовке на холсте (выполняется в странице, без замыканий). family — имя CSS (уже
+ * подключённое на странице), weight, style. → { ok, metrics, cyr: { letters, own }, error }
+ */
+async function measureInPage(family, weight, style) {
+  const S = 200;
+  const fam = `"${String(family).replace(/"/g, '\\"')}"`;
+  const font = (px, fb) => `${style} ${weight} ${px}px ${fam}${fb ? `, ${fb}` : ''}`;
+  const PROBE = 'HOxnoIlaAbcdefghijklmnopqrstuvwxyzBCDEFGKLMNPQRSTUVWXYZ0123456789ЙЁДЦЩЖ';
+  try { await document.fonts.load(font(S), PROBE); } catch { /* увидим по check */ }
+  if (!document.fonts.check(font(S), 'H')) return { ok: false, error: 'шрифт не загрузился' };
+  const cv = document.createElement('canvas'); cv.width = S * 3; cv.height = S * 2;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const W = cv.width, H = cv.height, base = Math.round(S * 1.35), x0 = Math.round(S * 0.6);
+  /* знак в шрифте, а не запасной: ширина с запасным monospace и serif не равна чистому запасному */
+  const own = (ch) => ['monospace', 'serif'].some((fb) => { ctx.font = font(40, fb); const a = ctx.measureText(ch).width; ctx.font = `${style} ${weight} 40px ${fb}`; return Math.abs(a - ctx.measureText(ch).width) > 0.01; });
+  const glyph = (ch) => {
+    ctx.clearRect(0, 0, W, H); ctx.font = font(S, 'monospace'); ctx.fillStyle = '#000'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(ch, x0, base);
+    const d = ctx.getImageData(0, 0, W, H).data; const on = new Uint8Array(W * H);
+    let t = H, b = -1, l = W, r = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3] >= 128) { on[y * W + x] = 1; if (y < t) t = y; if (y > b) b = y; if (x < l) l = x; if (x > r) r = x; }
+    return { on, t, b, l, r, w: r - l + 1, h: b - t + 1, empty: b < 0 };
+  };
+  const rowRuns = (g, y) => { const o = []; let s = -1; for (let x = g.l - 1; x <= g.r + 1; x++) { const v = x >= 0 && x < W && y >= 0 && y < H && g.on[y * W + x]; if (v && s < 0) s = x; if (!v && s >= 0) { o.push([s, x - 1]); s = -1; } } return o; };
+  const colRuns = (g, x) => { const o = []; let s = -1; for (let y = g.t - 1; y <= g.b + 1; y++) { const v = y >= 0 && y < H && x >= 0 && x < W && g.on[y * W + x]; if (v && s < 0) s = y; if (!v && s >= 0) { o.push([s, y - 1]); s = -1; } } return o; };
+  const len = (r) => (r ? r[1] - r[0] + 1 : 0);
+  /* ширина ножки на высоте frac и самая широкая полоса в зоне края (zone: 'bottom' | 'top') — засечки */
+  const foot = (g, frac, which, zone) => {
+    const ym = Math.round(g.t + g.h * frac);
+    const rr = rowRuns(g, ym); if (!rr.length) return null;
+    const stem = which === 'last' ? rr[rr.length - 1] : rr[0];
+    const c = (stem[0] + stem[1]) / 2, sw = len(stem);
+    const k = Math.max(2, Math.round(g.h * 0.07));
+    let mx = 0;
+    for (let i = 0; i <= k; i++) {
+      const y = zone === 'bottom' ? g.b - i : g.t + i;
+      const run = rowRuns(g, y).find(([a, z]) => c >= a - 1 && c <= z + 1);
+      if (run) mx = Math.max(mx, len(run));
+    }
+    return sw > 0 ? mx / sw : null;
+  };
+  const gH = glyph('H'), gO = glyph('O'), gx = glyph('x'), gI = glyph('I'), gn = glyph('n');
+  if (gH.empty || gO.empty || gx.empty) return { ok: false, error: 'знаки H, O, x не нарисовались' };
+  const capPx = base - gH.t, xPx = base - gx.t;
+  const stemRow = rowRuns(gH, Math.round(gH.t + gH.h * 0.25));
+  const stemV = len(stemRow[0]);
+  const colH = colRuns(gH, Math.round((gH.l + gH.r) / 2)).filter(([a, z]) => (a + z) / 2 > gH.t + gH.h * 0.25 && (a + z) / 2 < gH.t + gH.h * 0.85);
+  const bar = colH.length ? Math.max(...colH.map(len)) : 0;
+  const oRow = rowRuns(gO, Math.round((gO.t + gO.b) / 2)), oCol = colRuns(gO, Math.round((gO.l + gO.r) / 2));
+  const oSide = oRow.length ? (len(oRow[0]) + len(oRow[oRow.length - 1])) / 2 : 0, oTop = oCol.length ? (len(oCol[0]) + len(oCol[oCol.length - 1])) / 2 : 0;
+  const ratios = [stemV ? bar / stemV : null, oSide ? oTop / oSide : null].filter((v) => v !== null && Number.isFinite(v));
+  const feet = [foot(gH, 0.8, 'first', 'bottom'), foot(gH, 0.2, 'first', 'top'), gI.empty ? null : foot(gI, 0.5, 'first', 'bottom'), gn.empty ? null : foot(gn, 0.6, 'first', 'bottom')].filter((v) => v !== null);
+  feet.sort((a, b) => a - b);
+  const med = feet.length ? (feet.length % 2 ? feet[(feet.length - 1) / 2] : (feet[feet.length / 2 - 1] + feet[feet.length / 2]) / 2) : 1;
+  /* концы штрихов: ширина у самого края ножки I и l к ножке — прямой срез ~1, скруглённый ~0.6, засечки >1 */
+  const edge = (g, zone) => {
+    if (g.empty) return null;
+    const rr = rowRuns(g, Math.round(g.t + g.h * 0.5)); if (!rr.length) return null;
+    const stem = rr[0]; const c = (stem[0] + stem[1]) / 2, sw = len(stem);
+    const k = Math.max(1, Math.round(g.h * 0.025));
+    const run = rowRuns(g, zone === 'bottom' ? g.b - k : g.t + k).find(([a, z]) => c >= a - 1 && c <= z + 1);
+    return run && sw ? Math.min(1.3, len(run) / sw) : null;
+  };
+  const gl = glyph('l');
+  const ends = [edge(gI, 'bottom'), edge(gI, 'top'), edge(gl, 'bottom')].filter((v) => v !== null);
+  /* раскрытие «c»: от правого края внутрь — первая колонка, где видны оба конца; просвет между ними к высоте x */
+  const gc = glyph('c');
+  let aperture = null;
+  if (!gc.empty) {
+    for (let x = gc.r; x > gc.l + gc.w * 0.5; x--) {
+      const rr = colRuns(gc, x);
+      if (rr.length >= 2) { aperture = (rr[rr.length - 1][0] - rr[0][1] - 1) / xPx; break; }
+    }
+    if (aperture === null) aperture = 1;
+  }
+  ctx.font = font(S, 'monospace');
+  /* ширина знака — по краскам (форма), набор — по ширине шага (форма + поля, трекингом подгоняется) */
+  const ink = (s) => [...s].reduce((a, ch) => { const t = ctx.measureText(ch); return a + (t.actualBoundingBoxLeft + t.actualBoundingBoxRight); }, 0) / [...s].length / S;
+  const adv = (s) => [...s].reduce((a, ch) => a + ctx.measureText(ch).width, 0) / [...s].length / S;
+  const fm = ctx.measureText('Hx');
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const LC = 'abcdefghijklmnopqrstuvwxyz', UC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const metrics = {
+    xCap: r3(xPx / capPx), capEm: r3(capPx / S), widthLc: r3(ink(LC) / (capPx / S)), widthUc: r3(ink(UC) / (capPx / S)),
+    advLc: r3(adv(LC)), advUc: r3(adv(UC)),
+    contrast: r3(Math.min(1.5, ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : 1)), round: r3(gO.w / gO.h), stem: r3(stemV / capPx),
+    serif: r3(med), serifs: med >= 1.35, ends: r3(ends.length ? ends.reduce((a, b) => a + b, 0) / ends.length : 1), aperture: aperture === null ? null : r3(aperture),
+    ascEm: r3(fm.fontBoundingBoxAscent / S), descEm: r3(fm.fontBoundingBoxDescent / S),
+  };
+  const letters = [...'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя'].filter(own).length;
+  const cyr = { letters, of: 66 };
+  if (own('Й') && own('Ё') && own('Д')) {
+    const gJ = glyph('Й'), gE = glyph('Ё');
+    const desc = ['Д', 'Ц', 'Щ'].filter(own).map((ch) => { const g = glyph(ch); return g.empty ? 0 : g.b + 1 - base; });
+    metrics.joAsc = r3(Math.max(base - gJ.t, base - gE.t) / S);
+    metrics.cyrDesc = r3(Math.max(0, ...desc) / S);
+  }
+  return { ok: true, metrics, cyr };
+}
+
+/** Свой сервер для страницы замера и листа: «/» — пустая страница, /f/<ключ> — файл шрифта из карты. */
+async function fontServer() {
+  const files = new Map();
+  const srv = http.createServer((req, res) => {
+    const m = /^\/f\/([\w-]+)$/.exec(req.url || '');
+    res.setHeader('access-control-allow-origin', '*');
+    if (m && files.has(m[1])) { const b = files.get(m[1]); res.writeHead(200, { 'content-type': fontMime(b) }); res.end(b); return; }
+    if (m) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end('<!doctype html><meta charset="utf-8"><title>fonts.mjs</title><body style="margin:0;background:#fff"></body>');
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  return { origin, add: (buf) => { const k = sha(buf); files.set(k, buf); return `${origin}/f/${k}`; }, close: () => new Promise((r) => { srv.close(r); if (srv.closeAllConnections) srv.closeAllConnections(); /* иначе ждёт простоя keep-alive Chrome ~60 с */ }) };
+}
+/** Подключить файл в странице под именем name (вес — диапазон: и статичный, и переменный рисуются без синтетики). */
+const loadFaceInPage = (page, name, url) => page.evaluate(async (name, url) => {
+  try { const f = new FontFace(name, `url(${url})`, { weight: '1 1000' }); await f.load(); document.fonts.add(f); return true; } catch (e) { return String(e && e.message || e); }
+}, name, url);
+
+/** Числа из кэша по содержимому файла и весу. */
+function metricsCache() {
+  const file = path.join(CACHE_DIR, 'metrics.json');
+  let data = {}; try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* пусто */ }
+  let dirty = false;
+  return {
+    get: (buf, w) => data[`${sha(buf)}|${w}|v${METRIC_V}`] || null,
+    set: (buf, w, v) => { data[`${sha(buf)}|${w}|v${METRIC_V}`] = v; dirty = true; },
+    save: () => { if (dirty) { ensureDir(path.dirname(file)); fs.writeFileSync(file, JSON.stringify(data)); dirty = false; } },
+  };
+}
+
+/* ---------- расстояние ---------- */
+
+/** Числа сравнения: s — обычный разброс (единица расстояния), w — вес. */
+export const METRICS = [
+  { key: 'xCap', name: 'x/cap', s: 0.04, w: 1 },
+  { key: 'widthLc', name: 'шир. строчных', s: 0.05, w: 1 },
+  { key: 'widthUc', name: 'шир. прописных', s: 0.05, w: 0.7 },
+  { key: 'contrast', name: 'контраст', s: 0.1, w: 1 },
+  { key: 'round', name: 'круглота O', s: 0.05, w: 0.8 },
+  { key: 'stem', name: 'штрих', s: 0.02, w: 0.8 },
+  { key: 'serif', name: 'засечки', s: 0.15, w: 1.2 },
+  { key: 'ends', name: 'концы', s: 0.1, w: 1 },
+  { key: 'aperture', name: 'раскрытие c', s: 0.1, w: 0.8 },
+  { key: 'capEm', name: 'cap/кегль', s: 0.04, w: 0.4 },
+];
+/** Веса чисел под роль образца: капс — важнее ширина прописных, x-высота почти не видна. */
+export function metricWeights(sample) {
+  const w = Object.fromEntries(METRICS.map((m) => [m.key, m.w]));
+  if (sample && /uppercase/i.test(sample.textTransform || '')) Object.assign(w, { widthUc: 1.3, widthLc: 0.4, xCap: 0.3 });
+  return w;
+}
+/** Расстояние кандидата до образца: корень средневзвешенного квадрата разниц в долях разброса; засечки разные — +1. */
+export function fontDistance(a, b, weights = metricWeights()) {
+  let sum = 0, ws = 0; const parts = {};
+  for (const m of METRICS) {
+    if (!Number.isFinite(a[m.key]) || !Number.isFinite(b[m.key])) continue;
+    const d = b[m.key] - a[m.key]; parts[m.key] = Math.round(d * 1000) / 1000;
+    sum += weights[m.key] * (d / m.s) ** 2; ws += weights[m.key];
+  }
+  let d = ws ? Math.sqrt(sum / ws) : Infinity;
+  if (a.serifs !== b.serifs) d += 1;
+  return { d: Math.round(d * 100) / 100, parts };
+}
+/** Зазор от верха Й/Ё второй строки до строки выше при интерлиньяже lh (доли кегля): до линии шрифта и до хвостов Д/Ц/Щ. */
+export function joGap(m, lh) {
+  if (!m || !Number.isFinite(m.joAsc)) return null;
+  return { base: Math.round((lh - m.joAsc) * 1000) / 1000, tails: Math.round((lh - m.joAsc - (m.cyrDesc || 0)) * 1000) / 1000 };
+}
+/**
+ * Трекинг кандидата (em), при котором воздух между буквами как у образца: поле знака (шаг минус краска, в долях
+ * кегля) образца минус поле кандидата плюс трекинг образца; у капса — по прописным, иначе по строчным. Разницу
+ * в размере знака трекинг не возмещает — для неё sizeFor.
+ */
+export function trackFor(sample, m) {
+  if (!sample || !sample.metrics || !m) return 0;
+  const ls = (sample.font && sample.font.letterSpacingEm) || 0;
+  const up = /uppercase/i.test((sample.font && sample.font.textTransform) || '');
+  const [a, w] = up ? ['advUc', 'widthUc'] : ['advLc', 'widthLc'];
+  const sb = (x) => x[a] - x[w] * x.capEm;
+  if (![a, w, 'capEm'].every((k) => Number.isFinite(sample.metrics[k]) && Number.isFinite(m[k]))) return ls;
+  return Math.round((ls + sb(sample.metrics) - sb(m)) * 1000) / 1000;
+}
+/** Во сколько раз крупнее набрать кандидата, чтобы высота прописных была как у образца. */
+export const sizeFor = (sample, m) => (sample && sample.metrics && m && m.capEm ? Math.round((sample.metrics.capEm / m.capEm) * 100) / 100 : 1);
+const fmtGap = (g) => (g ? `${g.base >= 0 ? '+' : ''}${g.base.toFixed(2)}${g.tails < 0 ? '!' : ''}` : '—');
+const sgn = (v, n = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(n)}`;
+/** Две-три главные разницы: «шир. прописных −0.04, контраст +0.12» */
+function mainDiffs(parts, weights, k = 3) {
+  return METRICS.filter((m) => parts[m.key] !== undefined).map((m) => ({ m, z: Math.abs(parts[m.key] / m.s) * weights[m.key] })).sort((a, b) => b.z - a.z).slice(0, k).filter((x) => x.z >= 0.5).map((x) => `${x.m.name} ${sgn(parts[x.m.key])}`).join(', ');
+}
+
+/* ---------- образец ---------- */
+
+/** «google:Inter Tight:700» → { source: 'google', family: 'Inter Tight', weight: 700 } */
+export function parseFamilySpec(s) {
+  let t = String(s).trim(); let source = null, weight = null;
+  const m1 = /^([a-z0-9-]+):(.+)$/i.exec(t); if (m1 && !/^\d+$/.test(m1[2])) { source = m1[1].toLowerCase(); t = m1[2]; }
+  const m2 = /^(.+):(\d{3})$/.exec(t); if (m2) { t = m2[1]; weight = Number(m2[2]); }
+  return { source, family: t.trim(), weight };
+}
+const isUrl = (s) => /^https?:\/\//i.test(String(s));
+function sampleDir(input) {
+  const name = isUrl(input) ? capSlugLocal(new URL(input).host.replace(/^www\./, '') + new URL(input).pathname) : capSlugLocal(path.basename(String(input)).replace(FONT_EXT, ''));
+  return path.join(CACHE_DIR, 'samples', name);
+}
+const capSlugLocal = (s) => slugOf(s).slice(0, 60) || 'sample';
+
+/** Найти семейство в источниках: spec.source или по порядку включённых. → { src, fam } | null */
+async function findFamily(spec, reg, { refresh = false } = {}) {
+  const order = spec.source ? reg.list.filter((s) => s.id === spec.source) : reg.list.filter((s) => s.enabled !== false);
+  if (spec.source && !order.length) throw new Fail(`источника «${spec.source}» нет в ${reg.file}: есть ${reg.list.map((s) => s.id).join(', ')}`);
+  for (const src of order) {
+    const fams = await sourceFamilies(src, { refresh });
+    const fam = fams.list.find((f) => f.family.toLowerCase() === spec.family.toLowerCase());
+    if (fam) return { src, fam, from: fams.from };
+  }
+  return null;
+}
+
+/** Блок листа (в странице, без замыканий): строка капсом, строчными, абзац, Й/Ё при 0.9 и 1.0. */
+function buildBlockInPage(id, fontCss, weight, trackingEm, sheet) {
+  const box = document.createElement('div');
+  box.id = id;
+  box.style.cssText = 'all:initial;display:block;box-sizing:border-box;width:1360px;padding:14px 24px 18px;background:#fff;color:#111;';
+  const line = (text, px, lh, extra = '') => { const d = document.createElement('div'); d.textContent = text; d.style.cssText = `display:block;font-family:${fontCss};font-weight:${weight};font-style:normal;font-size:${px}px;line-height:${lh};letter-spacing:${trackingEm}em;white-space:nowrap;text-transform:none;${extra}`; return d; };
+  box.append(line(sheet.caps, 50, 1.15), line(sheet.lower, 50, 1.15, 'margin-bottom:10px;'));
+  const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:36px;align-items:flex-start;';
+  const p = document.createElement('div'); p.textContent = sheet.para;
+  p.style.cssText = `display:block;width:500px;flex:none;font-family:${fontCss};font-weight:${weight};font-size:18px;line-height:1.45;letter-spacing:0;`;
+  row.append(p);
+  for (const lh of [0.9, 1.0]) {
+    const col = document.createElement('div'); col.style.cssText = 'display:block;';
+    const cap = document.createElement('div'); cap.textContent = `line-height ${lh.toFixed(1)}`; cap.style.cssText = 'font:12px/1.4 system-ui,sans-serif;color:#777;margin-bottom:4px;';
+    const t = document.createElement('div');
+    t.style.cssText = `display:block;font-family:${fontCss};font-weight:${weight};font-size:50px;line-height:${lh};letter-spacing:${trackingEm}em;white-space:nowrap;background:repeating-linear-gradient(#fff 0 ${50 * lh - 1}px,#d0d0d0 ${50 * lh - 1}px ${50 * lh}px);`;
+    t.append(document.createTextNode(sheet.jo[0]), document.createElement('br'), document.createTextNode(sheet.jo[1]));
+    col.append(cap, t); row.append(col);
+  }
+  box.append(row);
+  return box;
+}
+
+/** Вставить блок листа в страницу (функция блока — через CDP, без eval в странице: CSP донора не мешает). fixed — поверх страницы. */
+async function makeBlock(page, id, fontCss, weight, trackingEm, { fixed = false } = {}) {
+  const fn = await page.evaluateHandle(`(${buildBlockInPage.toString()})`);
+  try {
+    return await page.evaluateHandle((make, id, fontCss, w, tr, sheet, fixed) => {
+      const b = make(id, fontCss, w, tr, sheet);
+      if (!fixed) { b.style.border = '1px solid #ccc'; document.body.append(b); return b; }
+      const host = document.createElement('div');
+      host.style.cssText = 'all:initial;position:fixed;left:0;top:0;z-index:2147483647;display:block;background:#fff;';
+      host.append(b); document.documentElement.append(host);
+      return host;
+    }, fn, id, fontCss, weight, trackingEm, SHEET, fixed);
+  } finally { await fn.dispose().catch(() => {}); }
+}
+
+/**
+ * Замер образца. input: адрес, файл шрифта или семейство. → протокол { kind, input, font, metrics, cyr, strip? }
+ * browser — общий (один на команду).
+ */
+async function measureSample(browser, input, o = {}) {
+  const now = new Date().toISOString();
+  if (isUrl(input)) {
+    const selector = o.selector || 'h1';
+    const page = await openPage(browser, input, { width: 1440, height: 900 }, { settle: 3000 });
+    try {
+      const info = await page.evaluate((sel) => {
+        const els = [...document.querySelectorAll(sel)];
+        const el = els.find((e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && (e.innerText || '').trim(); });
+        if (!el) return { error: `на странице нет видимого «${sel}» с текстом (всего найдено ${els.length})` };
+        el.setAttribute('data-fonts-mjs', '1');
+        const cs = getComputedStyle(el);
+        const fams = cs.fontFamily.split(',').map((x) => x.trim().replace(/^["']|["']$/g, ''));
+        const faces = [...document.fonts];
+        const used = fams.find((f) => faces.some((x) => x.family.replace(/^["']|["']$/g, '') === f && x.status !== 'error')) || fams[0];
+        const files = performance.getEntriesByType('resource').map((x) => x.name).filter((n) => /\.(woff2?|ttf|otf)(\?|#|$)/i.test(n));
+        const px = parseFloat(cs.fontSize);
+        const ls = cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing);
+        const lh = cs.lineHeight === 'normal' ? null : parseFloat(cs.lineHeight);
+        return { family: used, stack: cs.fontFamily, weight: Number(cs.fontWeight) || 400, style: cs.fontStyle, fontSize: px, letterSpacingPx: ls, letterSpacingEm: Math.round((ls / px) * 1000) / 1000, lineHeight: lh ? Math.round((lh / px) * 1000) / 1000 : null, textTransform: cs.textTransform, text: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 120), files: [...new Set(files)].slice(0, 12), faces: [...new Set(faces.filter((x) => x.family.replace(/^["']|["']$/g, '') === used).map((x) => `${x.weight} ${x.style} ${x.status}`))] };
+      }, selector);
+      if (info.error) throw new Fail(`measure ${input}: ${info.error}`);
+      /* какой шрифт на деле нарисовал элемент — CDP (имя внутри файла), если доступно */
+      let rendered = [];
+      try {
+        const cdp = await page.target().createCDPSession();
+        await cdp.send('DOM.enable'); await cdp.send('CSS.enable');
+        const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '[data-fonts-mjs="1"]' });
+        if (nodeId) rendered = ((await cdp.send('CSS.getPlatformFontsForNode', { nodeId })).fonts || []).map((f) => ({ name: f.familyName, postScript: f.postScriptName || null, custom: !!f.isCustomFont, glyphs: f.glyphCount }));
+        await cdp.detach();
+      } catch { /* без CDP — только имя из CSS */ }
+      const r = await page.evaluate(measureInPage, info.family, info.weight, info.style || 'normal');
+      if (!r.ok) throw new Fail(`measure ${input}: ${r.error} («${info.family}» ${info.weight})`);
+      /* полоса для листа: тот же блок, шрифт — стек образца как есть (без кириллицы — видно запасной) */
+      let strip = null;
+      if (o.stripFile) {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        const handle = await makeBlock(page, 'fonts-mjs-strip', info.stack, info.weight, info.letterSpacingEm, { fixed: true }).catch(() => null);
+        if (handle) {
+          await page.evaluate(() => document.fonts.ready).catch(() => {});
+          await new Promise((res) => setTimeout(res, 400));
+          try { ensureDir(path.dirname(o.stripFile)); await handle.screenshot({ path: o.stripFile }); strip = o.stripFile; } catch { strip = null; }
+        }
+      }
+      return { kind: 'fonts-sample', version: 1, created: now, input: { type: 'url', value: input, selector }, font: { family: info.family, stack: info.stack, rendered, weight: info.weight, style: info.style, fontSize: info.fontSize, letterSpacingEm: info.letterSpacingEm, lineHeight: info.lineHeight, textTransform: info.textTransform, text: info.text, files: info.files, faces: info.faces }, metrics: r.metrics, cyr: r.cyr, strip: strip ? path.basename(strip) : null };
+    } finally { await page.close().catch(() => {}); }
+  }
+  /* файл или семейство: рисуем на своей странице */
+  let buf, label, src = null, fam = null, weight = Number(o.weight) || 400, file = null;
+  if (FONT_EXT.test(input) && fs.existsSync(input)) { file = path.resolve(input); buf = fs.readFileSync(file); label = path.basename(file); }
+  else if (FONT_EXT.test(input)) throw new Fail(`нет файла шрифта: ${input}`);
+  else {
+    const spec = parseFamilySpec(input);
+    if (spec.weight && !o.weight) weight = spec.weight;
+    const reg = o.reg || loadSources();
+    const found = await findFamily(spec, reg, o);
+    if (!found) throw new Fail(`«${spec.family}» нет в подключённых источниках (${reg.list.filter((s) => s.enabled !== false).map((s) => s.id).join(', ')}) — адрес образца, файл шрифта или имя как в источнике`);
+    ({ src, fam } = found);
+    weight = nearestWeight(fam, weight);
+    const face = await acquireFace(src, fam, weight, { base: reg.base });
+    buf = face.buf; file = face.file; label = fam.family;
+  }
+  const srv = o.server || await fontServer();
+  const page = await browser.newPage();
+  try {
+    await page.goto(srv.origin + '/');
+    const ok = await loadFaceInPage(page, 'Sample Face', srv.add(buf));
+    if (ok !== true) throw new Fail(`measure: файл не подключился в Chrome (${ok}) — ${file}`);
+    const r = await page.evaluate(measureInPage, 'Sample Face', weight, 'normal');
+    if (!r.ok) throw new Fail(`measure ${label}: ${r.error}`);
+    let codes = null; try { codes = fontCodes(buf); } catch { /* таблица не прочитана — по отрисовке */ }
+    const gc = codes ? glyphCheck(codes) : null;
+    return { kind: 'fonts-sample', version: 1, created: now, input: { type: src ? 'family' : 'file', value: input, source: src ? src.id : null }, font: { family: label, stack: null, weight, style: 'normal', fontSize: null, letterSpacingEm: 0, lineHeight: null, textTransform: 'none', text: null, file, source: src ? { id: src.id, name: src.name } : null }, metrics: r.metrics, cyr: gc ? { letters: 66 - gc.cyrMissing.length, of: 66, signsMissing: gc.signsMissing } : r.cyr, strip: null };
+  } finally { await page.close().catch(() => {}); if (!o.server) await srv.close(); }
+}
+
+function printSample(s) {
+  const m = s.metrics; const f = s.font;
+  console.log(`образец: ${f.family} ${f.weight}${f.rendered && f.rendered.length ? ` (нарисовал: ${f.rendered.map((x) => `${x.name}${x.custom ? '' : ', системный'}`).join('; ')})` : ''}${s.input.selector ? ` · ${s.input.selector}` : ''}`);
+  if (f.fontSize) console.log(`  на странице: кегль ${Math.round(f.fontSize)} px, интерлиньяж ${f.lineHeight ?? 'normal'}, трекинг ${f.letterSpacingEm} em, регистр ${f.textTransform}${f.text ? ` · «${cut(f.text, 60)}»` : ''}`);
+  console.log(`  x/cap ${m.xCap} · ширина по краскам к высоте прописной: строчных ${m.widthLc}, прописных ${m.widthUc} · шаг набора к кеглю ${m.advLc}/${m.advUc} · контраст ${m.contrast} · круглота O ${m.round} · штрих ${m.stem} · засечки ${m.serif} (${m.serifs ? 'есть' : 'нет'}) · концы ${m.ends} · раскрытие c ${m.aperture} · cap/кегль ${m.capEm}`);
+  const cyrNote = s.cyr ? (s.cyr.letters === 66 ? 'кириллица есть (66 из 66)' : s.cyr.letters === 0 ? 'кириллицы нет' : `кириллица неполная: ${s.cyr.letters} из 66`) : 'кириллица не проверена';
+  const g9 = joGap(m, 0.9);
+  console.log(`  ${cyrNote}${g9 ? ` · Й/Ё при line-height 0.9: зазор ${sgn(g9.base)} кегля${g9.base < 0 ? ' — заходит на строку выше' : ''}${g9.tails < 0 ? `; ниже хвостов Д/Ц/Щ на ${sgn(g9.tails)}` : ''}` : ''}`);
+}
+
+async function cmdMeasure() {
+  const input = pos.join(' ').trim();
+  if (!input) throw new Fail(`нужен образец: ${SKILL_CMD} measure https://site --selector h1 | файл.woff2 | "Семейство" (-h — справка)`);
+  if (opt.out !== undefined && opt.run !== undefined) throw new Fail('measure: --out или --run, не оба');
+  const outFile = opt.run !== undefined ? path.join(path.resolve(String(opt.run)), 'fonts', 'sample.json') : opt.out !== undefined ? path.resolve(String(opt.out)) : path.join(sampleDir(input), 'sample.json');
+  if (!/\.json$/i.test(outFile)) throw new Fail(`measure --out — файл .json: ${outFile}`);
+  if (opt.weight !== undefined && !(Number(opt.weight) >= 1 && Number(opt.weight) <= 1000)) throw new Fail(`--weight ${opt.weight}: число 1…1000`);
+  const browser = await launch();
+  let s;
+  try { s = await measureSample(browser, input, { selector: opt.selector ? String(opt.selector) : null, weight: opt.weight, stripFile: isUrl(input) ? outFile.replace(/\.json$/i, '-strip.png') : null, refresh: !!opt.refresh }); } finally { await browser.close(); }
+  ensureDir(path.dirname(outFile));
+  fs.writeFileSync(outFile, JSON.stringify(s, null, 1));
+  printSample(s);
+  const warns = [];
+  if (s.cyr && s.cyr.letters === 66) warns.push('у шрифта образца кириллица есть — по typography.md §0 и §5 брать его самого (если лицензия позволяет), подбор не нужен');
+  if (isUrl(input) && !s.strip) warns.push('полоса образца для листа не снята — лист покажет образец только подписью');
+  if (s.font.rendered && s.font.rendered.length && !s.font.rendered.some((x) => x.custom)) warns.push('элемент нарисован системным шрифтом, веб-шрифта нет — числа системного');
+  for (const w of warns) console.log(`WARN: ${w}`);
+  console.log(`Протокол: ${outFile}${s.strip ? ` · полоса образца: ${path.join(path.dirname(outFile), s.strip)}` : ''}`);
+  console.log(`Дальше: ${SKILL_CMD} match "${outFile}" --sources google --n 8`);
+  console.log(`${warns.length ? 'WARN' : 'OK'}: образец снят — ${s.font.family} ${s.font.weight}`);
+  return 0;
+}
+
+/* ---------- match ---------- */
+
+const markFor = (f) => {
+  const m = [];
+  if (OVERUSED.test(f.family)) m.push('ИИ-набор');
+  if ((f.subsets || []).some((s) => /^(japanese|korean|chinese-)/.test(s))) m.push('CJK');
+  if (FAM.decor.has(f.family) || (/^Rubik /.test(f.family) && f.family !== 'Rubik Mono One')) m.push('декоративный');
+  if (FAM.slavonic.has(f.family)) m.push('церковнославянский');
+  if (FAM.pixel.has(f.family)) m.push('пиксельный');
+  if (f.category === 'handwriting') m.push('рукописный');
+  return m;
+};
+/** Пул из 8 одновременных задач. */
+async function pool(items, n, fn) {
+  const out = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k], k); } }));
+  return out;
+}
+
+/**
+ * Подбор: образец + источники → { ranked, rejected, stats }. browser — общий.
+ * o: { sources: [id], category: [кат], need, n, refresh, reg, server, log }
+ */
+export async function matchFonts(browser, sample, o = {}) {
+  const reg = o.reg || loadSources();
+  const log = o.log || (() => {});
+  const ids = o.sources && o.sources.length ? o.sources : reg.list.filter((s) => s.enabled !== false).map((s) => s.id);
+  const rejected = []; const stats = { sources: [], noCyrMeta: 0, considered: 0 }; const warns = [];
+  const pool0 = [];
+  for (const id of ids) {
+    const src = reg.list.find((s) => s.id === id);
+    if (!src) throw new Fail(`--sources: «${id}» нет в ${reg.file}; есть ${reg.list.map((s) => s.id).join(', ')}`);
+    if (src.enabled === false) { warns.push(`источник ${id} выключен в sources.json: ${src.why || 'без причины'}`); continue; }
+    const block = sourceBlock(src);
+    if (block) { rejected.push({ family: `весь источник ${src.name}`, source: id, why: block }); continue; }
+    const fams = await sourceFamilies(src, o);
+    if (fams.warn) warns.push(fams.warn);
+    let list = fams.list.filter((f) => !f.cls.includes('symbols'));
+    if (o.category && o.category.length) list = list.filter((f) => o.category.includes(f.category));
+    const noCyr = list.filter((f) => f.cyr === false);
+    stats.noCyrMeta += noCyr.length;
+    for (const f of list.filter((x) => x.cyr !== false)) {
+      if (!f.open) { rejected.push({ family: f.family, source: id, why: 'не открытая лицензия (isOpenSource: false)' }); continue; }
+      pool0.push({ src, fam: f });
+    }
+    stats.sources.push({ id, name: src.name, from: fams.from, total: fams.list.length, cyr: list.length - noCyr.length });
+  }
+  stats.considered = pool0.length;
+  const sw = sample.font.weight || 400;
+  let done = 0;
+  const faces = await pool(pool0, 8, async (c) => {
+    const w = nearestWeight(c.fam, sw);
+    try { const face = await acquireFace(c.src, c.fam, w, { base: reg.base }); if (++done % 50 === 0) log(`  файлы: ${done} из ${pool0.length}`); return { ...c, w, face }; } catch (e) { done++; return { ...c, w, error: e instanceof NetFail ? `сеть: ${e.netCode}` : e.message }; }
+  });
+  const netErr = faces.filter((x) => x.error && /^сеть/.test(x.error));
+  if (netErr.length && netErr.length === faces.length) throw new Fail(`ни один файл не скачан (${netErr[0].error}) — сети нет? Кэш: ${CACHE_DIR}`);
+  const cache = metricsCache();
+  const srv = o.server || await fontServer();
+  const page = await browser.newPage();
+  const ranked = [];
+  const weights = metricWeights(sample.font);
+  const need = o.need !== undefined ? String(o.need) : NEED_DEFAULT;
+  const LIC = loadLicenses();
+  let k = 0;
+  /* числа файла: из кэша или замер на странице; ошибка — строка */
+  const measureBuf = async (buf, w) => {
+    const hit = cache.get(buf, w); if (hit) return hit;
+    const name = `C${k++}`;
+    const ok = await loadFaceInPage(page, name, srv.add(buf));
+    if (ok !== true) return `не подключился в Chrome: ${ok}`;
+    const r = await page.evaluate(measureInPage, name, w, 'normal');
+    await page.evaluate((n) => { for (const f of [...document.fonts]) if (f.family === n || f.family === `"${n}"`) document.fonts.delete(f); }, name);
+    if (!r.ok) return r.error;
+    cache.set(buf, w, r.metrics); return r.metrics;
+  };
+  const entry = (c, w, m, gc, file) => {
+    const dist = fontDistance(sample.metrics, m, weights);
+    const lic = c.src.id === 'google' ? (LIC.get(c.fam.family.toLowerCase()) || null) : (c.fam.entry && c.fam.entry.license) || null;
+    return { family: c.fam.family, source: c.src.id, sourceName: c.src.name, weight: w, category: c.fam.category, d: dist.d, parts: dist.parts, metrics: m, track: trackFor(sample, m), signsMissing: gc.signsMissing, marks: markFor(c.fam), license: lic ? (LICENSES[lic] ? LICENSES[lic][0] : lic) : c.src.license.default, licenseUrl: lic && LICENSES[lic] ? LICENSES[lic][1] : c.src.license.url || null, file, popularity: c.fam.popularity, c };
+  };
+  try {
+    await page.goto(srv.origin + '/');
+    for (const c of faces) {
+      if (c.error) { rejected.push({ family: c.fam.family, source: c.src.id, why: `файл не получен: ${c.error}` }); continue; }
+      let codes; try { codes = fontCodes(c.face.buf); } catch (e) { rejected.push({ family: c.fam.family, source: c.src.id, why: `таблица знаков не прочитана: ${e.message}` }); continue; }
+      const gc = glyphCheck(codes, need);
+      if (gc.cyrMissing.length) { rejected.push({ family: c.fam.family, source: c.src.id, why: gc.cyrMissing.length === 66 ? 'кириллицы нет в файле' : `нет букв ${gc.cyrMissing}` }); continue; }
+      const m = await measureBuf(c.face.buf, c.w);
+      if (typeof m === 'string') { rejected.push({ family: c.fam.family, source: c.src.id, why: m }); continue; }
+      ranked.push(entry(c, c.w, m, gc, c.face.file));
+    }
+    /* второй проход — вес по толщине штриха: у первых 24 соседние веса (±100, ±200), если есть; лучший по расстоянию */
+    ranked.sort((a, b) => a.d - b.d);
+    const second = ranked.slice(0, o.weightPass === undefined ? 24 : o.weightPass);
+    const alts = [];
+    for (const r of second) {
+      const ws = uniq([sw - 200, sw - 100, sw + 100, sw + 200].filter((w) => w >= 100 && w <= 900).map((w) => nearestWeight(r.c.fam, w))).filter((w) => w !== r.weight && Math.abs(w - sw) <= 200);
+      for (const w of ws) alts.push({ r, w });
+    }
+    const got = await pool(alts, 8, async (x) => { try { return { ...x, face: await acquireFace(x.r.c.src, x.r.c.fam, x.w, { base: reg.base }) }; } catch { return null; } });
+    for (const x of got.filter(Boolean)) {
+      const m = await measureBuf(x.face.buf, x.w);
+      if (typeof m === 'string') continue;
+      let gc; try { gc = glyphCheck(fontCodes(x.face.buf), need); } catch { continue; }
+      if (gc.cyrMissing.length) continue;
+      const e = entry(x.r.c, x.w, m, gc, x.face.file);
+      const i = ranked.findIndex((y) => y.family === e.family && y.source === e.source);
+      if (i >= 0 && e.d < ranked[i].d) ranked[i] = { ...e, cssWeight: ranked[i].weight };
+    }
+  } finally { cache.save(); await page.close().catch(() => {}); if (!o.server) await srv.close(); }
+  for (const r of ranked) delete r.c;
+  /* пометки «не тот жанр» опускают при сортировке (+0.3 каждая), расстояние в таблице — без них */
+  const pen = (r) => 0.3 * r.marks.filter((x) => x !== 'ИИ-набор').length;
+  ranked.sort((a, b) => (a.d + pen(a)) - (b.d + pen(b)) || a.popularity - b.popularity || a.family.localeCompare(b.family));
+  const ok = ranked.filter((r) => !r.signsMissing);
+  const noSigns = ranked.filter((r) => r.signsMissing);
+  for (const r of noSigns) rejected.push({ family: r.family, source: r.source, why: `нет знаков ${r.signsMissing}`, d: r.d });
+  return { ranked: ok, noSigns, rejected, stats, warns, weights };
+}
+
+async function cmdMatch() {
+  const file = pos.join(' ').trim();
+  if (!file) throw new Fail(`нужен протокол образца: ${SKILL_CMD} match <папка>/fonts/sample.json (его пишет measure)`);
+  let sample; try { sample = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')); } catch (e) { throw new Fail(`протокол образца не прочитан: ${file} (${e.code || e.message}) — сначала ${SKILL_CMD} measure`); }
+  if (sample.kind !== 'fonts-sample' || !sample.metrics) throw new Fail(`${file} — не протокол measure (kind: ${sample.kind || 'нет'})`);
+  const n = opt.n !== undefined ? parseN(opt.n) : 8;
+  const sources = opt.sources !== undefined ? String(opt.sources).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) : [];
+  const category = parseCategories(opt.category);
+  const t0 = Date.now();
+  printSample(sample);
+  const browser = await launch();
+  let res;
+  try { res = await matchFonts(browser, sample, { sources, category, need: opt.need, refresh: !!opt.refresh, log: (s) => console.log(s) }); } finally { await browser.close(); }
+  const top = res.ranked.slice(0, n);
+  for (const s of res.stats.sources) console.log(`источник ${s.name} (${s.from}): семейств ${s.total}, с кириллицей по данным ${s.cyr}`);
+  console.log(`match: рассмотрено ${res.stats.considered}, без кириллицы по данным источника — ${res.stats.noCyrMeta} (не качались); измерено и годится ${res.ranked.length}, в отсеве ${res.rejected.length} · ${Math.round((Date.now() - t0) / 1000)} с`);
+  for (const w of res.warns) console.log(`WARN: ${w}`);
+  const sm = sample.metrics;
+  const head = ['#', 'семейство', 'вес', 'd', 'x/cap', 'шир. стр/проп', 'контраст', 'O', 'штрих', 'засечки', 'концы', 'c', 'трекинг', 'кегль', 'Й/Ё .9', 'источник · лицензия', 'пометки'];
+  const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : '—');
+  const cells = (m) => [f2(m.xCap), `${f2(m.widthLc)}/${f2(m.widthUc)}`, f2(m.contrast), f2(m.round), Number.isFinite(m.stem) ? m.stem.toFixed(3) : '—', `${m.serifs ? 'да' : 'нет'} ${f2(m.serif)}`, f2(m.ends), f2(m.aperture)];
+  const rowOf = (r, i) => [String(i + 1), r.family, `${r.weight}${r.cssWeight ? '*' : ''}`, r.d.toFixed(2), ...cells(r.metrics), `${r.track >= 0 ? '+' : ''}${r.track.toFixed(3)}`, `×${sizeFor(sample, r.metrics).toFixed(2)}`, fmtGap(joGap(r.metrics, 0.9)), `${r.sourceName} · ${r.license}`, r.marks.join('; ') || '—'];
+  const sampleRow = ['·', `образец: ${sample.font.family}`, String(sample.font.weight), '0', ...cells(sm), `${(sample.font.letterSpacingEm || 0) >= 0 ? '+' : ''}${(sample.font.letterSpacingEm || 0).toFixed(3)}`, '×1', fmtGap(joGap(sm, 0.9)), '—', '—'];
+  for (const line of table(head, [sampleRow, ...top.map(rowOf)])) console.log(line);
+  console.log('d — расстояние (0 — то же, до 1 — близко, от 2 — другой характер); вес* — взят другой вес, чем у образца: по толщине штриха ближе; ширина — по краскам к высоте прописной; трекинг — воздух между буквами как у образца (em; разницу размера знака он не возмещает); кегль × — во сколько раз крупнее набрать для той же высоты прописных; Й/Ё .9 — зазор над Й/Ё до строки выше при line-height 0.9 в долях кегля (минус — заходит на строку выше), «!» — верх Й/Ё выше низа хвостов Д/Ц/Щ: столкнутся, если хвост прямо над ними.');
+  for (const [i, r] of top.entries()) { const md = mainDiffs(r.parts, res.weights); if (md) console.log(`  ${i + 1}. ${r.family}: ${md}`); }
+  if (res.rejected.length) {
+    const byWhy = new Map();
+    for (const r of res.rejected) { const k = r.why.replace(/^нет букв .*/, 'нет части букв').replace(/^нет знаков .*/, 'нет знаков'); if (!byWhy.has(k)) byWhy.set(k, []); byWhy.get(k).push(r); }
+    console.log('\nОтсев (по причинам):');
+    for (const [why, list] of byWhy) {
+      const items = list.slice().sort((a, b) => (a.d ?? 99) - (b.d ?? 99)).slice(0, 10).map((r) => `${r.family}${r.d !== undefined ? ` d ${r.d.toFixed(2)}` : ''}${/^нет (букв|знаков)/.test(r.why) ? ` (${r.why.replace(/^нет (букв|знаков) /, '')})` : ''}`);
+      console.log(`  ${why} — ${list.length}: ${items.join('; ')}${list.length > 10 ? '; …' : ''}`);
+    }
+  }
+  const outFile = path.join(path.dirname(path.resolve(file)), 'match.json');
+  const strip = (r) => ({ family: r.family, source: r.source, weight: r.weight, cssWeight: r.cssWeight || null, track: r.track, d: r.d, parts: r.parts, metrics: r.metrics, marks: r.marks, signsMissing: r.signsMissing || '', license: r.license, licenseUrl: r.licenseUrl, file: r.file });
+  fs.writeFileSync(outFile, JSON.stringify({ kind: 'fonts-match', version: 1, created: new Date().toISOString(), sample: path.resolve(file), sampleFont: { family: sample.font.family, weight: sample.font.weight }, sources: res.stats.sources, need: opt.need !== undefined ? String(opt.need) : NEED_DEFAULT, weights: res.weights, top: top.map(strip), ranked: res.ranked.slice(0, 60).map(strip), noSigns: res.noSigns.slice(0, 30).map(strip), rejected: res.rejected }, null, 1));
+  console.log(`\nПротокол: ${outFile}`);
+  if (!top.length) { console.log('WARN: кандидатов с кириллицей нет — другой источник (reference/fonts.md) или без --category'); return 0; }
+  console.log(`Лист для глаз: ${SKILL_CMD} sheet "${path.resolve(file)}" ${top.map((r) => `"${r.source}:${r.family}:${r.weight}"`).join(' ')}`);
+  console.log(`Решение: ${SKILL_CMD} decide "${top[0].family}" --run <папка прогона> --why "<почему этот: числа и лист>"`);
+  if (top.some((r) => r.marks.includes('ИИ-набор'))) console.log('Пометка «ИИ-набор» — не запрет: по образцу это честный ближайший; брать, если это язык донора (typography.md §5).');
+  console.log(`${res.warns.length ? 'WARN' : 'OK'}: ${top.length} кандидатов, ближайший — ${top[0].family} ${top[0].weight} (d ${top[0].d.toFixed(2)})`);
+  return 0;
+}
+
+/* ---------- sheet ---------- */
+
+async function cmdSheet() {
+  const [sampleArg, ...candArgs] = pos;
+  if (!sampleArg) throw new Fail(`нужен образец: ${SKILL_CMD} sheet <образец.json> "Семейство" … --out лист.png`);
+  const reg = loadSources();
+  const browser = await launch();
+  const srv = await fontServer();
+  const warns = [];
+  try {
+    let sample, sampleBase;
+    if (/\.json$/i.test(sampleArg)) {
+      try { sample = JSON.parse(fs.readFileSync(path.resolve(sampleArg), 'utf8')); } catch (e) { throw new Fail(`образец не прочитан: ${sampleArg} (${e.code || e.message})`); }
+      if (sample.kind !== 'fonts-sample') throw new Fail(`${sampleArg} — не протокол measure`);
+      sampleBase = path.dirname(path.resolve(sampleArg));
+    } else { sample = await measureSample(browser, sampleArg, { reg, server: srv }); sampleBase = sampleDir(sampleArg); }
+    const weights = metricWeights(sample.font);
+    const matchFile = path.join(sampleBase, 'match.json');
+    let match = null; try { match = JSON.parse(fs.readFileSync(matchFile, 'utf8')); } catch { /* без match */ }
+    let specs = candArgs.map(parseFamilySpec);
+    if (!specs.length) {
+      if (!match) throw new Fail(`кандидатов нет: имена после образца или сначала ${SKILL_CMD} match`);
+      specs = match.top.slice(0, opt.n !== undefined ? parseN(opt.n) : 8).map((r) => ({ source: r.source, family: r.family, weight: r.weight }));
+    }
+    const sw = sample.font.weight || 400;
+    const cands = [];
+    for (const sp of specs) {
+      const found = await findFamily(sp, reg);
+      if (!found) { warns.push(`«${sp.family}» нет в источниках — пропущен`); continue; }
+      const w = sp.weight || nearestWeight(found.fam, sw);
+      let face; try { face = await acquireFace(found.src, found.fam, w, { base: reg.base }); } catch (e) { warns.push(`${sp.family}: файл не получен (${e.netCode || e.message})`); continue; }
+      const prev = match && [...(match.ranked || []), ...(match.noSigns || [])].find((r) => r.family === found.fam.family && r.weight === w);
+      cands.push({ spec: sp, src: found.src, fam: found.fam, w, face, prev });
+    }
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1400, height: 900 });
+    await page.goto(srv.origin + '/');
+    /* образец: полоса со страницы (как есть) или файл */
+    let stripUrl = null;
+    if (sample.strip && fs.existsSync(path.join(sampleBase, sample.strip))) stripUrl = `data:image/png;base64,${fs.readFileSync(path.join(sampleBase, sample.strip)).toString('base64')}`;
+    let sampleFace = null;
+    if (!stripUrl && sample.font.file && fs.existsSync(sample.font.file)) { sampleFace = 'Sample Face'; await loadFaceInPage(page, sampleFace, srv.add(fs.readFileSync(sample.font.file))); }
+    const rows = [];
+    const sm = sample.metrics;
+    const g = (m, lh) => { const x = m && joGap(m, lh); return x ? `${sgn(x.base)}${x.base < 0 ? ' — заходит на строку выше' : ' — чисто'}${x.tails < 0 ? ` (с хвостом Д/Ц/Щ прямо над ними ${sgn(x.tails)})` : ''}` : 'нет кириллицы'; };
+    rows.push({ label: `ОБРАЗЕЦ · ${sample.font.family} ${sample.font.weight}${sample.input.type === 'url' ? ` · ${sample.input.value} ${sample.input.selector}` : ''} · трекинг ${sample.font.letterSpacingEm} em · x/cap ${sm.xCap} · шир. ${sm.widthLc}/${sm.widthUc} · контраст ${sm.contrast} · засечки ${sm.serifs ? 'есть' : 'нет'} · кириллица ${sample.cyr ? `${sample.cyr.letters} из 66` : '?'}${sample.cyr && sample.cyr.letters < 66 ? ' — буквы ниже нарисованы запасным шрифтом' : ''}`, strip: stripUrl, face: sampleFace, w: sample.font.weight, tr: sample.font.letterSpacingEm || 0, sub: sample.font.text ? `на странице: «${cut(sample.font.text, 90)}»` : '' });
+    for (const [i, c] of cands.entries()) {
+      const name = `K${i}`;
+      const ok = await loadFaceInPage(page, name, srv.add(c.face.buf));
+      if (ok !== true) { warns.push(`${c.fam.family}: не подключился (${ok})`); continue; }
+      const m = c.prev ? c.prev.metrics : (await page.evaluate(measureInPage, name, c.w, 'normal')).metrics;
+      const dist = m ? fontDistance(sm, m, weights) : null;
+      const lic = c.prev ? c.prev.license : (c.src.id === 'google' ? (LICENSES[loadLicenses().get(c.fam.family.toLowerCase())] || [c.src.license.default])[0] : (c.fam.entry && c.fam.entry.license) || c.src.license.default);
+      const signs = (() => { try { return glyphCheck(fontCodes(c.face.buf)).signsMissing; } catch { return ''; } })();
+      const tr = m ? trackFor(sample, m) : (sample.font.letterSpacingEm || 0);
+      rows.push({ tr, label: `${i + 1}. ${c.fam.family} ${c.w} · ${c.src.name} · ${lic} · d ${dist ? dist.d.toFixed(2) : '?'} · трекинг ${tr >= 0 ? '+' : ''}${tr.toFixed(3)} em (воздух как у образца) · кегль ×${sizeFor(sample, m).toFixed(2)} для той же высоты прописных${dist && mainDiffs(dist.parts, weights) ? ` (${mainDiffs(dist.parts, weights)})` : ''}${signs ? ` · нет ${signs}` : ''}${markFor(c.fam).length ? ` · ${markFor(c.fam).join(', ')}` : ''}`, face: name, w: c.w, sub: `Й/Ё до строки выше, доли кегля: line-height 0.9 → ${g(m, 0.9)}; 1.0 → ${g(m, 1.0)}`, gap9: m ? joGap(m, 0.9) : null });
+    }
+    rows[0].sub = [rows[0].sub, `Й/Ё: line-height 0.9 → ${g(sm, 0.9)}; 1.0 → ${g(sm, 1.0)}`].filter(Boolean).join(' · ');
+    await page.evaluate(() => {
+      document.body.style.cssText = 'margin:0;background:#f2f2f2;padding:16px 20px;font:13px/1.4 system-ui,sans-serif;color:#222;width:1360px;';
+      const h = document.createElement('div'); h.textContent = 'fonts.mjs sheet — образец как есть и кандидаты в весе образца и в том же кегле, трекинг — воздух между буквами как у образца; серые линии в блоках Й/Ё — границы строк'; h.style.cssText = 'font:600 15px system-ui;margin:0 0 10px;';
+      document.body.append(h);
+    });
+    for (const r of rows) {
+      await page.evaluate((r) => {
+        const lab = document.createElement('div'); lab.textContent = r.label; lab.style.cssText = 'font:600 13px/1.35 system-ui,sans-serif;margin:12px 0 2px;color:#111;';
+        const sub = document.createElement('div'); sub.textContent = r.sub || ''; sub.style.cssText = `font:12px/1.35 system-ui,sans-serif;margin:0 0 4px;color:${/заходит/.test(r.sub || '') ? '#b00020' : '#555'};`;
+        document.body.append(lab, sub);
+        if (r.strip) { const im = document.createElement('img'); im.src = r.strip; im.style.cssText = 'display:block;width:1360px;border:2px solid #111;'; document.body.append(im); }
+        else if (!r.face) { const no = document.createElement('div'); no.textContent = '(образец без полосы и файла — только числа)'; no.style.cssText = 'padding:8px;background:#fff'; document.body.append(no); }
+      }, r);
+      if (!r.strip && r.face) await makeBlock(page, `b-${r.face}`, `"${r.face}", monospace`, r.w, r.tr);
+    }
+    await page.evaluate(() => document.fonts.ready);
+    await new Promise((r) => setTimeout(r, 300));
+    const outPng = opt.out !== undefined ? path.resolve(String(opt.out)) : path.join(sampleBase, 'sheet.png');
+    if (!/\.png$/i.test(outPng)) throw new Fail(`sheet --out — файл .png: ${outPng}`);
+    ensureDir(path.dirname(outPng));
+    await page.screenshot({ path: outPng, fullPage: true });
+    const dims = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]);
+    await page.close();
+    for (const w of warns) console.log(`WARN: ${w}`);
+    console.log(`sheet: образец ${sample.font.family} ${sample.font.weight} и кандидатов ${rows.length - 1} · ${dims[0]}×${dims[1]} px`);
+    const tight = rows.slice(1).filter((r) => r.gap9 && r.gap9.base < 0);
+    if (tight.length) console.log(`Й/Ё при line-height 0.9 заходят на строку выше у ${tight.length} из ${rows.length - 1}: ${tight.map((r) => `${r.label.split(' · ')[0].replace(/^\d+\. /, '')} ${sgn(r.gap9.base)}`).join(', ')} — капс в две строки с Й/Ё набирать с line-height от 1.0 (или проверить глазами на листе)`);
+    console.log(`Лист: ${outPng} — открыть глазами (Read): Ж, Д, Л, Ф, Ы, Й и Ё в капсе, абзац, ₽ и №`);
+    console.log(`${warns.length ? 'WARN' : 'OK'}: лист ${path.basename(outPng)}`);
+    return 0;
+  } finally { await srv.close(); await browser.close(); }
+}
+
+/* ---------- decide ---------- */
+
+/** Лицензия семейства Google по репозиторию google/fonts: ofl/<имя>/OFL.txt, apache/<имя>/LICENSE.txt, ufl/<имя>/UFL.txt. */
+async function googleLicense(family) {
+  const local = loadLicenses().get(family.toLowerCase());
+  if (local && LICENSES[local]) return { name: LICENSES[local][0], url: LICENSES[local][1], checked: 'google-font-licenses.json (ui-ux-pro-max)' };
+  const dirName = family.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const base = process.env.FONTS_LICENSE_BASE || 'https://raw.githubusercontent.com/google/fonts/main';
+  for (const [dir, file, key] of [['ofl', 'OFL.txt', 'OFL'], ['apache', 'LICENSE.txt', 'APACHE2'], ['ufl', 'UFL.txt', 'UFL']]) {
+    const url = `${base}/${dir}/${dirName}/${file}`;
+    try { const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10000) }); if (r.status === 200) return { name: LICENSES[key][0], url: LICENSES[key][1], text: url.replace(/^https:\/\/raw\.githubusercontent\.com\/google\/fonts\/main/, 'https://github.com/google/fonts/blob/main'), checked: `репозиторий google/fonts, ${new Date().toLocaleDateString('sv-SE')}` }; } catch { return null; }
+  }
+  return null;
+}
+
+async function cmdDecide() {
+  const famArg = pos.join(' ').trim();
+  if (!famArg) throw new Fail(`нужно семейство: ${SKILL_CMD} decide "Inter Tight" --run <папка прогона> --why "…"`);
+  if (opt.run === undefined) throw new Fail('decide: --run <папка прогона> обязателен — туда <папка>/fonts/decision.json');
+  if (opt.why === undefined || !String(opt.why).trim()) throw new Fail('decide: --why "<почему>" обязателен — решение без причины следующему агенту ничего не скажет');
+  const run = path.resolve(String(opt.run));
+  const dir = path.join(run, 'fonts');
+  const spec = parseFamilySpec(famArg);
+  if (opt.source !== undefined) spec.source = String(opt.source).toLowerCase();
+  const read = (n) => { try { return JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { return null; } };
+  const sample = read('sample.json'); const match = read('match.json');
+  const warns = [];
+  if (!sample) warns.push(`нет ${path.join(dir, 'sample.json')} — образец не записан (measure --run ${run})`);
+  if (!match) warns.push(`нет ${path.join(dir, 'match.json')} — кандидаты не записаны (match ${path.join(dir, 'sample.json')})`);
+  const all = match ? [...(match.ranked || []), ...(match.noSigns || [])] : [];
+  const hits = all.filter((r) => r.family.toLowerCase() === spec.family.toLowerCase() && (!spec.source || r.source === spec.source));
+  const weight = opt.weight !== undefined ? Number(opt.weight) : spec.weight || (hits[0] && hits[0].weight) || (sample && sample.font.weight) || 400;
+  const hit = hits.find((r) => r.weight === weight) || hits[0] || null;
+  const rank = hit && match ? (match.ranked || []).findIndex((r) => r === hit) + 1 : 0;
+  if (match && !hit) warns.push(`«${spec.family}» нет среди кандидатов match.json — числа и расстояние не записаны`);
+  if (hit && hit.signsMissing) warns.push(`у «${hit.family}» нет знаков ${hit.signsMissing} — их нарисует запасной шрифт`);
+  const reg = loadSources();
+  const srcId = (hit && hit.source) || spec.source || 'google';
+  const src = reg.list.find((s) => s.id === srcId);
+  if (!src) throw new Fail(`источника «${srcId}» нет в ${reg.file}`);
+  let license = null;
+  if (src.id === 'google') { license = await googleLicense(hit ? hit.family : spec.family); if (!license) warns.push('лицензия семейства по репозиторию google/fonts не сверена (нет сети или имя папки другое) — записана лицензия источника по умолчанию'); }
+  if (!license) license = { name: (hit && hit.license) || src.license.default, url: (hit && hit.licenseUrl) || src.license.url || null, checked: null };
+  const family = hit ? hit.family : spec.family;
+  const decision = {
+    kind: 'fonts-decision', version: 1, created: new Date().toISOString(),
+    choice: { family, weight, source: { id: src.id, name: src.name, url: src.url }, license, rank: rank || null, d: hit ? hit.d : null, metrics: hit ? hit.metrics : null, parts: hit ? hit.parts : null, joGap: hit ? { '0.9': joGap(hit.metrics, 0.9), '1.0': joGap(hit.metrics, 1.0) } : null, signsMissing: hit ? hit.signsMissing : null, marks: hit ? hit.marks : [] },
+    why: String(opt.why).trim(),
+    sample: sample ? { input: sample.input, family: sample.font.family, weight: sample.font.weight, letterSpacingEm: sample.font.letterSpacingEm, lineHeight: sample.font.lineHeight, textTransform: sample.font.textTransform, cyr: sample.cyr, metrics: sample.metrics } : null,
+    candidates: match ? (match.top || []).map((r, i) => ({ rank: i + 1, family: r.family, source: r.source, weight: r.weight, d: r.d, license: r.license, marks: r.marks })) : [],
+    sheet: fs.existsSync(path.join(dir, 'sheet.png')) ? path.join(dir, 'sheet.png') : null,
+    next: src.id === 'google' ? `${SKILL_CMD} get "${family}" --weights ${uniq([400, weight]).sort((a, b) => a - b).join(',')} --out <папка сайта>` : `файлы — по reference/fonts.md (источник ${src.name}), лицензию положить рядом с файлами`,
+  };
+  ensureDir(dir);
+  const out = path.join(dir, 'decision.json');
+  fs.writeFileSync(out, JSON.stringify(decision, null, 1));
+  for (const w of warns) console.log(`WARN: ${w}`);
+  console.log(`decide: ${family} ${weight} · ${src.name} · ${license.name}${license.url ? ` (${license.url})` : ''}${rank ? ` · место ${rank} в match, d ${hit.d.toFixed(2)}` : ''}`);
+  console.log(`  почему: ${decision.why}`);
+  console.log(`Записано: ${out}`);
+  console.log(`Дальше: ${decision.next}`);
+  console.log(`${warns.length ? 'WARN' : 'OK'}: решение записано — ${family} ${weight}`);
   return 0;
 }
 
@@ -1185,27 +2142,173 @@ async function selftest() {
   check('get: файл не с fonts.gstatic.com — не качает', c.code === 1 && /не с fonts\.gstatic\.com/.test(c.out), c.out.trim().split('\n').pop());
   c = await run(['get', 'Manropee', '--out', path.join(tmp, 's6')], mock);
   check('get: неизвестное семейство — HTTP 400 и подсказка по данным', c.code === 1 && /HTTP 400/.test(c.out) && /может быть, «Manrope»/.test(c.out), c.out.trim().split('\n').pop());
+  /* 10а. get: пути подключения от корня сайта */
+  const site2 = path.join(tmp, 'сайт2'); fs.mkdirSync(site2, { recursive: true }); fs.writeFileSync(path.join(site2, 'index.html'), '<!doctype html>');
+  c = await run(['get', 'Manrope', '--weights', '400,700', '--out', path.join(site2, 'assets', 'fonts', 'manrope')], mock);
+  check('get: preload — путь от корня сайта (найден по index.html), а не от --out', c.code === 0 && /от корня сайта .*найден по index\.html/.test(c.out) && /rel="preload" href="\/assets\/fonts\/manrope\/fonts\/manrope-200-800-cyrillic\.woff2"/.test(c.out) && /href="\/assets\/fonts\/manrope\/fonts\/fonts\.css"/.test(c.out) && /--css http:\/\/localhost:<порт>\/assets\/fonts\/manrope\/fonts\/fonts\.css/.test(c.out), (c.out.match(/rel="preload"[^\n]*/) || [''])[0]);
+  c = await run(['get', 'Manrope', '--weights', '400,700', '--out', path.join(site2, 'assets', 'f2'), '--root', path.join(site2, 'assets')], mock);
+  check('get --root: путь от заданного корня', c.code === 0 && /rel="preload" href="\/f2\/fonts\/manrope-200-800-cyrillic\.woff2"/.test(c.out), (c.out.match(/rel="preload"[^\n]*/) || [''])[0]);
+  check('get без корня сайта: путь от --out с пометкой', /корень сайта не найден/.test((await run(['get', 'Manrope', '--weights', '400', '--out', path.join(tmp, 'безкорня')], mock)).out));
   srv.close();
 
+  /* 11. подбор по образцу: чистые функции */
+  const FX = (n) => path.join(FIX, `m-${n}.woff2`);
+  const itBuf = fs.readFileSync(FX('inter-tight-600'));
+  const itCodes = fontCodes(itBuf);
+  check('fontCodes WOFF2: у подмножества Inter Tight 66 букв и ₽№«»', glyphCheck(itCodes).cyrMissing === '' && glyphCheck(itCodes).signsMissing === '');
+  check('fontCodes: у Prata нет №, у Playfair Display нет ₽, у Bebas Neue нет кириллицы', glyphCheck(fontCodes(fs.readFileSync(FX('prata-400')))).signsMissing === '№' && glyphCheck(fontCodes(fs.readFileSync(FX('playfair-display-400')))).signsMissing === '₽' && glyphCheck(fontCodes(fs.readFileSync(FX('bebas-neue-400')))).cyrMissing.length === 66);
+  /* TTF и WOFF — синтетические: таблица cmap из makeWoff2 */
+  const synthW2 = makeWoff2([0x41, 0x416, 0x20bd]);
+  const cmapRaw = zlib.brotliDecompressSync(synthW2.subarray(synthW2.length - synthW2.readUInt32BE(20)));
+  const ttf = Buffer.alloc(12 + 16); ttf.writeUInt32BE(0x00010000, 0); ttf.writeUInt16BE(1, 4); ttf.write('cmap', 12, 'latin1'); ttf.writeUInt32BE(28, 20); ttf.writeUInt32BE(cmapRaw.length, 24);
+  const ttfBuf = Buffer.concat([ttf, cmapRaw]);
+  const z = zlib.deflateSync(cmapRaw); const wf = Buffer.alloc(44 + 20); wf.write('wOFF', 0, 'latin1'); wf.writeUInt16BE(1, 12); wf.write('cmap', 44, 'latin1'); wf.writeUInt32BE(64, 48); wf.writeUInt32BE(z.length, 52); wf.writeUInt32BE(cmapRaw.length, 56);
+  const woffBuf = Buffer.concat([wf, z]);
+  let e3 = ''; try { fontCodes(Buffer.from('<html>не шрифт</html>')); } catch (e) { e3 = e.message; }
+  check('fontCodes: TTF и WOFF (zlib) читаются, не шрифт — понятная ошибка', [ttfBuf, woffBuf].every((b) => { const s = fontCodes(b); return s.has(0x416) && s.has(0x20bd) && s.has(0x41) && s.size === 3; }) && /не шрифт/.test(e3), e3);
+  const gi = googleIndexFrom(`)]}'\n${fx('google-metadata.json').toString('utf8')}`);
+  const giT = gi.find((f) => f.family === 'Inter Tight');
+  check('метаданные Google: разбор, подмножества без menu, веса, isOpenSource', gi.length === 10 && giT && giT.weights.join() === '600' && !giT.subsets.includes('menu') && gi.find((f) => f.family === 'Closedfont').open === false && gi.find((f) => f.family === 'Unbounded').category === 'display');
+  check('nearestWeight: переменный — сам вес, статичный — ближайший', nearestWeight({ wght: [100, 900], weights: [400, 700] }, 650) === 650 && nearestWeight({ wght: null, weights: [400, 700] }, 600) === 700 && nearestWeight({ wght: null, weights: [300, 500] }, 400) === 500);
+  const fs1 = parseFamilySpec('google:Inter Tight:700'), fs2 = parseFamilySpec('Oswald:500'), fs3 = parseFamilySpec('PT Serif');
+  check('parseFamilySpec: источник, семейство, вес', fs1.source === 'google' && fs1.family === 'Inter Tight' && fs1.weight === 700 && fs2.source === null && fs2.family === 'Oswald' && fs2.weight === 500 && fs3.family === 'PT Serif' && !fs3.weight);
+  const mA = { xCap: 0.7, widthLc: 0.6, widthUc: 0.8, contrast: 0.8, round: 0.9, stem: 0.17, serif: 1, serifs: false, ends: 1, aperture: 0.3, capEm: 0.72, joAsc: 0.95, cyrDesc: 0.15, advLc: 0.52, advUc: 0.65 };
+  const dSame = fontDistance(mA, { ...mA }), dSerif = fontDistance(mA, { ...mA, serifs: true }), dW = fontDistance(mA, { ...mA, widthUc: 0.85 });
+  const wUp = metricWeights({ textTransform: 'uppercase' });
+  check('fontDistance: то же — 0, другие засечки — +1, разница в разброс — около 0.3; капс — ширина прописных весомее', dSame.d === 0 && dSerif.d === 1 && dW.d > 0.2 && dW.d < 0.5 && fontDistance(mA, { ...mA, widthUc: 0.85 }, wUp).d > dW.d, `${dSame.d} ${dSerif.d} ${dW.d}`);
+  const jg = joGap(mA, 0.9), jg1 = joGap(mA, 1.0);
+  check('joGap: Й/Ё выше 0.9 кегля — заходит при 0.9, чисто при 1.0', jg.base === -0.05 && jg1.base === 0.05 && jg.tails === -0.2 && joGap({}, 0.9) === null);
+  check('trackFor: трекинг — воздух как у образца (капс — по прописным); sizeFor — по высоте прописных', sizeFor({ metrics: mA }, { ...mA, capEm: 0.8 }) === 0.9 && trackFor({ font: { textTransform: 'uppercase', letterSpacingEm: 0 }, metrics: mA }, { ...mA, widthUc: 0.9, advUc: 0.722 }) === 0 && trackFor({ font: { textTransform: 'uppercase', letterSpacingEm: -0.01 }, metrics: mA }, { ...mA, advUc: 0.6 }) === 0.04 && trackFor({ font: { textTransform: 'none', letterSpacingEm: 0 }, metrics: mA }, { ...mA, advLc: 0.55 }) === -0.03);
+  const srt = siteRoot(path.join(site2, 'assets', 'x'));
+  check('siteRoot: ближайшая папка с index.html вверх', srt && srt.root === site2 && /index\.html/.test(srt.how));
+  const gl = charsOf(GLYPHS);
+  check('набор знаков кандидата: латиница, 66 букв, ₽№«», все знаки листа', [...CYR_LETTERS, ...'₽№«»AZaz09'].every((ch) => gl.includes(ch)) && charsOf(SHEET.caps + SHEET.lower + SHEET.para + SHEET.jo.join('')).every((ch) => gl.includes(ch)));
+
+  /* 12. числа отрисовки на сохранённых шрифтах (Chrome, один на всё) */
+  let browser = null;
+  try { browser = await launch(); } catch (e) { console.log(`SKIP числа отрисовки — Chrome не запустился: ${e.message}`); }
+  const M = {};
+  if (browser) {
+    try {
+      for (const [n, w] of [['inter-tight-600', 600], ['pt-serif-400', 400], ['playfair-display-400', 400], ['oswald-400', 400], ['unbounded-400', 400], ['comfortaa-400', 400], ['prata-400', 400], ['bebas-neue-400', 400]]) {
+        try { M[n] = await measureSample(browser, FX(n), { weight: w }); } catch (e) { M[n] = { error: e.message }; }
+      }
+    } finally { await browser.close(); }
+    const m = (n) => (M[n] && M[n].metrics) || {};
+    check('measure: все 8 файлов измерены', Object.values(M).every((x) => x.metrics), Object.entries(M).filter(([, x]) => !x.metrics).map(([k, x]) => `${k}: ${x.error}`).join('; '));
+    const serifs = Object.keys(M).filter((n) => m(n).serifs).sort().join();
+    check('measure: засечки — ровно у PT Serif, Playfair Display, Prata', serifs === 'playfair-display-400,prata-400,pt-serif-400', serifs);
+    check('measure: контраст — дидоны (Playfair, Prata) < 0.35 < PT Serif < 0.7 < гротески', m('playfair-display-400').contrast < 0.35 && m('prata-400').contrast < 0.35 && m('pt-serif-400').contrast > 0.35 && m('pt-serif-400').contrast < 0.7 && ['inter-tight-600', 'oswald-400', 'unbounded-400', 'comfortaa-400'].every((n) => m(n).contrast > 0.7), ['playfair-display-400', 'pt-serif-400', 'inter-tight-600'].map((n) => `${n} ${m(n).contrast}`).join(', '));
+    check('measure: ширина прописных Oswald < Inter Tight < Unbounded; круглота O так же', m('oswald-400').widthUc < m('inter-tight-600').widthUc && m('inter-tight-600').widthUc < m('unbounded-400').widthUc && m('oswald-400').round < m('inter-tight-600').round && m('inter-tight-600').round < m('unbounded-400').round, ['oswald-400', 'inter-tight-600', 'unbounded-400'].map((n) => `${m(n).widthUc}/${m(n).round}`).join(' < '));
+    check('measure: концы — у Comfortaa скруглённые (< 0.95), у Inter Tight прямые (0.97–1.05)', m('comfortaa-400').ends < 0.95 && m('inter-tight-600').ends >= 0.97 && m('inter-tight-600').ends <= 1.05, `${m('comfortaa-400').ends} / ${m('inter-tight-600').ends}`);
+    check('measure: x/cap Inter Tight 0.72–0.78, у Prata ниже 0.68; штрих 600 толще 400', m('inter-tight-600').xCap > 0.72 && m('inter-tight-600').xCap < 0.78 && m('prata-400').xCap < 0.68 && m('inter-tight-600').stem > m('oswald-400').stem);
+    check('measure: кириллица файла — 66 у Inter Tight, 0 у Bebas Neue; Й/Ё замерены только с кириллицей', M['inter-tight-600'].cyr.letters === 66 && M['bebas-neue-400'].cyr.letters === 0 && Number.isFinite(m('inter-tight-600').joAsc) && m('bebas-neue-400').joAsc === undefined);
+  }
+
+  /* 13. команды measure (адрес), match, sheet, decide — на своём сервере: страница образца, метаданные и CSS2 Google */
+  const META = fx('google-metadata.json');
+  const famFile = { 'Inter Tight': 'inter-tight-600', 'PT Serif': 'pt-serif-400', 'Playfair Display': 'playfair-display-400', Oswald: 'oswald-400', Unbounded: 'unbounded-400', Comfortaa: 'comfortaa-400', Prata: 'prata-400', 'Bebas Neue': 'bebas-neue-400', Fakecyr: 'bebas-neue-400', Closedfont: 'oswald-400' };
+  const hits = { fx: 0, meta: 0, css: 0, lic: 0 };
+  const page = (file, css) => `<!doctype html><meta charset="utf-8"><style>@font-face{font-family:"Probe Sans";src:url(/fx/${file}.woff2) format("woff2");font-weight:100 900}h1{font-family:"Probe Sans",sans-serif;font-weight:600;font-size:80px;line-height:.9;letter-spacing:-0.02em;text-transform:uppercase;margin:40px}${css || ''}</style><h1>Hello world</h1>`;
+  const srv2 = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x'); const send = (code, type, body) => { res.writeHead(code, { 'content-type': type }); res.end(body); };
+    const base = `http://127.0.0.1:${srv2.address().port}`;
+    if (u.pathname === '/meta') { hits.meta++; return send(200, 'application/json', `)]}'\n${META}`); }
+    if (u.pathname === '/css2') {
+      hits.css++;
+      const [fam, axes = ''] = String(u.searchParams.get('family') || '').split(':');
+      const f = famFile[fam]; if (!f) return send(400, 'text/html', 'no');
+      return send(200, 'text/css; charset=utf-8', `@font-face {\n  font-family: '${fam}';\n  font-style: normal;\n  font-weight: ${(/@(\d+)/.exec(axes) || [0, 400])[1]};\n  src: url(${base}/fx/${f}.woff2) format('woff2');\n}\n`);
+    }
+    const m2 = /^\/fx\/([\w-]+)\.woff2$/.exec(u.pathname);
+    if (m2 && fs.existsSync(FX(m2[1]))) { hits.fx++; return send(200, 'font/woff2', fs.readFileSync(FX(m2[1]))); }
+    if (u.pathname === '/page') return send(200, 'text/html; charset=utf-8', page('inter-tight-600'));
+    if (u.pathname === '/page-bebas') return send(200, 'text/html; charset=utf-8', page('bebas-neue-400'));
+    if (u.pathname === '/lic/ofl/intertight/OFL.txt') { hits.lic++; return send(200, 'text/plain', 'SIL OPEN FONT LICENSE'); }
+    return send(404, 'text/plain', 'not found');
+  });
+  await new Promise((r) => srv2.listen(0, '127.0.0.1', r));
+  const B = `http://127.0.0.1:${srv2.address().port}`;
+  const env2 = { FONTS_API_BASE: B, FONTS_META_URL: `${B}/meta`, FONTS_LICENSE_BASE: `${B}/lic`, FONTS_CACHE_DIR: path.join(tmp, 'кэш'), FONTS_SOURCES: path.join(HERE, 'fonts', 'sources.json') };
+  const runDir2 = path.join(tmp, 'прогон');
+  try {
+    c = await run(['measure', `${B}/page`, '--selector', 'h1', '--run', runDir2], env2);
+    const smp = (() => { try { return JSON.parse(fs.readFileSync(path.join(runDir2, 'fonts', 'sample.json'), 'utf8')); } catch { return null; } })();
+    const fileM = browser && M['inter-tight-600'] ? M['inter-tight-600'].metrics : null;
+    const same = smp && fileM && ['xCap', 'widthUc', 'contrast', 'round', 'stem'].every((k) => Math.abs(smp.metrics[k] - fileM[k]) <= 0.01);
+    check('measure <адрес>: шрифт элемента, вес, трекинг, регистр, интерлиньяж; числа = числа файла', c.code === 0 && !!smp && smp.font.family === 'Probe Sans' && smp.font.weight === 600 && smp.font.letterSpacingEm === -0.02 && smp.font.textTransform === 'uppercase' && smp.font.lineHeight === 0.9 && smp.cyr.letters === 66 && (same || !fileM), smp ? `${smp.font.family} ${smp.font.weight} ${smp.font.letterSpacingEm} ${smp.font.textTransform}; ${['xCap', 'widthUc', 'contrast'].map((k) => `${k} ${smp.metrics[k]}${fileM ? `/${fileM[k]}` : ''}`).join(', ')}` : c.out.trim().split('\n').pop());
+    check('measure <адрес>: полоса образца для листа (PNG)', !!smp && !!smp.strip && fs.existsSync(path.join(runDir2, 'fonts', smp.strip)) && fs.readFileSync(path.join(runDir2, 'fonts', smp.strip)).toString('latin1', 1, 4) === 'PNG');
+    c = await run(['measure', `${B}/page-bebas`, '--out', path.join(tmp, 'bebas.json')], env2);
+    check('measure <адрес>: латинский шрифт без кириллицы — «кириллицы нет», протокол записан', c.code === 0 && /кириллицы нет/.test(c.out) && fs.existsSync(path.join(tmp, 'bebas.json')), c.out.trim().split('\n').pop());
+    c = await run(['measure', path.join(tmp, 'нет.woff2')], env2);
+    check('measure: нет файла — код 1', c.code === 1 && /нет файла шрифта/.test(c.out));
+
+    c = await run(['match', path.join(runDir2, 'fonts', 'sample.json'), '--n', '5'], env2);
+    const mj = (() => { try { return JSON.parse(fs.readFileSync(path.join(runDir2, 'fonts', 'match.json'), 'utf8')); } catch { return null; } })();
+    const order = mj ? mj.ranked.map((r) => r.family) : [];
+    check('match: образец сам себе первый (d 0), таблица и команды sheet/decide', c.code === 0 && !!mj && mj.top[0].family === 'Inter Tight' && mj.top[0].d === 0 && /^1\s+Inter Tight\s+600\s+0\.00/m.test(c.out) && /fonts\.mjs sheet /.test(c.out) && /fonts\.mjs decide "Inter Tight"/.test(c.out), order.join(', '));
+    check('match: гротески выше антикв (засечки — штраф): PT Serif последний', order.length === 5 && order.indexOf('PT Serif') === 4, order.join(', '));
+    const rj = mj ? mj.rejected : [];
+    check('match: отсев назван — нет кириллицы в файле (Fakecyr), нет № (Prata) и ₽ (Playfair), лицензия (Closedfont); Bebas — без кириллицы по данным', rj.some((r) => r.family === 'Fakecyr' && /кириллицы нет в файле/.test(r.why)) && rj.some((r) => r.family === 'Prata' && /нет знаков №/.test(r.why)) && rj.some((r) => r.family === 'Playfair Display' && /нет знаков ₽/.test(r.why)) && rj.some((r) => r.family === 'Closedfont' && /лицензия/.test(r.why)) && /без кириллицы по данным источника — 1 /.test(c.out) && /Отсев/.test(c.out) && !order.includes('Prata'), rj.map((r) => `${r.family}: ${r.why}`).join('; '));
+    const fx1 = hits.fx;
+    c = await run(['match', path.join(runDir2, 'fonts', 'sample.json'), '--n', '5'], env2);
+    check('match повторно: файлы и числа из кэша (ни одного скачивания)', c.code === 0 && hits.fx === fx1, `скачиваний во втором прогоне: ${hits.fx - fx1}`);
+    c = await run(['match', path.join(runDir2, 'fonts', 'sample.json'), '--sources', 'fontshare'], env2);
+    check('match --sources fontshare: выключенный источник — WARN с причиной', /WARN: источник fontshare выключен/.test(c.out) && /кириллицы/.test(c.out), c.out.trim().split('\n').pop());
+    c = await run(['match', path.join(tmp, 'нет.json')], env2);
+    check('match без протокола — код 1', c.code === 1 && /не прочитан/.test(c.out));
+
+    /* свой источник: файлы из реестра (direct), источник без веба — отсев целиком */
+    const reg2 = path.join(tmp, 'sources.json');
+    fs.writeFileSync(reg2, JSON.stringify({ sources: [
+      { id: 'local', name: 'Локальные файлы', enabled: true, list: { kind: 'inline' }, files: { kind: 'direct' }, license: { default: 'SIL Open Font License 1.1', url: 'https://openfontlicense.org' }, web: true, selfHost: true, families: [{ family: 'Oswald', files: { 400: FX('oswald-400') } }, { family: 'Unbounded', files: { 400: FX('unbounded-400') } }, { family: 'Comfortaa', files: { 400: FX('comfortaa-400') } }] },
+      { id: 'closed', name: 'Закрытый', enabled: true, list: { kind: 'inline' }, files: { kind: 'direct' }, license: { default: 'проприетарная' }, web: false, selfHost: false, families: [{ family: 'Prata', files: { 400: FX('prata-400') } }] },
+    ] }));
+    c = await run(['match', path.join(runDir2, 'fonts', 'sample.json'), '--sources', 'local,closed', '--n', '3'], { ...env2, FONTS_SOURCES: reg2 });
+    check('match: свой источник (файлы из реестра) меряется; источник без веба — в отсеве целиком', c.code === 0 && /Локальные файлы/.test(c.out) && /^1\s+(Comfortaa|Oswald|Unbounded)/m.test(c.out) && /весь источник Закрытый/.test(c.out), c.out.trim().split('\n').pop());
+    c = await run(['measure', 'local:Unbounded', '--out', path.join(tmp, 'unb.json')], { ...env2, FONTS_SOURCES: reg2 });
+    check('measure «источник:Семейство» — из своего источника', c.code === 0 && /образец: Unbounded 400/.test(c.out), c.out.trim().split('\n')[0]);
+    /* match.json мог перезаписаться своим источником — вернуть Google */
+    await run(['match', path.join(runDir2, 'fonts', 'sample.json'), '--n', '5'], env2);
+
+    c = await run(['sheet', path.join(runDir2, 'fonts', 'sample.json')], env2);
+    const png = path.join(runDir2, 'fonts', 'sheet.png');
+    const pb = fs.existsSync(png) ? fs.readFileSync(png) : null;
+    const pw = pb ? pb.readUInt32BE(16) : 0, ph = pb ? pb.readUInt32BE(20) : 0;
+    check('sheet: лист PNG — образец и 5 кандидатов из match.json, зазор Й/Ё строкой', c.code === 0 && pw === 1400 && ph > 1500 && /кандидатов 5/.test(c.out) && /Й\/Ё при line-height 0\.9 заходят на строку выше/.test(c.out), `${pw}×${ph}; ${c.out.trim().split('\n').pop()}`);
+    c = await run(['sheet', path.join(runDir2, 'fonts', 'sample.json'), 'Oswald', 'google:PT Serif:400', 'Нетакого', '--out', path.join(tmp, 'лист.png')], env2);
+    check('sheet: кандидаты именами, неизвестное — WARN, --out', c.code === 0 && fs.existsSync(path.join(tmp, 'лист.png')) && /кандидатов 2/.test(c.out) && /WARN: «Нетакого» нет в источниках/.test(c.out), c.out.trim().split('\n').pop());
+
+    c = await run(['decide', 'Inter Tight', '--run', runDir2], env2);
+    check('decide без --why — код 1', c.code === 1 && /--why/.test(c.out));
+    c = await run(['decide', 'Inter Tight', '--run', runDir2, '--why', 'ближе всех по числам, на листе Ж и Й ровные'], env2);
+    const dj = (() => { try { return JSON.parse(fs.readFileSync(path.join(runDir2, 'fonts', 'decision.json'), 'utf8')); } catch { return null; } })();
+    check('decide: decision.json — выбор, место, расстояние, источник, лицензия по google/fonts, образец, кандидаты, почему, get', c.code === 0 && !!dj && dj.choice.family === 'Inter Tight' && dj.choice.weight === 600 && dj.choice.rank === 1 && dj.choice.d === 0 && dj.choice.source.id === 'google' && dj.choice.license.name === 'SIL Open Font License 1.1' && /google\/fonts/.test(dj.choice.license.checked || '') && hits.lic === 1 && dj.sample.family === 'Probe Sans' && dj.candidates.length === 5 && /ближе всех/.test(dj.why) && /get "Inter Tight" --weights 400,600/.test(dj.next) && !!dj.sheet, dj ? `${dj.choice.family} ${dj.choice.weight}, место ${dj.choice.rank}, ${dj.choice.license.name}` : c.out.trim().split('\n').pop());
+  } finally { srv2.close(); }
+
   const bad = checks.filter((x) => !x).length;
-  console.log(`${bad ? 'FAIL' : 'OK'}: проверок ${checks.length}, не прошло ${bad}${bad ? ` · стенд оставлен: ${tmp}` : ''}`);
+  console.log(`${bad ? 'FAIL' : 'OK'}: прошло ${checks.length - bad} из ${checks.length}${bad ? ` · не прошло ${bad} · стенд оставлен: ${tmp}` : ''}`);
   if (!bad) fs.rmSync(tmp, { recursive: true, force: true });
   return bad ? 1 : 0;
 }
 
 /* ---------- запуск ---------- */
 
-const ALLOWED = { pick: ['category', 'like', 'need', 'weights', 'italic', 'variable', 'n'], pairs: [], get: ['weights', 'italic', 'subsets', 'text', 'need', 'out'], selftest: [] };
+const ALLOWED = { measure: ['selector', 'weight', 'run', 'out', 'refresh'], match: ['sources', 'n', 'category', 'need', 'refresh'], sheet: ['out', 'n'], decide: ['run', 'why', 'source', 'weight'], pick: ['category', 'like', 'need', 'weights', 'italic', 'variable', 'n'], pairs: [], get: ['weights', 'italic', 'subsets', 'text', 'need', 'out', 'root'], selftest: [] };
 const cmd = opt.selftest ? 'selftest' : pos.shift();
 try {
   for (const k of VALUE_FLAGS) if (opt[k] === true) throw new Fail(`--${k} без значения (-h — справка)`);
   if (cmd && ALLOWED[cmd]) for (const k of Object.keys(opt)) if (!ALLOWED[cmd].includes(k) && k !== 'selftest') console.log(`WARN: --${k} к команде ${cmd} не относится — не используется`);
   if (cmd === 'selftest') process.exit(await selftest());
+  if (cmd === 'measure') process.exit(await cmdMeasure());
+  if (cmd === 'match') process.exit(await cmdMatch());
+  if (cmd === 'sheet') process.exit(await cmdSheet());
+  if (cmd === 'decide') process.exit(await cmdDecide());
   if (cmd === 'pick') process.exit(cmdPick());
   if (cmd === 'pairs') process.exit(cmdPairs());
   if (cmd === 'get') process.exit(await cmdGet());
   if (!cmd) { console.log(HELP); process.exit(1); }
-  throw new Fail(`не знаю команду «${cmd}» — pick, pairs, get или --selftest (-h — справка)`);
+  throw new Fail(`не знаю команду «${cmd}» — measure, match, sheet, decide, pick, pairs, get или selftest (-h — справка)`);
 } catch (e) {
   if (e instanceof Fail) { console.error(`FAIL: ${e.message}`); process.exit(e.code); }
   throw e;

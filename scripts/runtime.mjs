@@ -185,7 +185,8 @@
  *                              браузер сам хранит как «2026-10-10T20:30» (OK с пометкой); поменялось
  *                              после input/change — FAIL «обработчик страницы переписал значение»
  *        --edit "sel"          поле с маской: набор, Backspace до конца, правка в середине,
- *                              Delete, вставка «8 (900) …», Ctrl+A+Backspace
+ *                              Delete, вставка «8 (900) …», Ctrl+A (на macOS Cmd+A) и Backspace;
+ *                              не выделило сочетание — выделяется el.select(), стирает Backspace
  *        --key Tab             нажать клавишу: где фокус, значение и курсор поля
  *        --select "sel=знач"   выбрать вариант списка (value или текст варианта); делится так же,
  *                              как --type: "select[name=work]=6", "#sel=a=b" → вариант «a=b».
@@ -328,6 +329,7 @@
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
  *        --selftest            прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка,
+ *                              правка поля с маской (--edit: выделить всё и стереть на macOS тоже),
  *                              подсказки против сломанного появления, страница в закреплённой обёртке
  *                              и закрытое меню на весь экран, вертикальное письмо, меню на весь экран,
  *                              со сломанными якорями и с якорями <a name>, первый экран на position:
@@ -2759,7 +2761,25 @@ async function editStep(v) {
   const sample = numeric ? '9001234567' : 'проверка';
   const chars = (s) => (numeric ? s.replace(/\D/g, '') : s.replace(/[^\p{L}\p{N}]/gu, ''));
   const val = () => h.evaluate((el) => ({ v: el.value, s: el.selectionStart }));
-  const clear = async () => { await h.click({ clickCount: 3 }).catch(() => h.focus()); await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await page.keyboard.press('Backspace'); await sleep(50); };
+  /* «выделить всё» как человек: сочетание (Cmd+A на macOS, Ctrl+A на Windows и Linux) с командой SelectAll — в безголовом
+     Chrome на macOS само сочетание текст не выделяет (29.09); выделение сверяется, и если поле выделено не целиком —
+     el.select() / setSelectionRange(0, длина). Стирание — настоящей клавишей Backspace, её видит маска */
+  const selectAll = async () => {
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await page.keyboard.down(mod);
+    try { await page.keyboard.press('KeyA', { commands: ['SelectAll'] }); } catch { await page.keyboard.press('KeyA').catch(() => {}); }
+    await page.keyboard.up(mod);
+    return h.evaluate((el) => {
+      let s = null, e = null; try { s = el.selectionStart; e = el.selectionEnd; } catch { /* email, number: выделения у поля нет */ }
+      const len = String(el.value || '').length;
+      if (s === 0 && e === len) return 'сочетание';
+      try { el.select(); } catch { /* не текстовое поле */ }
+      try { if (!(el.selectionStart === 0 && el.selectionEnd === len)) el.setSelectionRange(0, len); } catch { /* нет выделения */ }
+      return 'select()';
+    }).catch(() => 'нет');
+  };
+  const SA = process.platform === 'darwin' ? 'Cmd+A' : 'Ctrl+A';
+  const clear = async () => { await h.click({ clickCount: 3 }).catch(() => h.focus()); await selectAll(); await page.keyboard.press('Backspace'); await sleep(50); };
   const steps = [];
   /* а) набрать и стереть Backspace до конца: застревание — FAIL, пока осталось больше одного знака */
   await clear(); await h.type(sample, { delay: 15 }); const full = await val(); steps.push({ step: `набор ${sample}`, value: full.v });
@@ -2795,9 +2815,9 @@ async function editStep(v) {
   const pasteOk = numeric ? chars(paste.v).length === 11 || chars(paste.v).length === 10 : chars(paste.v).length >= chars(pasteText).length - 1;
   line(pasteOk ? 'OK' : 'WARN', `правка ${v}: вставка`, `«${pasteText}» → «${paste.v}»${pasteOk ? '' : ' — номер искажён'}`);
   /* д) выделить всё и стереть */
-  await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await page.keyboard.press('Backspace'); await sleep(50);
-  const wiped = await val(); steps.push({ step: 'Ctrl+A, Backspace', value: wiped.v });
-  line(chars(wiped.v).length <= 1 ? 'OK' : 'FAIL', `правка ${v}: выделить всё и стереть`, `осталось «${wiped.v}»`);
+  const how = await selectAll(); await page.keyboard.press('Backspace'); await sleep(50);
+  const wiped = await val(); steps.push({ step: `${SA}, Backspace`, value: wiped.v, selectedBy: how });
+  line(chars(wiped.v).length <= 1 ? 'OK' : 'FAIL', `правка ${v}: выделить всё и стереть`, `осталось «${wiped.v}»${how === 'select()' ? ` (сочетание ${SA} не выделило — выделено el.select())` : ''}`);
   report.edit = report.edit || []; report.edit.push({ sel: v, steps });
 }
 
@@ -3603,6 +3623,12 @@ async function selftest() {
         ['OK', /^выбор #venue/, /список формы/], ['WARN', /^выбор #loose/, /ничего не изменилось/], ['OK', /^выбор #filter/, /^DOM/], ['OK', /^eval .* = 2026-10-10$/, /совпало/],
         ['FAIL', /^выбор #hall = «Банкетный зал»$/, /^вариант недоступен \(disabled\) — человек его не выберет; доступные: main, terrace$/], ['OK', /^выбор #hall = «Веранда»$/, /в поле «terrace» — список формы/]],
       not: [[null, /^ввод в/, /маска/], ['FAIL', /^ввод в #dts$/], ['OK', /^выбор #hall = «Банкетный зал»$/]] },
+    /* --edit: «выделить всё и стереть» — Cmd+A на macOS, Ctrl+A на остальных, с командой SelectAll и el.select() про запас;
+       раньше Control+A в безголовом Chrome на macOS не выделял, и у любого поля выходил FAIL «осталось …» (29.09) */
+    { name: 'edit', file: 'edit.html', code: 0, verdict: 'OK', args: ['--edit', '#phone', '--edit', '#name'],
+      want: [['OK', /^правка #phone: стирание Backspace$/, /стёрлось до «(\+7)?»/], ['OK', /^правка #phone: вставка$/, /→ «\+7 \(900\) 123-45-67»/], ['OK', /^правка #phone: выделить всё и стереть$/, /^осталось «(\+7)?»/],
+        ['OK', /^правка #name: выделить всё и стереть$/, /^осталось «»/]],
+      not: [['FAIL', /^правка/]] },
     { name: 'hover', file: 'hover.html', code: 0, args: ['--hover', '.nav__link', '--hover', '.clip', '--hover', '.ok', '--hover-all'],
       want: [['OK', /^наведение \.nav__link$/, /backgroundSize: 0% 2px → 100% 2px/], ['OK', /^наведение \.clip$/, /clipPath/], ['OK', /^наведение \.ok$/, /color/], ['WARN', /^наведение: мёртвый селектор, элемента нет в DOM: 1$/, /\.card:hover \.card__tip — элемента \.card \.card__tip нет в DOM/], ['WARN', /^наведение перебито другим правилом: 1$/, /\.btn:hover/],
         ['WARN', /^наведение: цели правила нет у наведённых элементов: 1$/, /\.box:hover \.box__tip — у этого \.box нет \.box__tip \(в DOM таких 1 — у других\)/]],

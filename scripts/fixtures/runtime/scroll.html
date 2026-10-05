@@ -7,7 +7,7 @@
 <!--
   Стенд runtime.mjs --scroll: страница, на которой прокрутке находить нечего (node runtime.mjs --selftest).
   Вердикт шага — OK; раньше здесь было три ложных WARN:
-    .tab span    закреплённая вкладка с writing-mode: vertical-rl и line-height: 1 — глифы шире строки
+    .tab span    закреплённая вкладка с writing-mode: vertical-rl и line-height: 0.8 — глифы шире строки
                  на пару пикселей по горизонтали; раньше WARN «текст шире коробки», теперь — не находка
                  (у вертикального письма сбоку в допуск входит край глифа: половина разницы между высотой
                  шрифта и line-height; настоящий вылез сбоку — стенд vert.html)
@@ -22,11 +22,16 @@
   Строка «текст перекрыт картинкой: OK» печатается всегда — видно, что проверка шла.
 -->
 <style>
+  /* свой шрифт файлом (fonts/, OFL): у системных шрифтов край глифа разный — с Segoe UI (Windows) глифы при
+     line-height: 1 шире строки, с San Francisco (macOS) влезают, и строки «сверено … с краем глифа» не было.
+     У Commissioner высота шрифта 1,2 кегля: при 20px/0.8 строка 16px, глифы шире неё на 4px с каждой стороны —
+     больше допуска findOverflow (2px, находка есть) и в пределах края глифа (2 + 4px, вкладка отсеивается) */
+  @font-face { font-family: "Stand Commissioner"; src: url("fonts/commissioner-cyrillic.woff2") format("woff2"); font-weight: 500 700; font-display: block; }
   body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
   main { max-width: 720px; margin: 0 auto; padding: 32px 96px; }
   .tall { height: 1200px; background: linear-gradient(#faf8f4, #efe7da); }
   .tab { position: fixed; right: 0; top: 40%; display: flex; align-items: center; padding: 12px 6px; background: #1b1b1b; color: #fff; text-decoration: none; }
-  .tab span { writing-mode: vertical-rl; white-space: nowrap; line-height: 1; font: 600 20px/1 "Segoe UI", system-ui, sans-serif; }
+  .tab span { writing-mode: vertical-rl; white-space: nowrap; font: 600 20px/0.8 "Stand Commissioner", sans-serif; }
   .reveal { opacity: 0; transform: translateY(24px); transition: opacity .4s, transform .4s; padding: 40px; background: #fff; }
   .reveal.in { opacity: 1; transform: none; }
   .card { position: relative; margin: 48px 0; padding: 24px; background: #fff; border: 1px solid #ddd; }

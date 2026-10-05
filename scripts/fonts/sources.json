@@ -1,0 +1,53 @@
+{
+ "about": "Источники шрифтов для fonts.mjs (measure, match, sheet, decide). Формат записи и порядок добавления — reference/fonts.md. Источник без проверенной лицензии не добавлять; enabled: false — известен, но не подключён (причина в why).",
+ "version": 1,
+ "updated": "2026-10-05",
+ "sources": [
+  {
+   "id": "google",
+   "name": "Google Fonts",
+   "url": "https://fonts.google.com",
+   "enabled": true,
+   "list": {
+    "kind": "google-metadata",
+    "url": "https://fonts.google.com/metadata/fonts",
+    "note": "Список семейств с подмножествами, весами, осями и isOpenSource; кэш 30 дней в ~/.claude/site-rework/cache/fonts/google/index.json. Без сети и кэша — google-fonts.csv ui-ux-pro-max."
+   },
+   "files": {
+    "kind": "google-css2",
+    "url": "https://fonts.googleapis.com/css2",
+    "fileHosts": ["https://fonts.gstatic.com"],
+    "note": "Кандидаты — параметром text= (только знаки пробы и листа, 10–35 КБ); на сайт — fonts.mjs get (полные подмножества cyrillic, latin, latin-ext)."
+   },
+   "license": {
+    "default": "SIL Open Font License 1.1",
+    "url": "https://openfontlicense.org",
+    "others": ["Apache License 2.0", "Ubuntu Font Licence 1.0"],
+    "perFamily": "репозиторий https://github.com/google/fonts: папка ofl/, apache/ или ufl/ по имени семейства; на сайте — https://fonts.google.com/specimen/<Семейство>/license",
+    "note": "Все семейства Google Fonts — открытые лицензии: можно на сайте, в коммерческом проекте, своими файлами, с изменением (подмножества). Продавать сами шрифты нельзя; при раздаче файлов — текст лицензии рядом."
+   },
+   "web": true,
+   "selfHost": true,
+   "commercial": true,
+   "cyrillic": "у части: 294 семейства из 1950 (метаданные, 05.10.2026)",
+   "checked": "2026-10-05",
+   "checkedBy": "fonts.mjs: метаданные (isOpenSource) и лицензии семейств по репозиторию google/fonts"
+  },
+  {
+   "id": "fontshare",
+   "name": "Fontshare (Indian Type Foundry)",
+   "url": "https://www.fontshare.com",
+   "enabled": false,
+   "why": "у шрифтов ITF на Fontshare нет кириллицы — для русского текста не годятся (только латинский логотип, цифры); лицензию ITF Free Font License в этом реестре не сверяли — перед любым использованием сверить по reference/fonts.md",
+   "list": { "kind": "inline", "note": "не подключён" },
+   "files": { "kind": "css", "url": "https://api.fontshare.com/v2/css?f[]={slug}@{weight}&display=swap", "note": "не подключён; адрес CSS — для будущей записи, не проверен" },
+   "license": { "default": "ITF Free Font License (не сверено)", "url": null, "note": "текст лицензии не открывали — адрес и условия вписать после проверки" },
+   "web": null,
+   "selfHost": null,
+   "commercial": null,
+   "cyrillic": "нет (у шрифтов ITF)",
+   "checked": null,
+   "families": []
+  }
+ ]
+}

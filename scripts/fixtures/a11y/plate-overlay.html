@@ -14,7 +14,12 @@
      накрыл ::after. Ждём: FAIL со ссылками шапки #FFFFFF по снимку; пилюли за краем — «обрезан» в «не мерились»,
      без «по своей подложке». Полоска подчёркивания активной пилюли (::before 2px) подложку не отменяет. -->
 <style>
+/* шрифт файлом (fonts/, OFL): сколько пилюль влезает в 320px, зависит от ширины букв — с San Francisco (macOS)
+   влезали три, с Segoe UI (Windows) — четыре, и «измерено N из N» расходилось между системами. С Commissioner 500
+   в 320px видны три пилюли (центр четвёртой «Горячее» — 328px): с двумя ссылками шапки «измерено 5 из 5» */
+@font-face { font-family: "Stand Commissioner"; src: url("fonts/commissioner-cyrillic.woff2") format("woff2"); font-weight: 500 700; font-display: block; }
 body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+.hdr, .rib { font-family: "Stand Commissioner", sans-serif; font-weight: 500; }
 .hdr { position: fixed; top: 0; left: 0; right: 0; z-index: 10; background: #111; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 16px; }
 .hdr::before { content: ""; position: absolute; inset: 0; background: rgba(255, 255, 255, .92); opacity: 0; }
 .hdr.is-scrolled::before { opacity: 1; }

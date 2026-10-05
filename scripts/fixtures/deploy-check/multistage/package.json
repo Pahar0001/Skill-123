@@ -1,0 +1,1 @@
+{ "name": "ms", "scripts": { "build": "vite build" } }

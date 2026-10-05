@@ -32,7 +32,8 @@
  *               окном cookie), окно при загрузке (стенд fixtures/lib: одна строка «окно», не «свой стиль на
  *               странице»), нажатие SITE_REWORK_DISMISS, которое увело на главную (страница открыта заново —
  *               строка INFO), подписи с многоточием над фото (фон — под видимой частью строки), окно cookie
- *               поверх страницы (закрыто до замеров; с --keep-consent — мерится вместе с окном). Каждый стенд —
+ *               поверх страницы (закрыто до замеров; с --keep-consent — мерится вместе с окном), пилюли с
+ *               рамкой цвета текста на градиенте (рамка, outline и кольцо — не фон). Каждый стенд —
  *               отдельный запуск a11y (по одному браузеру), протоколы — во временной папке или в --out; код 1,
  *               если хоть одно ожидание не сошлось.
  *   --help, -h  эта справка.
@@ -69,6 +70,10 @@
  * и предки с overflow ≠ visible или contain: paint (у absolute — только его содержащий блок и выше, у fixed — только
  * предок с transform, filter, perspective или contain). Фон — только под видимой частью; у скольких подписей строку
  * обрезали — в строке и в JSON (imgContrast.trimmed). Видимой части нет — «обрезан предком», в «не измерены».
+ * Рамка самого элемента — не фон: у пилюли с рамкой цвета текста строка при line-height: 1 захватывает полосы
+ * рамки, и они шли в худшие 10% (ложный FAIL 4.36:1 при 5.6:1). На время снимка фона у элемента и у обёрток с тем
+ * же текстом (a.pill > span; до трёх уровней, не выше 2,5 высоты элемента) border и outline прозрачны, кольцо
+ * box-shadow без размытия и сдвига снято.
  * Одинаковые — только подписи того же класса и цвета над тем же фоном (тот же файл картинки с тем же
  * object-fit и object-position, та же запись градиента или картинки фоном с тем же background-position и
  * background-size, или цвет подложки) и на том же месте этого фона: центр текста в той же клетке коробки
@@ -1295,7 +1300,7 @@ async function selftest() {
       { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 12 из 12', '6 ниже нормы', 'Подпись четвёртая над белым', 'Цифра шестая над белым'], not: ['повтор того же фона', 'над тёмным'], why: 'одна картинка и один градиент, подписи в разных местах — не «повтор того же фона»' },
     ] },
     { page: 'plate-overlay.html', viewport: 'mobile-s', expect: [
-      { line: /^контраст по снимку фона/, status: 'OK', has: ['измерено 6 из 6'], why: 'наверху слоя нет; фон — под строками текста, углы пилюли на белой ленте не в счёт' },
+      { line: /^контраст по снимку фона/, status: 'OK', has: ['измерено 5 из 5'], why: 'наверху слоя нет; фон — под строками текста, углы пилюли на белой ленте не в счёт (шрифт стенда — файлом: в 320px три пилюли, центр четвёртой — 328px)' },
       { line: /^контраст закреплённого текста/, status: 'FAIL', has: ['a «Раздел один» #FFFFFF', '1.18:1', 'обрезан'], not: ['по своей подложке'], why: 'видимый — по снимку (светлый ::before поверх #111); пилюли за краем под ::after — не по подложке' },
     ] },
     { page: 'plate-layer.html', viewport: 'mobile-s', expect: [
@@ -1317,6 +1322,11 @@ async function selftest() {
        absolute-подписи): фон — только под видимой частью строки; настоящий низкий контраст видимой части — FAIL */
     { page: 'caption-clip.html', viewport: 'desktop', expect: [
       { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 4 из 4', '1 ниже нормы', 'Нечитаемая', 'у 4 строка длиннее своего блока'], not: ['Уха', 'Пельмени', 'Шашлык', 'не измерены'], why: 'спрятанная часть строки над светлым фото или белой страницей — не фон видимого текста' },
+    ] },
+    /* пилюли с рамкой цвета текста на сером градиенте: рамка, outline, кольцо box-shadow и рамка обёртки с тем же
+       текстом — не фон (раньше тёмные полосы рамки шли в худшие 10 % — «1:1»); контроль #333 на #7E8587 — FAIL */
+    { page: 'pill-border.html', viewport: 'desktop', expect: [
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 6 из 6', '1 ниже нормы', '«Слабая»', 'дают 3.36:1'], not: ['Новинка', 'Сезон', 'Хит', 'Постное', 'Острое'], why: 'рамка самого элемента и обёртки с тем же текстом прячется на время снимка фона' },
     ] },
     /* окно cookie поверх страницы: по умолчанию закрыто до замеров (и на вкладке обхода Tab — кнопка нажата мышью,
        обход с начала страницы); с --keep-consent — мерится вместе с окном */
@@ -1423,6 +1433,37 @@ try {
        теперь стиль переживает CSP, а не вставился — WARN «не измерен», прогон идёт дальше */
     let cssOk = true;
     try { await addCss(page, 'img-hide', '.rw-hide-text,.rw-hide-text *{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;caret-color:transparent!important}\n.rw-pe,.rw-pe *{pointer-events:auto!important}'); } catch (e) { cssOk = false; imgContrast.error = String(e.message || e).slice(0, 200); }
+    /* рамка самого элемента — не фон текста: у пилюли с рамкой цвета текста (1,2 px чёрная на сером) строка текста
+       при line-height: 1 захватывает полосы рамки, и тёмные пиксели рамки шли в «худшие 10 % фона» — ложный FAIL
+       4,36:1 при настоящих 5,6:1 (2026-10-03). На время снимка у элемента и у обёрток с тем же текстом (a.pill > span,
+       не выше трёх уровней и не крупнее 2,5 высоты элемента — не секция с одним заголовком) рамка и outline
+       прозрачны, а box-shadow без размытия и сдвига (кольцо, ring) снят; под рамкой остаётся фон самого элемента
+       или то, что за ним. Восстанавливается вместе с цветом текста */
+    const hideTextInPage = (el) => {
+      el.classList.add('rw-hide-text');
+      const txt = (n) => String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      const own = txt(el); const eh = el.getBoundingClientRect().height; const nodes = [el];
+      for (let n = el.parentElement, k = 0; n && k < 3 && n !== document.body && n !== document.documentElement; n = n.parentElement, k++) {
+        if (txt(n) !== own || n.getBoundingClientRect().height > Math.max(48, eh * 2.5)) break;
+        nodes.push(n);
+      }
+      const ring = (v) => v && v !== 'none' && v.split(/,(?![^(]*\))/).every((sh) => { const nums = (sh.replace(/rgba?\([^)]*\)|#[0-9a-f]+|[a-z]+\([^)]*\)/gi, '').match(/-?[\d.]+px/g) || []).map(parseFloat); return nums.length >= 3 && nums[0] === 0 && nums[1] === 0 && nums[2] === 0 && (nums[3] || 0) <= 4; });
+      const saved = [];
+      for (const n of nodes) {
+        const cs = getComputedStyle(n); const keep = ['border-color', 'outline-color', 'box-shadow'].map((p) => [p, n.style.getPropertyValue(p), n.style.getPropertyPriority(p)]);
+        const frame = ['Top', 'Right', 'Bottom', 'Left'].some((sd) => parseFloat(cs[`border${sd}Width`]) > 0) || (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0) || ring(cs.boxShadow);
+        if (!frame) continue;
+        saved.push([n, keep]);
+        n.style.setProperty('border-color', 'transparent', 'important'); n.style.setProperty('outline-color', 'transparent', 'important');
+        if (ring(cs.boxShadow)) n.style.setProperty('box-shadow', 'none', 'important');
+      }
+      window.__rwFrameSaved = saved;
+    };
+    const showTextInPage = (el) => {
+      el.classList.remove('rw-hide-text');
+      for (const [n, keep] of window.__rwFrameSaved || []) for (const [p, v, pr] of keep) { if (v) n.style.setProperty(p, v, pr); else n.style.removeProperty(p); }
+      window.__rwFrameSaved = null;
+    };
     for (const it of cssOk ? dom.contrast.imgList : []) {
       const h = await page.$(`[data-rw-imgbg="${it.idx}"]`); if (!h) { imgContrast.skipped++; continue; }
       try {
@@ -1457,7 +1498,7 @@ try {
           } finally { el.classList.remove('rw-pe'); }
         }, !!it.fixed);
         if (state.state !== 'виден') { imgContrast.covered = (imgContrast.covered || 0) + 1; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: state.state, by: state.by || null }); continue; }
-        await h.evaluate((el) => el.classList.add('rw-hide-text'));
+        await h.evaluate(hideTextInPage);
         await sleep(120);
         /* коробка и видимая область — из страницы: boundingBox отдаёт координаты окна раскладки, а снимок —
            видимая область (у страницы без meta viewport на телефоне 1 CSS-пиксель на снимке — 0.8 точки, а
@@ -1505,14 +1546,14 @@ try {
           const box = lines ? null : cut(r.left, r.top, r.right, r.bottom);
           return { x: r.left, y: r.top, w: r.width, h: r.height, rects: lines ? rects : box ? [box] : [], lines, trimmed, VX, VY, VW, VH };
         });
-        if (g.w < 4 || g.h < 4 || g.w * g.h > 1600 * 1200) { imgContrast.skipped++; await h.evaluate((el) => el.classList.remove('rw-hide-text')); continue; }
+        if (g.w < 4 || g.h < 4 || g.w * g.h > 1600 * 1200) { imgContrast.skipped++; await h.evaluate(showTextInPage); continue; }
         /* видимой части строк нет — всё обрезано блоком или за окном: не мерится, в «не измерены» (смотреть глазами) */
-        if (!g.rects.length) { await h.evaluate((el) => el.classList.remove('rw-hide-text')); imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'обрезан предком — видимой части строк нет', by: null }); continue; }
+        if (!g.rects.length) { await h.evaluate(showTextInPage); imgContrast.covered++; imgContrast.coveredList.push({ sig: it.sig, text: it.text, state: 'обрезан предком — видимой части строк нет', by: null }); continue; }
         if (g.trimmed) imgContrast.trimmed = (imgContrast.trimmed || 0) + 1;
         /* снимок окна и выборка по координатам окна: снимок элемента у закреплённых (position: fixed)
            и прокрученных элементов брал не ту область */
         const buf = await page.screenshot({ type: 'png' });
-        await h.evaluate((el) => el.classList.remove('rw-hide-text'));
+        await h.evaluate(showTextInPage);
         const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
         const kS = info.width / (g.VW || vp.width);
         const px = sampleRects(data, info, g.rects.map((q) => ({ ...q, x: q.x - g.VX, y: q.y - g.VY })), kS);
@@ -1529,7 +1570,7 @@ try {
         const p10 = ratios[Math.floor(ratios.length * 0.1)], median = ratios[Math.floor(ratios.length / 2)];
         imgContrast.measured++;
         if (p10 < it.need) imgContrast.failures.push({ sig: it.sig, text: it.text, fg: it.fg, alpha: it.alpha, size: it.size, p10: Math.round(p10 * 100) / 100, median: Math.round(median * 100) / 100, need: it.need });
-      } catch { imgContrast.skipped++; try { await h.evaluate((el) => el.classList.remove('rw-hide-text')); } catch { /* ушёл */ } }
+      } catch { imgContrast.skipped++; try { await h.evaluate(showTextInPage); } catch { /* ушёл */ } }
     }
   }
   /* возвраты видимой области при замере текста на картинке — отдельно: примечание о несработавшем

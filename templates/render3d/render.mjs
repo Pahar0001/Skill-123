@@ -23,6 +23,9 @@
  *   --soft       размер диска ключевого света (1; 0 — жёсткая тень); --dome — сила купола (1; 0 — без него)
  *   --exp, --env, --tone  выдержка, сила окружения, тональная кривая
  *
+ * Движок WebGL (ANGLE) выбирается по системе: Windows — d3d11, macOS — metal, Linux — swiftshader;
+ * свой — переменной SITE_REWORK_ANGLE (d3d11, metal, gl, vulkan, swiftshader).
+ *
  * Вывод: строка на кадр — размер, доля непрозрачных пикселей (пустой кадр — FAIL и код 1), вес PNG и WebP.
  * Планка качества и приёмы — README.md в этой папке и reference/engines.md → «3D».
  */
@@ -71,9 +74,14 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
 
+/* Движок ANGLE по системе: d3d11 есть только на Windows — на macOS с ним WebGL не создаётся
+   (drawingBufferWidth = 0, «createImageData… width is zero»). macOS — metal, Linux — swiftshader
+   (программный, есть везде, в том числе без дисплея и без драйвера GPU). SITE_REWORK_ANGLE — свой выбор. */
+const ANGLE = process.env.SITE_REWORK_ANGLE || ({ win32: 'd3d11', darwin: 'metal' }[process.platform] || 'swiftshader');
 const browser = await puppeteer.launch({
   executablePath: lib.requireChrome(), headless: true,
-  args: ['--ignore-gpu-blocklist', '--enable-gpu', '--use-angle=d3d11', '--enable-unsafe-swiftshader', '--hide-scrollbars', `--window-size=${W},${H}`],
+  /* --no-sandbox — как у lib.launch: в контейнере Linux от root Chrome без него не стартует */
+  args: ['--no-sandbox', '--ignore-gpu-blocklist', '--enable-gpu', `--use-angle=${ANGLE}`, '--enable-unsafe-swiftshader', '--hide-scrollbars', `--window-size=${W},${H}`],
 });
 let code = 0;
 try {
@@ -87,7 +95,12 @@ try {
     await page.goto(`http://127.0.0.1:${port}/stage.html?scene=${name}&w=${W}&h=${H}&dpr=${DPR}${extra}`, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction('window.__done === true', { timeout: 600000 });
     const err = await page.evaluate('window.__error || null');
-    if (err || errors.length) { console.error(`FAIL ${name}: ${err || errors.join(' | ')}`); code = 1; await page.close(); continue; }
+    if (err || errors.length) {
+      const msg = err || errors.join(' | ');
+      /* холст нулевой ширины — WebGL не создался: подсказать движок, а не искать ошибку в сцене */
+      const hint = /width is zero|WebGL|context/i.test(msg) && ANGLE !== 'swiftshader' ? ` (WebGL не создался на ANGLE=${ANGLE}; попробовать SITE_REWORK_ANGLE=swiftshader)` : '';
+      console.error(`FAIL ${name}: ${msg}${hint}`); code = 1; await page.close(); continue;
+    }
     const info = await page.evaluate('window.__info');
     const data = await page.evaluate('window.__png()');
     const png = Buffer.from(data.split(',')[1], 'base64');

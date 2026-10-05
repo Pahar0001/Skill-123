@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд: значок над заглавной</title>
+<!-- Стенд typeset.mjs --selftest, правило diacritic: значок над заглавной (Й Ё Å Ä Ö É) в плотном капсе упирается
+     в строку выше. Случай burbey.ru 05.10: Inter Tight 500, капс, line-height .9 — «И НЕЙРОСЕТЯМИ» под «С 3D»,
+     значок Й налезал; при line-height 1 — нет. Шрифт — Inter Tight (OFL, fonts/LICENSE.txt), cyrillic и latin 400–600. -->
+<style>
+@font-face { font-family: 'Inter Tight'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('fonts/inter-tight-cyrillic-400-600.woff2') format('woff2'); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: 'Inter Tight'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('fonts/inter-tight-latin-400-600.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2212; }
+body { margin: 0; padding: 24px 16px; background: #fff; color: #111; font: 400 17px/1.6 'Inter Tight', system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; }
+p { max-width: 36em; margin: 0 0 24px; }
+.cap { font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; text-transform: uppercase; letter-spacing: -0.01em; margin: 56px 0 20px; font-size: clamp(40px, 7vw, 88px); }
+.lh09 { line-height: .9; }
+.lh10 { line-height: 1; }
+.low { text-transform: none; }
+.small { font: 500 20px/.9 'Inter Tight', system-ui, sans-serif; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="dj09" class="cap lh09">Работаем с 3D<br>и нейросетями</h1>
+  <p>Абзац под заголовком: обычный текст основного кегля, чтобы у страницы был основной кегль и первый экран.</p>
+
+  <!-- дословно как на burbey.ru: «С 3D» над «И НЕЙРОСЕТЯМИ» -->
+  <h2 id="dj-burbey" class="cap lh09">С 3D<br>и нейросетями</h2>
+  <p>Тот же заголовок, что был на бою: строка «С 3D» короткая, значок Й встаёт рядом с её последним знаком.</p>
+
+  <!-- то же при line-height 1 — значок не достаёт до строки выше -->
+  <h2 id="dj10" class="cap lh10">Работаем с 3D<br>и нейросетями</h2>
+  <p>Тот же заголовок при интерлиньяже 1: между значком и строкой выше остаётся зазор.</p>
+
+  <!-- латиница с диакритикой при .9 -->
+  <h2 id="lat-dia" class="cap lh09">Café and bar<br>Åland Östersjö</h2>
+  <p>Латиница со значками над заглавными: Å и Ö во второй строке.</p>
+
+  <!-- регрессии: латиница без значков при .9; значок только в первой строке; строчные й; мелкий капс -->
+  <h2 id="lat09" class="cap lh09">Design with 3D<br>and neural nets</h2>
+  <p>Латиница без значков при том же интерлиньяже — не тревога.</p>
+
+  <h2 id="dj-first" class="cap lh09">Йога и бег<br>для всех</h2>
+  <p>Значок есть только в первой строке: строки выше нет, упираться не во что.</p>
+
+  <h2 id="dj-low" class="cap lh09 low">Работаем с 3D<br>и нейросетями</h2>
+  <p>Строчные буквы: значок над строчной й ниже заглавных и до строки выше не достаёт.</p>
+
+  <p id="dj-small" class="small">Мелкий капс с 3D<br>и нейросетями</p>
+  <p>Мелкий капс до 28 px — не это правило: его ловит интерлиньяж.</p>
+</main>
+</body>
+</html>

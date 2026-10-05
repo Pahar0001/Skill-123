@@ -60,6 +60,75 @@ node bgdecor.mjs --help | -h
 
 Коды выхода: 0 — OK или WARN; 1 — FAIL selftest или неизвестный флаг; 2 — неверные аргументы или файл; 3 — страница не открылась или браузер не запустился. Файлы донора не копируются: рисунки, слова и предметы у себя — свои.
 
+## blender.mjs
+
+```
+node blender.mjs doctor [--json файл]                     где Blender, версия, Cycles и видеокарта, glTF и Draco
+node blender.mjs render <сцена.py|сцена.json> [--out папка] [--w 1000] [--h 1000] [--samples 256] [--denoise]
+node blender.mjs physics <сцена> [--out папка] [--frames 120] [--sim auto|rigid|cloth] [--video] [--webm]
+node blender.mjs glb <сцена> --out файл.glb|папка [--draco] [--animation] [--for item|scene] [--max-kb N]
+node blender.mjs glb-check <файл.glb> [--poster картинка] [--shot файл.png] [--site папка] [--for item|scene] [--max-kb N]
+node blender.mjs vendor --out <папка сайта> [--draco]    three.js для страницы: vendor/three/… и glb-viewer.js
+node blender.mjs selftest [--keep]                       без Blender: аргументы, задания, Python, просмотрщик GLB
+node blender.mjs --help | -h
+```
+
+Команды: `doctor`, `render`, `physics`, `glb`, `glb-check`, `vendor`, `selftest`.
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--animation` | переключатель | анимация физики в GLB (твёрдые тела → ключи); ткань — всегда застывший последний кадр |
+| `--backdrop` | переключатель | [--palette "bone=#E7E3DD,accent=#C8553D"] [--variant имя[,имя…]] [--transparent \| --backdrop] [--bg EFEBE4] |
+| `--denoise` | переключатель | денойз OpenImageDenoise (по умолчанию включён); --no-denoise — выключить |
+| `--draco` | переключатель | сжатие геометрии Draco (на странице — декодер, vendor --draco) |
+| `--dry-run` | переключатель | ничего не запускать: напечатать задание и команду (с --json — записать их в файл) |
+| `--keep` | переключатель | node blender.mjs selftest [--keep]                       без Blender: аргументы, задания, Python, просмотрщик GLB |
+| `--no-check` | переключатель | не открывать GLB в браузере после экспорта |
+| `--no-denoise` | переключатель | --denoise       денойз OpenImageDenoise (по умолчанию включён); --no-denoise — выключить |
+| `--save-blend` | переключатель | сохранить собранную сцену <имя>.blend — открыть в Blender и поправить руками |
+| `--transparent` | переключатель | прозрачный фон и тень на земле в альфе (по умолчанию так); --backdrop — непрозрачная |
+| `--trim` | переключатель | обрезать прозрачные поля кадра |
+| `--video` | переключатель | ещё и кадры 1…frames → mp4 (ffmpeg, на цвете --bg); --webm — с прозрачностью (VP9); |
+| `--webm` | переключатель | node blender.mjs physics <сцена> [--out папка] [--frames 120] [--sim auto\|rigid\|cloth] [--video] [--webm] |
+| `--webp-frames` | переключатель | --webp-frames — кадры в WebP; --fps (30), --step — каждый N-й кадр, --video-samples (64) |
+| `--bake` | со значением | auto — процедурные материалы (шум бумаги, плетение ткани) запечь в картинки \| off |
+| `--bg` | со значением | цвет поля сайта: превью <имя>-on-<bg>.jpg, лист вариантов, подложка видео mp4 |
+| `--device` | со значением | auto (видеокарта, если есть) \| gpu \| cpu |
+| `--engine` | со значением | cycles (по умолчанию) \| eevee — быстрый черновик (без трассировки, нужна видеокарта) |
+| `--exposure` | со значением | выдержка, ступени (0): темно — +0.5…+1, пересвет — −0.5 |
+| `--for` | со значением | бюджет: item — предмет ≤ 1.5 МБ, 150 тыс. вершин \| scene — сцена ≤ 4 МБ, 400 тыс.; больше — WARN |
+| `--fps` | со значением | [--webp-frames] [--glb файл.glb] [--fps 30] [--step 1] [--video-samples 64] [--frame-on end\|all] (+ флаги render) |
+| `--frame-on` | со значением | рамка камеры: end — по улёгшимся предметам (влёт сверху в кадр) \| all — весь полёт в кадре |
+| `--frames` | со значением | длина симуляции, кадров (по умолчанию — FRAMES сцены или 120) |
+| `--glb` | со значением | ещё и GLB с анимацией падения (ключи на каждом кадре) в этот файл |
+| `--json` | со значением | протокол (или задания при --dry-run) — в этот файл |
+| `--key-step` | со значением | [--bake auto\|off] [--tex 1024] [--key-step 1] [--frames 120] [--no-check] |
+| `--look` | со значением | «look» тональной кривой (например "Medium High Contrast" у AgX) |
+| `--max-kb` | со значением | свой бюджет веса, КБ |
+| `--name` | со значением | имя файлов (по умолчанию — имя сцены; с вариантом — «имя-вариант») |
+| `--out` | со значением | папка результата (blender-out в текущей); у glb — файл .glb или папка |
+| `--palette` | со значением | цвета сайта по именам поверх палитры сцены: "bone=#E7E3DD,accent=#C8553D" |
+| `--param` | со значением | параметры сцены (ctx.param): "count=12,fabric=silk" |
+| `--poster` | со значением | картинка-постер для проверки запасного вида (без WebGL); --shot — снимок живого кадра в PNG |
+| `--q` | со значением | качество WebP (88); --small — ширина малой копии для srcset, px (640; 0 — без неё) |
+| `--samples` | со значением | сэмплов Cycles на пиксель (256; черновик — 32) |
+| `--seed` | со значением | зерно случайности сцены и сэмплера (7) |
+| `--shot` | со значением | node blender.mjs glb-check <файл.glb> [--poster картинка] [--shot файл.png] [--site папка] [--for item\|scene] [--max-kb N] |
+| `--sim` | со значением | что сцена строит (ctx.sim): auto \| rigid — твёрдые тела \| cloth — ткань |
+| `--site` | со значением | папка сайта после vendor: проверять его копию three.js и glb-viewer.js, а не скилла |
+| `--small` | со значением | [--trim] [--name имя] [--q 88] [--small 640] [--tone neutral\|agx\|filmic\|standard] [--exposure 0] |
+| `--step` | со значением | [--webp-frames] [--glb файл.glb] [--fps 30] [--step 1] [--video-samples 64] [--frame-on end\|all] (+ флаги render) |
+| `--tex` | со значением | сторона запечённой картинки, px (1024); --key-step — ключ на каждом N-м кадре (1) |
+| `--timeout` | со значением | предел работы Blender, минут (120) |
+| `--tone` | со значением | тональная кривая: neutral — Khronos PBR Neutral, цвета палитры без сдвига (по умолчанию); |
+| `--variant` | со значением | вариант сцены (ctx.variant); несколько через запятую — по кадру на каждый и лист превью |
+| `--video-samples` | со значением | [--webp-frames] [--glb файл.glb] [--fps 30] [--step 1] [--video-samples 64] [--frame-on end\|all] (+ флаги render) |
+| `--w` | со значением | --w, --h        размер кадра, px (1000 × 1000) |
+
+Переменные окружения: `BLENDER_PATH`, `SITE_REWORK_PROJECT`, `SR_STUB_MODE`.
+
 ## cliche.mjs
 
 ```
@@ -143,6 +212,30 @@ node copy.mjs --help
 | `--viewport` | значение необязательно | адрес: экран (mobile по умолчанию; desktop, laptop, tablet, mobile-s, 320x568@2) |
 
 Коды выхода: 0 — OK или WARN; 1 — FAIL, неверные аргументы, страница не открылась, провал selftest. Без команды («copy.mjs <url\|файл> …») — код 1 и «нужна команда: lint\|snapshot\|…» с готовой строкой lint.
+
+## deploy-check.mjs
+
+```
+node deploy-check.mjs <папка проекта> [--pages "/,/napravleniya/"] [--url https://сайт] [--out папка] [--tag имя]
+node deploy-check.mjs --selftest
+node deploy-check.mjs --help   (или -h)
+```
+
+Неизвестный флаг — ошибка, код 1 (parseArgs strict).
+
+| флаг | вид | из справки |
+|---|---|---|
+| `--selftest` | переключатель | стенды fixtures/deploy-check (уменьшенная копия Dockerfile KIMota777/sites без napravleniya и |
+| `--strict` | переключатель | код выхода 1 при итоге FAIL. |
+| `--json` | со значением | --json <файл>\|-  протокол ещё и сюда; «-» — JSON в stdout, текст — в stderr. |
+| `--out` | со значением | папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт из --url> или local-<имя папки>); |
+| `--pages` | со значением | страницы через запятую: пути («/,/napravleniya/») или адреса своего сайта. Проверяются эти страницы, |
+| `--tag` | со значением | имя протокола, по умолчанию deploy. |
+| `--url` | со значением | боевой адрес: страницы из списка ещё и запрашиваются на бою — GET (страница) и HEAD (ассет, на который |
+
+Коды выхода: 0 — сделано (вердикт в выводе и протоколе); 1 — неверные аргументы, провал --selftest или FAIL с --strict.
+
+Переменные окружения: `SITE_REWORK_RUNS`.
 
 ## diff.mjs
 
@@ -233,34 +326,45 @@ node firecrawl.mjs --help   (или -h)
 ## fonts.mjs
 
 ```
+node fonts.mjs measure <адрес | файл шрифта | "Семейство"> [--selector h1] [--weight 700] [--run <папка прогона> | --out <файл.json>]
+node fonts.mjs match <образец.json> [--sources google] [--n 8] [--category sans-serif] [--need "₽№«»"] [--refresh]
+node fonts.mjs sheet <образец.json> "<Семейство>" ["google:Семейство:600" …] [--out <лист.png>]
+node fonts.mjs decide "<Семейство>" --run <папка прогона> --why "<почему>" [--source google] [--weight 700]
 node fonts.mjs pick [--category serif|sans-serif|display|handwriting|monospace] [--like "<характер по-русски>"]
 node fonts.mjs pairs [слова по-английски: luxury, editorial, tech…]
 node fonts.mjs get "<Семейство>" --out <папка сайта> [--weights 400,700 | --weights 300..800] [--italic]
-node fonts.mjs --selftest
-node fonts.mjs --help   (или -h)
+node fonts.mjs selftest   (или --selftest)
 ```
 
-Команды: `pick`, `pairs`, `get`, `selftest`.
+Команды: `measure`, `match`, `sheet`, `decide`, `pick`, `pairs`, `get`, `selftest`.
 
 Неизвестный флаг — ошибка, код 1 (parseArgs strict).
 
 | флаг | вид | из справки |
 |---|---|---|
 | `--italic` | переключатель | pick: нужен курсив (с --weights — у каждого веса). get: курсив тех же весов. |
-| `--selftest` | переключатель | без сети: разбор CSV (кавычки, запятые и переводы строк в полях, BOM, CRLF), фильтры pick |
+| `--refresh` | переключатель | match: заново скачать список семейств источника (у Google — раз в 30 дней и так). |
+| `--selftest` | переключатель | (или команда selftest) без сети: числа measure на сохранённых шрифтах OFL (засечки, контраст, |
 | `--variable` | переключатель | pick: только переменные шрифты (есть оси). |
-| `--category` | значение необязательно | pick: serif, sans-serif (или sans), display, handwriting, monospace (или mono); несколько — |
+| `--category` | значение необязательно | pick, match: serif, sans-serif (или sans), display, handwriting, monospace (или mono); несколько — |
 | `--like` | значение необязательно | pick: характер по-русски (или по-английски); «не …» и «без …» — исключить. Слова: |
-| `--n` | значение необязательно | pick: сколько строк, по умолчанию 10 (-n — то же). |
+| `--n` | значение необязательно | pick: сколько строк, по умолчанию 10 (-n — то же). match: сколько кандидатов, по умолчанию 8; |
 | `--need` | значение необязательно | pick: какие знаки нужны; у каждого — подмножество Google: ₽ — latin-ext, № и Ё — |
-| `--out` | значение необязательно | get: папка сайта; файлы — в <папка>/fonts/. |
+| `--out` | значение необязательно | get: папка сайта; файлы — в <папка>/fonts/. measure: файл протокола (.json). sheet: файл листа (.png). |
+| `--root` | значение необязательно | get: корень сайта — строки подключения печатаются путями от него («/assets/fonts/…»). |
+| `--run` | значение необязательно | measure: протокол в <папка прогона>/fonts/sample.json. decide: обязателен — туда decision.json. |
+| `--selector` | значение необязательно | measure: какой элемент страницы-образца мерить, по умолчанию h1 (первый видимый). |
+| `--source` | значение необязательно | decide: источник выбора, если семейства нет в match.json; по умолчанию google. |
+| `--sources` | значение необязательно | match: источники из sources.json через запятую (google, …), по умолчанию все включённые. |
 | `--subsets` | значение необязательно | get: подмножества, по умолчанию cyrillic,latin,latin-ext: браузер качает файл, только когда |
 | `--text` | значение необязательно | get: подмножество ровно под знаки надписи (логотип, крупное слово; параметр text= API) — |
+| `--weight` | значение необязательно | measure: вес файла или семейства (по умолчанию 400; у адреса — вес элемента). decide: вес |
 | `--weights` | значение необязательно | pick: нужные веса (все). get: веса через запятую (400,700) или диапазон переменного |
+| `--why` | значение необязательно | decide: почему выбран этот шрифт — словами, для владельца и следующего агента. |
 
 Коды выхода: 0 — сделано (OK или WARN); 1 — ошибка: аргументы, нет данных, сеть, ответ API, файл; 2 — не сделано по правилу: у шрифта нет кириллицы (в ответе или в файлах), в подмножестве надписи нет её знаков.
 
-Переменные окружения: `FONTS_API_BASE`, `FONTS_DATA_DIR`.
+Переменные окружения: `FONTS_API_BASE`, `FONTS_CACHE_DIR`, `FONTS_DATA_DIR`, `FONTS_LICENSE_BASE`, `FONTS_META_URL`, `FONTS_SOURCES`.
 
 ## grain-tile.mjs
 
