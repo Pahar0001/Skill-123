@@ -327,13 +327,13 @@ node firecrawl.mjs --help   (или -h)
 
 ```
 node fonts.mjs measure <адрес | файл шрифта | "Семейство"> [--selector h1] [--weight 700] [--run <папка прогона> | --out <файл.json>]
-node fonts.mjs match <образец.json> [--sources google] [--n 8] [--category sans-serif] [--need "₽№«»"] [--refresh]
+node fonts.mjs match <образец.json> [--sources google,fontshare] [--n 8] [--category sans-serif] [--need "₽№«»"] [--latin] [--refresh]
 node fonts.mjs sheet <образец.json> "<Семейство>" ["google:Семейство:600" …] [--out <лист.png>]
 node fonts.mjs decide "<Семейство>" --run <папка прогона> --why "<почему>" [--source google] [--weight 700]
 node fonts.mjs pick [--category serif|sans-serif|display|handwriting|monospace] [--like "<характер по-русски>"]
 node fonts.mjs pairs [слова по-английски: luxury, editorial, tech…]
 node fonts.mjs get "<Семейство>" --out <папка сайта> [--weights 400,700 | --weights 300..800] [--italic]
-node fonts.mjs selftest   (или --selftest)
+node fonts.mjs get "fontshare:<Семейство>" --latin --out <папка сайта> [--weights 500,700] [--italic] [--root <корень>]
 ```
 
 Команды: `measure`, `match`, `sheet`, `decide`, `pick`, `pairs`, `get`, `selftest`.
@@ -343,6 +343,7 @@ node fonts.mjs selftest   (или --selftest)
 | флаг | вид | из справки |
 |---|---|---|
 | `--italic` | переключатель | pick: нужен курсив (с --weights — у каждого веса). get: курсив тех же весов. |
+| `--latin` | переключатель | match: только латиница — кириллица не требуется (логотип, цифры, английский текст). get из |
 | `--refresh` | переключатель | match: заново скачать список семейств источника (у Google — раз в 30 дней и так). |
 | `--selftest` | переключатель | (или команда selftest) без сети: числа measure на сохранённых шрифтах OFL (засечки, контраст, |
 | `--variable` | переключатель | pick: только переменные шрифты (есть оси). |
@@ -354,8 +355,8 @@ node fonts.mjs selftest   (или --selftest)
 | `--root` | значение необязательно | get: корень сайта — строки подключения печатаются путями от него («/assets/fonts/…»). |
 | `--run` | значение необязательно | measure: протокол в <папка прогона>/fonts/sample.json. decide: обязателен — туда decision.json. |
 | `--selector` | значение необязательно | measure: какой элемент страницы-образца мерить, по умолчанию h1 (первый видимый). |
-| `--source` | значение необязательно | decide: источник выбора, если семейства нет в match.json; по умолчанию google. |
-| `--sources` | значение необязательно | match: источники из sources.json через запятую (google, …), по умолчанию все включённые. |
+| `--source` | значение необязательно | decide: источник выбора, если семейства нет в match.json; по умолчанию google. get: то же, |
+| `--sources` | значение необязательно | match: источники из sources.json через запятую (google, fontshare), по умолчанию все включённые. |
 | `--subsets` | значение необязательно | get: подмножества, по умолчанию cyrillic,latin,latin-ext: браузер качает файл, только когда |
 | `--text` | значение необязательно | get: подмножество ровно под знаки надписи (логотип, крупное слово; параметр text= API) — |
 | `--weight` | значение необязательно | measure: вес файла или семейства (по умолчанию 400; у адреса — вес элемента). decide: вес |
