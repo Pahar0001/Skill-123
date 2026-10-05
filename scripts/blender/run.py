@@ -19,6 +19,9 @@
 НЕ ПРОВЕРЕНО ЗАПУСКОМ В BLENDER (05.10.2026): при разработке Blender на машине не было. Проверены только
 синтаксис (Python 3.11) и разбор заданий. Первый запуск на машине владельца — проверка самого конвейера.
 """
+import sys as _sys
+_sys.dont_write_bytecode = True   # Blender не оставляет __pycache__ в папке скилла
+
 import importlib.util
 import json
 import os
@@ -230,7 +233,7 @@ def do_probe(job):
         except TypeError:
             continue
     res["eevee"] = eng
-    res["shadow_catcher"] = hasattr(bpy.types.Object, "is_shadow_catcher")
+    res["shadow_catcher"] = "is_shadow_catcher" in bpy.types.Object.bl_rna.properties.keys()   # у класса RNA-свойства нет как атрибута
     return res
 
 

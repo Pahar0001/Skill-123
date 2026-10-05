@@ -136,7 +136,9 @@ def export_glb(path, objs, draco=False, animation=False, frame_range=None, warn=
         export_texcoords=True,
         export_normals=True,
         export_materials="EXPORT",
-        export_image_format="AUTO",
+        export_image_format="WEBP",          # запечённые текстуры: PNG давал 1,2 МБ на картинку, WebP — в разы меньше (EXT_texture_webp, three.js понимает)
+        export_image_quality=86,
+        export_image_webp_fallback=False,
         export_cameras=False,
         export_lights=False,
         export_extras=False,
@@ -168,7 +170,15 @@ def export_glb(path, objs, draco=False, animation=False, frame_range=None, warn=
     if important:
         warn("экспортёр glTF этой версии не знает %s — результат проверить glb-check" % ", ".join(important))
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    op(**kw)
+    try:
+        op(**kw)
+    except TypeError as e:  # версия без WEBP в export_image_format — JPEG
+        if kw.get("export_image_format") == "WEBP":
+            warn("экспортёр glTF не принял WEBP (%s) — текстуры в JPEG" % e)
+            kw["export_image_format"] = "JPEG"
+            op(**kw)
+        else:
+            raise
     if not os.path.isfile(path):
         raise RuntimeError("экспортёр отработал, но файла нет: " + path)
     return {"file": path, "bytes": os.path.getsize(path), "skipped": skipped}

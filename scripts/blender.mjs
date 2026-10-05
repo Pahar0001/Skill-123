@@ -571,7 +571,8 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
        (model.webp) без --poster не существует — не ошибка */
     const skipUrl = (u) => /favicon/.test(u) || (!poster && /\/model\.webp$/.test(u));
     page.on('console', (m) => { const t = m.text(); if (m.type() === 'error' && !/^Failed to load resource/.test(t)) errors.push(t); if (m.type() === 'warning' && /glb-viewer/.test(t)) errors.push(t); });
-    page.on('requestfailed', (r) => { if (!skipUrl(r.url())) errors.push(`не загрузилось: ${r.url().replace(base, '')}`); });
+    /* ERR_ABORTED — запрос прервала сама страница (закрытие вкладки, пауза вне экрана): не сбой; настоящий сбой — код ответа (ниже) или другая причина */
+    page.on('requestfailed', (r) => { const why = (r.failure() || {}).errorText || ''; if (!skipUrl(r.url()) && !/ERR_ABORTED/.test(why)) errors.push(`не загрузилось: ${r.url().replace(base, '')}${why ? ' (' + why + ')' : ''}`); });
     page.on('response', (r) => { if (r.status() >= 400 && !skipUrl(r.url())) errors.push(`HTTP ${r.status()}: ${r.url().replace(base, '')}`); });
     await page.setViewport(vp);
     if (reduced) await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
