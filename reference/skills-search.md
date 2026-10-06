@@ -115,7 +115,7 @@ node ~/.claude/skills/site-rework/scripts/skill-audit.mjs audit ~/.claude/skills
 Без `--exclude` итог — FAIL, и это не про навык: в `scripts/fixtures/skill-audit` лежат нарочно опасные
 стенды самопроверки, а в `skill-audit.mjs` — образцы опасных строк (в выражениях поиска и в самих
 проверках). С исключением (15 файлов, из них 6 вложенных навыков-стендов; строка «исключено при запуске»
-в начале и в конце) ждать итог **WARN**: 8 пунктов WARN, ни одного FAIL (01.10.2026). WARN по делу:
+в начале и в конце) ждать итог **WARN**: 9 пунктов WARN, ни одного FAIL (06.10.2026; до стендов Blender и deploy-check было 8). WARN по делу:
 
 - сеть — `fetch` и http в скриптах, которые снимают сайты, ищут фото и шрифты (discover, mirror, texture,
   typeset, media/net и другие), `curl` в runtime, сокет в serve;
@@ -135,7 +135,9 @@ node ~/.claude/skills/site-rework/scripts/skill-audit.mjs audit ~/.claude/skills
   подключение MCP в README и donor-mode.md;
 - обфускация — `new Function` и `eval` функций для страницы (lib, discover, runtime, typeset) и base64
   картинок (recraft, texture, perf);
-- лицензия — файла LICENSE нет.
+- лицензия — файла LICENSE нет;
+- размер и файлы — не текст в стендах: шрифты самопроверок (woff2, OFL), `scripts/fixtures/blender/stack.glb`
+  («двоичный файл неизвестного вида»), PDF-заглушка стенда deploy-check, два документа Office.
 
 Строки «FAIL только в стендах и тестах» здесь нет: FAIL в стендах остаётся только в исключённой папке.
 

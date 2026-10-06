@@ -57,7 +57,8 @@ godly.website перенаправляет на recent.design; siteinspire.com (
 2. Отбор до трёх: близкое дело или настроение; живой многостраничный сайт (не одна посадочная);
    есть детали — фон с фактурой, рисунки в тему, предметы на полях, логотипы, игра шрифтов — и движение
    (сайт с ровным белым фоном без деталей кандидатом не брать, если в анкете фон не «ровный»); шрифты с
-   кириллицей или ясная замена из Google Fonts (кириллицу проверять `cyrillic-check`); не SaaS-шаблон для
+   кириллицей или ясная замена (подбор — `fonts.mjs measure` → `match` → `sheet` → `decide`, подробности —
+   `reference/fonts.md`); не SaaS-шаблон для
    ресторана. Образцы владельца по фону: zakroma.rest (мятая фактура с прожилками, орнамент на полях),
    mamuka.rest (наброски от руки и буквы-призраки за текстом).
 3. Снимки первых экранов трёх живых сайтов (`shots.mjs <url> --viewports desktop,mobile --segments 0`)
@@ -78,11 +79,15 @@ godly.website перенаправляет на recent.design; siteinspire.com (
 node ~/.claude/skills/site-rework/scripts/discover.mjs <донор> --out <папка>/donor --no-design     # сводка, фактура, паспорт, медиа-слоты; дизайн-систему снимает extract ниже
 node ~/.claude/skills/design-reference/scripts/extract.mjs <донор> --out <папка>/donor/design --name donor   # единственная спецификация донора: donor.json, donor.tokens.css — их и брать в вёрстку
 node ~/.claude/skills/site-rework/scripts/texture.mjs <донор> --viewport desktop,tablet,mobile --out <папка>/donor/texture   # зерно и крупная фактура (мятая бумага, прожилки, ткань, доски): её вид с уверенностью, рецепты --grain-* и --surface-*
-node ~/.claude/skills/site-rework/scripts/bgdecor.mjs <донор> --pages "/,<путь>" --viewport desktop,mobile --out <папка> --tag donor   # фон: рисунки, предметы на полях, буквы-призраки → decor/donor.md, вырезки открыть глазами
+node ~/.claude/skills/site-rework/scripts/bgdecor.mjs <донор> --pages "/,<путь>" --viewport desktop,mobile --out <папка> --tag donor   # фон: рисунки, предметы на полях, буквы-призраки, узоры, свечения → decor/donor.md, вырезки открыть глазами; строки «внутри карточек», «крупное за содержимым», «чего скрипт не меряет» — прочитать
 node ~/.claude/skills/site-rework/scripts/cliche.mjs baseline <донор> --out <папка>/cliche/donor.json          # desktop и mobile
 node ~/.claude/skills/site-rework/scripts/motion.mjs <донор> --pages "home=/,product=<путь>,collection=<путь>" --viewport desktop,mobile --out <папка> --tag donor   # всё движение числами: donor-home, donor-home-mobile, donor-product… одним запуском
 node ~/.claude/skills/site-rework/scripts/typeset.mjs <донор> --out <папка> --tag donor --viewports desktop,mobile   # набор донора — база для typeset --baseline на этапе 4
 ```
+
+Донор в отдельной папке (`<папка>/donor`) итоги сайта не затирает. Два адреса в одну `--out` (второй донор,
+донор рядом с сайтом) — с `--tag имя`: итоги `discovery-имя.json`, `discovery-имя.md`, `design-имя/`, `pages-имя/`;
+у texture — `--label имя` → `texture-имя.json`.
 
 Спецификация донора несёт набор: «Набор: строка ~N знаков / M на телефоне, h1 в K строк» и `--measure` в
 токенах — абзацам `max-width: var(--measure)`. Длину строки и строки h1 сверяет `verify.mjs`; весь набор
@@ -200,7 +205,7 @@ motion ставит пункты «атрибуты Tilda» вместо зам�
 ```
 node ~/.claude/skills/design-reference/scripts/verify.mjs <папка>/donor/design/donor.json <адрес сайта>
 node ~/.claude/skills/site-rework/scripts/texture.mjs compare <папка>/donor/texture/texture.json <адрес сайта> --viewport desktop,mobile --out <папка>/texture-compare
-node ~/.claude/skills/site-rework/scripts/bgdecor.mjs compare <папка>/decor/donor.json <адрес сайта> --out <папка>   # фон: что из рисунков, предметов и букв донора у нас потерялось
+node ~/.claude/skills/site-rework/scripts/bgdecor.mjs compare <папка>/decor/donor.json <адрес сайта> --out <папка>   # фон: что из рисунков, предметов, букв и пятен света донора у нас потерялось
 node ~/.claude/skills/site-rework/scripts/cliche.mjs <адрес сайта> --baseline <папка>/cliche/donor.json --taste --run <папка> --shot
 node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <адрес сайта> <папка>/motion/donor-<тип>.json <наша страница этого типа> --out <папка>   # пары подряд: compare-home, compare-<тип>
 ```
@@ -222,8 +227,13 @@ node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion
   (или наоборот), — FAIL остаётся в протоколе, в отчёт — строкой с его словами.
 - `bgdecor.mjs compare` — вид украшения фона, который у донора есть, а у нас
   нет (НЕТ) или заметно реже (РЕЖЕ); без записи в `<папка>/decor-decisions.json`
-  — WARN. «У нас чаще» — проверить глазами, что не перебор. Вырезку находки
-  донора открыть до решения: размытое пятно-свечение скрипт называет рисунком.
+  — WARN. «У нас чаще» — проверить глазами, что не перебор. Виды: рисунки,
+  буквы-призраки, предметы на полях, узоры, свечения. Свечение (размытое пятно
+  света) — свой вид со своей строкой сверки и ключом `glow`: в «рисунки
+  донора» оно не входит. Вырезку находки донора открыть до решения.
+  Протокол донора, снятый до калибровки 02.10.2026 (поле `version` меньше 2)
+  или без вида «свечение», не сравним: строки «НЕ СРАВНИМО», первой строкой —
+  «переснять донора». Это не потеря и решения не требует — донора переснять.
 - Протокол сверки с ошибкой («страница не снялась», сверено 0) сверкой не
   считается — `state.mjs show` пишет его строкой «не в счёт»: перепрогнать.
 - `cliche.mjs` — приёмы, которых нет у донора, «размножено», запреты из

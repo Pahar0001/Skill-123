@@ -25,7 +25,7 @@ node ~/.claude/skills/site-rework/scripts/a11y.mjs <url> --out <папка> --ta
 node ~/.claude/skills/site-rework/scripts/typeset.mjs <url> --out <папка> --tag q --viewports desktop,mobile             # только если менялись тексты или шрифты
 node ~/.claude/skills/site-rework/scripts/perf.mjs <url> --out <папка> --tag q --viewport mobile --runs 1              # только если менялись первый экран, шрифты или картинки
 node ~/.claude/skills/site-rework/scripts/shots.mjs <url> --out <папка> --tag q --pages <изменённые> --viewports desktop,mobile-s --segments 0 --return jump   # первые экраны — открыть глазами
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-calm --reduced-motion --assert "document.querySelectorAll('.dk-armed, .dk-set').length === 0" --fullpage   # детали для красоты: при «меньше движения» всё видно сразу
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag q-calm --reduced-motion --scroll --wait 2500 --assert "document.querySelectorAll('.dk-armed:not([data-dk-draw=scroll]), .dk-set').length === 0" --motion --fullpage   # «меньше движения — тише, а не выключено»: после прокрутки всё проявилось (assert), петли тише и с паузой, контент виден (--motion)
 ```
 Плюс руками: кликнуть то, что правили (меню, формы, фильтры), и сверить фото с подписями на изменённых страницах.
 Детали и движение — короткий список `reference/craft.md` §4.
@@ -50,7 +50,7 @@ node ~/.claude/skills/site-rework/scripts/cliche.mjs <url> --baseline <папк�
 node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion/donor-home.json <url> [<папка>/motion/donor-<тип>.json <наша страница типа> …] --out <папка>   # движение донора: пара у нас или решение, все пары одним запуском
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> --tag browser-user --browser firefox --wait 3000 --canvas   # браузер пользователя
 node ~/.claude/skills/site-rework/scripts/security.mjs <url> --out <папка> --admin /admin --repo <папка исходников>   # безопасность и утечки: /.env, /.git и служебное с сервера, админка без входа, формы, секреты, чужие скрипты, заголовки; исправления — reference/security.md; и перед каждой выкладкой
-node ~/.claude/skills/site-rework/scripts/deploy-check.mjs <папка исходников> --url <боевой адрес> --out <папка>   # перед каждой выкладкой: каждая страница и её ассеты попадают в образ или папку публикации (Dockerfile COPY, .dockerignore, vercel, netlify, Pages, rsync); раздел «Перед выкладкой» ниже
+node ~/.claude/skills/site-rework/scripts/deploy-check.mjs <папка исходников> --url <боевой адрес> --out <папка>   # перед каждой выкладкой (FAIL — код выхода 1: цепочка «deploy-check && выкладка» остановится): каждая страница и её ассеты попадают в образ или папку публикации (Dockerfile COPY, .dockerignore, vercel, netlify, Pages, rsync); раздел «Перед выкладкой» ниже
 ```
 У `runtime.mjs` без `--tag` протокол называется по экрану (`runtime/desktop.json`),
 и следующий запуск на том же экране его перезаписывает — у каждого набора
@@ -86,7 +86,7 @@ must нет «без доказательства», «устарело», «п�
 P0 или решение владельца в отчёте); перед выкладкой `deploy-check.mjs` без FAIL (новая страница или папка ассетов
 попадает в образ, а с `--url` — на бою не 404); детали для красоты есть на всех типах страниц (раздел «Детали для красоты»
 закрыт по README decor-kit, «Что проверить после подключения»: без FAIL; в протоколе `console.warnings` = 0; после
-`--scroll` `.dk-armed` остаётся только у `data-dk-draw="scroll"`; при «меньше движения» assert true; 320 px без
+`--scroll` `.dk-armed` остаётся только у `data-dk-draw="scroll"`; при «меньше движения» assert true и строка «контент» без FAIL; 320 px без
 переполнения; в Firefox движение идёт; у разделов разные надписи и мотивы — открыто глазами); в браузере пользователя
 страницы открываются без ошибок и 3D/движение запускаются; иначе — ещё круг. Если круги
 закончились по времени — оставшееся честно в отчёт.
@@ -111,7 +111,7 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile --
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --viewport mobile-s --scroll                      # 320: переполнение по элементам
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --hover-all --nav --css
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --click "a[href='#contacts']" --edit "input[type=tel]" --type "#phone=89001234567" --click "form button[type=submit]" --shot sent
-node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --reduced-motion --scroll --motion --canvas
+node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --reduced-motion --scroll --motion --canvas                # «меньше движения»: появления сработали, петли тише и с паузой, контент виден, холсты рисуют
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --no-js --scroll                                  # без JavaScript: что видно, а что спрятано до скрипта
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --eval "document.querySelectorAll('.card').length" --expect 12
 node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --assert "getComputedStyle(document.querySelector('.cta')).position === 'sticky'"
@@ -184,8 +184,12 @@ CSS-переменную, WAAPI, CSS-анимация, «меньше движе
 320; меню открывается и закрывается; у каждого правила `:hover` есть
 видимый эффект; ввод и правка поля с маской проходят все сценарии;
 отправка формы что-то показывает и не роняет консоль; холсты рисуют и
-резкие после каждого действия; при «меньше движения» бесконечные анимации
-и автоплей-видео останавливаются, а содержимое видно.
+резкие после каждого действия; при «меньше движения» (правило «тише, а не
+выключено», `reference/motion.md`) содержимое проявилось целиком — строка
+«контент при „меньше движения“» без FAIL; бесконечные анимации идут вдвое
+медленнее и останавливаются видимой кнопкой паузы или стоят; появления — со
+сдвигом до 24 px; за мышью ничего не ходит; автоплей-видео на паузе. WARN
+этих строк — задача P2 или решение владельца в отчёте.
 
 ## Автопроверки состояния
 
@@ -208,7 +212,8 @@ CSS-переменную, WAAPI, CSS-анимация, «меньше движе
 | якорь не доводит до раздела | `--click "a[href='#id']"` | FAIL «ЦЕЛЬ ПОД ЗАКРЕПЛЁННЫМ СЛОЕМ nav.ribbon» / «ЦЕЛЬ ВНЕ ОКНА»; видна, но не у scroll-margin (своя прокрутка страницы) — WARN «цель не у scroll-margin: верх 76px, ждали 88px» |
 | блок шире своей колонки (неразрывная строка в грид- или флекс-колонке) | `--viewport mobile-s --scroll` | WARN «блок шире своей колонки: h2.wide на 16.8 px (CSS px; за правый край колонки …)»; страница шире окна на 1 px — WARN с именем элемента |
 | фокус уходит из открытого меню на страницу под ним | `--click "#burger"` | WARN «фокус уходит из открытого слоя на страницу под ним: button#more «Ещё»» (до 15 нажатий Tab; фокус и прокрутка возвращаются) |
-| видео: автоплей со звуком, без poster, без playsinline | `--video` | FAIL / WARN по каждому ролику; пауза вне экрана и при «меньше движения» |
+| видео: автоплей со звуком, без poster, без playsinline | `--video` | FAIL / WARN по каждому ролику; пауза вне экрана; при «меньше движения» автоплей обязан стоять на паузе (играет — WARN), есть ли кнопка запуска — в строке |
+| «меньше движения»: сайт мёртвый или, наоборот, ничего не изменилось | `--motion` | четыре строки: анимации (петля — вдвое медленнее и с рабочей кнопкой паузы, иначе WARN), появления (сдвиг от 40 px — WARN), мышь (ходит за мышью — WARN), контент (не проявился — **FAIL**) |
 | зерно не видно (multiply на чёрном) | `texture.mjs <url>` или `texture.mjs compare` | WARN «multiply гасит на тёмном: σ 0», FAIL против донора |
 
 После `--click`, `--select` и `--resize` холсты и переполнение
@@ -611,7 +616,8 @@ node ~/.claude/skills/site-rework/scripts/motion.mjs compare <папка>/motion
 нет или что сделано иначе; «решения не понадобились» в выводе сверки — убрать. «Своё (у донора нет)» — сверить с планом и
 банком идей: задумано ли. Протокол сверки годится доказательством задачи движения. Рецепты и общие
 правила (reduced-motion, LCP, петли дольше 5 с) — `reference/motion.md`. «Меньше движения» — отдельно:
-`runtime.mjs --reduced-motion` + assert конечного состояния каждого движения.
+`runtime.mjs <url> --motion` (петли, появления, мышь, контент — правило «тише, а не выключено») и
+`--reduced-motion --click … --assert` для действий по клику.
 
 ## Браузер пользователя
 

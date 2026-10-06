@@ -53,4 +53,4 @@ export RUN_DIR=<прогон> LOOK_BASE=http://localhost:3100        # папк�
   смысл — списком «было → стало» владельцу.
 
 Чего здесь нет нарочно: проверок с вердиктом (они в `scripts/`), генератора фактуры (`surface-tile.mjs`),
-набросков (`templates/sketch2d/`) и пререндера (`templates/render3d/`).
+набросков (`templates/sketch2d/`) и рендера предметов (`scripts/blender.mjs`, `templates/blender/`).

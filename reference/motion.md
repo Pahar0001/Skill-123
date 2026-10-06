@@ -210,10 +210,14 @@ node scripts/motion.mjs selftest --no-browser                                   
 
 - **Только transform и opacity** (плюс filter/clip-path для появлений). Не анимировать width,
   height, top, left, margin — это перекладка и рывки на телефоне. Полосу прогресса — `scaleX`.
-- **«Меньше движения»** (`prefers-reduced-motion: reduce`): сразу конечное состояние, без петель,
-  без печати, без параллакса. Не «нет анимации = всё скрыто»: скрытое до появления должно быть видно.
-  У действий по клику — короткое проявление без сдвига (раздел «Когда чисел донора нет»).
-  Проверка: `runtime.mjs --reduced-motion` + assert конечного состояния.
+- **«Меньше движения» — тише, а не выключено** (`prefers-reduced-motion: reduce`; решение владельца
+  06.10.2026). Движение при этой настройке остаётся, но спокойное: появления со сдвигом до 24 px за 0,6 с,
+  петли вдвое медленнее и с видимой кнопкой паузы, привязка к прокрутке вполовину, за мышью ничего не ходит,
+  печать — сразу готовый текст, автоплей-видео — на паузе с кнопкой, наведение — как есть. Что с каким
+  движением делать и почему — следующий раздел, «Меньше движения: тише, а не выключено». Запрещено по-прежнему:
+  мигание чаще 3 раз в секунду, крупные полёты через экран, движение дольше 5 с без возможности остановить
+  (WCAG 2.2.2). Скрытое до появления обязано проявиться: «скрипт вышел раньше, а стиль уже спрятал» — FAIL.
+  Проверка: `runtime.mjs <url> --motion` (строки «анимации / появления / мышь / контент при „меньше движения“»).
 - **Скрытое до появления — не главная картинка экрана.** Картинка, которая проявляется при
   прокрутке, становится «самым крупным элементом» в момент появления и уводит LCP на секунды
   (VN3D: появление у каталога дало LCP 11 с). Появление — у текстовых панелей и декора.
@@ -235,6 +239,77 @@ node scripts/motion.mjs selftest --no-browser                                   
 - **Петля при входе в экран — это `loop`, а не `scroll-scrub`** (Tilda SBS `intoview` + `loop`: пульс кнопки,
   вращение 25 с). На не-Tilda сайтах замер прокруткой такую петлю по-прежнему может назвать «привязано к
   прокрутке» — проверять стоп-кадром: меняется без прокрутки — петля.
+
+## Меньше движения: тише, а не выключено
+
+**Что это.** Настройка системы «отключить анимации»; браузер передаёт её сайту как
+`prefers-reduced-motion: reduce`. В Windows — «Параметры → Специальные возможности → Визуальные эффекты →
+Эффекты анимации», на айфоне — «Универсальный доступ → Движение → Уменьшение движения». Её включают те, кого
+укачивает, и те, у кого слабый компьютер; часто она выключена «сама» — после обновления, в режиме экономии
+батареи, при настройке «на быстродействие».
+
+**Почему не «выключить всё».** До 06.10.2026 навык требовал при этой настройке сразу конечное состояние. На
+основном компьютере владельца (Windows 10) анимации системы были выключены — и свой же «Зелёный уголок» он видел
+неподвижным. Решение владельца: сайт выглядит живым у всех, а тем, кому движение мешает, оно не бьёт в глаза и
+останавливается кнопкой. Образец — `zelu/public/css/shop.css` и `shop.js`, коммит 672e720 (KIMota777/sites).
+«Выключить всё и показать контент» остаётся допустимым — для панели управления, формы, служебной страницы, — но
+для витрины это не выбор по умолчанию. «Не обращать внимания на настройку» нельзя: людям бывает физически плохо.
+
+| движение | в обычном режиме | при «меньше движения» |
+|---|---|---|
+| появление при прокрутке и при загрузке (`reveal`, `entrance`) | числа донора — до 100 px за 1 с | сдвиг до 24 px, до 0,6 с; выезд из-под маски и шторка через весь кадр — проявлением со сдвигом |
+| бегущая строка, петли, автосмена слайдов (`marquee`, `loop`, `carousel-auto`) | период донора | вдвое медленнее **и** кнопка паузы, видимая всегда (не только при наведении); петля без кнопки — стоит |
+| привязка к прокрутке (`scroll-scrub`, `parallax`, `pin`) | ход донора | вполовину: ход свойства × 0,5 |
+| слежение за мышью, параллакс от мыши, наклон, свой курсор (`mouse-tilt`) | есть | выключено |
+| печать текста, смена слов (`typewriter`) | набирается | сразу готовый текст |
+| счётчики, табло (`counter`) | считают | сразу итог: лента цифр — крупный быстрый ход |
+| автоплей-видео (`video-bg`) | играет | на паузе (постер); содержательное — с видимой кнопкой запуска |
+| наведение и фокус (`hover`) | переход | остаётся как есть |
+| действия по клику (`click-menu`, аккордеон, окно, вкладки) | сдвиг, масштаб, пружина | без полёта: проявление прозрачностью до 200 мс — оно подтверждает, что клик сработал |
+| плавная прокрутка всей страницы (Lenis, `scroll-behavior: smooth`) | если есть у донора | выключена |
+| холст и 3D (`canvas`) | рисует, вращается | авто-вращение вдвое медленнее с кнопкой паузы или стоит; за мышью не ходит |
+
+**Как делать.** Один флаг в скрипте и один блок в CSS — образец:
+```js
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+const soft = () => (calm.matches ? 0.5 : 1);          // скорость строк и ход привязки к прокрутке
+const recalc = [];                                     // что пересчитать, когда настройку переключили при открытой странице
+if (calm.addEventListener) calm.addEventListener('change', () => { for (const f of recalc) f(); });
+```
+```css
+@media (prefers-reduced-motion: reduce) {
+  .js-reveal [data-reveal]:not(.is-in) { transform: translateY(24px); }   /* вместо 100 px донора; направление то же */
+  [data-reveal].is-in { transition-duration: .6s; }
+  .mq__pause { opacity: 1; }                                               /* кнопка паузы видна без наведения */
+}
+```
+- Скрипт при настройке **не выходит раньше времени**: `if (calm.matches) return;` перед появлениями оставляет
+  спрятанное стилем спрятанным навсегда — это FAIL «контент не проявился».
+- Правила — адресные. Глобальный сброс `* { transition-duration: .01ms !important; animation: none !important }`
+  (он ещё стоит в `engines.md` → «Движение») выключает всё разом и гасит подтверждение клика: не ставить.
+- Запрещено в любом режиме: мигание чаще 3 раз в секунду, полёты через экран, движение дольше 5 с без кнопки
+  остановки (WCAG 2.2.2).
+- Набор `templates/decor-kit` уже так устроен (строки, шторка, рисунок линией, автосмена, параллакс).
+
+**Проверка.** `runtime.mjs <url> --motion` открывает страницу заново в двух вкладках — с настройкой и без,
+прокручивает обе до низа и даёт четыре строки:
+- «анимации при „меньше движения“» — бесконечная петля допустима, если её круг не короче 1,5 круга обычного
+  режима (правило — вдвое, полтора — допуск проверки) и у неё есть видимая кнопка паузы, которая её
+  останавливает (скрипт кнопку нажимает). Нет кнопки, кнопка не останавливает, петля не замедлена — WARN.
+  Скорость сверяется по имени анимации: в тихом режиме менять длительность (`animation-duration`), а не имя
+  `@keyframes` — иначе WARN «сравнить не с чем»;
+- «появления» — элемент ждал появления со сдвигом от 40 px и приехал на место — WARN (правило — до 24 px);
+- «мышь» — после событий движения мыши у элементов меняется `transform` — WARN;
+- «контент» — текст виден в обычном режиме и спрятан с настройкой после прокрутки всей страницы: от 3 блоков
+  или от 10 % знаков — **FAIL** «контент не проявился»; видно меньше половины знаков — **FAIL** «страница почти
+  пустая»; 1–2 блока — WARN «проверить глазами». Автосмена слайдов потерей не считается: вкладки застают разные
+  слайды, и если у спрятанного блока в соседнем слайде того же контейнера есть обратный (спрятан в обычном
+  режиме, виден с настройкой) — WARN «похоже на автосмену слайдов», не FAIL.
+Чего проверка не видит: петли на `requestAnimationFrame` и холсте; привязку к прокрутке («вполовину» — глазами
+или `--assert` на значение свойства); кнопку паузы без слова «пауза», «остановить», «стоп», `pause`, `stop`
+в подписи, `aria-label` или классе. Действие по клику — `runtime.mjs <url> --reduced-motion --click
+"<кнопка>" --wait 300 --assert "<конечное состояние>"`. В отчёт — строка «что увидит человек с отключёнными
+анимациями» (`templates/report.md`).
 
 ## Когда чисел донора нет: правила Эмиля Ковальски
 
@@ -328,13 +403,8 @@ node scripts/motion.mjs selftest --no-browser                                   
 не в счёт; значение — `transform` прямо на элементе. Отскок — только после броска с инерцией. Подробно —
 `apple-design` §2–10.
 
-**«Меньше движения» — меньше и мягче, но не ноль.**
-- Появления, петли, параллакс, печать, счётчики — как в «Общих правилах»: сразу конечное состояние.
-- Действия по клику (меню, аккордеон, окно заявки, вкладки, «Отправлено») — без сдвига и масштаба, но с
-  коротким проявлением прозрачностью до 200 мс: оно подтверждает, что клик сработал.
-- Правила — адресные. Глобальный сброс `* { transition-duration: .01ms !important }` (он ещё стоит в
-  `engines.md` → «Движение») гасит и это подтверждение: поверх адресных правил его не ставить.
-- Проверка: `runtime.mjs <url> --reduced-motion --click "<кнопка>" --wait 300 --assert "<конечное состояние>"`.
+**«Меньше движения».** Правило — «тише, а не выключено», раздел выше. К действиям по клику из этого раздела оно
+применяется так: без сдвига, масштаба и пружины, проявление прозрачностью до 200 мс — оно подтверждает, что клик сработал.
 
 **Что это меняет в рецептах ниже** — только у своего; где у донора есть строка протокола, числа его:
 - `hover` — движение под `@media (hover: hover) and (pointer: fine)`, `:focus-visible` вне него; увеличение
@@ -379,7 +449,7 @@ node scripts/motion.mjs selftest --no-browser                                   
 | пружина, прерываемое движение, отклик на нажатие | Motion `{ type: "spring", bounce }`, `press`, `hover`; пружина в CSS — `linear()` (MCP `motion`, генератор пружин) | пружина сохраняет скорость, когда движение прервали |
 | уход из DOM с анимацией, смена раскладки, общий элемент (React) | Motion `AnimatePresence`, `layout`, `layoutId` | CSS не анимирует между двумя раскладками |
 | счётчик | Motion `animate(0, n, { onUpdate })` или свой `requestAnimationFrame` | бесплатно; готовый `AnimateNumber` — платный |
-| плавная прокрутка всей страницы | Lenis | только если она есть у донора или это характер сайта; при «меньше движения» — выключать |
+| плавная прокрутка всей страницы | Lenis | только если она есть у донора или это характер сайта; при «меньше движения» — выключать (единственное, что выключается целиком: она меняет саму прокрутку) |
 | иллюстрация с готовым движением | Lottie | только с готовым файлом |
 | 3D, частицы, шейдеры | Three.js, WebGL | `engines.md` → «3D» |
 
@@ -387,28 +457,28 @@ node scripts/motion.mjs selftest --no-browser                                   
 ```html
 <script type="module">
   import { animate, inView, scroll, stagger } from "https://cdn.jsdelivr.net/npm/motion@13.4.6/+esm";
-  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    document.documentElement.classList.add("motion-on");   /* в CSS: .motion-on .menu-list > * { opacity: 0 } — без JS всё видно */
-    inView(".menu-list", (list) => {                        /* колбэк — один раз, когда список вошёл в экран */
-      animate(list.children, { opacity: [0, 1], y: [16, 0] },
-        { delay: stagger(0.06), duration: 0.5, ease: [0.23, 1, 0.32, 1] });
-    }, { amount: 0.3 });
-    const hero = document.querySelector(".hero");           /* параллакс: фон привязан к прохождению блока через экран */
-    scroll(animate(".hero__bg", { y: [0, 120] }, { ease: "linear" }),
-      { target: hero, offset: ["start start", "end start"] });
-  }
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;   /* «меньше движения»: тише, а не выключено */
+  document.documentElement.classList.add("motion-on");     /* в CSS: .motion-on .menu-list > * { opacity: 0 } — без JS всё видно */
+  inView(".menu-list", (list) => {                          /* колбэк — один раз, когда список вошёл в экран */
+    animate(list.children, { opacity: [0, 1], y: [16, 0] },                /* сдвиг ≤ 24 px и ≤ 0,6 с — годится и для calm */
+      { delay: stagger(0.06), duration: 0.5, ease: [0.23, 1, 0.32, 1] });
+  }, { amount: 0.3 });
+  const hero = document.querySelector(".hero");             /* параллакс: фон привязан к прохождению блока через экран */
+  scroll(animate(".hero__bg", { y: [0, calm ? 60 : 120] }, { ease: "linear" }),   /* привязка к прокрутке — вполовину */
+    { target: hero, offset: ["start start", "end start"] });
 </script>
 ```
 Для простых анимаций хватает мини-версии `animate` (`motion@13.4.6/mini/+esm`, около 2,5 КБ), полная — около 18 КБ.
 
 **Motion в React** (сайт на React или Next):
 ```jsx
-import { motion, MotionConfig } from "motion/react";
-<MotionConfig reducedMotion="user">
-  <motion.li initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }}
-    viewport={{ once: true, amount: 0.3 }} transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }} />
-</MotionConfig>
+import { motion, useReducedMotion } from "motion/react";
+const calm = useReducedMotion();                              // «меньше движения»: числа тише, движение остаётся
+<motion.li initial={{ opacity: 0, y: calm ? 12 : 16 }} whileInView={{ opacity: 1, y: 0 }}
+  viewport={{ once: true, amount: 0.3 }} transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }} />
 ```
+`<MotionConfig reducedMotion="user">` выключает у всех потомков сдвиги и масштаб разом и оставляет прозрачность —
+это «всё выключено, контент виден»: годится для панели управления, для витрины — `useReducedMotion()` и свои числа.
 Код на Motion — по навыку `motion`: `~/.claude/skills/motion/best-practices/` (`motion.md` — обычный JS, `react.md`,
 `css-or-motion.md`); документация и примеры — MCP `motion` (`search-motion-docs`), API не писать по памяти.
 Motion+ ($399: splitText, AnimateNumber, Ticker, Typewriter, аудиты MotionScore) — только с согласия владельца.
@@ -424,7 +494,8 @@ GSAP (3.15) бесплатен целиком, включая ScrollTrigger и S
 ```css
 .hero__title { animation: rise .8s .1s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(24px); } }
-@media (prefers-reduced-motion: reduce) { .hero__title { animation: none; } }
+@keyframes rise-calm { from { opacity: 0; transform: translateY(12px); } }
+@media (prefers-reduced-motion: reduce) { .hero__title { animation: rise-calm .6s both; } }   /* тише: без задержки, сдвиг до 24 px */
 ```
 Не задерживать главный текст дольше 0.3 с — первый экран «пустой» — плохой LCP.
 
@@ -435,7 +506,7 @@ GSAP (3.15) бесплатен целиком, включая ScrollTrigger и S
 ```js
 // reveal.js
 const els = document.querySelectorAll('[data-reveal]');
-if (els.length && 'IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+if (els.length && 'IntersectionObserver' in window) {           // при «меньше движения» скрипт работает так же: тише его делает CSS
   document.documentElement.classList.add('js-reveal');           // без перехода: см. CSS
   const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } },
     { rootMargin: '0px 0px -12% 0px', threshold: 0.08 });          // «на 88% экрана»
@@ -446,6 +517,10 @@ if (els.length && 'IntersectionObserver' in window && !matchMedia('(prefers-redu
 .js-reveal [data-reveal]:not(.is-in) { opacity: 0; transform: translateY(20px); transition: none; }
 [data-reveal].is-in { transition: opacity .6s ease, transform .6s ease; }
 [data-reveal]:nth-child(2) { transition-delay: .1s; }            /* по очереди +100 мс */
+@media (prefers-reduced-motion: reduce) {                        /* тише: у донора бывает 100 px за 1 с */
+  .js-reveal [data-reveal]:not(.is-in) { transform: translateY(24px); filter: none; clip-path: none; }
+  [data-reveal].is-in { transition-duration: .6s; }
+}
 ```
 Шторка: `clip-path: inset(0 100% 0 0)` → `inset(0)`; размытие: `filter: blur(12px)` → `none`.
 
@@ -479,15 +554,15 @@ const lerp = (a, b, p) => a + (b - a) * p;
 let raf = 0;
 function update() {
   raf = 0;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { bg.style.transform = bg.style.opacity = ''; return; }
+  const k = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.5 : 1;   // «меньше движения» — ход вполовину
   const vh = innerHeight, top = box.getBoundingClientRect().top;
-  const p = Math.min(1, Math.max(0, (START * vh - top) / ((START - END) * vh)));
+  const p = 1 - k + k * Math.min(1, Math.max(0, (START * vh - top) / ((START - END) * vh)));   // конец пути тот же, начало ближе
   bg.style.transform = `scale(${lerp(1.4, 1.1, p).toFixed(4)})`; bg.style.opacity = lerp(0.9, 0.5, p).toFixed(3);
 }
 addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(update); }, { passive: true });
 addEventListener('resize', update); update();
 ```
-CSS (конечное состояние — оно же без JS и при «меньше движения»):
+CSS (конечное состояние — оно же без JS; при «меньше движения» путь к нему вдвое короче):
 `.custom__bg { transform: scale(1.1); opacity: .5; will-change: transform, opacity; }`.
 Можно `animation-timeline: view()` (Chrome, Edge, Safari 26) — но только под
 `@supports (animation-timeline: view())` и с этим же JS для остальных. Если слушатель
@@ -501,7 +576,8 @@ CSS (конечное состояние — оно же без JS и при «�
 const layers = [...document.querySelectorAll('[data-k]')];
 function par() { const y = scrollY; for (const l of layers) l.style.transform = `translate3d(0, ${(y * +l.dataset.k).toFixed(1)}px, 0) rotate(${l.dataset.rot || 0}deg)`; }
 ```
-Только у декора и слоёв без текста; на телефоне коэффициенты вдвое меньше или без параллакса.
+Только у декора и слоёв без текста; на телефоне и при «меньше движения» коэффициенты вдвое меньше
+(`+l.dataset.k * soft()`), на телефоне можно и без параллакса.
 
 ### `pin` — закреплённый раздел / полоса; лента вбок
 Из протокола: `sub` (полоса — меню категорий; раздел — сцена на N px прокрутки), для ленты —
@@ -532,7 +608,7 @@ let last = 0; addEventListener('scroll', () => { const y = scrollY; head.classLi
 ```html
 <div class="mq" data-marquee><div class="mq__track">
   <ul>…</ul><ul aria-hidden="true">…</ul>                       <!-- вторая копия — для стыка -->
-</div><button data-marquee-toggle aria-label="Остановить ленту">Остановить</button></div>
+</div><button class="mq__pause" data-marquee-toggle aria-label="Остановить ленту">Пауза</button></div>
 ```
 ```css
 .mq { overflow: hidden; mask-image: linear-gradient(to right, transparent, #000 12.5%, #000 87.5%, transparent); }
@@ -540,8 +616,18 @@ let last = 0; addEventListener('scroll', () => { const y = scrollY; head.classLi
 .mq:hover .mq__track, .mq.is-paused .mq__track { animation-play-state: paused; }
 .mq ul { display: flex; gap: 72px; padding: 0 36px; }             /* поля = половина зазора: стык не виден */
 @keyframes mq { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) { .mq__track { animation: none; } .mq ul[aria-hidden] { display: none; } .mq ul { flex-wrap: wrap; } }
+.mq__pause { opacity: 0; } .mq:hover .mq__pause, .mq__pause:focus-visible, .mq.is-paused .mq__pause { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {                          /* тише: вдвое медленнее, кнопка паузы видна всегда */
+  .mq__track { animation-duration: calc(var(--dur, 60s) * 2); }
+  .mq__pause { opacity: 1; }
+}
 ```
+```js
+btn.addEventListener('click', () => { const on = mq.classList.toggle('is-paused'); btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Дальше' : 'Пауза'; });
+```
+Длительность считает скрипт (`--dur` = ширина копии / скорость) — тогда вдвое медленнее делается делением скорости
+на `soft()`, а не `calc` в CSS (образец — shop.js «Зелёного уголка»). Кнопка — настоящая `button` с подписью или
+`aria-label` «Пауза» / «Остановить»: её ищет и нажимает `runtime --motion`.
 Чужие логотипы в ленте — только законно (клиенты, которые разрешили); иначе — своё содержание
 (игры, жанры, материалы) и строка о правах.
 
@@ -550,14 +636,15 @@ let last = 0; addEventListener('scroll', () => { const y = scrollY; head.classLi
 ```js
 const words = ['настольных игр.', 'вашей полки.']; const el = document.querySelector('.type');
 const TYPE = 1000 / 16, ERASE = 1000 / 29, HOLD = 2600;          // из протокола
-(async () => { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+(async () => { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;   // «меньше движения»: остаётся готовый текст из разметки — так и задумано
   for (let i = 0; ; i = (i + 1) % words.length) { const w = words[i];
     for (let n = 1; n <= w.length; n++) { el.textContent = w.slice(0, n); await new Promise((r) => setTimeout(r, TYPE)); }
     await new Promise((r) => setTimeout(r, HOLD));
     for (let n = w.length; n >= 0; n--) { el.textContent = w.slice(0, n); await new Promise((r) => setTimeout(r, ERASE)); } } })();
 ```
 В разметке — первое слово целиком (без JS, для поиска и LCP), для чтения с экрана — всё
-одной фразой в `.sr-only`, печатающийся узел `aria-hidden`. Курсор — `::after` с `steps(1)`.
+одной фразой в `.sr-only`, печатающийся узел `aria-hidden`. Курсор — `::after` с `steps(1)`; при «меньше
+движения» курсор не мигает (петля без кнопки паузы), текст — готовый.
 
 ### `counter` — числа считают
 Запуск — при входе в экран, 1–1.5 с, `toLocaleString('ru-RU')`; при «меньше движения» — сразу итог.
@@ -565,12 +652,15 @@ const TYPE = 1000 / 16, ERASE = 1000 / 29, HOLD = 2600;          // из про�
 «500 клиентов» у кофейни на 20 мест выдают выдумку.
 
 ### `carousel-auto` — слайды листаются сами
-Из протокола: шаг, интервал. Пауза при наведении и фокусе, кнопки «назад/вперёд» и «пауза»,
-при «меньше движения» — не листать. Чаще лучше без автолистания.
+Из протокола: шаг, интервал. Пауза при наведении и фокусе, кнопки «назад/вперёд» и «пауза»;
+при «меньше движения» — интервал вдвое длиннее, кнопка «пауза» видна всегда, слайд меняется проявлением, без
+проезда через весь блок (так устроен `data-dk-autoplay` набора decor-kit). Чаще лучше без автолистания.
 
 ### `loop` — петли (парение, вращение, пульс, мигание, покачивание)
 Из протокола: подвид, период, ключевые кадры. CSS `@keyframes` с `alternate` для парения,
 `linear infinite` для вращения. Вне экрана — `animation-play-state: paused` (IntersectionObserver).
+При «меньше движения»: период вдвое дольше (`animation-duration` × 2 в `@media`) и видимая кнопка паузы; декоративная
+петля без кнопки при этой настройке стоит (`animation: none` или `animation-play-state: paused`). Мигание — стоит всегда.
 Покачивание (Framer loop: ±2–6° за несколько секунд) — `rotate` в `@keyframes` с `ease-in-out alternate`.
 У донора периоды разные (shapefest: 9.6–13.1 с у пяти картинок, 7.4 с у контейнера) и старт общий — поэтому
 вразнобой. Повторять так же: разные `animation-duration` и одна задержка, не `animation-delay` по порядку. В
@@ -598,7 +688,10 @@ const TYPE = 1000 / 16, ERASE = 1000 / 29, HOLD = 2600;          // из про�
   transition: transform .35s cubic-bezier(.2,.7,.2,1), visibility 0s .35s; }                  /* числа — из протокола */
 .drawer.is-open { transform: none; visibility: visible; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
 .burger[aria-expanded="true"] i:first-child { transform: translateY(6px) rotate(45deg); }
-@media (prefers-reduced-motion: reduce) { .drawer, .drawer.is-open { transition: none; } }
+@media (prefers-reduced-motion: reduce) {            /* без полёта панели через экран: проявление 200 мс */
+  .drawer { transform: none; opacity: 0; transition: opacity .2s, visibility 0s .2s; }
+  .drawer.is-open { opacity: 1; transition: opacity .2s; }
+}
 ```
 ```js
 const setMenu = (on) => { drawer.classList.toggle('is-open', on); burger.setAttribute('aria-expanded', String(on)); document.documentElement.classList.toggle('no-scroll', on); if (on) drawer.querySelector('a').focus(); else burger.focus(); };
@@ -623,7 +716,7 @@ addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
 .faq__a > div { overflow: hidden; }                                       /* высота «auto» без замера в JS */
 .js .faq__item.is-open .faq__a { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows .4s cubic-bezier(.2,.7,.2,1); }
 .faq__q svg { transition: transform .3s ease; } .faq__item.is-open .faq__q svg { transform: rotate(90deg); }
-@media (prefers-reduced-motion: reduce) { .js .faq__a, .faq__q svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .js .faq__a, .js .faq__item.is-open .faq__a, .faq__q svg { transition-duration: .2s; } }   /* тише: коротко, без пружины */
 ```
 ```js
 document.documentElement.classList.add('js');
@@ -653,7 +746,8 @@ for (const b of document.querySelectorAll('.faq__q')) {
 
 ### `click-popup` — окно по ссылке (Tilda `#popup:<имя>`)
 Из протокола: как показывается (у Tilda T1093 — `data-anim`, часто «сразу»), блокируется ли прокрутка, чем
-закрывается (Escape, кнопка, подложка). Повторять как у донора; «меньше движения» — без анимации входа.
+закрывается (Escape, кнопка, подложка). Повторять как у донора; «меньше движения» — без сдвига и масштаба,
+проявление до 200 мс.
 
 ### `canvas` — холст рисует
 3D или 2D. Запуск после загрузки (`requestIdleCallback`), без блокировки (`compileAsync`, если
@@ -662,7 +756,8 @@ for (const b of document.querySelectorAll('.faq__q')) {
 
 ### `video-bg` — видео-фон
 `autoplay muted loop playsinline`, постер (он же LCP), `preload="metadata"`, пауза вне экрана,
-при «меньше движения» — постер вместо видео, вес ≤ 2–3 МБ (media.mjs режет петлю).
+при «меньше движения» — видео на паузе (виден постер); у содержательного ролика — видимая кнопка запуска,
+у декоративного фона хватает постера. Вес ≤ 2–3 МБ (media.mjs режет петлю).
 
 Лёгкое фоновое видео — рецепт целиком:
 - ролик по смыслу дела (жарка у гриля, пар над чашкой, руки мастера), без звука, петля 6–12 с без видимого шва;
@@ -672,9 +767,10 @@ for (const b of document.querySelectorAll('.faq__q')) {
 - `<video autoplay muted loop playsinline preload="metadata" poster="…" aria-hidden="true" disablepictureinpicture>`:
   декоративное — вне дерева доступности, смысл несёт текст рядом;
 - пауза вне экрана (`IntersectionObserver` или Motion `inView` с колбэком выхода) и при скрытой вкладке;
-  «меньше движения» или режим экономии (видео не стартовало) — остаётся постер;
+  «меньше движения» (`video.pause()` по `matchMedia`, и на смену настройки тоже) или режим экономии (видео не
+  стартовало) — остаётся постер; ролик со смыслом — с кнопкой «Смотреть»;
 - текст поверх видео — на подложке или затемнении, контраст меряет `a11y.mjs` по снимку фона;
-- проверка: `runtime.mjs <url> --video --reduced-motion`, вес — `perf.mjs` (видео первого экрана считается отдельно).
+- проверка: `runtime.mjs <url> --video` (строка «видео при „меньше движения“»: играет — WARN), вес — `perf.mjs` (видео первого экрана считается отдельно).
 
 ## Своё и банк идей
 

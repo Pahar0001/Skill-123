@@ -9,7 +9,7 @@
 - `verify.mjs` (design-reference) — шкала против донора;
 - `perf.mjs` — вес шрифтов;
 - `cyrillic-check.mjs` — кириллица у шрифта, до выбора;
-- `fonts.mjs` — шрифты Google с кириллицей: подбор (`pick`, `pairs`) и загрузка к себе (`get`).
+- `fonts.mjs` — выбор шрифта по образцу (`measure` → `match` → `sheet` → `decide`, порядок — `reference/fonts.md`); без образца — шрифты Google с кириллицей: подбор (`pick`, `pairs`); загрузка к себе (`get`).
 
 ## 0. Донор сильнее учебника
 

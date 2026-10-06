@@ -91,7 +91,7 @@ Start-Process node -ArgumentList '--watch','server.js' -WorkingDirectory D:\proj
   `typeset`) — только если стоит (`/Applications/Firefox.app`, `/usr/bin/firefox`, `/snap/bin/firefox` или `FIREFOX_PATH`);
   нет — так и писать в отчёт, а не заменять Chrome молча.
 - **WebGL (ANGLE).** `--use-angle=d3d11` есть только на Windows: на macOS с ним холст нулевой ширины, и
-  `render3d/render.mjs` падал «createImageData… width is zero». Теперь движок по системе: Windows — d3d11, macOS —
+  съёмка сцены Three.js падала «createImageData… width is zero». Теперь движок по системе: Windows — d3d11, macOS —
   metal, Linux — swiftshader (программный, работает без дисплея и драйвера GPU; на быстром GPU-сервере можно
   `SITE_REWORK_ANGLE=gl` или `vulkan`). Такая ошибка у своей сцены — сначала `SITE_REWORK_ANGLE=swiftshader`.
 - **Клавиши.** Сочетания с Control на macOS — Cmd (`Meta` у puppeteer). В безголовом Chrome на macOS даже Cmd+A
@@ -111,7 +111,8 @@ Start-Process node -ArgumentList '--watch','server.js' -WorkingDirectory D:\proj
 
 ```bash
 node -e "import('$HOME/.claude/skills/site-rework/scripts/lib.mjs').then((l) => console.log(l.findBrowser(), l.loadSharp() ? 'sharp есть' : 'sharp нет'))"
-node ~/.claude/skills/site-rework/templates/render3d/render.mjs icons --variant seed --w 300 --h 300 --dpr 1 --n 8 --name t --out "${TMPDIR:-/tmp}/r3test"   # OK, заполнено ≈9%
+node ~/.claude/skills/site-rework/scripts/blender.mjs doctor                                   # Blender, Cycles, видеокарта; нет Blender — что ставить
+node ~/.claude/skills/site-rework/scripts/blender.mjs render ~/.claude/skills/site-rework/templates/blender/icons.py --variant seed --w 300 --h 300 --samples 8 --out "${TMPDIR:-/tmp}/bltest"   # OK, поле 8.0%
 node ~/.claude/skills/site-rework/scripts/a11y.mjs --selftest                                  # ≈2 мин, «не сошлось 0»
 RW_SELFTEST_ONLY='^(edit|scroll|vert)$' node ~/.claude/skills/site-rework/scripts/runtime.mjs --selftest   # быстро; полный — ≈9 мин
 ```
@@ -159,7 +160,7 @@ scripts/runtime.mjs    проверка в браузере: клики с эф�
 scripts/texture.mjs    фактура числом: слои зерна, σ по фонам, кипение, рецепт, compare донор против сайта; крупная фактура (мятая бумага, камень, ткань, доски) — плитка, её вид с уверенностью, шов, сила по секциям, рецепт --surface-*; selftest на fixtures/texture
 scripts/grain-tile.mjs своя детерминированная шумовая плитка (PNG, спрайт, WebP, GIF) и её проверка
 scripts/surface-tile.mjs  своя бесшовная плитка крупной фактуры: paper, pulp, stone, canvas; --like замер донора (вид, яркость, σ, размер, шаг ткани, направление волокон), --veins, --thread, --dir, --sheet лист стыков, --check готовый файл и его вид против донора; selftest
-scripts/bgdecor.mjs    фон образца и свой: рисунки, буквы-призраки, предметы на полях, узоры — бледность числом по трём снимкам, вырезки; compare с решениями decor-decisions.json; selftest на fixtures/bgdecor
+scripts/bgdecor.mjs    фон образца и свой: рисунки, буквы-призраки, предметы на полях, узоры, свечения — бледность и резкость края числом по трём снимкам, вырезки; строки «внутри карточек», «крупное за содержимым», «чего скрипт не меряет»; compare с решениями decor-decisions.json; selftest на fixtures/bgdecor (index, cal, cal2, cal3, tiles, overlay)
 scripts/cliche.mjs     шаблонность: дефолты на живой странице против донора и журнала вкуса; Tilda — служебное вне индекса, кегли и радиусы × zoom; слова-пустышки — общий словарь copy-rules
 scripts/taste.mjs      журнал вкуса между прогонами: отвергнутое и принятое с картинками, область site|general
 scripts/media.mjs      фото и видео из законных бесплатных источников: doctor, search, pick, import, credits
@@ -182,16 +183,20 @@ scripts/mirror.mjs     зеркало чужой страницы как вер�
 scripts/flags-doc.mjs  справочник флагов из кода → reference/flags.md; --check — сверка кода, -h и документации (вручную перед коммитом скилла)
 scripts/serve.mjs      статический сервер (Range для видео, сжатие br/gzip как у хостинга, только эта машина); --proxy отдаёт остальное оригиналу
 scripts/firecrawl.mjs  сбор данных облаком Firecrawl: map (адреса по типам страниц), scrape (текст, фирменный стиль), search, facts (кандидаты фактов со ссылками), status; кэш и бюджет кредитов на прогон; без ключа — пропуск; selftest на подставном сервере
-scripts/fonts.mjs      шрифты Google с кириллицей: pick по характеру (--like по-русски), pairs из ui-ux-pro-max, get — свои woff2 и fonts.css (unicode-range, swap; переменный — диапазон веса из файла), --text — подмножество под надпись; знаки по таблице cmap; selftest на fixtures/fonts
+scripts/fonts.mjs      выбор шрифта по образцу: measure (числа шрифта образца по отрисовке) → match (кандидаты с кириллицей из реестра источников) → sheet (лист для глаз) → decide (решение и лицензия — fonts/decision.json) → get — свои woff2 и fonts.css (unicode-range, swap; переменный — диапазон веса из файла), --text — подмножество под надпись; без образца — pick по характеру (--like по-русски), pairs из ui-ux-pro-max; латинская надпись — Fontshare (--latin; файлы не класть в публичный репозиторий); знаки по таблице cmap; порядок — reference/fonts.md; selftest на fixtures/fonts
+scripts/fonts/sources.json  реестр источников шрифтов: Google Fonts, Fontshare (только латиница), Adobe Fonts (выключен) — лицензии и что можно; как добавить источник — reference/fonts.md
+scripts/blender.mjs    предметы с объёмом в Blender (Cycles): doctor, render (прозрачный WebP), physics (твёрдые тела, ткань; видео), glb и glb-check (модель и просмотрщик на странице), vendor (three.js в сайт); selftest; справочник — reference/blender.md
+scripts/blender/       Python для Blender: run.py (запуск по заданию JSON), studio.py (свет и материалы), physics.py, export.py
+scripts/deploy-check.mjs  сверка выкладки: попадёт ли каждая страница и её файлы на бой (Dockerfile и .dockerignore, Vercel, Netlify, GitHub Pages, Caddy/nginx, package.json); --url — страницы на бою (до 50 запросов, только чтение); FAIL — код выхода 1, --no-fail — код 0; --selftest
 scripts/security.mjs   безопасность и утечки: служебные файлы с сервера (/.env, /.git, резервные копии), админка и API без входа, формы, секреты в коде и репозитории (--repo), чужие скрипты и счётчики, заголовки; selftest на fixtures/security
 scripts/skill-audit.mjs  чужой навык до установки: audit (папка, .zip, адрес GitHub — распаковка своим кодом, ничего не запускается; хуки, команды при загрузке, скачать-и-выполнить, отправка наружу, секреты, обфускация, невидимые знаки, широта описания, лицензия) и install одной папки с ORIGIN.txt и списком пересечений; selftest на fixtures/skill-audit
 scripts/fixtures/motion/   стенд всех видов движения для motion.mjs selftest (и JS-петли: стопка ×3 с разными периодами, парение, пульс; пружина — data-expect-not)
 scripts/fixtures/<скрипт>/ стенды selftest: lib (свой запуск: node scripts/fixtures/lib/selftest.mjs), runtime, a11y, perf, cliche, security, media, state, firecrawl (подставной сервер), fonts (выжимки ui-ux-pro-max, живые ответы CSS2, woff2 надписи), clicks, copy, typeset, requirements (.docx две версии, чат, расшифровка), tilda (выжимки сохранённых страниц), texture (зерно, вуаль, крупная фактура, ровный фон — плитки рисуются на лету), bgdecor (стенд-донор со всеми видами украшений и «наш сайт» для сверки); clicks/tilda.html и motion/tilda.html — Tilda-донор (скрипты Tilda заменены имитацией)
 templates/grain.css    слой зерна: отдельный элемент, @media по ширине, кипение сдвигом
 templates/surface.css  слой крупной фактуры: плитка в фоне блока, multiply на светлых и цветных полях, color-burn на тёмных (своя плитка для тёмных — --surface-tile-dark), выключена в печати
-templates/render3d/    пререндер объёмных предметов в прозрачный WebP: stage.html (студия из софтбоксов, материалы, накопление кадров), render.mjs (съёмка, --palette, --n, --bg), scenes/ (образец — предметы магазина семян), tools/ (малые копии, обрезка по тени); README — порядок, планка качества, своя сцена
+templates/blender/     сцены-образцы Blender (рендер предметов с объёмом — только он): icon.py, icons.py (значки набором), honeycomb.py, sprout.py, ribbon.py, stack.py и drape.py (физика), cards.json; viewer.html и viewer.js — GLB на странице; порядок, планка качества, цена кадра — reference/blender.md
 templates/sketch2d/    наброски от руки в фон: sketch-kit.mjs (фигуры кодом) → svg3d.mjs rough; botanical.mjs — образец; README
-templates/run-tools/   разовые инструменты прогона (не скрипты навыка, вердиктов не дают): look, tops, slices, scroll-shots, states (+ states.example.json), contrast-at, gzip-proxy, img-variants, css-dead, strings, typo, run-env; README
+templates/run-tools/   разовые инструменты прогона (не скрипты навыка, вердиктов не дают): look, tops, slices, scroll-shots, frames (frames.mjs — поведение во времени: загрузка, покой, шапка при прокрутке, наведение, клик — листы кадров и frames.json), states (+ states.example.json), contrast-at, gzip-proxy, img-variants, css-dead, strings, typo, run-env; README
 templates/copy-prompt.md  задание агенту «Тексты»: факты, образец голоса, признаки машинного текста, проверка абзаца
 templates/decor-kit/   детали для красоты: decor-kit.css и decor-kit.js (ES-модуль без зависимостей) — строки из-под маски, рисунок линией, цитата по словам, шторка фото, заливка автосмены, табло цифр, бледные слова, россыпь, печать с фактами, надписи-логотипы, мотивы разделов; README (подключение, правила своих рисунков, что проверить), demo.html — образец
 reference/tool-registry.md   что есть, когда чем пользоваться, чем заменять
