@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд runtime.mjs — правка поля с маской</title>
+<link rel="icon" href="data:,">
+<!--
+  Стенд runtime.mjs --edit (node runtime.mjs --selftest, случай edit). Два поля:
+    #phone   маска «+7 (900) 123-45-67»: формат по цифрам, курсор остаётся после той же цифры, Backspace за
+             разделителем стирает цифру перед ним (не застревает)
+    #name    обычное текстовое поле без маски
+  Шаг «выделить всё и стереть» раньше жал Control+A: в безголовом Chrome на macOS сочетание текст не выделяет
+  (selectionStart = selectionEnd = длина), Backspace стирал один знак — FAIL «осталось …» у любого поля (29.09).
+  Теперь: Cmd+A на macOS, Ctrl+A на Windows и Linux, с командой SelectAll, и если поле выделено не целиком —
+  el.select(). Ждём: у обоих полей «выделить всё и стереть» — OK, «осталось «+7»» и «осталось «»».
+-->
+<style>
+  body { margin: 0; font: 18px/1.5 system-ui, sans-serif; color: #1b1b1b; background: #faf8f4; }
+  main { max-width: 480px; margin: 0 auto; padding: 32px 16px; }
+  label { display: block; margin: 16px 0 4px; }
+  input { font: inherit; padding: 8px 12px; width: 100%; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Обратный звонок</h1>
+  <label for="phone">Телефон</label>
+  <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__">
+  <label for="name">Имя</label>
+  <input id="name" type="text" autocomplete="name">
+</main>
+<script>
+  const el = document.getElementById('phone');
+  /* цифры номера без кода страны: «8…» и «+7…» в начале — код */
+  const digits = (s) => { let d = s.replace(/\D/g, ''); if (/^[78]/.test(d) && (d.length === 11 || /^\+?7/.test(s) || /^8/.test(s))) d = d.slice(1); return d.slice(0, 10); };
+  const fmt = (d) => {
+    let s = '+7';
+    if (d.length) s += ' (' + d.slice(0, 3);
+    if (d.length > 3) s += ') ' + d.slice(3, 6);
+    if (d.length > 6) s += '-' + d.slice(6, 8);
+    if (d.length > 8) s += '-' + d.slice(8, 10);
+    return s;
+  };
+  /* сколько цифр номера до позиции (код «+7» не в счёт) и позиция после n-й цифры номера */
+  const before = (s, pos) => s.slice(0, pos).replace(/^\+7/, '').replace(/\D/g, '').length;
+  const after = (s, n) => { if (!n) return Math.min(s.length, 4); let k = 0; for (let i = 2; i < s.length; i++) if (/\d/.test(s[i]) && ++k === n) return i + 1; return s.length; };
+  let last = '';
+  el.addEventListener('keydown', (e) => {
+    /* Backspace сразу за разделителем: стереть цифру перед ним, иначе маска вернёт разделитель */
+    if (e.key !== 'Backspace' || el.selectionStart !== el.selectionEnd) return;
+    const pos = el.selectionStart; const v = el.value;
+    if (pos > 2 && !/\d/.test(v[pos - 1])) {
+      e.preventDefault();
+      const n = before(v, pos); if (!n) return;
+      const d = digits(v); const nd = d.slice(0, n - 1) + d.slice(n);
+      el.value = fmt(nd); const c = after(el.value, n - 1); el.setSelectionRange(c, c); last = el.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  el.addEventListener('input', () => {
+    if (el.value === last) return;
+    const pos = el.selectionStart; const v = el.value;
+    const n = before(v, pos); const d = v.replace(/\D/g, '').length ? (/^\+7/.test(v) ? v.slice(2).replace(/\D/g, '').slice(0, 10) : digits(v)) : '';
+    el.value = d.length ? fmt(d) : (v ? '+7' : '');
+    const c = after(el.value, Math.min(n, d.length)); el.setSelectionRange(c, c); last = el.value;
+  });
+  el.addEventListener('paste', (e) => {
+    const t = (e.clipboardData || window.clipboardData).getData('text'); if (!t) return;
+    e.preventDefault(); el.value = fmt(digits(t)); last = el.value; el.setSelectionRange(el.value.length, el.value.length);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+</script>
+</body>
+</html>

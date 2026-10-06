@@ -1,0 +1,5 @@
+# макеты и тяжёлые исходники фото — не в образ
+node_modules
+**/*.psd
+media/
+!media/logo.svg

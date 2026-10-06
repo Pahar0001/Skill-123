@@ -255,17 +255,26 @@ P0 сломано · P1 крупная проблема UX · P2 крупная 
 - тексты — `reference/copy.md`; типограф `copy.mjs fix --typograph` — сначала дифф пользователю; у сайта с
   серверным рендером строки шаблонов — `run-tools/strings.mjs`, набор при выводе — `run-tools/typo.mjs`; чужой
   текст из базы — только набор, слова — списком «было → стало» владельцу;
-- шрифты — донора, иначе Google Fonts с кириллицей: `fonts.mjs pick --like "<характер>"`, `fonts.mjs get`;
+- шрифты — донора с кириллицей, иначе по порядку `reference/fonts.md`: `fonts.mjs measure <донор>` (числа шрифта
+  образца по отрисовке) → `match` (кандидаты с кириллицей из реестра источников `scripts/fonts/sources.json`, только
+  с лицензией на веб) → `sheet` (лист для глаз: образец рядом, ₽, капс с Й/Ё при межстрочном 0,9 и 1,0) → `decide`
+  (решение и лицензия — `<папка>/fonts/decision.json`) → `get`; без образца — `pick --like "<характер>"`;
+  латинская надпись — ещё и Fontshare (`match --latin`, `get "fontshare:…" --latin`; файлы не урезать и не
+  передавать клиенту — условия в decision.json); Adobe Fonts — не подключать (свои файлы запрещены);
   неразрывные пробелы — в исходном тексте и данных, `typeset.mjs` только меряет (`reference/typography.md`);
 - фото и видео — `media.mjs search` → лист-контакт глазами → `pick --seen --caption` → `credits`; заменённая
   под тем же именем картинка — метка версии в адресе (`photo.webp?v=<хэш>`);
 - фактура, 3D — `reference/engines.md`: зерно — `grain-tile.mjs` и `templates/grain.css`; крупная фактура (мятая и
   зернистая бумага, камень с прожилками, ткань) — `surface-tile.mjs` и `templates/surface.css`; детали — `templates/decor-kit/`
   (README); наброски от руки в фон — `templates/sketch2d/`; предметы пререндером в прозрачный WebP —
-  `templates/render3d/`; иконки, предметы и фоны с объёмом в SVG — `svg3d.mjs` (`reference/svg-3d.md`), на видных
-  местах рядом с пререндером они слабее — туда только объёмные;
+  `templates/render3d/`; фотореализм, стекло, ткань, физика (предметы ложатся на плоскости, ткань драпируется) и
+  живое 3D в GLB — `blender.mjs` на машине с Blender (`reference/blender.md`; `blender.mjs doctor` — что есть);
+  иконки, предметы и фоны с объёмом в SVG — `svg3d.mjs` (`reference/svg-3d.md`), на видных местах рядом с
+  пререндером они слабее — туда только объёмные;
 - состояния (меню, фильтры, подсказки, ошибки форм, «заявка принята») и длинные страницы — листами для глаз:
-  `templates/run-tools/` (`states`, `look`, `tops`, `slices`, `scroll-shots`); вердикты по-прежнему дают скрипты;
+  `templates/run-tools/` (`states`, `look`, `tops`, `slices`, `scroll-shots`); как живёт страница донора или своя —
+  загрузка, покой, шапка при прокрутке, переход при наведении — покадрово: `run-tools/frames.mjs`; вердикты
+  по-прежнему дают скрипты; перевод всего сайта в новый язык — рецепт `reference/steps.md`;
 - движение — рецепты `reference/motion.md` по числам `motion.mjs`, `prefers-reduced-motion` всегда; своё и
   полировка — `reference/craft.md` (навык `impeccable` не вызывать — читать его `reference/*.md`);
 - телефон — своя вёрстка первого экрана, меню, форм и таблиц, а не «ужать десктоп»; 320 px тоже.
@@ -297,7 +306,8 @@ node ~/.claude/skills/site-rework/scripts/runtime.mjs <url> --out <папка> -
 
 Выход из круга: P0–P2 исправлены, быстрые проверки без FAIL, изменённое открыто глазами и прокликано.
 Сдача: все P0–P2 VERIFIED с доказательствами новее последней правки, полная проверка без FAIL (runtime,
-320 px, a11y, typeset в Chrome и Firefox, copy, cliche, motion compare, security; с донором — ещё verify,
+320 px, a11y, typeset в Chrome и Firefox, copy, cliche, motion compare, security; перед выкладкой — `deploy-check.mjs
+<папка проекта> --url <бой>` без FAIL (новая папка страницы не попала в Dockerfile — 404 на бою); с донором — ещё verify,
 texture compare и bgdecor compare: `state.mjs show` перечисляет, чего нет), `perf` не хуже базы,
 придуманное — в списке для владельца, детали на всех типах страниц, в браузере пользователя всё открывается и
 движется. Круги кончились по времени — оставшееся честно в отчёт.
@@ -353,17 +363,18 @@ puppeteer-core sharp ffmpeg-static --prefix ~/.claude/site-rework`, `CHROME_PATH
 ```
 scripts/     lib (браузер, экраны, прокрутка, снимки — общий для всех) · discover · runtime · shots + diff · perf · a11y
              typeset · cliche + taste · copy + copy-rules · motion + clicks · tilda · texture + grain-tile + surface-tile
-             bgdecor · media (+ media/) · recraft · svg3d (+ svg3d/) · firecrawl · fonts · security · requirements
-             state · ideas · mirror + serve · skill-audit · flags-doc; стенды самопроверок — scripts/fixtures/<скрипт>/
+             bgdecor · media (+ media/) · recraft · svg3d (+ svg3d/) · blender (+ blender/) · firecrawl · fonts (+ fonts/)
+             security · deploy-check · requirements · state · ideas · mirror + serve · skill-audit · flags-doc; стенды самопроверок — scripts/fixtures/<скрипт>/
 templates/   brief.md, report.md, copy-prompt.md (задание агенту «Тексты»), grain.css (зерно), surface.css (крупная
              фактура), decor-kit/ (детали для красоты, README и demo.html), svg3d/ (сцены и образец «3D SVG»),
              render3d/ (пререндер предметов: сцена, материалы, планка качества), sketch2d/ (наброски от руки в фон),
-             run-tools/ (разовые инструменты прогона: листы снимков, состояния, прокси со сжатием, строки шаблонов),
+             blender/ (сцены Blender: предмет, физика, ткань; просмотрщик GLB для сайта),
+             run-tools/ (разовые инструменты прогона: листы снимков, кадры поведения, состояния, прокси со сжатием),
              deps/ (package.json и .env.example для ~/.claude/site-rework)
 ui/          brief-form.html — форма брифа в браузере
 reference/   steps.md          шаги подробно: статусы, подготовка, разведка, план, реализация, отчёт, когда спрашивать
              qa.md             проверки: профили и условие сдачи, runtime, автопроверки, визуал, телефон, скорость, доступность
-             environment.md    запуск скриптов, среда Windows, сбои, файлы скилла подробно
+             environment.md    запуск скриптов, среда Windows, macOS и Linux, сбои, файлы скилла подробно
              tool-registry.md  какой инструмент когда и чем заменять; flags.md — все флаги (из кода)
              discovery.md      визуальный разбор словами, паспорт, фактура, дизайн-система
              donor-mode.md     сайт на языке донора, подбор донора (Refero); donor-tilda.md — донор на Tilda
@@ -372,7 +383,8 @@ reference/   steps.md          шаги подробно: статусы, под
              new-site.md       сайт с нуля: реестр требований, вопросы, направления, изменения по ходу
              engines.md        картинки и видео, фактура, 3D, телефон; motion.md — движение; craft.md — полировка
              svg-3d.md         рисунки с объёмом в SVG: какой движок когда, качество, лицензии
-             copy.md           тексты; typography.md — набор и шрифты
+             blender.md        Blender: реалистичные предметы, физика плоскостей, GLB на сайте; установка, проверка
+             copy.md           тексты; typography.md — набор и шрифты; fonts.md — выбор шрифта и источники
              security.md, firecrawl.md, skills-search.md — безопасность, Firecrawl, чужие навыки
 ```
 Каждый скрипт подробно — `reference/tool-registry.md` и `reference/environment.md` → «Файлы скилла — подробно».

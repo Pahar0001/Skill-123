@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Модель GLB на странице — образец</title>
+<!--
+  Образец встраивания GLB из blender.mjs (reference/blender.md → «GLB на сайте»).
+  На сайт переносится: блок <figure class="glb-viewer">, стиль .glb-viewer/.glb-poster, importmap и строка
+  с mountAll. Модули three.js кладутся в сайт командой
+      node ~/.claude/skills/site-rework/scripts/blender.mjs vendor --out <папка сайта> [--draco]
+  (vendor/three/… и glb-viewer.js рядом) — внешних CDN нет.
+  Для просмотра и проверки: viewer.html?src=model.glb&poster=model.webp (только пути этого же сайта);
+  так её открывает blender.mjs glb-check.
+-->
+<style>
+  :root { --bg: #EFEBE4; --ink: #1E2420; --muted: #5C625D; }
+  html { background: var(--bg); color: var(--ink); }
+  body { margin: 0; font: 17px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); }
+  main { max-width: 1120px; margin: 0 auto; padding: 48px 16px 96px; }
+  .lead { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  @media (max-width: 760px) { .lead { grid-template-columns: 1fr; gap: 16px; } }
+  h1 { font-size: clamp(30px, 5vw, 52px); line-height: 1.05; margin: 0 0 16px; letter-spacing: -0.01em; }
+  p { color: var(--muted); max-width: 52ch; }
+  section.more { min-height: 140vh; padding-top: 64px; }
+
+  /* блок модели: размер задаёт вёрстка (aspect-ratio), постер — под холстом, пока модель не готова */
+  .glb-viewer { position: relative; margin: 0; aspect-ratio: 1 / 1; width: 100%; }
+  .glb-viewer .glb-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .glb-viewer[data-state="ready"] { cursor: grab; }
+  .glb-viewer[data-state="ready"]:active { cursor: grabbing; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<main>
+  <div class="lead">
+    <div>
+      <h1>Предмет, который можно повернуть</h1>
+      <p>Модель грузится, только когда блок подходит к экрану. Пока она не готова, без WebGL и при «меньше движения» видна та же сцена картинкой.</p>
+    </div>
+    <figure class="glb-viewer" data-src="model.glb" data-alt="Образец модели">
+      <img class="glb-poster" src="model.webp" alt="" width="1000" height="1000" decoding="async">
+    </figure>
+  </div>
+  <section class="more">
+    <h2>Ниже — обычный текст</h2>
+    <p>Когда блок уходит с экрана, отрисовка останавливается: ни одного кадра вне экрана и на скрытой вкладке.</p>
+  </section>
+</main>
+<script type="module">
+  import { mountAll } from './viewer.js';
+  /* для просмотра и проверки: ?src= и ?poster= — только пути этого же сайта */
+  const q = new URLSearchParams(location.search);
+  const fig = document.querySelector('.glb-viewer');
+  const same = (u) => { try { return new URL(u, location.href).origin === location.origin; } catch (e) { return false; } };
+  if (q.get('src') && same(q.get('src'))) fig.dataset.src = q.get('src');
+  const img = fig.querySelector('.glb-poster');
+  if (q.has('poster')) { if (q.get('poster') && same(q.get('poster'))) img.src = q.get('poster'); else img.remove(); }
+  mountAll();
+</script>
+</body>
+</html>

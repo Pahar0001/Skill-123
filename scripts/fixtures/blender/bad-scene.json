@@ -1,0 +1,7 @@
+{
+  "objects": [
+    { "type": "box", "size": [1, 1, 1], "material": "clay" },
+    { "type": "teapot", "location": [0, 0, 1] },
+    { "type": "sphere", "material": "chrome", "color": "не-цвет" }
+  ]
+}

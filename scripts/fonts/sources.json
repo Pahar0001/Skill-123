@@ -1,0 +1,121 @@
+{
+ "about": "Источники шрифтов для fonts.mjs (measure, match, sheet, decide, get). Формат записи и порядок добавления — reference/fonts.md. Источник без проверенной лицензии не добавлять; enabled: false — известен, но не подключён (причина в why); license.terms — условия, которые get и decide печатают и пишут в fonts.css.",
+ "version": 1,
+ "updated": "2026-10-06",
+ "sources": [
+  {
+   "id": "google",
+   "name": "Google Fonts",
+   "url": "https://fonts.google.com",
+   "enabled": true,
+   "list": {
+    "kind": "google-metadata",
+    "url": "https://fonts.google.com/metadata/fonts",
+    "note": "Список семейств с подмножествами, весами, осями и isOpenSource; кэш 30 дней в ~/.claude/site-rework/cache/fonts/google/index.json. Без сети и кэша — google-fonts.csv ui-ux-pro-max."
+   },
+   "files": {
+    "kind": "google-css2",
+    "url": "https://fonts.googleapis.com/css2",
+    "fileHosts": [
+     "https://fonts.gstatic.com"
+    ],
+    "note": "Кандидаты — параметром text= (только знаки пробы и листа, 10–35 КБ); на сайт — fonts.mjs get (полные подмножества cyrillic, latin, latin-ext)."
+   },
+   "license": {
+    "default": "SIL Open Font License 1.1",
+    "url": "https://openfontlicense.org",
+    "others": [
+     "Apache License 2.0",
+     "Ubuntu Font Licence 1.0"
+    ],
+    "perFamily": "репозиторий https://github.com/google/fonts: папка ofl/, apache/ или ufl/ по имени семейства; на сайте — https://fonts.google.com/specimen/<Семейство>/license",
+    "note": "Все семейства Google Fonts — открытые лицензии: можно на сайте, в коммерческом проекте, своими файлами, с изменением (подмножества). Продавать сами шрифты нельзя; при раздаче файлов — текст лицензии рядом."
+   },
+   "web": true,
+   "selfHost": true,
+   "commercial": true,
+   "cyrillic": "у части: 294 семейства из 1950 (метаданные, 05.10.2026)",
+   "checked": "2026-10-05",
+   "checkedBy": "fonts.mjs: метаданные (isOpenSource) и лицензии семейств по репозиторию google/fonts"
+  },
+  {
+   "id": "fontshare",
+   "name": "Fontshare (Indian Type Foundry)",
+   "url": "https://www.fontshare.com",
+   "enabled": true,
+   "list": {
+    "kind": "fontshare-api",
+    "url": "https://api.fontshare.com/v2/fonts",
+    "licenses": [
+     "itf_ffl"
+    ],
+    "note": "Список всех семейств с лицензией, категорией, весами и языками; кэш 30 дней в ~/.claude/site-rework/cache/fonts/fontshare/index.json. Берутся только шрифты ITF (itf_ffl): открытые (sil_ofl — Montserrat, Manrope, Fira Sans и др.) есть в Google Fonts с подмножествами — брать там."
+   },
+   "files": {
+    "kind": "css",
+    "url": "https://api.fontshare.com/v2/css?f[]={slug}@{weight}&display=swap",
+    "fileHosts": [
+     "https://cdn.fontshare.com"
+    ],
+    "page": "https://www.fontshare.com/fonts/{slug}",
+    "note": "CSS отдаёт woff2, woff и ttf на начертание; курсив — вес +1 (401). get берёт woff2 как есть: целиком, без подмножеств."
+   },
+   "license": {
+    "default": "ITF Free Font License 2.0",
+    "url": "https://www.fontshare.com/licenses/itf-ffl",
+    "perType": {
+     "itf_ffl": "ITF Free Font License 2.0",
+     "sil_ofl": "SIL Open Font License 1.1"
+    },
+    "noModify": true,
+    "terms": [
+     "ITF FFL §01: бесплатно, в том числе коммерчески; свои файлы на своём сервере для своих сайтов и приложений — можно; указывать ITF не обязательно.",
+     "ITF FFL §02, §05: подмножества, смена формата и любая правка файлов — только с письменного согласия ITF: файлы — как отдал Fontshare.",
+     "ITF FFL §02: передавать файлы другим нельзя — клиенту, подрядчику, через публичный репозиторий или конструктор сайтов. Сайт клиента: владелец берёт шрифт на fontshare.com сам (бесплатно) и сам становится лицензиатом.",
+     "ITF FFL §02: нельзя давать шрифт посетителям для их собственного текста (конструктор, редактор шаблонов, генератор)."
+    ],
+    "note": "Текст лицензии прочитан 06.10.2026 (версия 2.0 от 17.08.2026). Открытые шрифты на Fontshare — SIL OFL 1.1, их берём из Google Fonts."
+   },
+   "web": true,
+   "selfHost": true,
+   "commercial": true,
+   "latinOnly": true,
+   "cyrillic": "нет: 0 из 64 шрифтов ITF (таблица знаков ttf, 06.10.2026). Кириллица только у 8 открытых семейств (Montserrat, Oswald, Nunito, Lora, Fira Sans, Manrope, JetBrains Mono, Literata) — они же в Google Fonts. Значит, Fontshare — только латинские надписи: логотип, цифры, английский текст (match --latin, get --latin).",
+   "checked": "2026-10-06",
+   "checkedBy": "лицензия — www.fontshare.com/licenses/itf-ffl (браузер); кириллица — таблица cmap ttf всех 100 семейств из api.fontshare.com/v2/fonts"
+  },
+  {
+   "id": "adobe",
+   "name": "Adobe Fonts",
+   "url": "https://fonts.adobe.com",
+   "enabled": false,
+   "why": "по условиям Adobe шрифты на сайт — только кодом встраивания веб-проекта (use.typekit.net) по подписке Creative Cloud: свои файлы на сервере запрещены, сайт клиента — только по подписке самого клиента, после отмены подписки шрифты на сайте пропадают. Для «скачать и положить на сайт» не годится; для макетов и печати — по своей подписке.",
+   "list": {
+    "kind": "inline",
+    "note": "не подключён: свободного списка семейств нет, нужен вход в Creative Cloud"
+   },
+   "files": {
+    "kind": "embed",
+    "note": "только код встраивания веб-проекта Adobe — get не качает"
+   },
+   "license": {
+    "default": "Adobe Fonts — условия Creative Cloud",
+    "url": "https://helpx.adobe.com/fonts/web/font-licensing/webfont-licensing.html",
+    "terms": [
+     "Свои файлы на своём сервере или CDN — нельзя: только код встраивания Adobe; нужен self-host — лицензия у самой словолитни.",
+     "Сайт клиента — по подписке Creative Cloud самого клиента (веб-проект переносится на его аккаунт).",
+     "Отменили подписку — шрифты на сайтах пропадают, остаётся запасной.",
+     "В приложение (не web view) встраивать нельзя; давать посетителям для своего текста — нельзя."
+    ],
+    "note": "Справка Adobe «Web fonts from Adobe Fonts» (обновлена 14.11.2025) и «Font licensing FAQs», прочитаны 06.10.2026."
+   },
+   "web": true,
+   "selfHost": false,
+   "commercial": true,
+   "cyrillic": "не проверяли (фильтр языка на fonts.adobe.com)",
+   "checked": "2026-10-06",
+   "checkedBy": "helpx.adobe.com/fonts/web/font-licensing/webfont-licensing.html (браузер)",
+   "families": []
+  }
+ ]
+}

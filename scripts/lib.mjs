@@ -174,6 +174,11 @@ const CHROME = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',
   '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
+  /* macOS: Chrome в папке пользователя (~/Applications — установка без прав администратора); Linux: пакет
+     google-chrome-stable без ссылки google-chrome, Chromium из snap; Edge запасным — как на Windows */
+  path.join(os.homedir(), 'Applications', 'Google Chrome.app', 'Contents', 'MacOS', 'Google Chrome'),
+  '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome', '/snap/bin/chromium',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge', '/usr/bin/microsoft-edge', '/usr/bin/microsoft-edge-stable',
 ].filter(Boolean);
 
 export function requireChrome() {

@@ -1,0 +1,4 @@
+example.ru {
+  root * /var/www/site
+  file_server
+}

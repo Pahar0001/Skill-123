@@ -22,6 +22,7 @@ export RUN_DIR=<прогон> LOOK_BASE=http://localhost:3100        # папк�
 | `tops.mjs` | лист верхних частей снимков `look` — десять страниц одним взглядом | `node tops.mjs r1 d 1100 4` |
 | `slices.mjs` | длинная страница кусками по экрану на листах | `node slices.mjs <прогон>/look/r1/home-d.png 1100 3 640` |
 | `scroll-shots.mjs` | кадры окна в точках прокрутки: лента на середине пути, шапка при прокрутке | `node scroll-shots.mjs sc home ".hero__ribbon" 0.9,0.5,0.1` |
+| `frames.mjs` | поведение во времени, донора или своё: загрузка (screencast), покой первого экрана, шапка при прокрутке колесом вниз и вверх, превью при наведении на строки, клик — листы с подписями «сценарий · мс» и `frames.json` | `node frames.mjs owls https://www.owlsdepartment.com/ --load --idle 4s --scroll-down --scroll-up --hover ".works-table-row"` |
 | `states.mjs` + `states.example.json` | состояния по сценарию: меню, фильтры, подсказки, ошибки форм, «заявка принята» | `node states.mjs s1 сценарий.json --cookie "…"` |
 | `contrast-at.mjs` | контраст текста на картинке своим замером, когда `a11y` дал провал | `node contrast-at.mjs home ".credit" 320` |
 | `gzip-proxy.mjs` | прокси со сжатием, как на бою, — для честного `perf.mjs` | `node gzip-proxy.mjs 3101 3100` |

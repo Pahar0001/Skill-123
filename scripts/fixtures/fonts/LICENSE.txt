@@ -4,3 +4,9 @@ manrope-text.woff2 — Manrope 700, только знаки «Зёрна ₽» �
 css2-manrope.css, css2-text.css, css2-playfair-ital.css — ответы CSS2 API Google Fonts как есть (User-Agent Chrome).
 google-fonts.csv, typography.csv, google-font-licenses.json — выжимки данных ui-ux-pro-max v2.15.0 (MIT),
 PT Serif в google-fonts.csv и шрифты пар в typography.csv изменены под проверки разбора и отбора.
+m-*.woff2 — шрифты Google Fonts под SIL Open Font License 1.1 (https://openfontlicense.org): Inter Tight 600, PT Serif 400,
+Playfair Display 400, Oswald 400, Unbounded 400, Comfortaa 400, Prata 400, Bebas Neue 400 — подмножества css2 с параметром
+text (только знаки пробы и листа fonts.mjs: латиница, 66 букв с Ёё, ₽№«»„“—–…, знаки листа), скачаны 05.10.2026. У Prata
+нет №, у Playfair Display нет ₽, у Bebas Neue нет кириллицы — так и нужно для проверок отсева.
+google-metadata.json — выжимка формата https://fonts.google.com/metadata/fonts под самопроверку match: 8 семейств выше
+плюс «Fakecyr» (кириллица по данным есть, файл — Bebas Neue без неё) и «Closedfont» (isOpenSource: false).

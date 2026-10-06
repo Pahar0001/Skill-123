@@ -1,0 +1,13 @@
+{
+  "_": "Сцена-описание без Python (blender.mjs render cards.json). Типы: box, card, cylinder, sphere, torus, plane, text, cloth, import (своя модель glb/obj/fbx/stl). Материалы: clay, gloss, satin, metal, paper, glass, glow, fabric, rubber. Цвет — имя из палитры или #hex; углы — градусы; оси Blender (Z вверх, камера со стороны −Y). \"rigid\": {mass, friction, bounce, shape} — предмет падает в blender.mjs physics.",
+  "palette": { "accent": "#C8553D", "accent2": "#2F6B5A" },
+  "camera": { "view": [0.3, -1, 0.6], "fov": 28, "margin": 1.12 },
+  "ground": true,
+  "objects": [
+    { "type": "card", "size": [1.6, 1.0, 0.025], "material": "paper", "color": "bone", "location": [0, 0, 0.0125], "rotation": [0, 0, -8] },
+    { "type": "card", "size": [1.6, 1.0, 0.025], "material": "satin", "color": "accent2", "location": [0.12, 0.06, 0.0385], "rotation": [0, 0, 6] },
+    { "type": "card", "size": [1.6, 1.0, 0.025], "material": "satin", "color": "accent", "location": [0.05, -0.04, 0.0645], "rotation": [0, 0, 17] },
+    { "type": "cylinder", "radius": 0.26, "depth": 0.05, "bevel": 0.012, "material": "metal", "color": "#D9B66A", "location": [0.55, -0.32, 0.102] },
+    { "type": "sphere", "radius": 0.16, "material": "gloss", "color": "sun", "location": [-0.5, -0.25, 0.237] }
+  ]
+}

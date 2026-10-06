@@ -81,6 +81,41 @@ Start-Process node -ArgumentList '--watch','server.js' -WorkingDirectory D:\proj
 странице к координатам `getBoundingClientRect()` прибавлять `scrollX` и `scrollY` (свой замер контраста на
 «Зелёном уголке» сначала мерил не то место).
 
+## macOS и Linux
+
+Скилл писался на Windows; на macOS и Linux работает так же, отличия — ниже (сверено на macOS 05.10.2026).
+
+- **Браузер.** `lib.requireChrome()` / `lib.findBrowser()` ищут сами: `/Applications/…/Google Chrome`,
+  `~/Applications/…` (установка без прав администратора), `/usr/bin/google-chrome(-stable)`, `/opt/google/chrome/chrome`,
+  `chromium`, `/snap/bin/chromium`, запасным — Edge. Другой путь — `CHROME_PATH`. Firefox (`--browser firefox` у
+  `typeset`) — только если стоит (`/Applications/Firefox.app`, `/usr/bin/firefox`, `/snap/bin/firefox` или `FIREFOX_PATH`);
+  нет — так и писать в отчёт, а не заменять Chrome молча.
+- **WebGL (ANGLE).** `--use-angle=d3d11` есть только на Windows: на macOS с ним холст нулевой ширины, и
+  `render3d/render.mjs` падал «createImageData… width is zero». Теперь движок по системе: Windows — d3d11, macOS —
+  metal, Linux — swiftshader (программный, работает без дисплея и драйвера GPU; на быстром GPU-сервере можно
+  `SITE_REWORK_ANGLE=gl` или `vulkan`). Такая ошибка у своей сцены — сначала `SITE_REWORK_ANGLE=swiftshader`.
+- **Клавиши.** Сочетания с Control на macOS — Cmd (`Meta` у puppeteer). В безголовом Chrome на macOS даже Cmd+A
+  без команды `SelectAll` поле не выделяет; `runtime --edit` выделяет сам (сочетание с `commands: ['SelectAll']`, не
+  вышло — `el.select()`). В своих сценариях выделять `el.select()` / `setSelectionRange(0, длина)`, а не сочетанием.
+- **Пути и оболочка.** zsh и bash раскрывают `~` сами; оговорки про Git Bash и PowerShell выше не нужны. Временная
+  папка `os.tmpdir()` — `/var/folders/…/T` на macOS (туда кладут протоколы selftest), `/tmp` там — ссылка на
+  `/private/tmp`. Сервер стенда отдельным процессом — `nohup node serve.mjs … > server.log 2>&1 &` и `disown`;
+  гасить по номеру (`pgrep -fl 'serve.mjs'` → `kill <pid>`), не `pkill` по слову.
+- **Системный шрифт.** `system-ui` — San Francisco на macOS, обычно DejaVu или Noto на Linux, Segoe UI на Windows:
+  ширина подписи и край глифа разные. Стенды, чьи ожидания зависят от метрик, набраны своим шрифтом файлом
+  (`fixtures/runtime/fonts`, `fixtures/a11y/fonts`, Commissioner OFL); новый такой стенд — так же.
+- **Linux в контейнере.** Chrome от root с песочницей не стартует — `lib.launch` и `render.mjs` запускают его с
+  `--no-sandbox`. Кириллице нужен шрифт в системе (`fonts-dejavu` или `fonts-noto`), иначе на снимках квадраты.
+
+**Проверить установку** (браузеры по одному, не параллельно):
+
+```bash
+node -e "import('$HOME/.claude/skills/site-rework/scripts/lib.mjs').then((l) => console.log(l.findBrowser(), l.loadSharp() ? 'sharp есть' : 'sharp нет'))"
+node ~/.claude/skills/site-rework/templates/render3d/render.mjs icons --variant seed --w 300 --h 300 --dpr 1 --n 8 --name t --out "${TMPDIR:-/tmp}/r3test"   # OK, заполнено ≈9%
+node ~/.claude/skills/site-rework/scripts/a11y.mjs --selftest                                  # ≈2 мин, «не сошлось 0»
+RW_SELFTEST_ONLY='^(edit|scroll|vert)$' node ~/.claude/skills/site-rework/scripts/runtime.mjs --selftest   # быстро; полный — ≈9 мин
+```
+
 ## Восстановление после сбоев
 
 Не останавливаться на первом отказе; но в отчёте — что именно не проверено.

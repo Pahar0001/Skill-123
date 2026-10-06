@@ -39,7 +39,9 @@
  *                 (заголовок следующей секции — не подзаголовок, её кнопка — не кнопка первого экрана), flat-sub
  *                 (подзаголовок своего кегля в плоской разметке — подзаголовок), h2h3 (h3 под h2
  *                 мерится на близость), narrow-nomain, bs-nomain (каркас без main: узкая колонка, шапка в .container),
- *                 scale-clamp (кегли 23 и 24 одного clamp — один уровень «23–24», 16/18 и 32/36 — разные);
+ *                 scale-clamp (кегли 23 и 24 одного clamp — один уровень «23–24», 16/18 и 32/36 — разные),
+ *                 diacritic (Inter Tight 500 капсом: «И НЕЙРОСЕТЯМИ» под «С 3D» при line-height .9 — FAIL, при 1 — нет;
+ *                 Å Ö латиницей; не тревога — латиница без значков, «Й» в первой строке, строчная «й», капс 20 px);
  *                 каждый случай сверяется с ожидаемым.
  *   --help, -h    эта справка.
  * Неизвестный флаг — ошибка с кодом 1 и подсказкой. Адрес, экраны и значения флагов проверяются до
@@ -48,7 +50,7 @@
  * Проход (экран × страница): переход, окно cookie, заставка, document.fonts.ready; прокрутка до низа
  * (появления показаны) и наверх; наблюдение 1 с — блоки, где текст меняется сам (печать, счётчики,
  * бегущая строка), помечаются «меняется само», строчные правила для них не выносятся; замер; шрифты
- * на экране (CDP); проба синтетики; вердикты; вырезки.
+ * на экране (CDP); проба синтетики; проба значков над заглавными; вердикты; вырезки.
  *
  * Замер (LINES_FN). Блок — ближайший предок текста с блочным display. inline-block, inline-flex и
  * inline-grid — свой блок (кнопка, бейдж), кроме разбивки слов для анимации: одно слово внутри и не
@@ -112,6 +114,15 @@
  *                переносит — INFO «проверьте --browser firefox»
  *   leading      интерлиньяж ниже таблицы typography.md п. 2 (допуск 0.03) — WARN, выше — INFO (длинная строка,
  *                тонкий текст на тёмном); h1 и дисплей от 80 px — 0.8–1.05, вне — INFO; < 1.0 у текста до 24 px — FAIL
+ *   diacritic    значок над заглавной (Й Ё Ї Ў, Å Ä Ö É Ñ…: в NFD надстрочный знак; text-transform учтён) упирается в
+ *                строку выше. Кандидаты: заголовок или кегль от 28 px, от 2 строк, line-height < 1.1. Мерится отрисовкой:
+ *                коробки знаков (Range по знаку) → строки; пара «строка выше — заглавные со значком строки ниже»
+ *                перерисовывается поверх страницы на белом (каждый знак — на своём месте: строка выше красным, значки —
+ *                синим с mix-blend-mode: multiply), снимок, пиксели. Зазор — от верха значка до низа строки выше: линии
+ *                букв (медиана низа её знаков) или выносного знака (Д Ц Щ у ,) в колонках значка ± 0.1 кегля, что ниже.
+ *                Значок выше этой линии (пересечение) — FAIL, зазор < 2 px — WARN; над значком пусто на ± 0.5 кегля
+ *                (пробел, конец короткой строки) — не в счёт. Совет — line-height, при котором зазор станет 2 px.
+ *                Случай burbey.ru: Inter Tight 500, капс, .9 — Й налезал на 3–4 px при 88 px; при 1 — зазор 5 px
  *   caps-track   разрядка капса и строчного дисплея (INFO/WARN); разрядка основного текста > 0.03em — WARN
  *   scale        кеглей с текстом от 20 знаков > 8 (основное содержимое; заголовок из надписи и подписи —
  *                кеглями частей; соседние кегли в пределах max(1 px, 4 %) — один уровень «23–24»: clamp в карточках
@@ -169,7 +180,7 @@
  * Вывод: первая строка — браузер, экран, адрес, блоки по ролям; строки OK/WARN/FAIL/INFO; итог; путь
  * протокола. Вырезки: <tag>-<экран>/NN-<правило>-<id>.png — блок в пунктирной рамке, слова в красной (по
  * коробкам замера); 00-hero.png — первый экран 1:1 с h1, лидом и кнопкой. Порядок вырезок: FAIL, первый
- * экран, hang, orphan, justify, fallback, hyphen-break.
+ * экран, diacritic, hang, orphan, justify, fallback, hyphen-break.
  *
  * Код выхода: 0 — сделано (вердикт в выводе и протоколе); 1 — неверные аргументы, провал --selftest или
  * FAIL с --strict; 3 — страница не открылась или упал браузер.
@@ -179,7 +190,8 @@
  *   lead[], numSplit[], broken[], shortTotal, shortNb, maxGap, space, fs, lh, ls, fsBy?, fsOwn?, mixed?, fsMin?,
  *   fsLines?, … }; lines(el, null, { deep: true }) — весь текст под el; lines.collect(root) → Map(блок → текстовые
  *   узлы). export measureLines(page, selector) — то же из Node.
- * Протокол: blocks[] — frame, fromData, disp, vertical, gaps.afterHead; env.source { ok, chars | why }, env.main; hero.block, hero.sub;
+ * Протокол: blocks[] — frame, fromData, disp, vertical, gaps.afterHead, dia { pairs, items[{ ch, line, gap, overlap, ref:
+ *   baseline|ink|empty, at, size }] }; env.diacritic { checked, errors }; env.source { ok, chars | why }, env.main; hero.block, hero.sub;
  *   fonts.faces[].localOnly; fonts.glyphs { гарнитура: { знак: есть ли в файле } } (Chrome); rules.frame.
  */
 import fs from 'node:fs';
@@ -443,6 +455,140 @@ function observeInPage(ms) {
     mo.observe(document.body, { subtree: true, childList: true, characterData: true });
     setTimeout(() => { mo.disconnect(); res(ch.n); }, ms);
   });
+}
+
+/* =====================================================================
+   В странице: значок над заглавной (Й Ё Å Ä Ö É) и строка выше
+   ===================================================================== */
+/* Знаки блоков-кандидатов с коробками (Range по каждому знаку), строки по центру коробки; пары «строка выше —
+   заглавные со значком в строке ниже». Знак — как его рисует браузер: text-transform применён (й → Й).
+   Значок сверху — в NFD есть надстрочный комбинируемый знак (кратка Й, диерезис Ё Ä Ö, кольцо Å, акут É…);
+   подстрочные (седиль Ç, огонэк Ą) не в счёт. → [{ id, line, above[], dia[], styles[] }] */
+function diaCollect(o) {
+  const ABOVE = /[\u0300-\u0315\u031A\u031B\u033D-\u0344\u0346\u034A-\u034C\u0350-\u0352\u0357\u035B\u0363-\u036F]/;
+  const isDia = (ch) => ch.length === 1 && ch !== ch.toLowerCase() && ABOVE.test(ch.normalize('NFD'));
+  const out = []; const rg = document.createRange();
+  for (const c of o.cands) {
+    if (out.length >= o.maxPairs) break;
+    const el = document.querySelector(`[data-ts="${c.id}"]`); if (!el) continue;
+    const nodes = c.deep ? lines.deepNodes(el) : (lines.collect(el).get(el) || []);
+    const styles = []; const sKey = new Map(); const chars = [];
+    for (const n of nodes) {
+      if (!n || n.nodeType !== 3 || !n.parentElement) continue;
+      const pe = n.parentElement; const s = getComputedStyle(pe); const t = n.nodeValue;
+      const lang = ((pe.closest('[lang]') || document.documentElement).getAttribute('lang') || '').trim() || undefined;
+      const zoom = typeof pe.currentCSSZoom === 'number' ? pe.currentCSSZoom : 1;
+      const f = { family: s.fontFamily, weight: s.fontWeight, style: s.fontStyle, stretch: s.fontStretch || 'normal', size: Math.round((parseFloat(s.fontSize) || 16) * zoom * 100) / 100, feat: s.fontFeatureSettings || 'normal', vari: s.fontVariationSettings || 'normal', caps: s.fontVariantCaps || 'normal', opsz: s.fontOpticalSizing || 'auto', synth: s.fontSynthesis || 'weight style' };
+      const k = JSON.stringify(f); if (!sKey.has(k)) { sKey.set(k, styles.length); styles.push(f); }
+      const si = sKey.get(k);
+      for (let i = 0; i < t.length && chars.length < 400; i++) {
+        const ch0 = t[i]; if (/\s/.test(ch0) || (ch0 >= '\ud800' && ch0 <= '\udfff')) continue;
+        try { rg.setStart(n, i); rg.setEnd(n, i + 1); } catch (e) { continue; }
+        const q = [...rg.getClientRects()].find((r) => r.width > 0.3 && r.height > 0.3); if (!q) continue;
+        const tt = s.textTransform;
+        const ch = tt === 'uppercase' ? ch0.toLocaleUpperCase(lang) : tt === 'lowercase' ? ch0.toLocaleLowerCase(lang) : tt === 'capitalize' && (i === 0 || /\s/.test(t[i - 1])) ? ch0.toLocaleUpperCase(lang) : ch0;
+        chars.push({ ch, x: q.left, y: q.top, w: q.width, h: q.height, s: si, dx: Math.round(q.left + scrollX), dy: Math.round(q.top + scrollY) });
+      }
+    }
+    /* строки: центр коробки дальше max(4, 0.5 · интерлиньяж) от центра текущей строки — новая строка */
+    const tol = Math.max(4, (c.lhPx || 0) * 0.5); const L = []; let cur = null;
+    for (const x of chars) { const cy = x.y + x.h / 2; if (!cur || Math.abs(cy - cur.cy) > tol) { cur = { cy, list: [] }; L.push(cur); } cur.list.push(x); }
+    for (let i = 1; i < L.length && out.length < o.maxPairs; i++) {
+      const dia = L[i].list.filter((x) => isDia(x.ch)); if (!dia.length) continue;
+      /* строка выше — только знаки рядом со значками (±1 кегль): проба остаётся узкой */
+      const em = Math.max(...dia.map((x) => styles[x.s].size));
+      const lo = Math.min(...dia.map((x) => x.x)) - em, hi = Math.max(...dia.map((x) => x.x + x.w)) + em;
+      const above = L[i - 1].list.filter((x) => x.x + x.w > lo && x.x < hi);
+      out.push({ id: c.id, line: i + 1, above, dia, styles, aboveAll: L[i - 1].list.length });
+    }
+  }
+  return out;
+}
+
+/* Проба одной пары строк: поверх страницы белый слой, на нём каждый знак строки выше — красным, каждая заглавная
+   со значком строки ниже — синим с mix-blend-mode: multiply, ровно на своих местах (каждый знак — свой span,
+   место выверяется по коробке Range за два прохода). Пиксели: красный = 1 − B/255, синий = 1 − R/255, где оба —
+   знаки пересеклись. → { clip, dia[], above[] } в координатах пробы */
+async function diaProbe(p) {
+  const old = document.getElementById('__ts_dia'); if (old) old.remove();
+  const pad = 12; const all = [...p.above, ...p.dia];
+  const ox = Math.min(...all.map((c) => c.x)) - pad, oy = Math.min(...all.map((c) => c.y)) - pad;
+  const W = Math.ceil(Math.max(...all.map((c) => c.x + c.w)) - ox + pad), H = Math.ceil(Math.max(...all.map((c) => c.y + c.h)) - oy + pad);
+  const host = document.createElement('div'); host.id = '__ts_dia';
+  host.style.cssText = `position:fixed;left:0;top:0;width:${W}px;height:${H}px;z-index:2147483647;background:#fff;margin:0;padding:0;border:0;overflow:hidden;isolation:isolate;transform:none;filter:none;opacity:1;pointer-events:none`;
+  const spans = [];
+  const mk = (c, color, blend) => {
+    const f = p.styles[c.s]; const s = document.createElement('span'); s.textContent = c.ch;
+    s.style.cssText = `position:absolute;left:${c.x - ox}px;top:${c.y - oy}px;margin:0;padding:0;border:0;white-space:pre;line-height:normal;letter-spacing:0;word-spacing:0;text-transform:none;text-shadow:none;background:none;color:${color};-webkit-text-fill-color:${color};-webkit-text-stroke:0;opacity:1;mix-blend-mode:${blend};font-family:${f.family};font-weight:${f.weight};font-style:${f.style};font-stretch:${f.stretch};font-size:${f.size}px;font-feature-settings:${f.feat};font-variation-settings:${f.vari};font-variant-caps:${f.caps};font-optical-sizing:${f.opsz};font-synthesis:${f.synth}`;
+    host.appendChild(s); spans.push({ s, c });
+  };
+  p.above.forEach((c) => mk(c, '#f00', 'normal')); p.dia.forEach((c) => mk(c, '#00f', 'multiply'));
+  document.documentElement.appendChild(host);
+  const text = all.map((c) => c.ch).join('');
+  await Promise.all(p.styles.map((f) => document.fonts.load(`${f.style} ${f.weight} ${f.size}px ${f.family}`, text).catch(() => null)));
+  const rg = document.createRange(); let miss = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    miss = 0;
+    for (const { s, c } of spans) {
+      rg.selectNodeContents(s); const q = rg.getClientRects()[0] || s.getBoundingClientRect();
+      const dx = (c.x - ox) - q.left, dy = (c.y - oy) - q.top;
+      if (Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05) { miss++; s.style.left = `${parseFloat(s.style.left) + dx}px`; s.style.top = `${parseFloat(s.style.top) + dy}px`; }
+    }
+  }
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const box = (c) => ({ ch: c.ch, l: c.x - ox, r: c.x - ox + c.w, t: c.y - oy, b: c.y - oy + c.h, size: p.styles[c.s].size, at: { x: c.dx, y: c.dy, w: Math.round(c.w), h: Math.round(c.h) } });
+  return { clip: { x: scrollX, y: scrollY, width: W, height: H }, dia: p.dia.map(box), above: p.above.map(box), moved: miss };
+}
+
+/* Значки над заглавными: кандидаты — блоки от 2 строк, заголовок или кегль от 28 px, интерлиньяж ниже 1.1;
+   пары строк — в странице (diaCollect), каждая пара — проба и снимок (diaProbe). Зазор — от верха синего (значок)
+   до низа красного (строка выше) в колонках значка ± 0.1 кегля, в CSS px. Красного рядом нет (значок под пробелом
+   или за концом строки выше) — зазор до линии букв строки выше (медиана низа её знаков без выносных).
+   → { [id блока]: { pairs, items: [{ ch, line, gap, overlap, ref, at }] } } */
+const DIA_INK = 0.35;
+async function diacriticCheck(page, blocks, sharp) {
+  const ABOVE_ANY = /[\u0300-\u0315\u031A\u031B\u033D-\u0344\u0346\u034A-\u034C\u0350-\u0352\u0357\u035B\u0363-\u036F]/;
+  const cands = blocks.filter((b) => !b.partOf && !b.changing && !b.vertical && b.lines.length >= 2 && (b.role === 'semantic' || b.fs >= 28) && b.lh < 1.1 && (b.textLen > 200 || ABOVE_ANY.test(b.text.normalize('NFD'))))
+    .slice(0, 40).map((b) => ({ id: b.id, deep: !!b.composite, lhPx: b.lhPx }));
+  const res = { checked: cands.length, byBlock: {}, errors: [] };
+  if (!cands.length || !sharp) { if (cands.length) res.errors.push('sharp не найден'); return res; }
+  const pairs = await evaluateWith(page, diaCollect, { cands, maxPairs: 30 }, { lines: LINES_FN });
+  for (const p of pairs) {
+    if (!p.above.length) { (res.byBlock[p.id] = res.byBlock[p.id] || { pairs: 0, items: [] }).pairs++; for (const c of p.dia) res.byBlock[p.id].items.push({ ch: c.ch, line: p.line, gap: null, overlap: 0, ref: 'none', at: { x: c.dx, y: c.dy, w: Math.round(c.w), h: Math.round(c.h) } }); continue; }
+    let pr;
+    try {
+      pr = await evaluateWith(page, diaProbe, p);
+      const buf = await page.screenshot({ clip: pr.clip, type: 'png' });
+      const { data, info } = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const sc = info.width / pr.clip.width; const Wd = info.width, Hd = info.height, ch = info.channels;
+      const red = (x, y) => 1 - data[(y * Wd + x) * ch + 2] / 255, blue = (x, y) => 1 - data[(y * Wd + x) * ch] / 255;
+      const cols = (l, r) => { const a = Math.max(0, Math.floor(l * sc)), b = Math.min(Wd - 1, Math.ceil(r * sc) - 1); return [a, b]; };
+      /* линия букв строки выше: медиана низа каждого её знака (выносные Д Ц Щ , у — в меньшинстве) */
+      const bottoms = [];
+      for (const c of pr.above) { const [a, b] = cols(c.l, c.r); let yb = -1; for (let x = a; x <= b; x++) for (let y = Hd - 1; y > yb; y--) if (red(x, y) > DIA_INK) { yb = y; break; } if (yb >= 0) bottoms.push(yb); }
+      bottoms.sort((x, y) => x - y); const base = bottoms.length ? bottoms[Math.floor((bottoms.length - 1) / 2)] : null;
+      const blk = (res.byBlock[p.id] = res.byBlock[p.id] || { pairs: 0, items: [] }); blk.pairs++;
+      for (const c of pr.dia) {
+        const [a, b] = cols(c.l, c.r);
+        let top = Infinity; for (let x = a; x <= b; x++) for (let y = 0; y < Math.min(Hd, top); y++) if (blue(x, y) > DIA_INK) { top = y; break; }
+        if (!Number.isFinite(top)) continue;
+        /* низ строки выше над значком: линия букв или выносной знак (Д Ц Щ у ,) в колонках значка ± 0.1 кегля —
+           что ниже; рядом (± 0.5 кегля) знаков нет — значок под пробелом или за концом строки, упираться не во что */
+        const [na, nb] = cols(c.l - 0.5 * c.size, c.r + 0.5 * c.size); const [wa, wb] = cols(c.l - 0.1 * c.size, c.r + 0.1 * c.size);
+        let near = false, rb = -1, overlap = 0;
+        for (let x = na; x <= nb; x++) for (let y = 0; y < Hd; y++) {
+          const rv = red(x, y); if (rv <= DIA_INK) continue; near = true;
+          if (x >= wa && x <= wb) { if (y > rb) rb = y; if (rv > 0.5 && blue(x, y) > 0.5) overlap++; }
+        }
+        const b0 = base == null ? -1 : base; const yRef = Math.max(b0, rb);
+        const ref = !near || yRef < 0 ? 'empty' : rb > b0 + Math.max(2, 0.04 * c.size * sc) ? 'ink' : 'baseline';
+        const gap = yRef < 0 ? null : Math.round(((top - yRef - 1) / sc) * 10) / 10;
+        blk.items.push({ ch: c.ch, line: p.line, gap, overlap: Math.round(overlap / (sc * sc)), ref, at: c.at, size: c.size });
+      }
+    } catch (e) { res.errors.push(String((e && e.message) || e).split('\n')[0].slice(0, 120)); }
+    finally { await page.evaluate(() => { const x = document.getElementById('__ts_dia'); if (x) x.remove(); }).catch(() => {}); }
+  }
+  return res;
 }
 
 /* =====================================================================
@@ -972,7 +1118,7 @@ const LEADING = [[0, 14.5, 1.4, 1.6], [14.5, 18.5, 1.5, 1.65], [18.5, 24.5, 1.35
 const leadingRange = (fs) => LEADING.find(([a, b]) => fs >= a && fs < b) || LEADING[0];
 const STYLE_RULES = new Set(['leading', 'caps-track', 'scale', 'families', 'weights']);
 const DECIDABLE = new Set([...STYLE_RULES, 'measure', 'h-lines', 'proximity', 'justify', 'hero', 'balance', 'near-align']);
-const RULE_IDS = ['measure', 'hang', 'orphan', 'lead', 'num-unit', 'hyphen-break', 'h-lines', 'balance', 'proximity', 'justify', 'hyphens', 'leading', 'caps-track', 'scale', 'families', 'weights', 'synthetic', 'weight-miss', 'fallback', 'fallback-all', 'font-error', 'font-display', 'preload', 'format', 'lang-mismatch', 'nbsp', 'tnum', 'hero', 'word-overflow', 'near-align', 'frame'];
+const RULE_IDS = ['measure', 'hang', 'orphan', 'lead', 'num-unit', 'hyphen-break', 'h-lines', 'balance', 'proximity', 'justify', 'hyphens', 'leading', 'diacritic', 'caps-track', 'scale', 'families', 'weights', 'synthetic', 'weight-miss', 'fallback', 'fallback-all', 'font-error', 'font-display', 'preload', 'format', 'lang-mismatch', 'nbsp', 'tnum', 'hero', 'word-overflow', 'near-align', 'frame'];
 /* кегли с длиной текста; заголовок из надписи и подписи разного кегля (mixed) — кеглями своих частей */
 function sizeMap(list, byId) {
   const m = new Map();
@@ -1272,7 +1418,7 @@ function judge(d, ctx) {
     const headish = b.role === 'semantic' || b.role === 'display';
     const big = b.fs >= 80 && headish;
     let [, , lo, hi] = big ? [0, 0, 0.8, 1.05] : leadingRange(b.fs);
-    /* капс в заголовке: выносных вниз нет — от 1.0 норма (ниже — смотреть Й Ё на снимке) */
+    /* капс в заголовке: выносных вниз нет — от 1.0 норма (ниже — значки Й Ё меряет правило diacritic) */
     if (headish && b.upper && !big) { lo = Math.min(lo, 1.0); hi = Math.max(hi, 1.2); }
     if (b.lh >= lo - 0.03 && b.lh <= hi + 0.03) continue;
     const st = b.lh < 1.0 && b.fs <= 24 ? 'FAIL' : big || b.lh > hi ? 'INFO' : 'WARN';
@@ -1281,8 +1427,29 @@ function judge(d, ctx) {
   const leadBase = (it) => baseTop.some((x) => x.lines.length >= 2 && Math.abs(x.fs - it.fs) <= 1 && Math.abs(x.lh - it.lh) <= 0.03);
   emit('leading', lead, (st, g) => {
     const grp = new Map(); for (const x of g) { const k = `${x.note} (норма ${x.lo}–${x.hi})`; if (!grp.has(k)) grp.set(k, []); grp.get(k).push(x); }
-    return [st === 'FAIL' ? 'интерлиньяж меньше 1.0 у текста до 24 px' : st === 'WARN' ? `интерлиньяж ниже таблицы (typography.md п. 2): ${pl(g.length, 'блок', 'блока', 'блоков')}` : `интерлиньяж выше таблицы или крупный h1 вне 0.8–1.05: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${[...grp].slice(0, 5).map(([k, l]) => `${k} ×${l.length}: ${S(l[0])}`).join('; ')}${st === 'INFO' ? ' — не ошибка при длинной строке или тонком тексте на тёмном; у h1 ниже 0.9 смотреть Й Ё Ц Щ Д на снимке' : ''}`];
+    return [st === 'FAIL' ? 'интерлиньяж меньше 1.0 у текста до 24 px' : st === 'WARN' ? `интерлиньяж ниже таблицы (typography.md п. 2): ${pl(g.length, 'блок', 'блока', 'блоков')}` : `интерлиньяж выше таблицы или крупный h1 вне 0.8–1.05: ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${[...grp].slice(0, 5).map(([k, l]) => `${k} ×${l.length}: ${S(l[0])}`).join('; ')}${st === 'INFO' ? ' — не ошибка при длинной строке или тонком тексте на тёмном; у h1 ниже 0.9 смотреть Ц Щ Д на снимке (значки Й Ё Å Ö меряет правило diacritic)' : ''}`];
   }, { baseMatch: leadBase });
+  /* ---- значок над заглавной (Й Ё Å Ä Ö É) упирается в строку выше ----
+     Проба пикселями (diacriticCheck): зазор от верха значка до низа строки выше — линии букв или выносного знака над
+     ним; значок выше этой линии — FAIL «налезает», зазор меньше 2 px — WARN; над значком пусто (± 0.5 кегля) — не в счёт */
+  const diaItems = [];
+  for (const b of top) {
+    const r = b.dia; if (!r) continue;
+    const ms = r.items.filter((x) => x.gap != null && x.ref !== 'empty'); if (!ms.length) continue;
+    const bad = ms.filter((x) => x.gap < 2); if (!bad.length) continue;
+    const worst = bad.reduce((a, x) => (x.gap < a.gap ? x : a));
+    const st = bad.some((x) => x.gap < 0 || x.overlap > 0) ? 'FAIL' : 'WARN';
+    const need = Math.ceil((b.lh + (2 - worst.gap) / b.fs) * 100) / 100;
+    const what = (x) => `«${x.ch}» (стр. ${x.line}) ${x.gap < 0 ? `налезает на ${-x.gap}px` : `зазор ${x.gap}px`}${x.ref === 'ink' ? ' (до выносного знака над ним)' : ''}`;
+    const list = [...new Map(bad.map((x) => [`${x.ch}${x.line}${x.gap}`, x])).values()];
+    diaItems.push({ status: st, sig: b.sig, block: b.id, text: b.text, gap: worst.gap, need, first: isHero(b), note: `${S(b)} ${Math.round(b.fs)}px/${b.lh}: ${list.slice(0, 3).map(what).join(', ')}${list.length > 3 ? ` и ещё ${list.length - 3}` : ''} — нужен line-height от ${need}`, marks: bad.map((x) => x.at), b });
+  }
+  emit('diacritic', diaItems, (st, g) => [st === 'FAIL' ? `значок над заглавной налезает на строку выше: ${pl(g.length, 'блок', 'блока', 'блоков')}` : `значок над заглавной почти касается строки выше (зазор меньше 2 px): ${pl(g.length, 'блок', 'блока', 'блоков')}`, `${ex(g, 4)} — поднять line-height до названного (капсу со значками нужен ≈ 1.0) или переставить строки так, чтобы Й Ё Å Ä Ö не стояли под буквами; text-box и отрицательный margin не помогут`]);
+  if (d.dia && d.dia.checked && !diaItems.length) {
+    const all = top.flatMap((b) => ((b.dia && b.dia.items) || []).filter((x) => x.gap != null && x.ref !== 'empty'));
+    if (all.length) L('OK', `значки над заглавными не упираются в строку выше: ${pl(all.length, 'знак', 'знака', 'знаков')}`, `наименьший зазор ${Math.min(...all.map((x) => x.gap))}px (порог 2 px)`);
+  }
+  if (d.dia && d.dia.errors && d.dia.errors.length) L('INFO', 'проба значков над заглавными не сработала', d.dia.errors.slice(0, 2).join('; '));
   const caps = [];
   for (const b of top) {
     if (!/[A-Za-zА-Яа-яЁё]/.test(b.text)) continue;
@@ -1530,6 +1697,11 @@ async function runPass(browser, url, vpName, vp, o) {
     });
     d.synth = sharp ? await synthProbe(page, synthCombos, sharp) : synthCombos.map((c) => ({ ...c, error: 'sharp не найден' }));
     timing.synthMs = Date.now() - ts;
+    /* значок над заглавной (Й Ё Å Ä Ö É) и строка выше: проба пикселями по парам строк */
+    const tdia = Date.now();
+    d.dia = await diacriticCheck(page, d.blocks, sharp).catch((e) => ({ checked: 0, byBlock: {}, errors: [String((e && e.message) || e).split('\n')[0].slice(0, 120)] }));
+    for (const b of d.blocks) if (d.dia.byBlock[b.id]) b.dia = d.dia.byBlock[b.id];
+    timing.diaMs = Date.now() - tdia;
     /* знаки системным: коробки знаков для вырезок (по тексту блока) */
     const sysSet = new Set(Object.values(d.sysChars || {}).flat().map((x) => x.ch));
     for (const b of d.blocks) if (b.outChars) for (const c of b.outChars) sysSet.add(c);
@@ -1563,7 +1735,7 @@ async function runPass(browser, url, vpName, vp, o) {
         const file = path.join(o.cropsDir, '00-hero.png');
         if (await markAndShot(page, file, { x: 0, y: 0, width: vp.width, height: vp.height }, mk, null)) crops.push({ rule: 'hero', file });
       }
-      const PRI = ['hang', 'orphan', 'justify', 'fallback', 'fallback-all', 'hyphen-break', 'lead', 'num-unit', 'measure', 'synthetic'];
+      const PRI = ['diacritic', 'hang', 'orphan', 'justify', 'fallback', 'fallback-all', 'hyphen-break', 'lead', 'num-unit', 'measure', 'synthetic'];
       const cand = [];
       for (const l of res.lines) for (const it of l.items) if (it.block && l.rule !== 'frame') cand.push({ rule: l.rule, status: l.status, it, pri: (l.status === 'FAIL' ? 0 : it.first ? 1 : 2) * 100 + (PRI.indexOf(l.rule) >= 0 ? PRI.indexOf(l.rule) : 50) });
       cand.sort((a, b) => a.pri - b.pri);
@@ -1603,7 +1775,7 @@ function protocol(url, vpName, vp, slug, bInfo, pass) {
   const blocks = d.blocks.map(({ charRects, comboKey, ...b }) => b);
   return {
     url, viewport: vpName, size: `${vp.width}×${vp.height}@${vp.deviceScaleFactor || 1}`, page: slug, browser: bInfo, takenAt: new Date().toISOString(),
-    env: { ...d.env, limits: d.limits, consent: pass.consent && pass.consent.found ? { closed: pass.consent.closed, box: pass.consent.box } : null, scroll: pass.scroll, changes: d.changes },
+    env: { ...d.env, limits: d.limits, consent: pass.consent && pass.consent.found ? { closed: pass.consent.closed, box: pass.consent.box } : null, scroll: pass.scroll, changes: d.changes, diacritic: d.dia ? { checked: d.dia.checked, errors: d.dia.errors } : null },
     fonts: { ...d.fonts, platform: d.platformStats || null, sysChars: d.sysChars || null, glyphs: d.glyphs || null },
     blocks, synth: (d.synth || []).map(({ stack, ...s }) => s), hero: d.hero, tnum: d.tnum, summary: summaryOf(d),
     rules: Object.fromEntries(Object.entries(res.rules).map(([k, r]) => [k, { status: r.status, count: r.count, items: r.items.map(({ b, marks, ...it }) => it) }])),
@@ -1900,6 +2072,16 @@ const SELFTEST = {
     ['контроль: настоящие уровни 16 и 18, 32 и 36 не склеены, счёт уровней 6', (a) => { const sm = summaryOf(a.d); return [['44', '36', '32', '23–24', '18', '16'].join() === sm.sizeLevels.join(), `уровни ${sm.sizeLevels.join(', ')}`]; }],
     ['h4 24 px того же веса под h3 23–24 — «один уровень», не «перевёрнуты»', (a) => { const it = a.res.rules.scale ? a.res.rules.scale.items : []; return [!it.some((x) => /перевёрнуты/.test(x.note)) && it.some((x) => x.kind === 'close' && /h3 .* и h4 24px .*один уровень/.test(x.note)), it.map((x) => x.note).join('; ') || 'пунктов шкалы нет']; }],
     ['склейка по разбросу уровня, не цепочкой: 16+17+18 — не один уровень; 50 и 52 — один (4 %); 48 и 50 — два', () => { const f = (arr) => sizeLevels(new Map(arr)).map(lvlLabel).join(' '); const a1 = f([[16, 100], [17, 500], [18, 100]]), a2 = f([[50, 100], [52, 90]]), a3 = f([[48, 100], [50, 90]]); return [!/16–18/.test(a1) && a1.split(' ').length === 2 && a2 === '50–52' && a3 === '50 48', `16/17/18 → ${a1}; 50/52 → ${a2}; 48/50 → ${a3}`]; }],
+  ],
+  /* burbey.ru 05.10: значок Й в капсе Inter Tight 500 при line-height .9 налезал на строку выше, при 1 — нет */
+  'diacritic.html': [
+    ['#dj09: Inter Tight 500, капс, .9 — «Й» налезает на строку выше: diacritic FAIL, совет — line-height от ~0.97', (a) => { const it = a.items('diacritic', 'dj09'); return [it.length === 1 && it[0].status === 'FAIL' && it[0].gap < 0 && it[0].need >= 0.94 && it[0].need <= 1.0, it.map((x) => `${x.status} зазор ${x.gap}px, line-height от ${x.need}`).join('; ') || 'нет пункта']; }, 'layout'],
+    ['#dj-burbey: дословно «С 3D» над «И НЕЙРОСЕТЯМИ» при .9 — значок выше линии букв строки выше: FAIL', (a) => { const it = a.items('diacritic', 'dj-burbey'); return [it.length === 1 && it[0].status === 'FAIL', it.map((x) => `${x.status} зазор ${x.gap}px`).join('; ') || 'нет пункта']; }, 'layout'],
+    ['#dj10: тот же заголовок при line-height 1 — не тревога (зазор от 2 px)', (a) => { const b = a.byEl('dj10'); const g = b && b.dia ? b.dia.items.map((x) => x.gap) : []; return [a.st('diacritic', 'dj10') === 'none' && g.length === 1 && g[0] >= 2, `diacritic ${a.st('diacritic', 'dj10')}, зазор ${g.join(', ') || 'не мерился'}px`]; }, 'layout'],
+    ['числа: зазор при 1 минус зазор при .9 ≈ 0.1 кегля (±1.5 px) — проба меряет геометрию, а не догадку', (a) => { const b9 = a.byEl('dj09'), b1 = a.byEl('dj10'); const g9 = b9 && b9.dia && b9.dia.items[0], g1 = b1 && b1.dia && b1.dia.items[0]; if (!g9 || !g1) return [false, 'нет замера']; const want = 0.1 * b9.fs; return [Math.abs(g1.gap - g9.gap - want) <= 1.5, `${g9.gap} → ${g1.gap}px, разница ${Math.round((g1.gap - g9.gap) * 10) / 10} при ожидаемой ${Math.round(want * 10) / 10}`]; }, 'layout'],
+    ['#lat-dia: латиница «ÅLAND ÖSTERSJÖ» под «CAFÉ AND BAR» при .9 — FAIL', (a) => { const it = a.items('diacritic', 'lat-dia'); return [it.length === 1 && it[0].status === 'FAIL' && /Å/.test(it[0].note), it.map((x) => `${x.status} ${short(x.note, 90)}`).join('; ') || 'нет пункта']; }, 'layout'],
+    ['регрессии: латиница без значков при .9, «Й» только в первой строке, строчная «й», мелкий капс 20 px — не diacritic', (a) => { const ids = ['lat09', 'dj-first', 'dj-low', 'dj-small']; const got = ids.map((id) => `${id} ${a.st('diacritic', id)}`); return [ids.every((id) => a.st('diacritic', id) === 'none') && a.st('leading', 'dj-small') === 'FAIL', `${got.join(', ')}; leading dj-small ${a.st('leading', 'dj-small')}`]; }],
+    ['итог страницы — FAIL из-за diacritic, вырезка с отметкой значка', (a) => { const c = a.res.lines.filter((l) => l.rule === 'diacritic').flatMap((l) => l.items.map((x) => x.crop)).filter(Boolean); return [a.res.verdict === 'FAIL' && a.res.rules.diacritic && a.res.rules.diacritic.status === 'FAIL' && c.length > 0, `итог ${a.res.verdict}, diacritic ${a.res.rules.diacritic ? a.res.rules.diacritic.status : 'нет'}, вырезок ${c.length}`]; }],
   ],
   'bs-nomain.html': [
     ['шапка и подвал в div.container без main — каркас; header и footer карточек div.post — основное (кегль 20 в шкале)', (a) => { const h = a.byEl('brand'), f = a.byEl('fnote'); const ph = a.d.blocks.find((b) => !b.partOf && /выбираем зерно/.test(b.text)); const pf = a.d.blocks.find((b) => !b.partOf && /^12 сентября$/.test(b.text)); const s = summaryOf(a.d).sizes; return [h && h.frame === 'шапка' && f && f.frame === 'подвал' && ph && !ph.frame && pf && !pf.frame && s.includes(20) && !s.includes(15), `шапка ${h ? h.frame : 'нет блока'}, подвал ${f ? f.frame : 'нет блока'}, карточка ${ph ? ph.frame || 'основное' : 'нет блока'}/${pf ? pf.frame || 'основное' : 'нет блока'}, шкала ${s.join(', ')}`]; }],

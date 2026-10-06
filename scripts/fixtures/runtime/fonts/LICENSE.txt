@@ -1,0 +1,4 @@
+Commissioner — SIL Open Font License 1.1 (https://openfontlicense.org/open-font-license-official-text/).
+Источник: https://fonts.google.com/specimen/Commissioner — подмножество cyrillic, вес 500–700 (копия
+fixtures/typeset/fonts/commissioner-cyrillic.woff2). Стенды scroll.html и vert.html: вертикальная вкладка
+«Забронировать» набрана им, чтобы край глифа не зависел от системного шрифта (Segoe UI, San Francisco, DejaVu).
