@@ -51,17 +51,26 @@
  *   discover   discover.mjs --pages-shots 2: /dinners и /dinners/* — два файла (dinners.png, dinners-item.png);
  *              гарнитура заголовков на div и навигации в div-шапке — по замеру (не «null»); строка «окна при
  *              загрузке» есть и без SITE_REWORK_DISMISS; увело на шумную главную — в сводке консоли 0 ошибок
+ *   pages      pagesFrom / pagesInfo (--pages): сайт в подпапке — «/» и «/about» остаются корнем хоста, но с WARN
+ *              «страницы ВНЕ неё» (вид «страницы», подпись «--pages»); "./", "index.html", путь внутри подпапки и
+ *              полный адрес — без WARN; сайт в корне хоста — адреса и молчание как раньше; подмена Git Bash
+ *              («C:/Program Files/Git/about») возвращается, неизвестный путь Windows — ошибка; file:// — так же
+ *   status     ответ самого документа (docStatus, docFailure) на стенде через serve.mjs: существующая страница —
+ *              200 и null, несуществующая — 404 и текст провала, expect 404 — null, expect у 200 — провал;
+ *              shots.mjs: страница 404 — FAIL с кодом, не снята, docStatus в shots.json, --strict — код 1;
+ *              --expect-status 404 — снята, OK; --pages "/" у сайта в подпапке — WARN в выводе, в счёте и в shots.json
  * Код выхода: 0 — все случаи сошлись, 1 — нет.
  */
 import fs from 'node:fs';
 import os from 'node:os';
+import net from 'node:net';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   launch, openPage, preparePage, gotoRetry, resolveViewport, findOverflow, fullPageShot, segmentPositions, scrollThrough, checkOpenModal,
   applyDismiss, collectWarnings, takeWarnings, collectNotes, takeNotes, loadSharp, sleep, parseArgs, readJson, warningKind, warningLabel,
-  findBrowser,
+  findBrowser, pagesFrom, pagesInfo, docStatus, docFailure,
 } from '../../lib.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -392,6 +401,100 @@ if (want('dismiss-ff')) {
   }
 }
 
+/* ---------- pages: разбор --pages, чистая функция ---------- */
+if (want('pages')) {
+  takeWarnings();
+  const SUB = 'http://localhost:4010/sites/bbq-kitchen/index.html';
+  /* Ж:798 — «/» у сайта в подпапке: смысл прежний (корень хоста), но не молча */
+  let p = pagesFrom('/,index.html,/about', SUB); let w = takeWarnings();
+  check('pages: подпапка — «/» и «/about» от корня хоста, index.html от адреса', JSON.stringify(p) === JSON.stringify(['http://localhost:4010/', 'http://localhost:4010/sites/bbq-kitchen/index.html', 'http://localhost:4010/about']), p);
+  check('pages: подпапка — WARN называет обе страницы вне неё, подпапку и запись "./"', w.length === 1 && w[0].includes('«/» → http://localhost:4010/,') && w[0].includes('«/about» → http://localhost:4010/about') && w[0].includes('в подпапке /sites/bbq-kitchen/') && w[0].includes('ВНЕ') && w[0].includes('"./" — http://localhost:4010/sites/bbq-kitchen/') && !w[0].includes('«index.html»'), w);
+  check('pages: вид предупреждения «страницы», подпись «--pages»', !!w[0] && warningKind(w[0]) === 'страницы' && warningLabel(w[0]) === '--pages', w[0] && [warningKind(w[0]), warningLabel(w[0])]);
+  p = pagesFrom('./,index.html,menu/,/sites/bbq-kitchen/about.html,https://other.ru/x', SUB); w = takeWarnings();
+  check('pages: подпапка — "./", относительные, путь внутри подпапки и полный адрес — без WARN', !w.length && p[0] === 'http://localhost:4010/sites/bbq-kitchen/' && p[2] === 'http://localhost:4010/sites/bbq-kitchen/menu/' && p[3] === 'http://localhost:4010/sites/bbq-kitchen/about.html' && p[4] === 'https://other.ru/x', JSON.stringify({ p, w }));
+  /* сайт в корне хоста: ничего не изменилось и ничего не печатается */
+  p = [...pagesFrom('/,/about,contacts.html', 'https://site.ru/'), ...pagesFrom('/,/menu', 'https://site.ru/about.html')]; w = takeWarnings();
+  check('pages: сайт в корне хоста — адреса прежние, WARN нет', !w.length && JSON.stringify(p) === JSON.stringify(['https://site.ru/', 'https://site.ru/about', 'https://site.ru/contacts.html', 'https://site.ru/', 'https://site.ru/menu']), JSON.stringify({ p, w }));
+  const info = pagesInfo('/, about.html ,,/sites/bbq-kitchen/x', SUB);
+  check('pages: pagesInfo — откуда считан путь и вышел ли за подпапку; пустые пункты отброшены', info.length === 3 && info[0].from === 'host' && info[0].outside === true && info[1].from === 'base' && info[1].outside === false && info[2].from === 'host' && info[2].outside === false, JSON.stringify(info));
+  /* Git Bash: «/» и «/about» приходят путём к его папке */
+  p = pagesFrom(['C:/Program Files/Git/', ['C:', 'Program Files', 'Git', 'about'].join(String.fromCharCode(92))].join(','), 'https://site.ru/'); w = takeWarnings();
+  check('pages: подмена Git Bash возвращается («C:/Program Files/Git/about» → /about)', !w.length && JSON.stringify(p) === JSON.stringify(['https://site.ru/', 'https://site.ru/about']), JSON.stringify({ p, w }));
+  p = pagesFrom('C:/Program Files/Git/', SUB); w = takeWarnings();
+  check('pages: подмена Git Bash у сайта в подпапке — тот же WARN, что у «/»', p[0] === 'http://localhost:4010/' && w.length === 1 && w[0].includes('ВНЕ'), JSON.stringify({ p, w }));
+  let err = null; try { pagesFrom('D:/Git/about', SUB); } catch (e) { err = String(e.message); }
+  let err2 = null; try { pagesFrom(['D:', 'Git', 'about'].join(String.fromCharCode(92)), SUB); } catch (e) { err2 = String(e.message); }
+  check('pages: неизвестный путь Windows (и с обратными слешами) — ошибка с подсказкой, а не адрес «d:»', !!err && err.includes('путь Windows') && err.includes('MSYS_NO_PATHCONV=1') && !!err2 && err2.includes('путь Windows'), `${err} | ${err2}`);
+  err = null; try { pagesFrom('mailto:a@b.ru', SUB); } catch (e) { err = String(e.message); }
+  check('pages: не http(s) и не file — ошибка', !!err && err.includes('не страница'), err);
+  p = pagesFrom('/,about.html', 'file:///C:/site/index.html'); w = takeWarnings();
+  check('pages: file:// — «/» это корень диска, WARN; about.html — рядом с адресом', p[1] === 'file:///C:/site/about.html' && w.length === 1 && w[0].includes('ВНЕ'), JSON.stringify({ p, w }));
+  pagesFrom('/', SUB, { warn: false }); w = takeWarnings();
+  check('pages: { warn: false } — без WARN', !w.length, w);
+  /* 06.10 — адрес без «/» на конце: папкой считается уровень выше, WARN говорит об этом прямо; у адреса со страницей приписки нет */
+  p = pagesFrom('/,./', 'http://localhost:4010/sites/bbq-kitchen'); w = takeWarnings();
+  const wSub = (pagesFrom('/', SUB), takeWarnings());
+  check('pages: адрес без «/» на конце — WARN называет папку /sites/ и просит дописать «/»; у адреса …/index.html приписки нет; текст не утверждает «чужая главная» безусловно',
+    p[1] === 'http://localhost:4010/sites/' && w.length === 1 && w[0].includes('Адрес без «/» на конце: папкой считается /sites/') && w[0].includes('допишите «/»') && wSub.length === 1 && !wSub[0].includes('Адрес без «/»') && wSub[0].includes('если сайт целиком в подпапке') && wSub[0].includes('глубокая страница сайта в корне хоста'), JSON.stringify({ p, w, wSub }));
+}
+
+/* ---------- status: ответ самого документа, стенд через serve.mjs ---------- */
+if (want('status')) {
+  takeWarnings();
+  /* чистая часть: без ответа (file://, переход не через gotoRetry) провала нет */
+  const f404 = docFailure({ rwDoc: { status: 404, url: 'http://h/x' } }) || '';
+  check('status: без ответа — не провал; 404 и 500 — провал с кодом и адресом; 200 и 301 — нет', docFailure({}) === null && docFailure(null) === null && f404 === 'ответ документа 404 — это страница ошибки, а не сайт (http://h/x)' && (docFailure({ rwDoc: { status: 500 } }) || '').includes('500') && docFailure({ rwDoc: { status: 200 } }) === null && docFailure({ rwDoc: { status: 301 } }) === null, [docFailure({}), f404, docFailure({ rwDoc: { status: 500 } }), docFailure({ rwDoc: { status: 200 } })].join(' | '));
+  check('status: expect — совпало → null, другой или неизвестный ответ → провал', docFailure({ rwDoc: { status: 404 } }, { expect: 404 }) === null && (docFailure({ rwDoc: { status: 200 } }, { expect: 404 }) || '').includes('200, ждали 404') && (docFailure({}, { expect: 404 }) || '').includes('неизвестен, ждали 404'), [docFailure({ rwDoc: { status: 200 } }, { expect: 404 }), docFailure({}, { expect: 404 })].join(' | '));
+  const port = await new Promise((res, rej) => { const sv = net.createServer(); sv.once('error', rej); sv.listen(0, '127.0.0.1', () => { const n = sv.address().port; sv.close(() => res(n)); }); });
+  const srv = spawn(process.execPath, [path.join(here, '..', '..', 'serve.mjs'), path.join(here, '..'), '--port', String(port), '--host', '127.0.0.1'], { stdio: 'ignore' });
+  const origin = `http://127.0.0.1:${port}`; const site = `${origin}/discover/site/index.html`;
+  try {
+    let up = false; for (let i = 0; i < 60 && !up; i++) { try { up = (await fetch(site)).status === 200; } catch { /* ещё не слушает */ } if (!up) await sleep(250); }
+    check('status: стенд serve.mjs поднялся', up, `${site} не отвечает 200`);
+    if (up) {
+      const browser = await launch();
+      try {
+        const [, vp] = resolveViewport('desktop');
+        let page = await openPage(browser, site, vp, { settle: 300, modalCheck: false });
+        check('status: существующая страница — 200, провала нет', docStatus(page).status === 200 && docFailure(page) === null && (docFailure(page, { expect: 404 }) || '').includes('ждали 404'), JSON.stringify(docStatus(page)));
+        await page.close();
+        page = await openPage(browser, `${origin}/discover/site/nope.html`, vp, { settle: 300, modalCheck: false });
+        const d = docStatus(page); const df = docFailure(page) || '';
+        check('status: несуществующая страница — 404 (переход «удался»), docFailure называет код и адрес', d.status === 404 && String(d.url).endsWith('nope.html') && df.startsWith('ответ документа 404 — это страница ошибки, а не сайт (') && df.endsWith('nope.html)') && docFailure(page, { expect: 404 }) === null, JSON.stringify(d));
+        await page.close();
+        page = await openPage(browser, fx('no-modal.html'), vp, { settle: 300, modalCheck: false });
+        check('status: file:// — провала нет', docFailure(page) === null && !(docStatus(page).status >= 400), JSON.stringify(docStatus(page)));
+        await page.close();
+      } finally { await browser.close().catch(() => {}); }
+      if (!opt['no-shots']) {
+        const shots = path.join(here, '..', '..', 'shots.mjs');
+        const run = (args) => spawnSync(process.execPath, [shots, site, '--out', out, '--viewports', 'desktop', '--light', ...args], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '' } });
+        const tail = (r, n = 400) => `${r.status} ${String(r.stdout || '').slice(-n)} ${String(r.stderr || '').slice(-200)}`;
+        /* Ж:819 — страница 404 шла в набор «до» с итогом OK */
+        let r = run(['--tag', 'st404', '--pages', './,nope.html']);
+        let j = readJson(path.join(out, 'st404', 'shots.json'), {}); let sh = j.shots || [];
+        const made = fs.existsSync(path.join(out, 'st404')) ? fs.readdirSync(path.join(out, 'st404')) : [];
+        check('shots: страница 404 — строка FAIL с кодом, вердикт FAIL, 1 провал', r.stdout.includes('FAIL ответ документа 404 — это страница ошибки, а не сайт') && r.stdout.includes('\nFAIL: 1 провалов') && j.verdict === 'FAIL' && j.fails === 1, tail(r));
+        check('shots: страница 404 не снята, в shots.json — docStatus 404 и error; соседняя — 200 и снята', sh.length === 2 && sh[0].docStatus === 200 && !sh[0].error && !!sh[0].first && sh[1].docStatus === 404 && String(sh[1].error).includes('ответ документа 404') && !made.some((x) => x.startsWith('nope')) && made.some((x) => x.endsWith('-first.png')), JSON.stringify({ shots: sh.map((x) => ({ page: x.page, docStatus: x.docStatus, error: x.error })), made }));
+        check('shots: без --strict код 0 (как у остальных FAIL)', r.status === 0, r.status);
+        r = run(['--tag', 'st404s', '--pages', 'nope.html', '--strict']);
+        check('shots: страница 404 с --strict — код 1', r.status === 1 && r.stdout.includes('FAIL ответ документа 404'), tail(r));
+        r = run(['--tag', 'st404e', '--pages', 'nope.html', '--expect-status', '404', '--strict']);
+        j = readJson(path.join(out, 'st404e', 'shots.json'), {}); sh = j.shots || [];
+        check('shots: --expect-status 404 — страница ошибки снята нарочно, провалов нет', r.status === 0 && j.fails === 0 && sh.length === 1 && sh[0].docStatus === 404 && !sh[0].error && j.expectStatus === 404, tail(r));
+        r = run(['--tag', 'st200e', '--expect-status', '404']);
+        check('shots: --expect-status 404 у страницы с ответом 200 — FAIL', r.stdout.includes('FAIL ответ документа 200, ждали 404') && r.stdout.includes('\nFAIL: 1 провалов'), tail(r));
+        /* Ж:798 — «/» у сайта в подпапке: корень хоста (на стенде его нет — 404), WARN до съёмки и в счёте */
+        r = run(['--tag', 'sub', '--pages', '/,./']);
+        j = readJson(path.join(out, 'sub', 'shots.json'), {}); sh = j.shots || [];
+        check('shots: --pages "/" у сайта в подпапке — WARN «ВНЕ неё» в выводе, в счёте и в shots.json', r.stdout.includes(`WARN --pages: «/» → ${origin}/ — `) && r.stdout.includes('ВНЕ') && j.warns >= 1 && (j.warnings || []).some((x) => x.includes('ВНЕ')) && sh.length === 2 && sh[0].url === `${origin}/` && sh[1].url === `${origin}/discover/site/`, tail(r, 700));
+        r = run(['--tag', 'subok', '--pages', './']);
+        check('shots: --pages "./" у сайта в подпапке — без WARN про страницы, 0 провалов', !r.stdout.includes('--pages:') && r.stdout.includes(': 0 провалов'), tail(r));
+      }
+    }
+  } finally { try { srv.kill(); } catch { /* уже нет */ } }
+}
+
 /* ---------- shots.mjs: --light и обычный запуск ---------- */
 if (want('shots') && !opt['no-shots']) {
   const shots = path.join(here, '..', '..', 'shots.mjs');
@@ -438,6 +541,21 @@ if (want('discover') && !opt['no-shots']) {
   check('discover: гарнитура заголовков — по замеру «Georgia», не «null»', /заголовки «Georgia»/.test(fonts) && !/«null»/.test(fonts), fonts.slice(0, 300));
   check('discover: гарнитура навигации (div-шапка) — «Courier New»', /навигация «Courier New»/.test(fonts), fonts.slice(0, 300));
   check('discover: строка «окна при загрузке» — и без SITE_REWORK_DISMISS', /^- окна при загрузке: SITE_REWORK_DISMISS не задана · открытое окно: нет$/m.test(md), (md.match(/^- окна при загрузке.*$/m) || ['нет строки'])[0]);
+  /* Ж:805 — второй адрес в ту же --out: с --tag итоги свои (discovery-donor.*, pages-donor/), прежние целы и названы
+     по-старому; без метки поверх чужого итога — WARN «перезаписаны» */
+  const first = readJson(path.join(dOut, 'discovery.json'), {});
+  check('discover: без --tag имена прежние — discovery.json, discovery.md, pages/ (в json — files)', fs.existsSync(path.join(dOut, 'discovery.md')) && first.url === site && first.files && first.files.json === 'discovery.json' && first.files.md === 'discovery.md' && first.files.pages === 'pages' && first.files.design === 'design' && !fs.readdirSync(dOut).some((x) => /^discovery-/.test(x)), JSON.stringify({ files: first.files, dir: fs.readdirSync(dOut) }));
+  const other = fx('no-modal.html');
+  const rt = spawnSync(process.execPath, [disc, other, '--out', dOut, '--tag', 'donor', '--viewports', 'desktop', '--no-320', '--no-design', '--light', '--no-texture', '--no-pages'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '' } });
+  const tagged = readJson(path.join(dOut, 'discovery-donor.json'), {}); const kept = readJson(path.join(dOut, 'discovery.json'), {});
+  const mdKept = fs.existsSync(path.join(dOut, 'discovery.md')) ? fs.readFileSync(path.join(dOut, 'discovery.md'), 'utf8') : '';
+  check('discover: --tag donor в ту же папку — discovery-donor.json и discovery-donor.md свои, снимки в donor/', rt.status === 0 && tagged.url === other && tagged.files && tagged.files.md === 'discovery-donor.md' && tagged.files.pages === 'pages-donor' && tagged.files.design === 'design-donor' && fs.existsSync(path.join(dOut, 'discovery-donor.md')) && fs.existsSync(path.join(dOut, 'donor', 'desktop-first.png')) && /discovery-donor\.md — сводка, discovery-donor\.json — данные, donor\/ — снимки/.test(rt.stdout), `${rt.status} ${(rt.stdout || '').slice(-300)} ${(rt.stderr || '').slice(-200)}`);
+  check('discover: прежние discovery.json и discovery.md не затёрты запуском с меткой, WARN о перезаписи нет', kept.url === site && kept.takenAt === first.takenAt && mdKept === md && !/перезаписан/.test(rt.stdout), JSON.stringify({ url: kept.url, same: mdKept === md }));
+  const ro = spawnSync(process.execPath, [disc, other, '--out', dOut, '--viewports', 'desktop', '--no-320', '--no-design', '--light', '--no-texture', '--no-pages'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '' } });
+  const over = readJson(path.join(dOut, 'discovery.json'), {});
+  check('discover: другой адрес без метки поверх чужого итога — WARN «перезаписаны» с подсказкой --tag, в выводе и в json', ro.status === 0 && /WARN +discovery\.json и discovery\.md в этой папке были от другого адреса — перезаписаны вместе с design\/ и pages\/ \([^)]*--tag имя → discovery-имя\.json[^)]*\); прежний адрес: file:/.test(ro.stdout) && over.url === other && (over.warnings || []).some((x) => /перезаписаны/.test(x) && /прежний адрес: \S*discover\/site\/index\.html, снят \d{4}-/.test(x)), `${ro.status} ${(ro.stdout || '').slice(-400)}`);
+  const ro2 = spawnSync(process.execPath, [disc, other, '--out', dOut, '--viewports', 'desktop', '--no-320', '--no-design', '--light', '--no-texture', '--no-pages'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '' } });
+  check('discover: повторный запуск того же адреса — без WARN о перезаписи', ro2.status === 0 && !/перезаписан/.test(ro2.stdout), `${ro2.status} ${(ro2.stdout || '').slice(-300)}`);
   /* SITE_REWORK_DISMISS увёл на шумную главную: в сводке консоли — только нужная страница */
   const nOut = path.join(out, 'discover-noisy');
   const rn = spawnSync(process.execPath, [disc, fx('dismiss-nav.html', '?noisy=1'), '--out', nOut, '--viewports', 'desktop', '--pages-shots', '0', '--no-320', '--no-design', '--light', '--no-texture'], { encoding: 'utf8', timeout: 600000, env: { ...process.env, SITE_REWORK_DISMISS: '.city li.city__item' } });

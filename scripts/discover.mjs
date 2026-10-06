@@ -20,7 +20,11 @@
  *   --no-design        без дизайн-системы (скилл design-reference)
  *   --light            без серии снимков по прокрутке (быстрее); палитра сверяется по first/full
  *   --scheme <тема>    light | dark — prefers-color-scheme (по умолчанию light)
- *   --tag <имя>        подпапка снимков, по умолчанию discover
+ *   --tag <имя>        метка запуска: подпапка снимков (по умолчанию discover) и имена итогов. Без --tag (и с
+ *                      --tag discover) итоги — discovery.json, discovery.md, design/, pages/, как всегда. С меткой —
+ *                      discovery-<имя>.json, discovery-<имя>.md, design-<имя>/, pages-<имя>/: два запуска в одну
+ *                      --out (сайт и донор, два потока сразу) не затирают друг друга. Если в папке уже лежит
+ *                      итог с тем же именем от ДРУГОГО адреса — WARN «перезаписан» с подсказкой про --tag
  *   --no-hover         не наводить мышь на карточки, разбирая блоки, невидимые после прокрутки
  *   --no-texture       не снимать фактуру по пикселям (слои всё равно перечисляются)
  *   --no-texture-module  не подключать texture.mjs, даже если он рядом: запасной путь discover
@@ -73,8 +77,8 @@
  * --strict — ещё и любой FAIL в итоге. Аргументы проверяются до того, как создаётся папка
  * прогона: с ошибкой в них на диске ничего не появляется.
  *
- * В папке прогона появляются:
- *   discovery.json   сырые данные по каждому экрану
+ * В папке прогона появляются (с --tag имя — discovery-имя.json, discovery-имя.md, design-имя/, pages-имя/):
+ *   discovery.json   сырые данные по каждому экрану (поле files — имена итогов этого запуска)
  *   discovery.md     сводка для чтения: что найдено и какие снимки открыть глазами
  *   discover/        снимки разведки: первый экран, серия по прокрутке (равномерно по всей
  *                    высоте) и её лист миниатюр, вся страница, фактура «со слоем / без»
@@ -141,7 +145,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
-  launch, openPage, scrollThrough, fullPageShot, pickViewports, parseArgs, runDir, writeJson, summarizeRequests, ensureDir, kb, sleep,
+  launch, openPage, scrollThrough, fullPageShot, pickViewports, parseArgs, runDir, writeJson, readJson, summarizeRequests, ensureDir, kb, sleep,
   forceInstantScroll, findOverflow, canvasList, evaluateWith, screenSegment, scrollToY, freezeMotion, loadSharp, findModuleRoot,
   waitForOverlay, withDeadline, SIG_FN, HEX_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE, closeConsent, consentNote,
   EFFECTIVE_ZOOM_FN, CLIP_SHARE_FN, IS_TILDA_SERVICE_FN, TILDA_PH, tildaInfo, collectWarnings, takeWarnings, trackModule,
@@ -1701,11 +1705,11 @@ function pagesLines(pg, shots, n) {
   } else if (tp && tp.error) L.push(`- Tilda: типы по подписи блоков не сняты (${tp.error}) — ниже по шаблону адреса, у Tilda он даёт тип почти на каждую страницу; снять: \`tilda.mjs pages <адрес>\``, '');
   if (tp && tp.types) {
     if (shots && shots.length) {
-      L.push('', `### Снято по странице каждого типа (\`pages/\`, ${shots.length} из ${tp.types.filter((t) => !t.self).length})`, '');
+      L.push('', `### Снято по странице каждого типа (\`${OUT_NAMES.pages}/\`, ${shots.length} из ${tp.types.filter((t) => !t.self).length})`, '');
       for (const s of shots) {
         if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
         const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
-        L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}`);
+        L.push(`- \`${OUT_NAMES.pages}/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}`);
       }
     } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
     return L;
@@ -1716,15 +1720,15 @@ function pagesLines(pg, shots, n) {
   const ctx = (c) => Object.entries(c || {}).sort((a, b) => b[1] - a[1]).map(([k, x]) => `${k} ${x}`).join(', ') || '—';
   L.push('| тип страницы | адресов по ссылкам (ссылок) | в sitemap.xml | где ссылки | по имени | пример |', '|---|---|---|---|---|---|',
     ...others.slice(0, 30).map((t) => `| \`${t.key}\` | ${t.pages ? `${t.pages} (${t.links})` : '—'} | ${sm && !sm.error ? t.sitemap || '—' : '?'} | ${ctx(t.ctx)} | ${t.hint || '—'} | ${t.example || '—'}${t.texts.length ? ` «${t.texts[0]}»` : ''} |`));
-  if (others.length > 30) L.push(`| … | ещё ${others.length - 30} типов — в discovery.json (pages) | | | | |`);
+  if (others.length > 30) L.push(`| … | ещё ${others.length - 30} типов — в ${OUT_NAMES.json} (pages) | | | | |`);
   if (pg.external.length) L.push('', `- внешние ссылки: ${pg.external.map((e) => `${e.host} ×${e.n}`).join(', ')}`);
   if (pg.filesTotal) L.push(`- файлы: ${pg.filesTotal} (${pg.files.join(', ')})`);
   if (shots && shots.length) {
-    L.push('', `### Снято по странице каждого типа (\`pages/\`, ${shots.length} из ${others.length})`, '');
+    L.push('', `### Снято по странице каждого типа (\`${OUT_NAMES.pages}/\`, ${shots.length} из ${others.length})`, '');
     for (const s of shots) {
       if (s.error) { L.push(`- \`${s.key}\` — **не снялась**: ${s.error} (${s.example})`); continue; }
       const hs = s.heads.slice(0, 10).map((h) => `${h.level}: ${h.text}`).join(' · ');
-      L.push(`- \`pages/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.consent ? ` · окно согласия: ${s.consent}` : ''}${s.dismiss ? ` · SITE_REWORK_DISMISS: ${s.dismiss}` : ''}${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}${s.heads.length > 10 ? ` · ещё ${s.heads.length - 10}` : ''}`);
+      L.push(`- \`${OUT_NAMES.pages}/${s.file}\` — \`${s.key}\` · ${s.url}${s.status && s.status >= 400 ? ` · **HTTP ${s.status}**` : ''} · «${s.title}» · высота ${s.height}px${s.consent ? ` · окно согласия: ${s.consent}` : ''}${s.dismiss ? ` · SITE_REWORK_DISMISS: ${s.dismiss}` : ''}${s.modal ? ` · **${s.modal}**` : ''}`, `  - заголовки: ${hs || 'нет видимых h1–h3'}${s.heads.length > 10 ? ` · ещё ${s.heads.length - 10}` : ''}`);
     }
   } else if (n === 0) L.push('', '- страницы не открывались (по умолчанию): снять по одной странице каждого типа — тот же запуск с `--pages-shots N`');
   return L;
@@ -1787,7 +1791,7 @@ function writeSummary(url, run, per, design, order, extra) {
     `### Кнопки и призывы (${c.ctasTotal} на странице, ${c.ctas.length} разных; сначала отправка формы и первый экран)`, '',
     'Кнопка — компактный элемент с заливкой, контуром или градиентом (у самого элемента или у вложенного блока на всю площадь); стиль текста — от видимого текста внутри. Ссылки с картинкой и коробки от 120 px — ниже, в «Карточках-ссылках».', '',
     ...c.ctas.slice(0, 14).map((b) => `- «${b.text}» ${b.tag}${b.href ? ` → ${b.href}` : ''}${b.count > 1 ? ` ×${b.count}` : ''} · ${b.filled ? `заливка ${b.bg}` : b.gradient ? 'градиент' : b.bordered ? `контур ${b.border}` : 'без заливки'}${b.surface ? ` (у ${b.surface})` : ''}, ${b.w}×${b.h}, радиус ${b.radius}${b.pill ? ' (пилюля)' : ''}, текст ${b.color} ${b.fs}px/${b.fw}${b.upper ? ' КАПС' : ''}${b.ls ? ` ls ${b.ls}em` : ''}${b.submit ? ' · **отправка формы**' : ''}${b.aboveFold ? ' · первый экран' : ''}`),
-    ...(c.ctas.length > 14 ? [`- …и ещё ${c.ctas.length - 14} разных (все — в discovery.json)`] : []),
+    ...(c.ctas.length > 14 ? [`- …и ещё ${c.ctas.length - 14} разных (все — в ${OUT_NAMES.json})`] : []),
     ...(!c.ctas.length ? ['— нет'] : []),
     ...(c.icons.count ? [`- образцы и значки без подписи (меньше 48×48, только aria-label): ${c.icons.count} — ${c.icons.sample.join(' | ')}`] : []),
     ...(c.consentButtons && c.consentButtons.length ? [`- кнопки окна согласия cookie — не кнопки сайта, в списки выше не входят: ${c.consentButtons.map((x) => `«${x}»`).join(', ')}`] : []), '',
@@ -1870,13 +1874,13 @@ function writeSummary(url, run, per, design, order, extra) {
   }
   const tt = extra.textureTokens;
   if (tt) L.push('', tt.written
-    ? `Фактура: блок \`--grain-*\` (между texture:start и texture:end) ${tt.replaced ? 'заменён' : 'дописан'} в \`design/${tt.file}\` — ${tt.grain === 'есть' ? `зерно есть: opacity ${tt.opacity}, наложение ${tt.blend}, зерно ${tt.px} px, кадров ${tt.frames} × ${tt.frameMs} мс, с ширины ${tt.minWidth}px` : tt.grain === 'нет' ? 'зерна нет: --grain-opacity 0, слой выключен' : 'зерна нет там, где измерено, часть экранов не измерена: --grain-opacity 0, слой выключен — проверить глазами по вырезам 1:1'} (по экранам: ${Object.entries(tt.statuses || {}).map(([k, v]) => `${k} ${v}`).join(', ')}). Значения — рецепт из раздела «Фактура» выше; сборка берёт их отсюда.`
-    : `Фактура: блок \`--grain-*\` в \`design/${tt.file}\` не дописан — ${tt.why}.`);
+    ? `Фактура: блок \`--grain-*\` (между texture:start и texture:end) ${tt.replaced ? 'заменён' : 'дописан'} в \`${OUT_NAMES.design}/${tt.file}\` — ${tt.grain === 'есть' ? `зерно есть: opacity ${tt.opacity}, наложение ${tt.blend}, зерно ${tt.px} px, кадров ${tt.frames} × ${tt.frameMs} мс, с ширины ${tt.minWidth}px` : tt.grain === 'нет' ? 'зерна нет: --grain-opacity 0, слой выключен' : 'зерна нет там, где измерено, часть экранов не измерена: --grain-opacity 0, слой выключен — проверить глазами по вырезам 1:1'} (по экранам: ${Object.entries(tt.statuses || {}).map(([k, v]) => `${k} ${v}`).join(', ')}). Значения — рецепт из раздела «Фактура» выше; сборка берёт их отсюда.`
+    : `Фактура: блок \`--grain-*\` в \`${OUT_NAMES.design}/${tt.file}\` не дописан — ${tt.why}.`);
   else if (!design && extra.texResults && extra.texResults.length) L.push('', 'Фактура: блок `--grain-*` — в разделе «Фактура» выше (дизайн-системы нет, дописывать некуда).');
   L.push('');
   const pg = extra.pages; const moreTypes = pg ? (pg.tilda && pg.tilda.types ? pg.tilda.types.filter((x) => !x.self).length : pg.types.filter((x) => x.key !== '/').length) : 0;
   L.push('## Что дальше', '', '1. Открыть снимки и заполнить визуальный разбор по `reference/discovery.md` (язык дизайна, иерархия, приём, что сохранить). «Паспорт донора» и «Подписные приёмы» — рамка для своих решений.', '2. Прогнать `runtime.mjs` по всему, что зависит от JS: меню (селектор — в «Мобильном экране»), формы, слайдеры, холсты, появления.', '3. Составить матрицу «менять / не трогать» и план по приоритетам P0–P5 (`reference/analysis.md`).',
-    ...(moreTypes ? [`4. Режим донора: у сайта ${moreTypes} других типов страниц (раздел «Страницы сайта по типам»)${extra.pageShots && extra.pageShots.length ? ' — открыть снимки из pages/' : ' — снять по одной странице каждого типа: тот же запуск с `--pages-shots N`'}, в analysis.md составить «тип страницы донора → что там → аналог у нас → совет» и спросить пользователя, какие страницы нужны, до плана.`] : []), '');
+    ...(moreTypes ? [`4. Режим донора: у сайта ${moreTypes} других типов страниц (раздел «Страницы сайта по типам»)${extra.pageShots && extra.pageShots.length ? ` — открыть снимки из ${OUT_NAMES.pages}/` : ' — снять по одной странице каждого типа: тот же запуск с `--pages-shots N`'}, в analysis.md составить «тип страницы донора → что там → аналог у нас → совет» и спросить пользователя, какие страницы нужны, до плана.`] : []), '');
   return L.join('\n');
 }
 
@@ -1913,6 +1917,18 @@ collectWarnings(); collectNotes();
 const run = ensureDir(runDir(opt, url));
 const tag = String(opt.tag || 'discover');
 const shotsDir = ensureDir(path.join(run, tag));
+/* Имена итогов. Без --tag (и с --tag discover) — прежние: discovery.json, discovery.md, design/, pages/ — их читают
+   requirements.mjs, документы и люди. С меткой — свои: до 06.10 --tag разводил только снимки, и два потока в одну
+   --out (сайт и донор) затирали сводку, данные, design/ и pages/ друг друга (03.10, прогон bbq-fresh). */
+const tagSuffix = opt.tag && tag !== 'discover' ? `-${tag.replace(/[^\w.а-яё-]+/gi, '_')}` : '';
+const OUT_NAMES = { json: `discovery${tagSuffix}.json`, md: `discovery${tagSuffix}.md`, design: `design${tagSuffix}`, pages: `pages${tagSuffix}` };
+/* в папке уже лежит итог с тем же именем от другого адреса — он будет перезаписан: не молча */
+const samePage = (a, b) => { try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname.replace(/\/(index\.html?)?$/, '') === y.pathname.replace(/\/(index\.html?)?$/, ''); } catch { return a === b; } };
+const prevRun = readJson(path.join(run, OUT_NAMES.json));
+const overwriteNote = prevRun && prevRun.url && !samePage(prevRun.url, url)
+  /* подсказка — в начале: строка вердикта режется до 300 знаков, а адрес file:// длинный */
+  ? `${OUT_NAMES.json} и ${OUT_NAMES.md} в этой папке были от другого адреса — перезаписаны вместе с ${OUT_NAMES.design}/ и ${OUT_NAMES.pages}/ (два адреса в одной папке — с меткой: --tag имя → discovery-имя.json, или своя --out); прежний адрес: ${(() => { try { return decodeURI(prevRun.url); } catch { return prevRun.url; } })()}${prevRun.takenAt ? `, снят ${String(prevRun.takenAt).slice(0, 16).replace('T', ' ')}` : ''}`
+  : null;
 
 const browser = await launch();
 const per = {}; const extra320 = {};
@@ -1967,7 +1983,7 @@ try {
     if (pagesShotsN > 0) {
       const [vpName, vp] = viewports[0];
       const toShoot = pages.tilda && pages.tilda.types ? pages.tilda.types.filter((t) => !t.self).map((t) => ({ key: t.name, example: t.example })) : pages.types.filter((t) => t.key !== pages.self);
-      pageShots = await shootPages(browser, toShoot, pagesShotsN, vpName, vp, ensureDir(path.join(run, 'pages')), opt);
+      pageShots = await shootPages(browser, toShoot, pagesShotsN, vpName, vp, ensureDir(path.join(run, OUT_NAMES.pages)), opt);
     }
   }
 } finally { await browser.close().catch(() => {}); }
@@ -1986,11 +2002,11 @@ const texResults = order.map((v) => good[v].texture).filter((t) => t && t.source
 
 /* одинаковые WARN lib с разных экранов (SITE_REWORK_DISMISS не найдено на каждом) — одной строкой */
 const uniqW = (l) => [...new Set(l)];
-const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN, warnings: uniqW(takeWarnings()), notes: uniqW(takeNotes()) };
+const extra = { tag, extra320, failed, shares, texResults, tokenCheck: null, designNote: null, textureTokens: null, pages, pageShots, pagesShotsN, warnings: uniqW([...(overwriteNote ? [overwriteNote] : []), ...takeWarnings()]), notes: uniqW(takeNotes()) };
 const textureSource = opt['no-texture-module'] ? 'discover (запасной путь, --no-texture-module)' : texNote || 'texture.mjs';
 const save = (design) => {
-  writeJson(path.join(run, 'discovery.json'), { url, takenAt: new Date().toISOString(), shotsDir: tag, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null, warnings: extra.warnings, notes: extra.notes });
-  fs.writeFileSync(path.join(run, 'discovery.md'), writeSummary(url, run, good, design, order, extra));
+  writeJson(path.join(run, OUT_NAMES.json), { url, takenAt: new Date().toISOString(), shotsDir: tag, files: OUT_NAMES, viewports: order, failedViewports: failed, per: good, extra320, pixelShares: shares, textureSource, design, tokenCheck: extra.tokenCheck, textureTokens: extra.textureTokens, pages: pages ? { ...pages, shots: pageShots } : null, warnings: extra.warnings, notes: extra.notes });
+  fs.writeFileSync(path.join(run, OUT_NAMES.md), writeSummary(url, run, good, design, order, extra));
 };
 
 /* D6: разведка на диске ДО дизайн-системы — если design-reference упадёт или завершит процесс, она уже есть */
@@ -2007,7 +2023,7 @@ if (!opt['no-design']) {
     try {
       trackModule(extractPath);
       const mod = await import(pathToFileURL(extractPath).href);
-      const designDir = ensureDir(path.join(run, 'design'));
+      const designDir = ensureDir(path.join(run, OUT_NAMES.design));
       const data = await mod.extract(url, { shotsDir: null, light: !!opt.light });
       /* протокол — через writeJson: поле generator (какой discover и какой extract сняли спецификацию); verify его не читает */
       writeJson(path.join(designDir, 'site.json'), data);
@@ -2024,9 +2040,9 @@ if (!opt['no-design']) {
 }
 /* G8: рецепт фактуры — в переменные дизайн-системы, чтобы сборка брала --grain-* отсюда, а не «на глаз» */
 if (design) {
-  extra.textureTokens = addTextureTokens(path.join(run, 'design', 'site.tokens.css'), texResults, opt);
+  extra.textureTokens = addTextureTokens(path.join(run, OUT_NAMES.design, 'site.tokens.css'), texResults, opt);
   const tt = extra.textureTokens;
-  console.log(tt.written ? `· фактура → design/site.tokens.css: блок --grain-* (${tt.grain === 'есть' ? `зерно есть, opacity ${tt.opacity}, ${tt.blend}` : `зерна ${tt.grain}, opacity 0`}${tt.replaced ? ', прежний блок заменён' : ''})` : `· фактура: блок --grain-* в design/site.tokens.css не дописан — ${tt.why}`);
+  console.log(tt.written ? `· фактура → ${OUT_NAMES.design}/site.tokens.css: блок --grain-* (${tt.grain === 'есть' ? `зерно есть, opacity ${tt.opacity}, ${tt.blend}` : `зерна ${tt.grain}, opacity 0`}${tt.replaced ? ', прежний блок заменён' : ''})` : `· фактура: блок --grain-* в ${OUT_NAMES.design}/site.tokens.css не дописан — ${tt.why}`);
 }
 extra.warnings = uniqW([...extra.warnings, ...takeWarnings()]);
 save(design);
@@ -2071,5 +2087,5 @@ if (extra.tokenCheck) { const bad = extra.tokenCheck.filter((x) => x.share < 0.1
 if (verdicts.length) { console.log(''); for (const [vv, msg] of verdicts) console.log(`${vv.padEnd(5)} ${msg.slice(0, 300)}`); }
 const nFail = verdicts.filter(([vv]) => vv === 'FAIL').length; const nWarn = verdicts.filter(([vv]) => vv === 'WARN').length;
 console.log(`\nИтог: ${nFail || nWarn ? [nFail && `FAIL ${nFail}`, nWarn && `WARN ${nWarn}`].filter(Boolean).join(' · ') : 'OK'}${opt.strict ? ` (--strict: код выхода ${nFail ? 1 : 0})` : ''}`);
-console.log(`Готово: ${run}\n  discovery.md — сводка, discovery.json — данные, ${tag}/ — снимки${design ? `, design/ — переменные${extra.textureTokens && extra.textureTokens.written ? ' (с блоком --grain-*)' : ''}` : ''}${pageShots && pageShots.length ? `, pages/ — по снимку на тип страницы (${pageShots.filter((s) => !s.error).length})` : ''}`);
+console.log(`Готово: ${run}\n  ${OUT_NAMES.md} — сводка, ${OUT_NAMES.json} — данные, ${tag}/ — снимки${design ? `, ${OUT_NAMES.design}/ — переменные${extra.textureTokens && extra.textureTokens.written ? ' (с блоком --grain-*)' : ''}` : ''}${pageShots && pageShots.length ? `, ${OUT_NAMES.pages}/ — по снимку на тип страницы (${pageShots.filter((s) => !s.error).length})` : ''}`);
 if (opt.strict && nFail) process.exit(1);

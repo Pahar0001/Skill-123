@@ -27,6 +27,12 @@
  *   Файл и папка разбираются без браузера: роли — из разметки (h1–h6, lead, text, li, button, label,
  *   faq-q, faq-a, caption, nav, footer, title); атрибуты alt, placeholder, aria-label, meta description,
  *   og:title, og:description и value кнопок — отдельными прогонами attr:<имя> (типограф их не трогает).
+ *   Протокол copy.mjs snapshot или lint (.json, pages[].runs) — тоже цель: проверяются его строки с их ролями
+ *   (страница не открывается; пометки copy:stub, data-copy и скрытость в протоколе не хранятся — INFO об этом
+ *   в выводе). Любой другой JSON (протокол shots, discover, texture, package.json, файл с JSON внутри под другим
+ *   расширением) и .json, который не разбирается, — FAIL с кодом 1: как HTML он не читается (до 06.10 весь JSON
+ *   шёл одной строкой текста и давал OK без единой находки). fix --typograph файл JSON не правит — FAIL, код 1.
+ *   Адрес, который ответил кодом от 400 (страницы нет, сервер упал), — FAIL с кодом ответа, код выхода 1.
  *   Адрес (http, https, file) — браузер: страница такой, какой её видит человек, со всем, что дорисовал
  *   JS (демо-сайты Vanta берут тексты из базы); блочность и скрытость — из вычисленных стилей. Окно, которое
  *   SITE_REWORK_DISMISS закрыл выбором, увело на другую страницу (mamuka.rest/menu → главная) — адрес открывается
@@ -64,7 +70,10 @@
  *   пересобрать и пересчитать листы.
  *
  * Флаги:
- *   --pages "/,/a"      адрес: пути от адреса; папка: /a → a.html, a/index.html или a
+ *   --pages "/,/a"      адрес: путь с ведущим «/» — от корня ХОСТА («/a» → http://хост/a), без него ("./",
+ *                       "a.html") — от папки адреса; у сайта в подпапке (http://хост/sites/x/index.html) страницы —
+ *                       "./,a.html": «/» там чужая главная, WARN «страницы ВНЕ неё»; папка: /a → a.html,
+ *                       a/index.html или a
  *   --viewport <экран>  адрес: экран (mobile по умолчанию; desktop, laptop, tablet, mobile-s, 320x568@2)
  *   --out <прогон>      папка прогона: протокол <прогон>/copy/<tag>.json и список придуманного
  *                       copy/invented.json; оттуда же по умолчанию copy/facts.json, copy/before.json (сайт
@@ -126,9 +135,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import net from 'node:net';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseArgs, writeJson, launch, openPage, gotoRetry, waitForOverlay, pagesFrom, resolveViewport, unmangle } from './lib.mjs';
+import { parseArgs, writeJson, launch, openPage, gotoRetry, waitForOverlay, pagesInfo, pagesOutsideNote, docFailure, resolveViewport, unmangle, sleep } from './lib.mjs';
 import {
   RULES, TYPO_RULES, lintRuns, indexOf, claimsOf, factIndex, confirmed, donorShingles, typographRun, lockedOf,
   collapse, clip, words, buzzSource, isCredit, norm,
@@ -455,10 +465,39 @@ function pageFile(root, p) {
   for (const c of cands) { const f = path.join(root, c); if (fs.existsSync(f) && fs.statSync(f).isFile()) return f; }
   throw new Error(`страница «${p}» не найдена в ${root} (искал ${cands.join(', ')})`);
 }
+/* Файл — JSON? По расширению (.json) и по содержимому (не .html, начинается с { или [ и разбирается).
+   → null (не JSON) | { data } | { error } — .json, который не разбирается. */
+function jsonOf(abs) {
+  const named = /\.json$/i.test(abs);
+  if (!named && /\.(html?|xhtml|svg|md)$/i.test(abs)) return null;
+  let raw; try { raw = fs.readFileSync(abs, 'utf8').replace(/^\uFEFF/, ''); } catch (e) { return named ? { error: e.message } : null; }
+  if (!named && !/^\s*[{[]/.test(raw)) return null;
+  try { return { data: JSON.parse(raw) }; } catch (e) { return named ? { error: e.message } : null; }
+}
+const NOT_HTML = 'lint проверяет адрес, файл .html, папку или протокол copy.mjs snapshot / lint (pages[].runs); как HTML файл JSON не читается';
+/* Страницы из протокола snapshot/lint: строки с ролями — как есть (текст уже собран и очищен при съёмке).
+   До 06.10 протокол читался как HTML: весь JSON — одна строка «text», кавычки JSON попадали под правило
+   кавычек, итог — OK без находок по тексту (03.10, прогон bbq-fresh: «OK before.json · слов 8051»). */
+function protocolPages(abs, target, j) {
+  if (j.error) throw new Error(`${target}: файл .json не разбирается (${j.error}) — ${NOT_HTML}`);
+  const d = j.data;
+  if (!d || typeof d !== 'object' || !Array.isArray(d.pages) || !d.pages.length || !d.pages.every((p) => p && Array.isArray(p.runs))) {
+    const whose = d && typeof d === 'object' && !Array.isArray(d) ? (d.tool ? `протокол ${d.tool}${d.mode ? ` ${d.mode}` : ''}` : d.generator && d.generator.script ? `протокол ${d.generator.script}` : `ключи: ${Object.keys(d).slice(0, 6).join(', ') || 'нет'}`) : Array.isArray(d) ? 'массив' : typeof d;
+    throw new Error(`${target}: это JSON, но не протокол текстов (нет pages[].runs; ${whose}) — ${NOT_HTML}`);
+  }
+  const pages = d.pages.map((p, i) => {
+    const runs = p.runs.filter((r) => r && typeof r.text === 'string' && collapse(r.text)).map((r) => { const role = String(r.role || 'text'); return { text: r.text, lintText: r.text, role, line: r.line ?? null, path: '', spans: [], locked: new Set(), nextTags: [], ...(role.startsWith('attr:') ? { attr: true } : {}) }; });
+    return { what: String(p.what || `страница ${i + 1}`), file: abs, html: null, runs, lint: runs };
+  });
+  /* ни одной годной строки (runs пустые или без text) — отказ, а не «OK · слов 0»: тот же класс, что запись журнала */
+  if (!pages.some((p) => p.runs.length)) throw new Error(`${target}: в протоколе нет ни одной строки текста (pages[].runs пусты или без text) — проверять нечего; снимите тексты заново: copy.mjs snapshot`);
+  return { source: 'protocol', base: abs, protocol: { tool: d.tool || null, mode: d.mode || null, tag: d.tag || null, from: d.url || d.path || null, startedAt: d.startedAt || null }, pages };
+}
 function filePages(target, pages) {
   const abs = path.resolve(unmangle(target));
   if (!fs.existsSync(abs)) throw new Error(`нет файла или папки: ${target}`);
   const isFile = fs.statSync(abs).isFile();
+  if (isFile) { const j = jsonOf(abs); if (j) return protocolPages(abs, target, j); }
   const root = isFile ? path.dirname(abs) : abs;
   const files = isFile ? [abs] : pages ? String(pages).split(',').map((p) => p.trim()).filter(Boolean).map((p) => pageFile(root, p)) : htmlFilesOf(abs);
   if (!files.length) throw new Error(`в папке ${target} нет .html`);
@@ -483,12 +522,18 @@ async function urlPages(target, opt, B) {
   const r = resolveViewport(opt.viewport || 'mobile');
   if (!r) throw new Error(`неизвестный экран «${opt.viewport}»: desktop, laptop, tablet, mobile, mobile-s, android или ШxВ@плотность`);
   const [vpName, vp] = r;
-  const list = opt.pages ? pagesFrom(opt.pages, target) : [new URL(target).href];
+  /* --pages: путь с ведущим «/» — от корня хоста; у сайта в подпапке это чужая страница — WARN в stderr (stdout
+     может быть занят протоколом: --json -) */
+  let list = [new URL(target).href];
+  if (opt.pages) { const info = pagesInfo(opt.pages, target); const note = pagesOutsideNote(info, target); if (note) console.error(`WARN  ${note}`); list = info.map((x) => x.href); }
   if (!B.browser) B.browser = await launch({ mobile: !!vp.isMobile });
   const pages = [];
   for (const url of list) {
     const page = await openPage(B.browser, url, vp, { settle: 3000 });
     try {
+      /* ответ документа от 400 — страница ошибки: её тексты за тексты сайта не выдаются */
+      const docBad = docFailure(page);
+      if (docBad) throw new Error(`${url}: ${docBad} — тексты страницы ошибки не проверяются`);
       /* SITE_REWORK_DISMISS увёл на другую страницу (mamuka.rest: «Ярославль» в окне выбора города на /menu открывает
          главную) — выбор запомнен, открыть нужный адрес ещё раз, иначе в снимок /menu идут тексты главной */
       if (((page.overlay && page.overlay.dismiss) || []).some((d) => d && d.nav)) {
@@ -685,7 +730,7 @@ async function cmdLint(target, opt, B) {
   /* придуманное — в список для владельца (файл пишет main при --out); разведка чужого сайта списка не даёт */
   const invented = opt['no-facts'] ? [] : inventedOf(res.findings, tag);
   const data = {
-    tool: 'copy', mode: 'lint', source: col.source, ...(col.source === 'url' ? { url: target, viewport: col.viewport } : { path: col.base }), startedAt, tag, verdict,
+    tool: 'copy', mode: 'lint', source: col.source, ...(col.source === 'url' ? { url: target, viewport: col.viewport } : { path: col.base }), ...(col.protocol ? { protocol: col.protocol } : {}), startedAt, tag, verdict,
     options: { facts: factsFile, baseline: base ? base.file : null, noFacts: !!opt['no-facts'], donor: donorSrc || null, allow: allowFile, taste: !!opt.taste, tasteDir: opt.taste ? tDir : null, run: run ? runName(run) : null, invent: !!opt.invent },
     totals: { ...res.totals, warn: res.totals.warn + extra.length, indexBase: base ? base.index : null, facts: idx ? idx.facts : null, baselineTexts: base ? base.texts.length : null, ...(noBase ? { pagesNoBase: noBase.pages, inventedNoBase: invented.filter((e) => noBase.pages.includes(e.page)).length } : {}), factsNoSource: extra.length, stubs, invented: invented.length },
     steps: res.steps, findings, pages: res.pagesOut.map(({ found, ...p }) => p),
@@ -695,6 +740,7 @@ async function cmdLint(target, opt, B) {
 
 function printLint({ data, res, extra, idx, base, taste, noBase, inv }, opt, say) {
   const url = data.source === 'url';
+  if (data.source === 'protocol') { const P = data.protocol || {}; say(`INFO  тексты из протокола ${[P.tool, P.mode, P.tag].filter(Boolean).join(' ') || 'copy.mjs'}${P.from ? ` (${P.from})` : ''}: проверяются его строки с ролями, страница не открывается; пометки copy:stub, data-copy и скрытость в протоколе не хранятся — их проверка только по адресу или .html`); }
   if (!opt['no-facts']) {
     const parts = []; if (data.options.facts) parts.push(`facts.json (${idx.facts} с источником${extra.length ? `, без источника ${extra.length} — своим не считается` : ''})`); if (base) parts.push(`сайт «до» (${path.basename(String(base.file))}, текстов ${base.texts.length}${noBase ? `; снимок со страниц ${noBase.had.join(', ')} — нет снимка «до» для ${noBase.pages.join(', ')}: в список придуманного там могли попасть факты с сайта «до»` : ''})`);
     say(parts.length ? `факты: ${parts.join(' + ')}` : 'факты: сверять не с чем (нет facts.json и снимка «до») — всякая цена, срок, гарантия считается придуманной (в список для владельца); своё от владельца — в copy/facts.json с source; разведка чужого сайта — --no-facts');
@@ -911,7 +957,10 @@ async function main(argv) {
         const dir = path.join(path.resolve(unmangle(opt.out)), 'copy');
         /* список придуманного для владельца — до протокола, чтобы протокол знал, куда он лёг */
         if (!opt['no-facts']) { r.inv = saveInvented(path.join(dir, 'invented.json'), r.invented, r.data.pages.map((p) => p.what)); r.data.options.invented = r.inv.file; if (!r.inv.error) r.data.totals.inventedList = r.inv.total; }
-        const f = path.join(dir, `${r.data.tag}.json`); writeJson(f, r.data); r.data.file = f;
+        const f = path.join(dir, `${r.data.tag}.json`);
+        /* итог проверки протокола не пишется поверх самого протокола: lint <прогон>/copy/after.json --out <прогон> --tag after стёр бы снятые тексты */
+        if (r.data.source === 'protocol' && path.resolve(unmangle(args[0])).toLowerCase() === f.toLowerCase()) { console.error(`FAIL  ${args[0]}: итог лёг бы поверх читаемого протокола (${f}) — задайте другую метку: --tag имя`); return 1; }
+        writeJson(f, r.data); r.data.file = f;
       }
       if (jsonOut && jsonOut !== '-') { writeJson(path.resolve(unmangle(jsonOut)), r.data); if (!r.data.file) r.data.file = jsonOut; }
       printLint(r, opt, say);
@@ -952,6 +1001,7 @@ async function main(argv) {
       }
       const abs = path.resolve(unmangle(target));
       if (!fs.existsSync(abs)) { console.error(`FAIL  нет файла или папки: ${target}`); return 1; }
+      if (fs.statSync(abs).isFile() && jsonOf(abs)) { console.error(`FAIL  ${target}: файл JSON — типограф правит разметку .html (кавычки и пробелы JSON он бы испортил); тексты из данных — строкой: node copy.mjs fix --typograph - < текст`); return 1; }
       const files = fs.statSync(abs).isFile() ? [abs] : htmlFilesOf(abs);
       if (opt.out && files.length > 1) { console.error('FAIL  --out <файл> — только для одного файла; для папки — --write'); return 1; }
       const startedAt = new Date().toISOString();
@@ -1055,6 +1105,23 @@ async function selftest(opt) {
     say(confirmed(idx, claimsOf('Цена 1 000–20 000 ₽')[0]), 'facts.json: «1 000–20 000 ₽» подтверждается записью «от 1 000 до 20 000 ₽»');
     const i2 = factIndex({ texts: ['Кружка стоит 1500 ₽ и 12 недель ждёт'] });
     say(!confirmed(i2, claimsOf('Кружка 500 ₽')[0]) && !confirmed(i2, claimsOf('за 2 недели')[0]) && confirmed(i2, claimsOf('всего 1 500 ₽')[0]), '«500 ₽» не подтверждается «1500 ₽», «2 недели» — «12 недель»; «1 500 ₽» — подтверждается');
+    /* Ж:842 — срок прилагательным: «12-часового томления» на сайте «до» — тот же факт, что «12 часов» в новом тексте */
+    const adj = claimsOf('Свиные рёбрышки 12-часового томления');
+    const i3 = factIndex({ texts: ['Свиные рёбрышки 12-часового томления, 3-дневный маринад'] });
+    say(adj.length === 1 && adj[0].kind === 'term' && adj[0].text === '12-часового' && adj[0].sigs.join() === 'term|час|12' && confirmed(i3, claimsOf('Рёбра томим 12 часов')[0]) && confirmed(i3, claimsOf('маринуем 3 дня')[0]),
+      `срок прилагательным: «12-часового» — заявление ${adj.map((c) => c.sigs.join()).join(' ') || 'не найдено'}; «12 часов» и «3 дня» в новом тексте подтверждаются сайтом «до»`);
+    say(!confirmed(i3, claimsOf('Рёбра томим 14 часов')[0]) && !confirmed(i3, claimsOf('12 дней выдержки')[0]) && !confirmed(factIndex({ texts: ['Томим 12 часов'] }), claimsOf('14-часового томления')[0]),
+      'срок прилагательным: другое число («14 часов») и другая единица («12 дней») не подтверждаются; «14-часового» в новом тексте без факта — придумано');
+    say(['30-минутная доставка|term|мин|30', '5-летняя гарантия|term|год|5', '2-недельный курс|term|неделя|2', '6-месячная выдержка|term|месяц|6', '30-ти минутный разогрев|term|мин|30'].every((x) => { const [t, ...s] = x.split('|'); const c = claimsOf(t).find((y) => y.kind === 'term'); return !!c && c.sigs.join() === s.join('|'); })
+      && !claimsOf('12-этажный дом, 4-местный стол, вход с 3-го этажа').some((c) => c.kind === 'term'),
+      'срок прилагательным: минутный, летний, недельный, месячный, «30-ти минутный» — с единицей своего вида; «12-этажный», «4-местный» — не срок');
+    /* 06.10 — десятилетие не срок: «90-х годов» давало term|год|90 и подтверждало придуманное «Нам 90 лет» */
+    const dec = claimsOf('Кафе в стиле 90-х годов. Играют хиты 80-х годов, интерьер 1980-х годов, музыка с начала 2000-х годов').filter((c) => c.kind === 'term');
+    const i4 = factIndex({ texts: ['Хиты 90-х годов и мебель в стиле 1980-х годов'] });
+    say(dec.length === 0 && !confirmed(i4, claimsOf('Нам 90 лет')[0]) && !confirmed(i4, claimsOf('работаем 1980 лет')[0]),
+      `десятилетие не срок: «90-х годов», «80-х годов», «1980-х годов», «2000-х годов» — заявлений о сроке ${dec.length}${dec.length ? ` (${dec.map((c) => c.sigs.join()).join(' ')})` : ''}; «90 лет» в новом тексте ими не подтверждается`);
+    say(['2-х годовой запас|term|год|2', '3-годовой контракт|term|год|3', '2-годовалый саженец|term|год|2', '2-х часовой мастер-класс|term|час|2'].every((x) => { const [tx, ...sg] = x.split('|'); const c = claimsOf(tx).find((y) => y.kind === 'term'); return !!c && c.sigs.join() === sg.join('|'); }),
+      'срок прилагательным после правки десятилетий: «2-х годовой», «3-годовой», «2-годовалый», «2-х часовой» — по-прежнему срок');
     const runs = runsOf('<p>Доставим за 2 дня, гарантия 3 года.</p>');
     const none = lintRuns(runs, {});
     say(none.filter((f) => f.rule === 'copy-unverified' && f.sev === 'WARN' && f.invented).map((f) => f.match).join(' | ') === 'за 2 дня | гарантия | 3 года' && !none.some((f) => f.sev === 'FAIL'), 'нет ни facts.json, ни снимка «до» — все три заявления придуманы: WARN «в список для владельца» («за 2 дня», «гарантия», «3 года»), FAIL нет');
@@ -1191,6 +1258,55 @@ async function selftest(opt) {
     const w16 = j16 ? j16.findings.filter((x) => x.rule === 'copy-unchecked') : [];
     say(r15.status === 0 && r16.status === 0 && w16.length === 1 && w16[0].sev === 'WARN' && /снят с одной страницы — index\.html: если это она же под другим именем, список придуманного верный/.test(w16[0].suggest) && r17.status === 0 && j17 && !j17.findings.some((x) => x.rule === 'copy-unchecked'),
       `lint одной страницы при снимке «до» с другой (index.html → booking.html): WARN copy-unchecked и «если это она же под другим именем…» (${w16.map((x) => x.sev).join(', ') || 'нет'}, код ${r16.status}); index.html ↔ index.html — без WARN (код ${r17.status})`);
+    /* Ж:812 — протокол .json как цель lint: строки с ролями, а не «весь JSON одной строкой»; чужой JSON — отказ */
+    {
+      const runP = path.join(tmp, 'run-proto');
+      node(['lint', path.join(FIXTURES, 'bad.html'), '--out', runP, '--tag', 'after', '--no-facts', '--quiet']);
+      const proto = path.join(runP, 'copy', 'after.json');
+      let pj = null; try { pj = JSON.parse(fs.readFileSync(proto, 'utf8')); } catch { /* нет */ }
+      const pOut = path.join(tmp, 'proto-lint.json');
+      const rp = node(['lint', proto, '--no-facts', '--json', pOut]);
+      let jp = null; try { jp = JSON.parse(fs.readFileSync(pOut, 'utf8')); } catch { /* нет */ }
+      const rh = node(['lint', path.join(FIXTURES, 'bad.html'), '--no-facts', '--json', path.join(tmp, 'html-lint.json')]);
+      let jh = null; try { jh = JSON.parse(fs.readFileSync(path.join(tmp, 'html-lint.json'), 'utf8')); } catch { /* нет */ }
+      const rulesOf = (j, sev) => [...new Set(j.findings.filter((x) => x.sev === sev).map((x) => x.rule))].sort().join(',');
+      say(rp.status === 1 && !!jp && jp.source === 'protocol' && jp.verdict === 'FAIL' && jp.steps[0].what === 'bad.html' && jp.pages[0].runs.length === pj.pages[0].runs.length && jp.pages[0].runs.length > 10 && !jp.findings.some((x) => /"tool"|"generator"|"pages"/.test(x.quote || '')),
+        `lint по протоколу .json: строки протокола (${jp ? jp.pages[0].runs.length : 0} из ${pj ? pj.pages[0].runs.length : 0}), страница bad.html, вердикт ${jp ? jp.verdict : '—'}, код ${rp.status} — а не весь JSON одной строкой`);
+      say(!!jp && !!jh && rulesOf(jp, 'FAIL') === rulesOf(jh, 'FAIL') && rulesOf(jp, 'FAIL') === 'copy-todo' && jp.totals.fail === jh.totals.fail && jp.totals.warn >= Math.floor(jh.totals.warn * 0.8) && Math.abs(jp.totals.words - jh.totals.words) <= Math.max(5, jh.totals.words * 0.1),
+        `lint по протоколу против lint по самой странице: FAIL те же (${jp ? rulesOf(jp, 'FAIL') : '—'}, ${jp ? jp.totals.fail : '—'} и ${jh ? jh.totals.fail : '—'}), WARN ${jp ? jp.totals.warn : '—'} против ${jh ? jh.totals.warn : '—'}, слов ${jp ? jp.totals.words : '—'} против ${jh ? jh.totals.words : '—'}`);
+      say(/INFO {2}тексты из протокола copy lint after/.test(rp.stdout + rp.stderr), 'lint по протоколу: строка INFO — откуда тексты и чего в протоколе нет');
+      const snapDir = path.join(tmp, 'snap-proto'); node(['snapshot', path.join(FIXTURES, 'good.html'), '--out', snapDir]);
+      const rs = node(['lint', path.join(snapDir, 'copy', 'before.json'), '--no-facts']);
+      say(rs.status === 0 && /^(OK|WARN) +good\.html · слов \d+ · FAIL 0/m.test(rs.stdout) && !/copy-quotes/.test(rs.stdout), `lint по протоколу snapshot (good.html): код ${rs.status}, страница good.html, кавычки JSON не находка`);
+      /* чужой JSON и битый .json — отказ с кодом 1, а не OK */
+      const rf = node(['lint', path.join(FIXTURES, 'facts.json'), '--no-facts']);
+      say(rf.status === 1 && /это JSON, но не протокол текстов/.test(rf.stderr) && /как HTML файл JSON не читается/.test(rf.stderr) && !/^OK/m.test(rf.stdout), `lint по чужому JSON (facts.json): код ${rf.status}, отказ — ${clip(rf.stderr.trim(), 90)}`);
+      const shotsLike = path.join(tmp, 'shots.json'); fs.writeFileSync(shotsLike, JSON.stringify({ tag: 'before', verdict: 'OK', generator: { script: 'shots.mjs' }, shots: [{ url: 'http://x/', page: 'home' }] }));
+      const rsh = node(['lint', shotsLike, '--no-facts']);
+      say(rsh.status === 1 && /протокол shots\.mjs/.test(rsh.stderr), `lint по протоколу другого скрипта: код ${rsh.status}, назван — ${clip(rsh.stderr.trim(), 90)}`);
+      const broken = path.join(tmp, 'broken.json'); fs.writeFileSync(broken, '{ "pages": [ { "runs": ');
+      const rb = node(['lint', broken, '--no-facts']);
+      say(rb.status === 1 && /файл \.json не разбирается/.test(rb.stderr), `lint по битому .json: код ${rb.status}`);
+      /* 06.10 — протокол без единой строки и итог поверх читаемого протокола */
+      const emptyP = path.join(tmp, 'proto-empty.json'); fs.writeFileSync(emptyP, JSON.stringify({ tool: 'copy', mode: 'snapshot', pages: [{ what: 'a.html', runs: [] }, { what: 'b.html', runs: [{ role: 'p' }, { role: 'h1', text: '  ' }] }] }));
+      const re0 = node(['lint', emptyP, '--no-facts']);
+      say(re0.status === 1 && /нет ни одной строки текста/.test(re0.stderr) && !/^OK/m.test(re0.stdout), `lint по протоколу без строк (runs пустые и без text): код ${re0.status}, отказ, а не «OK · слов 0»`);
+      const selfRun = path.join(tmp, 'self-run'); const selfP = path.join(selfRun, 'copy', 'after.json'); fs.mkdirSync(path.dirname(selfP), { recursive: true }); fs.copyFileSync(path.join(snapDir, 'copy', 'before.json'), selfP);
+      const selfWas = fs.readFileSync(selfP, 'utf8');
+      const rself = node(['lint', selfP, '--out', selfRun, '--tag', 'after', '--no-facts']);
+      const rother = node(['lint', selfP, '--out', selfRun, '--tag', 'check', '--no-facts']);
+      say(rself.status === 1 && /поверх читаемого протокола/.test(rself.stderr) && fs.readFileSync(selfP, 'utf8') === selfWas && rother.status === 0 && fs.existsSync(path.join(selfRun, 'copy', 'check.json')),
+        `lint протокола с --out и той же меткой: код ${rself.status}, протокол цел; с другой меткой — код ${rother.status}, итог рядом`);
+      const disguised = path.join(tmp, 'data.txt'); fs.writeFileSync(disguised, JSON.stringify({ title: 'Меню', items: [{ name: 'Рёбра "BBQ"' }] }));
+      const rd = node(['lint', disguised, '--no-facts']);
+      say(rd.status === 1 && /это JSON, но не протокол текстов/.test(rd.stderr), `lint по JSON под другим расширением (по содержимому): код ${rd.status}`);
+      const htmlStill = path.join(tmp, 'brace.html'); fs.writeFileSync(htmlStill, '<p>Кофе варим с восьми утра.</p>');
+      const rhs = node(['lint', htmlStill, '--no-facts']);
+      say(rhs.status === 0 && /brace\.html · слов 5/.test(rhs.stdout), `обычный .html по-прежнему читается как разметка: код ${rhs.status}`);
+      const before = fs.readFileSync(proto, 'utf8');
+      const rfx = node(['fix', '--typograph', proto, '--write']);
+      say(rfx.status === 1 && /файл JSON — типограф правит разметку/.test(rfx.stderr) && fs.readFileSync(proto, 'utf8') === before, `fix --typograph по .json: код ${rfx.status}, файл не тронут`);
+    }
     const r14 = node(['http://localhost:9/', '--pages', '/,/menu']);
     say(r14.status === 1 && /нужна команда: lint\|/.test(r14.stderr) && /node copy\.mjs lint http:\/\/localhost:9\/ --pages \/,\/menu/.test(r14.stderr), `без команды: ${clip(r14.stderr.trim(), 110)}`);
   }
@@ -1222,6 +1338,20 @@ async function selftest(opt) {
       say(h1runs.length === 3 && !eg.found.some((f) => f.rule === 'copy-heading'), `адрес: h1 из ${h1runs.length} прогонов (${h1runs.map((r) => `«${collapse(r.lintText)}»`).join(' + ')}) судится целиком — copy-heading нет`);
       const hc = lintRuns(lintView(runsOf('<h2><span style="display:block" data-copy-b>Что входит</span> <span data-copy-b>в стоимость:</span></h2><p>Замер и доставка.</p>')), { facts: idx }).filter((f) => f.rule === 'copy-heading');
       say(hc.length === 1 && hc[0].quote === 'Что входит в стоимость:', `заголовок из двух прогонов с двоеточием в конце всего заголовка — WARN, цитата целиком («${hc[0] ? hc[0].quote : '—'}»)`);
+      /* Ж:798 и Ж:819 — сайт в подпапке через serve.mjs: «/» — корень хоста (WARN), несуществующая страница — 404 (отказ) */
+      const port = await new Promise((res, rej) => { const sv = net.createServer(); sv.once('error', rej); sv.listen(0, '127.0.0.1', () => { const n = sv.address().port; sv.close(() => res(n)); }); });
+      const srv = spawn(process.execPath, [path.join(HERE, 'serve.mjs'), path.join(FIXTURES, '..'), '--port', String(port), '--host', '127.0.0.1'], { stdio: 'ignore' });
+      const errs = []; const origErr = console.error; console.error = (...a) => errs.push(a.join(' '));
+      try {
+        const site = `http://127.0.0.1:${port}/copy/good.html`;
+        let up = false; for (let i = 0; i < 60 && !up; i++) { try { up = (await fetch(site)).status === 200; } catch { /* ещё не слушает */ } if (!up) await sleep(250); }
+        const ok = up ? await urlPages(site, { viewport: 'mobile', pages: './good.html,url.html' }, B) : null;
+        say(!!ok && ok.pages.length === 2 && ok.pages[0].what === '/copy/good.html' && ok.pages[1].what === '/copy/url.html' && !errs.some((x) => /--pages:/.test(x)), `адрес в подпапке, --pages "./good.html,url.html": страницы сайта (${ok ? ok.pages.map((p) => p.what).join(', ') : 'стенд не поднялся'}), WARN нет`);
+        let e404 = null; try { await urlPages(site, { viewport: 'mobile', pages: 'nope.html' }, B); } catch (e) { e404 = String(e.message); }
+        say(!!e404 && /nope\.html: ответ документа 404 — это страница ошибки, а не сайт/.test(e404), `адрес ответил 404: отказ с кодом — ${clip(e404 || 'страница принята', 110)}`);
+        errs.length = 0; let eRoot = null; try { await urlPages(site, { viewport: 'mobile', pages: '/' }, B); } catch (e) { eRoot = String(e.message); }
+        say(errs.some((x) => /^WARN {2}--pages: «\/» → http:\/\/127\.0\.0\.1:\d+\/ — /.test(x) && /ВНЕ/.test(x) && /в подпапке \/copy\//.test(x)), `адрес в подпапке, --pages "/": WARN «страницы ВНЕ неё» в stderr (${errs.length} строк)${eRoot ? '; корня хоста на стенде нет — 404' : ''}`);
+      } finally { console.error = origErr; try { srv.kill(); } catch { /* уже нет */ } }
     } catch (e) { say(false, `адрес: ${e.message}`); } finally { if (B.browser) await B.browser.close().catch(() => {}); }
   } else console.log('--    режим адреса пропущен (--no-browser)');
 

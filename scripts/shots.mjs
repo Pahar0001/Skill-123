@@ -6,6 +6,7 @@
  *                  [--with-320] [--pages /,/about,/contacts] [--no-freeze] [--scheme dark]
  *                  [--segments auto|N] [--shot-pause 1200] [--full-mode segments|auto] [--full-scale 1|dpr]
  *                  [--sheet] [--return both|jump|up|none] [--light] [--strict] [--browser chrome|firefox|edge]
+ *                  [--expect-status 404]
  *
  * Флаги:
  *   --tag         подпапка снимков (before | after | любое имя), по умолчанию before (не в Chrome —
@@ -27,7 +28,16 @@
  *                 снимается один раз.
  *   --with-320   добавить к выбранным экранам mobile-s (320 px): на нём вылезают закреплённые панели
  *                 и длинные подписи.
- *   --pages       страницы через запятую относительно адреса.
+ *   --pages       страницы через запятую. Путь с ведущим «/» — от корня ХОСТА, как в браузере («/about» →
+ *                 http://хост/about); путь без него ("./", "about.html", "menu/") — от папки адреса. Сайт
+ *                 в подпапке (http://localhost:4010/sites/x/index.html): --pages "./,about.html", а не «/,/about» —
+ *                 «/» там корень хоста, чужая главная; такая страница снимается, но с WARN «страницы ВНЕ неё».
+ *                 Полный адрес — как есть. Git Bash подменяет «/…» на путь к своей папке: известная подмена
+ *                 возвращается, неизвестная — ошибка (MSYS_NO_PATHCONV=1 или путь без «/»).
+ *   --expect-status  код ответа документа, который ждём (--expect-status 404 — страница ошибки открыта нарочно).
+ *                 Без флага ответ документа от 400 — FAIL «ответ документа 404 — это страница ошибки, а не сайт»:
+ *                 страница не снимается (до 06.10 она снималась с итогом OK). С флагом — FAIL у страницы с
+ *                 любым другим ответом. Код — в shots.json (docStatus у страницы).
  *   --no-freeze   не останавливать движение (если нужно поймать именно фазу анимации).
  *   --scheme      light | dark — prefers-color-scheme.
  *   --segments    снимки окна по всей высоте: auto (по умолчанию) — без дыр: соседние отстоят не больше чем на
@@ -56,7 +66,7 @@
  *                 снимков окна и возвратов (--segments 0 --return none --full-mode auto; любой из них,
  *                 заданный явно, важнее). Проход прокрутки остаётся (ленивое и появления на снимке всей
  *                 страницы). Для набора «до/после» — без --light.
- *   --strict      код выхода 1, если есть FAIL (состояние не сбрасывается или сбой съёмки).
+ *   --strict      код выхода 1, если есть FAIL (состояние не сбрасывается, ответ документа от 400 или сбой съёмки).
  *   --out         папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт>); снимки — в <out>/<tag>/.
  *   --help, -h    эта справка (код 0, ничего не создаёт и не запускает).
  * Код выхода: 0 — съёмка сделана (вердикт в выводе и в shots.json, поле verdict); 1 — нет адреса или он
@@ -187,10 +197,11 @@ import {
   waitForMedia, settleAnimations, pickViewports, parseArgs, runDir, writeJson, ensureDir, pageSlug, pagesFrom,
   sleep, loadSharp, evaluateWith, SIG_FN, EFFECTIVE_OPACITY_FN, FULLPAGE_NOTE,
   parseBrowser, browserInfo, defaultBrowser, defaultBrowserHint, collectWarnings, takeWarnings, collectNotes, takeNotes as takeLibNotes,
+  docStatus, docFailure,
 } from './lib.mjs';
 
 const HELP = fs.readFileSync(new URL(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
-const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'light', 'strict', 'help', 'h'], optional: ['out', 'tag', 'viewports', 'viewport', 'pages', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'full-scale', 'return', 'browser'], strict: true });
+const { pos, opt } = parseArgs(process.argv.slice(2), { flags: ['with-320', 'no-freeze', 'sheet', 'light', 'strict', 'help', 'h'], optional: ['out', 'tag', 'viewports', 'viewport', 'pages', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'full-scale', 'return', 'browser', 'expect-status'], strict: true });
 /* -h и --h — как --help: справка без побочных действий (ни папок, ни браузера) */
 if (opt.help || opt.h || pos.includes('-h')) { console.log(HELP); process.exit(0); }
 const die = (msg) => { console.error(`${msg}  (подробно: --help)`); process.exit(1); };
@@ -200,7 +211,7 @@ let base = null; try { base = new URL(pos[0]); } catch { /* ниже */ }
 if (!base || !/^(https?|file):$/.test(base.protocol)) die(`Неверный адрес «${pos[0]}»: нужен полный адрес — http://…, https://… или file:///…`);
 /* флаг со значением, но без значения (--out в конце строки, --tag --strict) или с пустым (--out= молча
    увёл бы снимки в общую папку прогонов, --viewports= — на экраны по умолчанию) */
-for (const k of ['out', 'tag', 'pages', 'viewports', 'viewport', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'full-scale', 'return', 'browser']) if (opt[k] === true || (typeof opt[k] === 'string' && !opt[k].trim())) die(`--${k}: нужно значение`);
+for (const k of ['out', 'tag', 'pages', 'viewports', 'viewport', 'scheme', 'segments', 'shot-pause', 'full-mode', 'full', 'full-scale', 'return', 'browser', 'expect-status']) if (opt[k] === true || (typeof opt[k] === 'string' && !opt[k].trim())) die(`--${k}: нужно значение`);
 /* браузер съёмки: chrome (по умолчанию), firefox, edge */
 const browserKind = opt.browser === undefined ? 'chrome' : parseBrowser(opt.browser);
 if (!browserKind) die(`--browser: chrome, firefox или edge, а не «${opt.browser}»`);
@@ -227,8 +238,14 @@ if (!(fullScaleOpt === 'dpr' || (/^\d+(\.\d+)?$/.test(fullScaleOpt) && Number(fu
 const fullScaleOf = (vp) => (fullScaleOpt === 'dpr' ? vp.deviceScaleFactor || 1 : Number(fullScaleOpt));
 const returnOpt = String(opt.return || (light ? 'none' : 'both'));
 if (!/^(both|jump|up|none)$/.test(returnOpt)) die('--return: both, jump, up или none');
+/* --expect-status: код ответа документа, который ждём (страница 404 открыта нарочно) */
+const expectStatus = opt['expect-status'] === undefined ? null : Number(String(opt['expect-status']).trim());
+if (expectStatus !== null && !(/^\d{3}$/.test(String(opt['expect-status']).trim()) && expectStatus >= 100 && expectStatus <= 599)) die(`--expect-status ${opt['expect-status']}: нужен код ответа 100–599 (--expect-status 404)`);
 let pages = [base.href];
+/* WARN lib собираются уже здесь: страница --pages вне подпапки адреса («/» у сайта в подпапке) — строкой до съёмки и в вердикт */
+collectWarnings();
 if (opt.pages) { try { pages = pagesFrom(opt.pages, base); } catch (e) { die(`--pages: ${e.message}`); } if (!pages.length) die('--pages: пустой список страниц'); }
+const pagesWarnings = takeWarnings();
 const run = runDir(opt, pos[0]);
 /* не Chrome — своя папка по умолчанию, чтобы снимки Chrome (before) не затирались */
 const tag = opt.tag || (browserKind === 'chrome' ? 'before' : `before-${browserKind}`);
@@ -975,6 +992,7 @@ bInfo = browserInfo(browser);
 console.log(`браузер ${bInfo.label}${bHint ? ` · ${bHint}` : ''}`);
 const NOT_IN = `не поддерживается в ${bInfo.name || 'Firefox'}`;
 const index = []; const files = {}; let fails = 0, warns = 0; const fullHow = new Set();
+for (const w of pagesWarnings) { console.log(`WARN ${w}`); warns++; }
 const scaleOf = async (file, cssWidth) => { if (!sharp) return null; try { const m = await sharp(file).metadata(); return Math.round(m.width / cssWidth * 1000) / 1000; } catch { return null; } };
 /* предупреждения к экрану: чего не дал браузер (page.rwLimits) и WARN из lib — печать под строкой экрана и в счёт;
    одно и то же на следующих страницах того же экрана не повторяется (в shots.json — у каждой) */
@@ -993,6 +1011,10 @@ try {
       try {
         await openBrowser(!!vp.isMobile);
         page = await openPage(browser, url, vp, { scheme: opt.scheme || 'light' });
+        /* ответ самого документа: 404 и 500 — страница ошибки, снимать её как сайт нельзя (03.10: чужая и
+           несуществующая страницы шли в набор «до» с итогом OK) */
+        const docBad = docFailure(page, { expect: expectStatus });
+        if (docBad) { const err = new Error(docBad); err.rwDoc = true; throw err; }
         await forceInstantScroll(page);
         await waitForMedia(page, { timeout: 6000 });
         /* 1. первый экран как его видит человек при загрузке — до прокрутки */
@@ -1056,7 +1078,7 @@ try {
         if (sc.sheet) files[sc.sheet] = { kind: 'лист', scale: null, cssWidth: vp.width, dpr, viewport: name };
         const notes = takeNotes(page);
         const windows = { dismiss: page.rwDismiss ? page.rwDismiss.list : null, modal: page.rwModal || null, wrongPage: page.rwWrongPage || null };
-        index.push({ url, page: slug, viewport: name, width: vp.width, height: h, dpr, ...(light ? { light: true } : {}), first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, fullScale, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, viewH: sc.viewH, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck, gaps }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, firstState: { elements: firstInfo ? firstInfo.count : 0, loadMotion }, windows, consoleErrors: errors, ...(notes.length ? { warnings: notes } : {}) });
+        index.push({ url, page: slug, viewport: name, docStatus: docStatus(page).status, width: vp.width, height: h, dpr, ...(light ? { light: true } : {}), first: path.basename(first), firstReturn: stale ? path.basename(firstReturn) : null, firstUp: staleUp ? path.basename(firstUp) : null, full: path.basename(full), fullMode: how, fullScale, segments: (sc.shots || []).map((s) => ({ file: s.file, y: s.scrollY, pendingMedia: s.media ? s.media.pending : null })), sheet: sc.sheet, scroll: { pageHeight: sc.pageHeight, viewH: sc.viewH, maxScrollY: sc.maxScrollY, reachedBottom: sc.reachedBottom, stuck: sc.stuck, gaps }, stale, staleUp, liveElements: ctx.liveCount ?? null, liveWatch: ctx.watch || null, firstState: { elements: firstInfo ? firstInfo.count : 0, loadMotion }, windows, consoleErrors: errors, ...(notes.length ? { warnings: notes } : {}) });
         console.log(`ок, высота ${h}px, снимков окна ${segFiles.length}${segments ? '' : ' (не снимались)'}, вся страница — ${how} ×${fullScale}${checks ? '' : ', возврат наверх не проверялся'}${errors ? `, ошибок в консоли ${errors}` : ''}`);
         if (scrollNote) console.log(`  WARN прокрутка — ${scrollNote}`);
         if (gapNote) console.log(`  WARN ${gapNote}`);
@@ -1065,7 +1087,7 @@ try {
         printNotes(notes, name);
         printReturn('прокрутки до низа и прыжка наверх', stale);
         printReturn('листания до низа и обратно вверх', staleUp);
-      } catch (e) { console.log(`сбой: ${e.message}`); const notes = takeNotes(page); index.push({ url, page: slug, viewport: name, error: e.message, ...(notes.length ? { warnings: notes } : {}) }); printInfo(); printNotes(notes, name); fails++; }
+      } catch (e) { console.log(e.rwDoc ? `FAIL ${e.message} — не снималась${expectStatus === null ? `; страница ошибки открыта нарочно — --expect-status ${docStatus(page).status}` : ''}` : `FAIL сбой: ${e.message}`); const notes = takeNotes(page); index.push({ url, page: slug, viewport: name, docStatus: docStatus(page).status, error: e.message, ...(notes.length ? { warnings: notes } : {}) }); printInfo(); printNotes(notes, name); fails++; }
       finally { if (page) await page.close().catch(() => {}); }
     }
   }
@@ -1082,7 +1104,7 @@ for (const s of index) for (const d of (s.windows && s.windows.dismiss) || []) {
 const modalAt = index.filter((s) => s.windows && s.windows.modal).map((s) => `${s.page} ${s.viewport}`);
 const wrongAt = index.filter((s) => s.windows && s.windows.wrongPage).map((s) => `${s.page} ${s.viewport} (открылась ${s.windows.wrongPage.got})`);
 const windowsSummary = { dismiss: envDismiss || null, results: dismissCount, modal: modalAt, wrongPage: wrongAt };
-writeJson(path.join(outDir, 'shots.json'), { tag, takenAt: new Date().toISOString(), browser: { ...bInfo, default: defBrowser, hint: bHint || null }, verdict, fails, warns, note: FULLPAGE_NOTE, fullModeRequested: fullMode, fullScaleRequested: fullScaleOpt, segmentsRequested: segAuto ? 'auto' : segments, returnRequested: returnOpt, light, windows: windowsSummary, files, shots: index });
+writeJson(path.join(outDir, 'shots.json'), { tag, takenAt: new Date().toISOString(), browser: { ...bInfo, default: defBrowser, hint: bHint || null }, verdict, fails, warns, note: FULLPAGE_NOTE, ...(expectStatus !== null ? { expectStatus } : {}), ...(pagesWarnings.length ? { warnings: pagesWarnings } : {}), fullModeRequested: fullMode, fullScaleRequested: fullScaleOpt, segmentsRequested: segAuto ? 'auto' : segments, returnRequested: returnOpt, light, windows: windowsSummary, files, shots: index });
 console.log(`\nОкна при загрузке: SITE_REWORK_DISMISS ${envDismiss ? `«${envDismiss}» — ${Object.entries(dismissCount).map(([k, n]) => `${k} ×${n}`).join(', ') || 'не применялась'}` : 'не задана'} · открытое окно: ${modalAt.length ? `${modalAt.join(', ')} — снимки под ним (селектор — в WARN выше)` : 'нет'}${wrongAt.length ? ` · не та страница: ${wrongAt.join(', ')}` : ''}`);
 console.log(`${verdict}: ${fails} провалов, ${warns} предупреждений`);
 console.log(`Снимки: ${outDir}`);

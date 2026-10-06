@@ -57,7 +57,9 @@
  *   аргументы          parseArgs (strict — неизвестный флаг даёт ошибку с подсказкой),
  *                      closestFlag, flagsDump (справочник flags-doc.mjs)
  *   прочее             getFfmpeg, findModuleRoot, summarizeRequests,
- *                      runDir, slugFromUrl, pageSlug, capSlug, SLUG_MAX, pagesFrom, unmangle,
+ *                      runDir, slugFromUrl, pageSlug, capSlug, SLUG_MAX, pagesFrom, pagesInfo, pagesOutsideNote, unmangle,
+ *   ответ документа    docStatus, docFailure — код ответа самого документа после gotoRetry/openPage (page.rwDoc):
+ *                      ответ от 400 — провал, страница ошибки не мерится как сайт
  *                      ensureDir, writeJson, readJson, kb, sleep
  *
  * Протоколы пишутся через writeJson: в объект добавляется поле generator —
@@ -1026,6 +1028,8 @@ export async function gotoRetry(page, url, { waitUntil = 'networkidle2', timeout
       const res = await page.goto(url, { waitUntil: wu, timeout: i === attempts && attempts > 1 ? timeout * 1.5 : timeout });
       if (i > 1) page.retries = i - 1;
       page.gotoInfo = { attempt: i, waitUntil: wu };
+      /* ответ самого документа — для docStatus и docFailure: 404 и 500 переходом не считаются ошибкой */
+      try { page.rwDoc = { status: res ? res.status() || null : null, url: res ? res.url() : null, asked: String(url) }; } catch { page.rwDoc = { status: null, url: null, asked: String(url) }; }
       return res;
     } catch (e) {
       last = e;
@@ -1057,8 +1061,65 @@ export async function openPage(browser, url, vp, { scheme = 'light', reducedMoti
 /* Git Bash подменяет аргументы вида «/sites/…» на путь внутри своей папки:
    «C:/Program Files/Git/sites/…». Возвращаем как было. Полные адреса не трогаем. */
 export function unmangle(p) { return String(p).replace(/^[a-z]:[\\/]program files[\\/]git(?=[\\/])/i, ''); }
-export function pagesFrom(list, base) {
-  return String(list).split(',').map((p) => unmangle(p.trim())).filter(Boolean).map((p) => new URL(p, base).href);
+/**
+ * Разбор --pages: список через запятую → [{ spec, href, from, outside }].
+ *   from     'url' — полный адрес; 'host' — путь с ведущим «/»: от корня ХОСТА, как в браузере («/about» у
+ *            http://h/sites/x/index.html — это http://h/about); 'base' — путь без ведущего «/» ("./", "about.html",
+ *            "menu/"): от папки адреса (http://h/sites/x/about.html).
+ *   outside  true — адрес лежит в подпапке, а страница с ведущим «/» вышла за неё: у сайта в подпапке «/» — это
+ *            корень хоста, чужая страница (03.10: вместо BBQ Kitchen с OK сняли витрину студии).
+ * У сайта в корне хоста (http://site.ru/, http://site.ru/about.html) смысл путей прежний, outside не бывает.
+ * Путь Windows («D:/Git/about» — Git Bash подменил «/about», а его папку unmangle не узнал) — ошибка, а не
+ * страница: new URL принял бы «d:» за схему.
+ */
+export function pagesInfo(list, base) {
+  const b = new URL(String(base));
+  const dir = b.pathname.replace(/[^/]*$/, '') || '/';
+  return String(list).split(',').map((p) => unmangle(p.trim())).filter(Boolean).map((spec) => {
+    if (/^[a-z]:[\\/]/i.test(spec)) throw new Error(`«${spec}» — путь Windows, а не страница: Git Bash подменил путь с ведущим «/». Задайте MSYS_NO_PATHCONV=1 или пишите путь без ведущего «/» ("./", "about.html")`);
+    const u = new URL(spec, b);
+    if (!/^(https?|file):$/.test(u.protocol)) throw new Error(`«${spec}» — не страница: нужен путь ("/about", "about.html", "./") или адрес http(s)://…, file:///…`);
+    const from = /^[a-z][a-z0-9+.-]*:/i.test(spec) || spec.startsWith('//') ? 'url' : /^[\\/]/.test(spec) ? 'host' : 'base';
+    const outside = from === 'host' && dir !== '/' && u.origin === b.origin && !u.pathname.startsWith(dir);
+    return { spec, href: u.href, from, outside };
+  });
+}
+/** Текст предупреждения о страницах вне подпапки адреса (или null) — для скрипта, который разбирает --pages сам. */
+export function pagesOutsideNote(info, base) {
+  const out = (info || []).filter((x) => x.outside); if (!out.length) return null;
+  const b = new URL(String(base)); const dir = b.pathname.replace(/[^/]*$/, '') || '/';
+  /* адрес без «/» на конце и без расширения (http://h/sites/x): папкой считается /sites/, и совет "./" вёл бы мимо сайта */
+  const bare = /\/[^/.]+$/.test(b.pathname) ? ` Адрес без «/» на конце: папкой считается ${dir}; если ${b.pathname} — папка сайта, допишите «/» к адресу, иначе "./" и "about.html" уйдут мимо неё.` : '';
+  return `--pages: ${out.map((x) => `«${x.spec}» → ${x.href}`).join(', ')} — путь с ведущим «/» считается от корня хоста, а адрес лежит в подпапке ${dir}: это страницы ВНЕ неё (если сайт целиком в подпапке — «/» чужая главная; если адрес — глубокая страница сайта в корне хоста, всё верно). Страницы подпапки — без ведущего «/»: "./" — ${new URL('./', b).href}, "about.html" — ${new URL('about.html', b).href}.${bare}`;
+}
+/**
+ * --pages → адреса страниц (массив строк, как раньше). Страница с ведущим «/» вне подпапки адреса — WARN lib
+ * (вид 'страницы'; у скрипта с collectWarnings — в его вердикте), смысл путей не меняется. { warn: false } — без WARN.
+ */
+export function pagesFrom(list, base, { warn = true } = {}) {
+  const info = pagesInfo(list, base);
+  if (warn) { const note = pagesOutsideNote(info, base); if (note) libWarn(note, 'страницы'); }
+  return info.map((x) => x.href);
+}
+
+/* ---------- ответ самого документа ---------- */
+
+/**
+ * Ответ документа вкладки после последнего перехода gotoRetry (и openPage): { status, url, asked } — код ответа
+ * (после редиректов — конечный), адрес ответа и адрес, который просили. status null — ответа нет (file:// у части
+ * браузеров, переход по #, about:, data:) или переход шёл не через gotoRetry.
+ */
+export function docStatus(page) { return (page && page.rwDoc) || { status: null, url: null, asked: null }; }
+/**
+ * Провал по ответу документа: строка для FAIL или null. Без expect — ответ от 400 («страница ошибки, а не сайт»:
+ * до 06.10 shots и bgdecor снимали 404 с итогом OK). С expect (код, который ждём: страница 404 открыта нарочно) —
+ * любой другой ответ, в том числе неизвестный. Вызов: после openPage или gotoRetry —
+ *   const bad = docFailure(page[, { expect: 404 }]); if (bad) { …FAIL bad, страницу не мерить… }
+ */
+export function docFailure(page, { expect = null } = {}) {
+  const d = docStatus(page); const st = d.status; const where = d.url || d.asked || '';
+  if (expect !== null && expect !== undefined) return Number(st) === Number(expect) ? null : `ответ документа ${st === null ? 'неизвестен' : st}, ждали ${expect}${where ? ` (${where})` : ''}`;
+  return st >= 400 ? `ответ документа ${st} — это страница ошибки, а не сайт${where ? ` (${where})` : ''}` : null;
 }
 
 /* ---------- свой стиль на странице, в том числе при строгом CSP ---------- */
@@ -1161,7 +1222,7 @@ export function takeWarnings({ unique = true } = {}) { const l = libWarnings.lis
 /** Вид предупреждения lib по его тексту: 'окно' | 'SITE_REWORK_DISMISS' | 'стиль' | 'папка' | null. */
 export function warningKind(text) { return libWarnings.kinds.get(text) || null; }
 /** Подпись строки вердикта для предупреждения lib: «окно», «SITE_REWORK_DISMISS», «свой стиль на странице», «папка прогона». */
-export function warningLabel(text) { return { 'окно': 'окно', SITE_REWORK_DISMISS: 'SITE_REWORK_DISMISS', 'стиль': 'свой стиль на странице', 'папка': 'папка прогона' }[warningKind(text)] || 'lib'; }
+export function warningLabel(text) { return { 'окно': 'окно', SITE_REWORK_DISMISS: 'SITE_REWORK_DISMISS', 'стиль': 'свой стиль на странице', 'папка': 'папка прогона', 'страницы': '--pages' }[warningKind(text)] || 'lib'; }
 /* INFO из lib (SITE_REWORK_DISMISS: нажато): по умолчанию строкой «INFO …» в stderr — один раз на процесс для
    одного ключа (одно и то же окно на каждой странице не повторяется); скрипт с collectNotes() забирает их
    takeNotes() для каждой страницы и печатает на своём месте */

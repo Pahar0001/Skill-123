@@ -704,7 +704,8 @@ const unitNums = (t) => [...String(t).matchAll(/(\d+(?:[.,]\d+)?)\s*(мс|ms|с�
 });
 function passportNever(R) {
   const files = [];
-  for (const d of ['donor', '.']) { const f = path.join(RUN, d, 'discovery.md'); if (fs.existsSync(f)) files.push(f); }
+  /* сводки разведки: discovery.md и с меткой — discovery-<метка>.md (discover --tag; до 06.10 метка имён не меняла) */
+  for (const d of ['donor', '.']) { const dir = path.join(RUN, d); if (!fs.existsSync(dir)) continue; for (const n of fs.readdirSync(dir).sort()) if (/^discovery(-[^/\\]+)?\.md$/.test(n)) files.push(path.join(dir, n)); }
   if (R.direction && R.direction.id) { const f = path.join(RUN, 'direction', R.direction.id, 'passport.md'); if (fs.existsSync(f)) files.push(f); }
   const never = [];
   for (const f of files) {
@@ -1553,6 +1554,12 @@ function selftest() {
     check('report', 'ФИО нет ни в реестре, ни в отчёте', !/Тестовый|Примерова/.test(r.out + fs.readFileSync(path.join(run, 'requirements.json'), 'utf8') + fs.readFileSync(path.join(run, 'requirements.md'), 'utf8')));
     r = R('md');
     check('report', 'requirements.md пересобран', r.code === 0 && /# Требования/.test(fs.readFileSync(path.join(run, 'requirements.md'), 'utf8')));
+    /* 06.10 — паспорт донора из сводки разведки с меткой: discover --tag donor пишет discovery-donor.md */
+    { const pq = reg().items.find((x) => active(x) && !isContext(x) && ['style', 'motion', 'media', 'content'].includes(x.kind) && !NEG.test(x.text));
+      const pf = path.join(run, 'discovery-donor.md'); const before = R('conflicts').out;
+      fs.writeFileSync(pf, `# Разведка\n\n**Чего донор не делает никогда (числами)**\n\n- ${pq ? pq.text : 'нет требования'}: 0 из 12 секций\n\n## Дальше\n`);
+      r = R('conflicts'); fs.rmSync(pf, { force: true });
+      check('conflicts', 'паспорт: «никогда» из сводки разведки с меткой (discovery-donor.md) читается', !!pq && !/discovery-donor\.md/.test(before) && new RegExp(`\\? паспорт\\s+${pq && pq.id} `).test(r.out) && /против «никогда»/.test(r.out) && /\(discovery-donor\.md\)/.test(r.out), short((r.out.match(/\? паспорт.*/) || [''])[0], 110)); }
     r = R('bogus');
     check('args', 'неизвестная команда — код 2', r.code === 2);
   } catch (e) { check('selftest', 'упал', false, e.stack); }

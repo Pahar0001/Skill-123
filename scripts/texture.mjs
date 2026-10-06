@@ -41,8 +41,11 @@
  *   --out       папка для снимков, файлов текстур и texture.json
  *               (по умолчанию <папка прогона>/texture, см. runDir в lib.mjs).
  *   --screens   сколько экранов по высоте страницы снимать (4, равномерно, снимки ОКНА).
- *   --label     имя в файлах (по умолчанию адрес-экран).
- *   --json      куда записать итог (по умолчанию <out>/texture.json).
+ *   --label     метка замера: имя в файлах снимков (по умолчанию адрес-экран) и в имени итога —
+ *               <out>/texture-<метка>.json вместо <out>/texture.json: два замера в одну --out (сайт и донор,
+ *               два потока сразу) не затирают итог друг друга. Без --label имя прежнее, texture.json.
+ *   --json      куда записать итог (по умолчанию <out>/texture.json, с --label — <out>/texture-<метка>.json).
+ *               Если файл итога уже есть и он от ДРУГОГО адреса — WARN «перезаписан» с подсказкой про --label.
  *   --tokens    записать блок переменных --grain-* в файл (site.tokens.css): блок между
  *               /* texture:start *\/ и /* texture:end *\/ заменяется дословно (знаки «$&», «$'» в адресе
  *               страницы остаются как есть, «*\/» в адресе пишется как «*%2F»), иначе дописывается.
@@ -2524,8 +2527,10 @@ const HELP = `texture.mjs — фактура: слои зерна, их пара
               --png и --tile — только OK и WARN, код 0. Ошибка замера или аргументов — всегда 1.
   --out       папка снимков и texture.json (по умолчанию <папка прогона>/texture)
   --screens   экранов по высоте страницы (4), снимки окна
-  --label     имя в файлах
-  --json      файл итога (по умолчанию <out>/texture.json; в compare — <out>/compare.json)
+  --label     метка замера: имя в файлах снимков и итог <out>/texture-<метка>.json (два замера в одну
+              --out не затирают друг друга); без неё — texture.json
+  --json      файл итога (по умолчанию <out>/texture.json, с --label — texture-<метка>.json; в compare —
+              <out>/compare.json); итог от другого адреса на этом месте — WARN «перезаписан»
   --tokens    записать блок --grain-* в файл (заменяет блок texture:start…end или дописывает);
               есть крупная фактура — в том же блоке ещё --surface-*
   --css       записать templates/grain.css с подставленным рецептом; есть крупная фактура — и
@@ -2677,6 +2682,22 @@ function writeTokens(file, block) {
   /* замена функцией: строкой-заменой «$&», «$'», «$`» из адреса в блоке подставляли старый блок и хвост файла */
   const next = re.test(prev) ? prev.replace(re, () => block) : (prev ? prev.replace(/\s*$/, '\n\n') : '') + block + '\n';
   ensureDir(path.dirname(path.resolve(file))); fs.writeFileSync(file, next);
+}
+/**
+ * Файл итога одиночного замера: <out>/texture.json, с меткой (--label) — <out>/texture-<метка>.json. До 06.10 метка
+ * шла только в имена снимков, и два замера в одну папку (сайт и донор) затирали texture.json друг друга: в отчёте
+ * донора оказалась фактура сайта (03.10, прогон bbq-fresh).
+ */
+export function textureJsonFile(out, label = null) {
+  const l = label === null || label === undefined || label === true ? '' : String(label).trim().replace(/[^\w.а-яё-]+/gi, '_');
+  return path.join(out, l ? `texture-${l}.json` : 'texture.json');
+}
+/** Итог на этом месте уже есть и он от другого адреса — текст WARN (файл будет перезаписан), иначе null. */
+export function textureOverwriteNote(file, url) {
+  const prev = readJson(file); if (!prev || !prev.url) return null;
+  const key = (u) => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/(index\.html?)?$/, ''); } catch { return String(u); } };
+  if (key(prev.url) === key(url)) return null;
+  return `${path.basename(file)} в этой папке был от другого адреса (${prev.url}${prev.takenAt ? `, ${String(prev.takenAt).slice(0, 16).replace('T', ' ')}` : ''}) — перезаписан. Два адреса в одной папке — с меткой: --label имя (итог texture-имя.json) или своя --out`;
 }
 async function runSet(url, vps, out, screens, extras, tag = null) {
   const list = [];
@@ -3053,6 +3074,14 @@ async function selftest({ browser = true } = {}) {
       const gf = path.join(tmp, 'grain.png'); fs.writeFileSync(gf, await png(g1, 256, 256));
       const tg = run(['--tile', gf]);
       say(tg.status === 0 && /; похоже на шум/.test(text(tg)) && /крупная фактура[^\n]*: нет/.test(text(tg)), `--tile плитки зерна: код ${tg.status}, «похоже на шум», «крупная фактура: нет»`);
+      /* Ж:805 — метка разводит итог: без неё имя прежнее */
+      const nm = (l) => path.basename(textureJsonFile(tmp, l));
+      say(nm(null) === 'texture.json' && nm(undefined) === 'texture.json' && nm('') === 'texture.json' && nm('donor') === 'texture-donor.json' && nm('до нор/1') === 'texture-до_нор_1.json' && path.dirname(textureJsonFile(tmp, 'donor')) === tmp, `имя итога: без метки ${nm(null)}, с меткой ${nm('donor')}, метка с пробелом и «/» — ${nm('до нор/1')}`);
+      {
+        const pf = path.join(tmp, 'texture-prev.json'); writeJson(pf, { url: 'https://donor.example/menu/', takenAt: '2026-10-03T10:00:00.000Z', results: [] });
+        const same = textureOverwriteNote(pf, 'https://donor.example/menu/index.html'), other = textureOverwriteNote(pf, 'http://localhost:4010/sites/bbq-kitchen/'), none = textureOverwriteNote(path.join(tmp, 'нет-такого.json'), 'https://a.ru/');
+        say(same === null && none === null && /texture-prev\.json в этой папке был от другого адреса \(https:\/\/donor\.example\/menu\/, 2026-10-03 10:00\) — перезаписан/.test(other || '') && /--label/.test(other || ''), `итог другого адреса на том же месте: WARN «перезаписан» с подсказкой --label; тот же адрес и новый файл — тихо`);
+      }
       const h = run(['-h']);
       const flags = ['viewport', 'out', 'json', 'tokens', 'css', 'md', 'png', 'png2', 'png3', 'without', 'region', 'tile', 'label', 'screens', 'extras', 'strict', 'sd-tol', 'lag-tol', 'surface-tol', 'selftest', 'no-browser'];
       const missing = flags.filter((k) => !new RegExp(`--${k}(?![\\w-])`).test(h.stdout || ''));
@@ -3221,6 +3250,20 @@ async function selftest({ browser = true } = {}) {
         say(c4.verdict === 'FAIL' && c4.rows.some((x) => x.what === 'крупная фактура' && x.ok === false), `сверка стендов, у сайта фактуры нет: ${c4.verdict}`);
         say(c5.rows.some((x) => /наложение светлый/.test(x.what) && x.ok === true) && c5.rows.some((x) => x.what === 'крупная фактура' && x.ok === true), `сверка стендов, слой у донора против фона блока у сайта: ${c5.verdict}; наложение на светлом — ${(c5.rows.find((x) => /наложение светлый/.test(x.what)) || {}).note || 'совпало'}`);
         say(c6.verdict === 'OK' && c6.rows.every((x) => x.group !== 'surface'), `сверка стендов, зерно само с собой: ${c6.verdict}, строк о крупной фактуре нет`);
+        /* Ж:805 — два замера в одну --out: с --label итог свой, без метки — прежний texture.json; третий адрес
+           без метки на месте чужого итога — WARN «перезаписан» */
+        {
+          const two = path.join(tmp, 'two'); const u = (f) => pathToFileURL(path.join(site, f)).href;
+          const a = run([u('grain.html'), '--viewport', VP, '--out', two, '--screens', '1', '--label', 'donor']);
+          const b = run([u('plain.html'), '--viewport', VP, '--out', two, '--screens', '1']);
+          const ja = readJson(path.join(two, 'texture-donor.json')), jb = readJson(path.join(two, 'texture.json'));
+          say(a.status === 0 && b.status === 0 && !!ja && !!jb && /grain\.html$/.test(ja.url) && /plain\.html$/.test(jb.url) && ja.results.length === 1 && jb.results.length === 1 && /итог → .*texture-donor\.json/.test(text(a)) && !/перезаписан/.test(text(a) + text(b)), `два замера в одну папку: --label donor → texture-donor.json (${ja ? path.basename(ja.url) : 'нет'}), без метки → texture.json (${jb ? path.basename(jb.url) : 'нет'}), друг друга не затёрли`);
+          const c = run([u('veil.html'), '--viewport', VP, '--out', two, '--screens', '1']);
+          const jc = readJson(path.join(two, 'texture.json')), ja2 = readJson(path.join(two, 'texture-donor.json'));
+          say(c.status === 0 && /WARN texture\.json в этой папке был от другого адреса \([^)]*plain\.html[^)]*\) — перезаписан/.test(text(c)) && !!jc && /veil\.html$/.test(jc.url) && (jc.warnings || []).some((x) => /перезаписан/.test(x)) && !!ja2 && /grain\.html$/.test(ja2.url), `третий адрес без метки на месте чужого итога: WARN «перезаписан» в выводе и в json, итог с меткой цел`);
+          const d = run([u('veil.html'), '--viewport', VP, '--out', two, '--screens', '1']);
+          say(d.status === 0 && !/перезаписан/.test(text(d)), 'повторный замер того же адреса — без WARN о перезаписи');
+        }
         /* командная строка по сохранённым замерам */
         const save = (k) => { const f = path.join(tmp, `${k}.json`), rec = recipeFrom([R[k]]); writeJson(f, { url: R[k].url, takenAt: R[k].takenAt, results: [R[k]], recipe: rec, tokens: tokensBlock(rec, [R[k]]) }); return f; };
         const jS = save('surface'), jD = save('surface-dead'), jG = save('grain');
@@ -3350,8 +3393,11 @@ if (isMain) {
       printRecipe(rec);
       const block = tokensBlock(rec, list);
       console.log(`\nпеременные для site.tokens.css:\n${block}`);
-      const jf = fromJson ? (opt.json ? String(opt.json) : null) : String(opt.json || path.join(path.resolve(String(opt.out || path.join(runDir({}, url), 'texture'))), 'texture.json'));
+      const jf = fromJson ? (opt.json ? String(opt.json) : null) : String(opt.json || textureJsonFile(path.resolve(String(opt.out || path.join(runDir({}, url), 'texture'))), opt.label));
       const lw = libWarnings();
+      /* итог другого адреса на этом месте (два потока в одну --out без --label) — не молча */
+      const over = jf && !fromJson ? textureOverwriteNote(jf, url) : null;
+      if (over) { console.log(`WARN ${over}`); lw.push(over); }
       if (jf) writeJson(jf, { url, takenAt: fromJson && saved && saved.takenAt ? saved.takenAt : new Date().toISOString(), results: list, recipe: rec, tokens: block, ...(lw.length ? { warnings: lw } : {}) });
       if (opt.tokens) { writeTokens(String(opt.tokens), block); console.log(`блок переменных → ${opt.tokens}`); }
       if (opt.css) {
