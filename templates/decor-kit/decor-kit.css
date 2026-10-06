@@ -6,9 +6,12 @@
    README.md рядом, образец со всеми приёмами — demo.html.
 
    Правила набора (их держит и скрипт):
-   · без скрипта и при «меньше движения» всё видно сразу и в конечном виде:
-     прячет до появления только скрипт (класс dk-armed) и только то, чего
-     нет на экране в момент разметки — первый экран анимаций не ждёт;
+   · без скрипта всё видно сразу и в конечном виде: прячет до появления
+     только скрипт (класс dk-armed) и только то, чего нет на экране в момент
+     разметки — первый экран анимаций не ждёт;
+   · «меньше движения» (prefers-reduced-motion: reduce) — тише, а не
+     выключено: появления со сдвигом 24 px за 0,6 с, без выездов, шторок и
+     лент; автосмена вдвое медленнее с кнопкой паузы (блок в конце файла);
    · движение — только transform, opacity, clip-path и штрих линии
      (stroke-dashoffset): вёрстка не сдвигается;
    · декор — aria-hidden, не ловит фокус и мышь, за край страницы не выходит
@@ -39,6 +42,11 @@
   --dk-count-step: 90ms;     /* табло: разряды по очереди справа налево */
   --dk-words-dim: 0.22;      /* цитата по словам: непрочитанные слова */
   --dk-words-dur: 0.35s;
+
+  /* «меньше движения»: сдвиг и срок тихого появления, срок тихой прорисовки линии */
+  --dk-calm-shift: 24px;
+  --dk-calm-dur: 0.6s;
+  --dk-calm-draw: 0.8s;
 }
 
 .dk-sr {
@@ -209,7 +217,9 @@
    Заливка автосмены (data-dk-autoplay): полоска активного слайда
    заливается за срок показа — заливка и есть таймер смены.
    .is-paused — пауза (наведение, фокус, вне экрана, скрытая вкладка,
-   кнопка); .is-stopped — без автосмены (выбрал человек, «меньше движения»).
+   кнопка); .is-stopped — без автосмены (выбрал человек). При «меньше
+   движения» заливка идёт вдвое дольше (срок ставит скрипт), кнопка паузы
+   есть всегда.
    --------------------------------------------------------------------- */
 .dk-dots { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-seg-gap, 6px); }
 .dk-dots__i {
@@ -305,18 +315,44 @@
   transition: transform var(--dk-count-dur) var(--dk-ease-out) calc(var(--k, 0) * var(--dk-count-step));
 }
 
-/* ---------- «меньше движения» ----------
-   Скрипт тогда ничего не прячет и не запускает; это — страховка на случай,
-   когда настройку включили, пока страница открыта (скрипт и сам всё
-   доводит до конца). */
+/* ---------- «меньше движения»: тише, а не выключено ----------
+   Решение владельца 06.10.2026: в Windows «Эффекты анимации» выключены у многих (режим быстродействия,
+   экономия батареи), и сайт, который при этой настройке всё отключает, выглядит у них мёртвым.
+   Поэтому движение остаётся, но спокойное:
+   · появления — сдвиг --dk-calm-shift (24 px) и проявление за --dk-calm-dur (0,6 с): без выезда на высоту
+     строки, без шторки через весь кадр и без отъезда фото;
+   · рисунок линией рисуется, но не дольше --dk-calm-draw (0,8 с); цитата по словам — как есть (прозрачность);
+   · табло — сразу готовое число (лента — крупный быстрый ход; скрипт её не заводит, правило ниже — страховка
+     на случай, когда настройку включили при открытой странице);
+   · автосмена идёт вдвое медленнее (срок ставит скрипт), кнопка «Пауза» есть всегда.
+   Запрещено по-прежнему: мигание чаще 3 раз в секунду, полёты через экран, движение дольше 5 с без кнопки
+   остановки (WCAG 2.2.2). Правила стоят после обычных и той же точности — перебивают их порядком, без
+   !important (кроме табло): сайт может настроить --dk-calm-* под себя. */
 @media (prefers-reduced-motion: reduce) {
-  .dk-armed .dk-w__i,
+  /* строки: маска снята, слово проявляется со сдвигом 24 px */
+  .dk-armed .dk-w { overflow: visible; }
+  .dk-armed .dk-w__i { transform: translate3d(0, var(--dk-calm-shift), 0); opacity: 0; }
+  .dk-armed.dk-on .dk-w__i {
+    transform: none; opacity: 1;
+    transition: transform var(--dk-calm-dur) var(--dk-ease-out) calc(var(--l, 0) * 40ms), opacity var(--dk-calm-dur) ease calc(var(--l, 0) * 40ms);
+  }
+  /* рисунок линией: тот же ход пера, короче */
+  .dk-draw.dk-armed.dk-on { transition-duration: var(--dk-calm-draw); }
+  /* шторка: проявление со сдвигом вместо шторки, фото без отъезда */
+  .dk-armed[data-dk-curtain] > * { clip-path: none; opacity: 0; transform: translate3d(0, var(--dk-calm-shift), 0); }
   .dk-armed[data-dk-curtain] img,
-  .dk-armed[data-dk-curtain] video { transform: none !important; transition: none !important; }
-  .dk-draw.dk-armed { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; transition: none !important; }
-  .dk-armed[data-dk-curtain] > * { clip-path: none !important; transition: none !important; }
-  .dk-armed .dk-lw { opacity: 1 !important; transition: none !important; }
+  .dk-armed[data-dk-curtain] video { transform: none; }
+  .dk-armed[data-dk-curtain] > img,
+  .dk-armed[data-dk-curtain] > video { transform: translate3d(0, var(--dk-calm-shift), 0); }
+  .dk-armed[data-dk-curtain].dk-on > * {
+    clip-path: none; opacity: 1; transform: none;
+    transition: opacity var(--dk-calm-dur) ease, transform var(--dk-calm-dur) var(--dk-ease-out);
+  }
+  .dk-armed[data-dk-curtain].dk-on img,
+  .dk-armed[data-dk-curtain].dk-on video {
+    transform: none;
+    transition: opacity var(--dk-calm-dur) ease, transform var(--dk-calm-dur) var(--dk-ease-out);
+  }
+  /* табло: число сразу готовое */
   .dk-count .dk-digit__strip { transform: translate3d(0, calc(var(--to, 0) * -1lh), 0) !important; transition: none !important; }
-  .dk-dots__i.is-active::after { animation: none !important; transform: none !important; }
-  [data-dk-autoplay].dk-ready [data-dk-slide].is-active { animation: none !important; }
 }

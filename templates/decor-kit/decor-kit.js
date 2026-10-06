@@ -29,11 +29,24 @@
    Экспорт: init, scan, play, registerMotif, logo, draw, autoplay, finish, config;
    для обычных (не модульных) скриптов то же — window.decorKit.
 
-   Правила: без скрипта и при «меньше движения» всё видно сразу и в конечном
-   виде; прячется до появления только то, чего нет на экране в момент
-   разметки; движение — только transform, opacity, clip-path и штрих линии;
-   петель нет — мотивы играют при входе в экран и по наведению; то, что вне
-   экрана, стоит (IntersectionObserver).
+   Правила: без скрипта всё видно сразу и в конечном виде; прячется до
+   появления только то, чего нет на экране в момент разметки; движение —
+   только transform, opacity, clip-path и штрих линии; петель нет — мотивы
+   играют при входе в экран и по наведению; то, что вне экрана, стоит
+   (IntersectionObserver).
+
+   «Меньше движения» (prefers-reduced-motion: reduce — в Windows это
+   выключенные «Эффекты анимации», так настроено у многих): движение не
+   пропадает, а идёт тише (решение владельца 06.10.2026).
+     появления (строки, шторка)   сдвиг 24 px и проявление за 0,6 с вместо выезда и шторки (CSS)
+     рисунок линией               рисуется, не дольше 0,8 с
+     цитата по словам             как есть: только прозрачность
+     параллакс, вращение печати   привязка к прокрутке вполовину
+     табло цифр                   сразу готовое число (лента — крупный быстрый ход)
+     автосмена                    вдвое медленнее, кнопка «Пауза» есть всегда
+     мотив раздела                играет при входе; повтор наведением выключен; вид — CSS сайта
+   Настройку переключили при открытой странице — скорость автосмены и
+   привязка к прокрутке пересчитываются сами.
    ===================================================================== */
 
 const d = document;
@@ -88,10 +101,15 @@ const inView = (el) => {
   const r = el.getBoundingClientRect();
   return r.width + r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
 };
-/* можно ли прятать до появления: стили есть, движение разрешено, элемента нет на экране */
-const mayArm = (el) => canHide && !calm() && hasIO && !inView(el);
+/* можно ли прятать до появления: стили есть, элемента нет на экране. При «меньше движения» — тоже можно:
+     появление идёт тише (сдвиг 24 px, 0,6 с — decor-kit.css), а не выключено */
+const mayArm = (el) => canHide && hasIO && !inView(el);
+/* привязка к прокрутке при «меньше движения» — вполовину */
+const soft = () => (calm() ? 0.5 : 1);
+/* что пересчитать, когда настройку переключили при открытой странице */
+const recalc = new Set();
 
-/* что довести до конечного вида, если включили «меньше движения», пока страница открыта */
+/* что довести до конечного вида по просьбе страницы (finish) */
 const finishers = new Set();
 const once = (fn) => { let done = false; const f = () => { if (done) return; done = true; finishers.delete(f); fn(); }; finishers.add(f); return f; };
 /** Довести всё до конечного вида сразу: снять прятанье, остановить автосмену и мотивы. */
@@ -363,7 +381,7 @@ function wordsLight(el) {
    доходит до конца). Скрытое состояние — «1 1.01» и сдвиг 1.005: без точки от круглого конца. */
 const HIDDEN = 1.005;
 function drawLine(el) {
-  if (!canHide || calm() || !hasIO) return;
+  if (!canHide || !hasIO) return;
   const mode = el.dataset.dkDraw === 'scroll' ? 'scroll' : 'in';
   checkPaths(el);
   if (mode === 'in') {
@@ -417,7 +435,8 @@ function counter(el) {
   const total = (text.match(/\d/g) || []).length;
   if (!total) return;
   if (el.textContent !== text) el.textContent = text;
-  if (!mayArm(el)) return;
+  /* «меньше движения»: лента проезжает десяток цифр за секунду — крупный быстрый ход; число сразу готовое */
+  if (calm() || !mayArm(el)) return;
   let k = 0;
   const strip = Array.from({ length: 20 }, (_, i) => `<span>${i % 10}</span>`).join('');
   const cols = [...text].map((ch) => {
@@ -436,26 +455,27 @@ function counter(el) {
   });
 }
 
-/* Сдвиг при прокрутке: доля расстояния до середины экрана. Только на широком экране и при
-   разрешённом движении; меряется родитель — свой сдвиг не мешает замеру. Свойство translate —
-   поворот (--dk-rot) им не затирается. */
+/* Сдвиг при прокрутке: доля расстояния до середины экрана. Только на широком экране; при
+   «меньше движения» — вполовину (soft). Меряется родитель — свой сдвиг не мешает замеру.
+   Свойство translate — поворот (--dk-rot) им не затирается. */
 function parallax(el) {
-  if (calm() || !hasIO || innerWidth < config.wideMin) return;
+  if (!hasIO || innerWidth < config.wideMin) return;
   const k = Number(el.dataset.dkParallax) || 0.1;
   const ref = el.parentElement || el;
   once(() => { unscrub(el); el.style.translate = ''; });
   scrub(el, (r, vh) => {
     const pr = ref.getBoundingClientRect();
     const c = pr.top + pr.height / 2 - vh / 2;
-    el.style.translate = `0 ${(-c * k).toFixed(1)}px`;
+    el.style.translate = `0 ${(-c * k * soft()).toFixed(1)}px`;
   });
+  recalc.add(tick);
   tick();
 }
 
 /* Печать с текстом по кругу. Кольцо — SVG с textPath: пишет скрипт из data-dk-stamp или оно уже
    в разметке (.dk-stamp__ring — тогда видно и без JS). Кегль на экране не меньше 12 px,
    разрядка растягивает текст ровно по кругу (letter-spacing — textLength на textPath Firefox
-   не понимает). data-dk-stamp-turn — вращение прокруткой, без петли. */
+   не понимает). data-dk-stamp-turn — вращение прокруткой, без петли; при «меньше движения» — вполовину. */
 let uid = 0;
 function stamp(el) {
   el.classList.add('dk-stamp');
@@ -492,9 +512,10 @@ function stamp(el) {
   if (!fit()) whenIn(el, fit);
   if (d.fonts && d.fonts.status !== 'loaded') d.fonts.ready.then(fit);
   if (typeof ResizeObserver === 'function') { let w = el.offsetWidth; new ResizeObserver(() => { if (el.offsetWidth !== w) { w = el.offsetWidth; fit(); } }).observe(el); }
-  if (!el.hasAttribute('data-dk-stamp-turn') || calm() || !hasIO) return;
+  if (!el.hasAttribute('data-dk-stamp-turn') || !hasIO) return;
   once(() => { unscrub(el); svg.style.transform = ''; });
-  scrub(el, (r) => { svg.style.transform = `rotate(${(-r.top * 0.12).toFixed(1)}deg)`; });
+  scrub(el, (r) => { svg.style.transform = `rotate(${(-r.top * 0.12 * soft()).toFixed(1)}deg)`; });
+  recalc.add(tick);
   tick();
 }
 
@@ -599,7 +620,9 @@ function avoidText(el, R, full) {
    без перехода) и .dk-play (к обычному виду, с переходом); обычный вид — он же конечный и
    он же без JS. Содержимое пишется разметкой или строится функцией registerMotif(имя, build).
    Играет один раз при входе в экран; заново — наведением мыши на .dk-motif-host (не чаще
-   раза в 1.5 с). Мотив, который уже на экране при загрузке, не прячется и сам не играет. */
+   раза в 1.5 с). Мотив, который уже на экране при загрузке, не прячется и сам не играет.
+   «Меньше движения»: при входе в экран играет (тише его делает CSS сайта — сдвиги до 24 px,
+   до 0,6 с, без петель: README, «Мотив раздела»); повтор наведением выключен. */
 const MOTIFS = new Map();
 const waiting = new Map();
 const lastPlay = new WeakMap();
@@ -611,9 +634,9 @@ export function registerMotif(name, build) {
   waiting.delete(key);
   if (list) list.forEach((el) => { try { motif(el); } catch (err) { warn(err); } });
 }
-/** Сыграть мотив заново (из своего кода). */
+/** Сыграть мотив (из своего кода). */
 export function play(el) {
-  if (!el || calm()) return;
+  if (!el) return;
   el.classList.remove('dk-play');
   el.classList.add('dk-set');
   void el.getBoundingClientRect(); /* начало и движение — в разных кадрах стиля: переход пойдёт заново */
@@ -633,7 +656,7 @@ function motif(el) {
   if (name) { try { MOTIFS.get(name)(el, { rng, hash }); } catch (err) { warn(`мотив «${name}»:`, err); } }
   el.querySelectorAll('svg.dk-draw').forEach((svg) => { if (!DONE.stroke.has(svg)) { DONE.stroke.add(svg); autoStroke(svg); } });
   watchOff(el, (off) => el.classList.toggle('dk-off', off));
-  if (!canHide || calm() || !hasIO) return;
+  if (!canHide || !hasIO) return;
   once(() => el.classList.remove('dk-set', 'dk-play'));
   if (!inView(el)) {
     el.classList.add('dk-set');
@@ -651,8 +674,10 @@ function motif(el) {
 /* Банк идей: autoplay-progress-dot. Полоска активного слайда заливается за срок показа, и
    конец заливки (animationend) переключает слайд: пауза заливки — пауза смены, они не
    расходятся. Пауза — наведение мыши, фокус внутри, блок вне экрана, скрытая вкладка, кнопка
-   «Пауза»; выбор слайда человеком и «меньше движения» — автосмена стоит (кнопка «Дальше»
-   запускает её снова). Слайды [data-dk-slide] переключает сам набор (без JS видны все);
+   «Пауза»; выбор слайда человеком — автосмена стоит (кнопка «Дальше» запускает её снова).
+   «Меньше движения»: автосмена идёт вдвое медленнее, а кнопка «Пауза» есть всегда — и при
+   data-dk-autoplay-toggle="off" (движение дольше 5 с обязано останавливаться: WCAG 2.2.2).
+   Слайды [data-dk-slide] переключает сам набор (без JS видны все);
    свой слайдер сайта слушает событие dk:autoplay (detail: index, prev, cause). */
 const players = new WeakMap();
 export const autoplay = {
@@ -677,13 +702,19 @@ function autoplayInit(box) {
     items = [...dots.querySelectorAll('.dk-dots__i')];
   }
   let toggle = dots.querySelector('.dk-dots__toggle');
-  if (!toggle && box.dataset.dkAutoplayToggle !== 'off') {
+  /* кнопка паузы: по умолчанию есть; выключена атрибутом — всё равно появляется при «меньше движения» */
+  const ensureToggle = () => {
+    if (toggle || (box.dataset.dkAutoplayToggle === 'off' && !calm())) return false;
     toggle = d.createElement('button');
     toggle.type = 'button';
     toggle.className = 'dk-dots__toggle';
     dots.append(toggle);
-  }
-  dots.style.setProperty('--dk-dur', `${dur}ms`);
+    return true;
+  };
+  ensureToggle();
+  /* срок показа: при «меньше движения» — вдвое дольше */
+  const fitDur = () => dots.style.setProperty('--dk-dur', `${Math.round(dur / soft())}ms`);
+  fitDur();
   const live = slides[0] && slides[0].parentElement;
   let k = Math.max(0, slides.findIndex((s) => s.classList.contains('is-active')), items.findIndex((b) => b.classList.contains('is-active')));
   const why = new Set(); /* причины паузы: hover, focus, off, hidden, user */
@@ -722,14 +753,19 @@ function autoplayInit(box) {
     show(k + 1, 'auto');
   });
   items.forEach((b, j) => b.addEventListener('click', () => { stop(); show(j, 'click'); }));
-  if (toggle) {
+  const bindToggle = () => {
+    if (!toggle || toggle.dkBound) return;
+    toggle.dkBound = true;
     toggle.addEventListener('click', () => {
       const start = stopped || why.has('user');
       /* явный запуск главнее мыши над блоком и фокуса на самой кнопке — иначе «Дальше» ничего не делает */
       if (start) { why.delete('hover'); why.delete('focus'); }
       user(!start);
     });
-  }
+  };
+  bindToggle();
+  /* настройку переключили при открытой странице: срок показа и кнопка паузы — по новому режиму */
+  recalc.add(() => { fitDur(); if (ensureToggle()) { bindToggle(); sync(); } });
   const pause = (reason, on) => { if (on) why.add(reason); else why.delete(reason); sync(); };
   box.addEventListener('pointerenter', (e) => { if (e.pointerType !== 'touch') pause('hover', true); });
   box.addEventListener('pointerleave', () => pause('hover', false));
@@ -737,7 +773,6 @@ function autoplayInit(box) {
   box.addEventListener('focusout', (e) => { if (!box.contains(e.relatedTarget)) pause('focus', false); });
   d.addEventListener('visibilitychange', () => pause('hidden', d.hidden));
   watchOff(box, (off) => pause('off', off));
-  if (calm()) stopped = true;
   once(stop);
   show(k, 'init');
   box.classList.add('dk-ready');
@@ -828,7 +863,10 @@ export async function init(opts = {}) {
     }).observe(d.body, { childList: true, subtree: true });
   }
   if (mq) {
-    const on = (e) => { if (e.matches) finish(); };
+    /* «меньше движения» включили или выключили при открытой странице: спрятанное остаётся ждать своего
+       появления (оно пойдёт уже по правилам нового режима — их держит CSS), пересчитываются привязка к
+       прокрутке и срок автосмены. До 06.10.2026 здесь всё доводилось до конца (finish) — сайт замирал. */
+    const on = () => { for (const f of [...recalc]) { try { f(); } catch (err) { warn(err); } } };
     if (mq.addEventListener) mq.addEventListener('change', on); else if (mq.addListener) mq.addListener(on);
   }
 }

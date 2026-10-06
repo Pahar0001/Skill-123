@@ -185,8 +185,12 @@
  *                              браузер сам хранит как «2026-10-10T20:30» (OK с пометкой); поменялось
  *                              после input/change — FAIL «обработчик страницы переписал значение»
  *        --edit "sel"          поле с маской: набор, Backspace до конца, правка в середине,
- *                              Delete, вставка «8 (900) …», Ctrl+A (на macOS Cmd+A) и Backspace;
- *                              не выделило сочетание — выделяется el.select(), стирает Backspace
+ *                              Delete, вставка «8 (900) …», Ctrl+A (на macOS Cmd+A) и Backspace.
+ *                              Сочетание не выделило поле — FAIL «осталось …»: человек не может
+ *                              выделить всё (страница отменяет нажатие — так и сказано). Запасной
+ *                              el.select() — только на macOS и только когда страница нажатие не
+ *                              отменяла (безголовый Chrome там сочетание не исполняет): тогда
+ *                              WARN «выделено запасным путём, сочетание не проверено», не OK
  *        --key Tab             нажать клавишу: где фокус, значение и курсор поля
  *        --select "sel=знач"   выбрать вариант списка (value или текст варианта); делится так же,
  *                              как --type: "select[name=work]=6", "#sel=a=b" → вариант «a=b».
@@ -212,10 +216,32 @@
  *                              восстанавливает: preserveDrawingBuffer или перерисовка по
  *                              visibilitychange / IntersectionObserver); «буфер сменил размер после
  *                              последнего кадра — кадр стёрт» (перерисовка после смены размера)
- *        --motion              анимации: идут, бесконечные, закончились и держат свойство;
- *                              «меньше движения» — в отдельной вкладке
- *        --video               видео: poster, muted/playsinline, играет ли, пауза вне экрана
- *                              и при «меньше движения»
+ *        --motion              анимации: идут, бесконечные, закончились и держат свойство.
+ *                              «Меньше движения» (prefers-reduced-motion: reduce) — правило «тише, а не
+ *                              выключено» (reference/motion.md): страница открывается заново в двух
+ *                              вкладках — с настройкой и без, обе прокручиваются до низа, четыре строки:
+ *                              · анимации — бесконечная петля (CSS и WAAPI) допустима, если её круг не
+ *                                короче 1,5 круга обычного режима (правило — вдвое) И у неё есть видимая
+ *                                кнопка паузы, которая её останавливает (кнопка нажимается, петля обязана
+ *                                встать; кнопка — button / role=button со словом пауза, остановить, стоп,
+ *                                pause, stop, от 16×16, видна без наведения). Нет кнопки, не останавливает,
+ *                                не замедлена, сравнить не с чем — WARN. Мигание чаще 3 раз в секунду — WARN.
+ *                                Петель нет вовсе — OK (выключить всё по-прежнему можно);
+ *                              · появления — элемент ждал появления со сдвигом от 40 px и приехал на место
+ *                                после прокрутки — WARN (правило — до 24 px за 0,6 с);
+ *                              · мышь — после событий движения мыши у элементов сменился transform — WARN
+ *                                «за мышью двигается» (не на телефоне);
+ *                              · контент — текст, видимый в обычном режиме и спрятанный с настройкой после
+ *                                прокрутки всей страницы (прозрачность, visibility, маска, clip-path):
+ *                                от 3 блоков или от 10 % знаков — FAIL «контент не проявился»; видно
+ *                                меньше половины знаков обычного режима — FAIL «страница почти пустая»;
+ *                                1–2 блока — WARN «проверить глазами».
+ *                              Не видит: петли на requestAnimationFrame и холсте, привязку к прокрутке
+ *                              («вполовину» — глазами или --assert), кнопку паузы — ссылку или иконку без
+ *                              подписи и класса со словом pause
+ *        --video               видео: poster, muted/playsinline, играет ли, пауза вне экрана;
+ *                              при «меньше движения» автоплей обязан стоять на паузе (играет — WARN),
+ *                              есть ли кнопка запуска — в строке
  *        --nav                 меню: подсвеченный пункт ведёт на раздел, который на экране
  *                              (верх, каждый раздел, низ, снова верх). Меню с тремя и более якорями
  *                              на разделы нет (многостраничный сайт) — INFO «якорей нет», не WARN.
@@ -329,7 +355,9 @@
  *        --out папка, --tag имя  папка прогона и имя протокола
  *        --no-fail             код выхода 0 даже при провалах
  *        --selftest            прогнать стенды fixtures/runtime/*.html (форма, наведение, прокрутка,
- *                              правка поля с маской (--edit: выделить всё и стереть на macOS тоже),
+ *                              правка поля с маской (--edit: выделить всё и стереть на macOS тоже; страница глушит
+ *                              Ctrl+A — FAIL на любой системе; сочетание не исполнилось без отмены нажатия — FAIL на
+ *                              Windows и Linux, запасной путь и WARN на macOS — ветка macOS проверяется и здесь),
  *                              подсказки против сломанного появления, страница в закреплённой обёртке
  *                              и закрытое меню на весь экран, вертикальное письмо, меню на весь экран,
  *                              со сломанными якорями и с якорями <a name>, первый экран на position:
@@ -343,7 +371,10 @@
  *                              из одной шапки (и та же, где скрипт сам разбивает свой текст на буквы), текст, который скрипт
  *                              только разбивает на слова и буквы, разметка под v-cloak и x-cloak, показ обработчиком onload
  *                              без единого <script>, переход по ссылке на другую страницу, заставка, страница без скриптов;
- *                              --emulate-motion; переход, который не шёл, —
+ *                              --emulate-motion; «меньше движения — тише, а не выключено» (--motion: петля тише и с
+ *                              паузой — OK; на полной скорости, без кнопки и с кнопкой-пустышкой, сдвиг 100 px, ход за
+ *                              мышью — WARN; всё выключено и контент виден — OK; контент не проявился — FAIL, один
+ *                              заголовок — WARN; то же в Firefox); переход, который не шёл, —
  *                              перебитый clip-path (и у фото в проявляющемся блоке, и на обёртке), конечное none, нормальная
  *                              шторка, inline style по кадрам, ход через CSS-переменную (и быстрый, в четыре кадра), посторонняя
  *                              переменная прокрутки, WAAPI, CSS-анимация, без объявленного
@@ -367,7 +398,7 @@
  *                              заново, в счёте только её консоль и запросы; то же в Firefox на file://,
  *                              если он есть; страница снова уводит — «замер не той страницы») и сверить
  *                              строки протокола с ожидаемыми; код 1 — что-то разошлось. Адрес не нужен,
- *                              браузер — один за раз, около тринадцати минут. Часть случаев — переменной окружения
+ *                              браузер — один за раз, около пятнадцати минут. Часть случаев — переменной окружения
  *                              RW_SELFTEST_ONLY (регулярное выражение по имени случая: RW_SELFTEST_ONLY="^(jump|nojs)")
  *        -h, --h, --help       эта справка (ничего не создаёт и не запускает); --help=… —
  *                              тоже справка. Ищется только до «--»: после него — адрес
@@ -2761,24 +2792,41 @@ async function editStep(v) {
   const sample = numeric ? '9001234567' : 'проверка';
   const chars = (s) => (numeric ? s.replace(/\D/g, '') : s.replace(/[^\p{L}\p{N}]/gu, ''));
   const val = () => h.evaluate((el) => ({ v: el.value, s: el.selectionStart }));
-  /* «выделить всё» как человек: сочетание (Cmd+A на macOS, Ctrl+A на Windows и Linux) с командой SelectAll — в безголовом
-     Chrome на macOS само сочетание текст не выделяет (29.09); выделение сверяется, и если поле выделено не целиком —
-     el.select() / setSelectionRange(0, длина). Стирание — настоящей клавишей Backspace, её видит маска */
+  /* «выделить всё» как человек: сочетание (Cmd+A на macOS, Ctrl+A на Windows и Linux) с командой SelectAll.
+     Выделение сверяется. Не выделилось — это находка: человек в этом поле «выделить всё» не сделает (частая
+     ошибка самодельных масок — preventDefault в keydown при ctrlKey). Отменила ли страница нажатие, видно по
+     defaultPrevented самого события (ловим его в фазе перехвата на window, читаем после рассылки).
+     Запасной el.select() / setSelectionRange(0, длина) — только на macOS и только когда страница нажатие НЕ
+     отменяла: в безголовом Chrome там сочетание текст не выделяет без вины страницы (29.09). На Windows и Linux
+     запасного пути нет: до 06.10 он срабатывал везде и превращал FAIL «страница глушит Ctrl+A» в OK.
+     Ответ: 'сочетание' | 'select()' (запасной путь, сочетание не проверено) | 'отменено' | 'не выделено' | 'нет'.
+     Стирание — настоящей клавишей Backspace, её видит маска */
+  const PLAT = process.env.RW_EDIT_PLATFORM || process.platform; /* RW_EDIT_PLATFORM=darwin — ветка macOS в самопроверке */
   const selectAll = async () => {
-    const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+    const mod = PLAT === 'darwin' ? 'Meta' : 'Control';
+    await page.evaluate(() => {
+      window.__rwKeyA = null; if (window.__rwKeyAOn) window.removeEventListener('keydown', window.__rwKeyAOn, true);
+      window.__rwKeyAOn = (e) => { if (e.code === 'KeyA' || /^[aAфФ]$/.test(e.key)) window.__rwKeyA = e; };
+      window.addEventListener('keydown', window.__rwKeyAOn, true);
+    }).catch(() => {});
     await page.keyboard.down(mod);
     try { await page.keyboard.press('KeyA', { commands: ['SelectAll'] }); } catch { await page.keyboard.press('KeyA').catch(() => {}); }
     await page.keyboard.up(mod);
-    return h.evaluate((el) => {
+    return h.evaluate((el, fallback) => {
+      const ev = window.__rwKeyA; const prevented = !!(ev && ev.defaultPrevented);
+      if (window.__rwKeyAOn) window.removeEventListener('keydown', window.__rwKeyAOn, true);
+      window.__rwKeyA = null; window.__rwKeyAOn = null;
       let s = null, e = null; try { s = el.selectionStart; e = el.selectionEnd; } catch { /* email, number: выделения у поля нет */ }
       const len = String(el.value || '').length;
       if (s === 0 && e === len) return 'сочетание';
+      if (prevented) return 'отменено';
+      if (!fallback) return 'не выделено';
       try { el.select(); } catch { /* не текстовое поле */ }
       try { if (!(el.selectionStart === 0 && el.selectionEnd === len)) el.setSelectionRange(0, len); } catch { /* нет выделения */ }
       return 'select()';
-    }).catch(() => 'нет');
+    }, PLAT === 'darwin').catch(() => 'нет');
   };
-  const SA = process.platform === 'darwin' ? 'Cmd+A' : 'Ctrl+A';
+  const SA = PLAT === 'darwin' ? 'Cmd+A' : 'Ctrl+A';
   const clear = async () => { await h.click({ clickCount: 3 }).catch(() => h.focus()); await selectAll(); await page.keyboard.press('Backspace'); await sleep(50); };
   const steps = [];
   /* а) набрать и стереть Backspace до конца: застревание — FAIL, пока осталось больше одного знака */
@@ -2817,7 +2865,12 @@ async function editStep(v) {
   /* д) выделить всё и стереть */
   const how = await selectAll(); await page.keyboard.press('Backspace'); await sleep(50);
   const wiped = await val(); steps.push({ step: `${SA}, Backspace`, value: wiped.v, selectedBy: how });
-  line(chars(wiped.v).length <= 1 ? 'OK' : 'FAIL', `правка ${v}: выделить всё и стереть`, `осталось «${wiped.v}»${how === 'select()' ? ` (сочетание ${SA} не выделило — выделено el.select())` : ''}`);
+  const wipedOk = chars(wiped.v).length <= 1;
+  const howNote = how === 'отменено' ? ` — сочетание ${SA} поле не выделило: страница отменяет нажатие (preventDefault в keydown) — человек не может выделить всё`
+    : how === 'не выделено' ? ` — сочетание ${SA} поле не выделило`
+      : how === 'select()' ? ` — выделено запасным путём (el.select()): сочетание ${SA} в этом браузере не исполнилось, страница его не отменяла — само сочетание не проверено, проверить руками или на Windows/Linux` : '';
+  /* запасной путь — не доказательство: стёрлось, но сочетание не проверено — WARN, а не OK */
+  line(!wipedOk ? 'FAIL' : how === 'select()' ? 'WARN' : 'OK', `правка ${v}: выделить всё и стереть`, `осталось «${wiped.v}»${howNote}`);
   report.edit = report.edit || []; report.edit.push({ sel: v, steps });
 }
 
@@ -2995,17 +3048,274 @@ async function motionStep() {
   const inf = now.filter((a) => a.iterations === 'infinite' && a.state === 'running');
   const holding = now.filter((a) => a.state === 'finished' && /forwards|both/.test(a.fill || ''));
   line('OK', `анимации: идут ${running.length}, бесконечных ${inf.length}, закончились и держат свойство ${holding.length}`, `${[...new Set(inf.map((a) => a.name))].slice(0, 6).join(', ') || 'бесконечных нет'}${holding.length ? ` · держат: ${holding.slice(0, 5).map((a) => `${a.target} ${a.name} (${a.fill}: ${a.props.join(', ')})`).join('; ')} — :hover и классы не поменяют эти свойства` : ''}`);
-  /* «меньше движения» — в отдельной вкладке: переключение на лету оставляет страницу в переходах */
-  const rt = await reducedTab(); const p2 = rt.page;
-  try {
-    await gotoRetry(p2, url); await p2.evaluate(() => document.fonts.ready).catch(() => {}); await sleep(1500);
-    const red = await animList(p2);
-    const infR = red.filter((a) => a.iterations === 'infinite' && a.state === 'running');
-    const smooth = await p2.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior);
-    const st = infR.length ? 'WARN' : 'OK';
-    line(st, `анимации при «меньше движения» (${rt.where})`, `бесконечных идёт ${infR.length}${infR.length ? `: ${[...new Set(infR.map((a) => `${a.target} ${a.name}`))].slice(0, 5).join(', ')} — не останавливаются` : ''} · всего анимаций ${red.length} против ${now.length}${smooth === 'smooth' ? ' · плавная прокрутка остаётся (scroll-behavior:smooth)' : ''}`);
-    report.motion = { now, reduced: red };
-  } finally { await rt.close(); }
+  /* «меньше движения» — в отдельной вкладке: переключение на лету оставляет страницу в переходах.
+     Правило с 06.10.2026 — «тише, а не выключено» (reference/motion.md): петля допустима, если она замедлена против
+     обычного режима и у неё есть видимая кнопка паузы, которая её останавливает; появления — со сдвигом до 24 px;
+     за мышью ничего не ходит; контент обязан проявиться. Сравнивать нужно с обычным режимом на такой же свежей
+     вкладке (основная уже прошла шаги пользователя), поэтому вкладок две. */
+  /* вкладки открываются по очереди: сначала с настройкой (замеры, вкладка закрыта), потом обычная — два Firefox разом
+     под нагрузкой теряли вкладку («detached Frame», «Target closed»). Сбой открытия — одна повторная попытка. */
+  const open = async (pg) => { await gotoRetry(pg, url); await pg.evaluate(() => document.fonts.ready).catch(() => {}); await sleep(1500); };
+  const ev = (pg, fn, arg) => evaluateWith(pg, fn, arg, DEPS).catch(() => null);
+  const twice = async (fn) => { try { return await fn(); } catch (e) { if (!/detached|Target closed|Session closed|Execution context|Navigating frame/i.test(String((e && e.message) || e))) throw e; await sleep(800); return fn(); } };
+  const R = await twice(async () => {
+    const rt = await reducedTab(); const p2 = rt.page;
+    try {
+      await open(p2);
+      const red = await animList(p2);
+      const smooth = await p2.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior).catch(() => '');
+      const pending = await ev(p2, calmPendingInPage, { min: CALM.shiftWarn });
+      const loops = await calmScrollPass(p2);
+      const text = await ev(p2, calmTextInPage, null);
+      const shifts = pending ? await ev(p2, calmShiftsInPage, null) : null;
+      const mouse = cur.isMobile ? null : await ev(p2, calmMouseInPage, null);
+      /* кнопка паузы проверяется там, где петля шла: у каждой своей высоты страницы — свой заход */
+      for (const y of [...new Set((loops || []).map((l) => l.y))]) {
+        await scrollToY(p2, y); await sleep(450);
+        const v = await ev(p2, calmLoopsInPage, { verify: true });
+        for (const x of v || []) { const l = loops.find((q) => q.name === x.name && q.target === x.target); if (l && (!l.pause || (x.pause && x.pause.stops))) { l.pause = x.pause; l.controls = x.controls; } }
+      }
+      return { where: rt.where, red, smooth, pending, text, shifts, loops, mouse };
+    } finally { await rt.close(); }
+  });
+  const N = await twice(async () => {
+    const nt = await normalTab(); const n2 = nt.page;
+    try {
+      await open(n2); const loops = await calmScrollPass(n2);
+      return { text: await ev(n2, calmTextInPage, null), loops };
+    } finally { await nt.close(); }
+  });
+  await page.bringToFront().catch(() => {});
+  const calm = calmVerdict({ rLoops: R.loops, nLoops: N.loops, rText: R.text, nText: N.text, shifts: R.shifts, pending: R.pending, mouse: R.mouse });
+  const tail = ` · всего анимаций ${R.red.length} против ${now.length}${R.smooth === 'smooth' ? ' · плавная прокрутка остаётся (scroll-behavior:smooth)' : ''}`;
+  line(calm.loops.st, `анимации при «меньше движения» (${R.where})`, calm.loops.text + tail);
+  line(calm.shifts.st, 'появления при «меньше движения»', calm.shifts.text);
+  if (calm.mouse) line(calm.mouse.st, 'мышь при «меньше движения»', calm.mouse.text);
+  line(calm.content.st, 'контент при «меньше движения»', calm.content.text);
+  report.motion = { now, reduced: R.red, calm: { loops: R.loops, loopsNormal: N.loops, shifts: R.shifts, mouse: R.mouse, text: R.text && { chars: R.text.chars, total: R.text.total, hidden: R.text.hidden.length }, textNormal: N.text && { chars: N.text.chars, total: N.text.total, hidden: N.text.hidden.length }, lost: calm.lost, rotated: calm.rotated || [], rule: CALM } };
+}
+
+/* ---------- «меньше движения — тише, а не выключено»: замеры и вердикт ---------- */
+/* Числа правила (reference/motion.md, «Меньше движения»): образец — сдвиг появления 24 px за 0,6 с, петли вдвое медленнее.
+   Пороги проверки мягче образца на допуск: сдвиг — WARN от 40 px, «замедлена» — круг не короче 1,5 от обычного. */
+const CALM = { shift: 24, shiftWarn: 40, slow: 1.5, blinkMs: 334, lostFail: 3, lostShare: 0.1 };
+
+/* проход по странице сверху вниз шагом 0,8 экрана: появления по прокрутке должны сработать; в конце — наверх.
+   На каждой остановке собираются идущие петли: бегущая строка, которую сайт останавливает вне экрана
+   (IntersectionObserver), у верха страницы не идёт — без этого проверка её не увидела бы. → [{ …петля, y }] */
+async function calmScrollPass(pg) {
+  await pg.bringToFront().catch(() => {});
+  const m = await pg.evaluate(() => ({ h: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0), vh: innerHeight })).catch(() => null);
+  if (!m) return null;
+  const n = Math.min(40, Math.max(1, Math.ceil(m.h / Math.max(200, m.vh * 0.8))));
+  const step = Math.ceil(m.h / n);
+  const seen = new Map(); let read = false;
+  const grab = async (y) => { const l = await evaluateWith(pg, calmLoopsInPage, { verify: false }, DEPS).catch(() => null); if (!l) return; read = true; for (const x of l) { const k = `${x.name}|${x.target}`; if (!seen.has(k)) seen.set(k, { ...x, y }); } };
+  await grab(0);
+  for (let i = 1; i <= n; i++) { await scrollToY(pg, i * step); await sleep(320); await grab(i * step); }
+  await sleep(900); await scrollToY(pg, 0); await sleep(500);
+  return read ? [...seen.values()] : null;
+}
+
+/* В странице, до прохода: элементы, которые ждут появления с крупным сдвигом (transform/translate от min px), —
+   помечаются data-rw-calm; меню за краем и окна тоже попадут сюда, отсеет их calmShiftsInPage (они не приезжают). */
+function calmPendingInPage({ min }) {
+  let i = 0; const out = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (i >= 400) break;
+    const cs = getComputedStyle(el); if (cs.display === 'none' || (cs.transform === 'none' && (cs.translate === 'none' || !cs.translate))) continue;
+    let x = 0, y = 0;
+    try { if (cs.transform !== 'none') { const m = new DOMMatrixReadOnly(cs.transform); x += m.m41; y += m.m42; } } catch (e) { /* не разобрано */ }
+    if (cs.translate && cs.translate !== 'none') { const p = cs.translate.split(' ').map(parseFloat); x += p[0] || 0; y += p[1] || 0; }
+    const d = Math.hypot(x, y); if (!(d >= min)) continue;
+    const r = el.getBoundingClientRect(); if (r.width < 8 || r.height < 8) continue;
+    el.setAttribute('data-rw-calm', String(i)); out.push({ i, shift: Math.round(d) }); i++;
+  }
+  window.__rwCalm = out;
+  return out.length;
+}
+/* В странице, после прохода: кто из помеченных приехал на место (сдвиг < 4 px) — это и было появление со сдвигом */
+function calmShiftsInPage() {
+  const out = [];
+  for (const p of window.__rwCalm || []) {
+    const el = document.querySelector('[data-rw-calm="' + p.i + '"]'); if (!el) continue;
+    const cs = getComputedStyle(el); let x = 0, y = 0;
+    try { if (cs.transform !== 'none') { const m = new DOMMatrixReadOnly(cs.transform); x += m.m41; y += m.m42; } } catch (e) { /* не разобрано */ }
+    if (cs.translate && cs.translate !== 'none') { const q = cs.translate.split(' ').map(parseFloat); x += q[0] || 0; y += q[1] || 0; }
+    if (Math.hypot(x, y) < 4) out.push({ el: sig(el), shift: p.shift });
+    el.removeAttribute('data-rw-calm');
+  }
+  return out.sort((a, b) => b.shift - a.shift);
+}
+/* В странице: текст, который человек не видит (прозрачность, visibility, обрезка маской, clip-path «в ноль»),
+   и сколько знаков видно. Декор (aria-hidden), скрытое display: none и пустые коробки — не в счёт. */
+function calmTextInPage() {
+  const pathOf = (el) => { const p = []; for (let e = el; e && e !== document.body && p.length < 30; e = e.parentElement) { let k = 1; for (let s = e.previousElementSibling; s; s = s.previousElementSibling) if (s.tagName === e.tagName) k++; p.push(e.tagName + ':' + k); } return p.reverse().join('>'); };
+  const clipped = (el, r) => {
+    for (let a = el, d = 0; a && a !== document.documentElement && d < 8; a = a.parentElement, d++) {
+      const cs = getComputedStyle(a);
+      if (/inset\((?:[^)]*\s)?100%/.test(cs.clipPath || '') || /circle\(0(px|%)?(\s|\))/.test(cs.clipPath || '')) return true;
+      if (a !== el && /hidden|clip/.test(cs.overflowX + cs.overflowY)) {
+        const b = a.getBoundingClientRect(); const w = Math.min(r.right, b.right) - Math.max(r.left, b.left), h = Math.min(r.bottom, b.bottom) - Math.max(r.top, b.top);
+        if (w <= 1 || h <= 1 || (w * h) / (r.width * r.height) < 0.15) return true;
+      }
+    }
+    return false;
+  };
+  const hidden = []; const shown = []; let chars = 0, total = 0; const seen = new Set();
+  const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+    const t = n.nodeValue.replace(/\s+/g, ' ').trim(); if (t.length < 2) continue;
+    const el = n.parentElement; if (!el || seen.has(el)) continue; seen.add(el);
+    if (el.closest('script, style, noscript, template, [aria-hidden="true"], [hidden], [inert]')) continue;
+    const cs = getComputedStyle(el); if (cs.display === 'none') continue;
+    const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) continue;
+    total++;
+    const text = el.textContent.replace(/\s+/g, ' ').trim();
+    if (cs.visibility !== 'visible' || eff(el) < 0.05 || clipped(el, r)) hidden.push({ key: pathOf(el), el: sig(el), text: text.slice(0, 40), chars: text.length });
+    else { chars += text.length; shown.push(pathOf(el)); }
+  }
+  return { hidden, shown, chars, total };
+}
+/* В странице: идущие бесконечные анимации (Web Animations: CSS-анимации и WAAPI; петли на requestAnimationFrame сюда
+   не попадают) — имя, цель, длительность круга с учётом playbackRate, свойства. С verify — у каждой ищется видимая
+   кнопка паузы (button, role=button, input type=button; не ссылка и не отправка формы; подпись, aria-label, title, класс
+   или id со словами пауза / остановить / стоп / pause / stop; не меньше 16×16, видна без наведения — непрозрачность от
+   0,4) и проверяется делом: кнопка нажимается, петля обязана перестать идти. Ближние по дереву кнопки — первыми. */
+async function calmLoopsInPage({ verify }) {
+  const WORD = /пауз|останов|стоп|pause|stop/i;
+  const list = () => document.getAnimations().filter((a) => { try { return a.playState === 'running' && a.effect && a.effect.getTiming().iterations === Infinity; } catch (e) { return false; } });
+  const info = (a) => {
+    const t = a.effect.getTiming(); const el = a.effect.target; let props = [];
+    try { props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)).filter((k) => !/^(offset|computedOffset|easing|composite)$/.test(k)))]; } catch (e) { /* без кадров */ }
+    const r = el ? el.getBoundingClientRect() : { width: 0, height: 0 };
+    const rate = Math.abs(a.playbackRate || 1) || 1;
+    return { name: a.animationName || a.id || a.constructor.name, target: el ? sig(el) : null, tag: el ? el.tagName.toLowerCase() : null, pseudo: a.effect.pseudoElement || null, iterMs: Math.round((Number(t.duration) || 0) / rate), props, w: Math.round(r.width), h: Math.round(r.height) };
+  };
+  const anims = list(); const out = anims.map(info);
+  if (!verify) return out;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const controls = [...document.querySelectorAll('button, [role="button"], input[type="button"]')].filter((c) => {
+    if (c.tagName === 'A' || c.disabled) return false;
+    if (c.tagName === 'BUTTON' && c.form && (c.getAttribute('type') || 'submit').toLowerCase() !== 'button') return false;
+    const label = [c.getAttribute('aria-label'), c.getAttribute('title'), c.textContent, c.value, typeof c.className === 'string' ? c.className : '', c.id, Object.keys(c.dataset || {}).join(' ')].join(' ');
+    if (!WORD.test(label)) return false;
+    const r = c.getBoundingClientRect(); if (r.width < 16 || r.height < 16) return false;
+    const cs = getComputedStyle(c); return cs.visibility === 'visible' && cs.display !== 'none' && eff(c) >= 0.4;
+  });
+  const dist = (a, b) => { let n = 0; for (let e = a; e; e = e.parentElement, n++) if (e.contains(b)) return n; return 99; };
+  /* «рядом» — общий предок не дальше трёх уровней от цели и не сама страница (body, main) */
+  const isNear = (a, b) => { let n = 0; for (let e = a; e && n <= 3; e = e.parentElement, n++) if (e.contains(b)) return !/^(BODY|MAIN|HTML)$/.test(e.tagName); return false; };
+  let lastStop = null;
+  for (let i = 0; i < anims.length; i++) {
+    const a = anims[i]; const el = a.effect.target; const o = out[i];
+    o.controls = controls.length; o.pause = null;
+    /* эту петлю уже остановила кнопка, нажатая для другой (одна кнопка на две строки) */
+    if (a.playState !== 'running' || !list().includes(a)) { o.pause = lastStop || { stops: false, self: true, el: 'остановилась сама' }; continue; }
+    const near = controls.map((c) => ({ c, d: el ? dist(el, c) : 99 })).sort((x, y) => x.d - y.d).slice(0, 3);
+    for (const { c } of near) {
+      c.click(); await wait(280);
+      const stopped = a.playState !== 'running' || !list().includes(a);
+      if (stopped) { o.pause = lastStop = { stops: true, el: sig(c), label: (c.getAttribute('aria-label') || c.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 30) }; break; }
+      c.click(); await wait(120); /* не та кнопка — вернуть как было */
+      o.pause = { stops: false, el: sig(c), near: el ? isNear(el, c) : false };
+    }
+  }
+  return out;
+}
+/* В странице: ходит ли что-нибудь за мышью. События pointermove/mousemove рассылаются в четырёх точках первого экрана
+   (сам указатель не двигается — :hover не меняется); у кого после этого сменился transform, translate или rotate, а
+   сам по себе за то же время не менялся (анимация, петля), — тот следит за мышью. */
+async function calmMouseInPage() {
+  const els = [...document.querySelectorAll('body *')].slice(0, 5000).filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight; });
+  const snap = () => els.map((e) => { const cs = getComputedStyle(e); return cs.transform + '|' + cs.translate + '|' + cs.rotate; });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const a = snap(); await wait(450); const b = snap();
+  for (const [fx, fy] of [[0.2, 0.3], [0.8, 0.3], [0.5, 0.7], [0.85, 0.8]]) {
+    const x = Math.round(innerWidth * fx), y = Math.round(innerHeight * fy); const t = document.elementFromPoint(x, y) || document.body;
+    const init = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, screenX: x, screenY: y, pageX: x, pageY: y + scrollY, view: window };
+    try { t.dispatchEvent(new PointerEvent('pointermove', { ...init, pointerType: 'mouse', isPrimary: true })); } catch (e) { /* нет PointerEvent */ }
+    t.dispatchEvent(new MouseEvent('mousemove', init));
+    await wait(120);
+  }
+  await wait(450); const c = snap();
+  const moved = [];
+  for (let i = 0; i < els.length; i++) if (b[i] !== c[i] && a[i] === b[i]) moved.push(sig(els[i]));
+  return { n: moved.length, list: moved.slice(0, 5) };
+}
+/* Вердикт по замерам двух вкладок. Чистая функция: её же зовёт самопроверка. */
+function calmVerdict({ rLoops, nLoops, rText, nText, shifts, pending, mouse }) {
+  const sec = (ms) => `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0).replace(/\.0$/, '')} с`;
+  const res = { lost: [] };
+  /* петли */
+  if (!rLoops) res.loops = { st: 'WARN', text: 'не проверено: список анимаций страницы не прочитан' };
+  else if (!rLoops.length) res.loops = { st: 'OK', text: 'бесконечных не идёт (петли на requestAnimationFrame и холсте этой проверке не видны)' };
+  else {
+    const bad = []; let calmN = 0;
+    for (const l of rLoops) {
+      const same = (nLoops || []).filter((x) => x.name === l.name);
+      const m = same.find((x) => x.target === l.target) || same.find((x) => x.tag === l.tag) || same[0] || null;
+      const slow = m && m.iterMs > 0 ? l.iterMs >= m.iterMs * CALM.slow : null;
+      const why = [];
+      if (l.iterMs > 0 && l.iterMs < CALM.blinkMs && l.props.some((p) => /^(opacity|visibility|backgroundColor|color|filter)$/.test(p))) why.push(`мигает чаще 3 раз в секунду (круг ${l.iterMs} мс) — запрещено в любом режиме`);
+      if (slow === false) why.push(`не замедлена: круг ${sec(l.iterMs)}, в обычном режиме ${sec(m.iterMs)} — нужно вдвое медленнее`);
+      else if (slow === null) why.push('в обычном режиме такой петли нет — замедлена ли, сравнить не с чем');
+      if (!l.pause) why.push(l.controls ? 'кнопка паузы на странице есть, но до проверки дело не дошло' : 'видимой кнопки паузы нет');
+      else if (l.pause.self) why.push('петля остановилась сама до проверки кнопки — останавливает ли её кнопка паузы, не проверено');
+      else if (!l.pause.stops) why.push(l.pause.near ? `кнопка ${l.pause.el} рядом петлю не останавливает` : `видимой кнопки паузы у петли нет (кнопки паузы на странице — ${l.controls}, эту петлю ни одна не останавливает)`);
+      l.slowed = slow; l.verdict = why.length ? 'WARN' : 'OK';
+      if (why.length) bad.push(`${l.target || '?'} ${l.name}: ${why.join('; ')}`); else calmN++;
+    }
+    res.loops = bad.length
+      ? { st: 'WARN', text: `бесконечных идёт ${rLoops.length}, не по правилу ${bad.length}: ${[...new Set(bad)].slice(0, 4).join(' | ')}${calmN ? ` · тише и с паузой: ${calmN}` : ''} — петля при этой настройке допустима замедленной вдвое и с видимой кнопкой паузы (WCAG 2.2.2), иначе её останавливают` }
+      : { st: 'OK', text: `бесконечных идёт ${rLoops.length} — все тише обычного и останавливаются видимой кнопкой: ${[...new Set(rLoops.map((l) => `${l.target} ${l.name} (круг ${sec(l.iterMs)}, кнопка ${l.pause.el})`))].slice(0, 4).join(', ')}` };
+  }
+  /* появления */
+  if (!shifts) res.shifts = pending === null || pending === undefined || pending > 0 ? { st: 'WARN', text: 'не проверено: страница не ответила' } : { st: 'OK', text: `ждущих появления со сдвигом от ${CALM.shiftWarn} px нет` };
+  else {
+    const big = shifts.filter((x) => x.shift >= CALM.shiftWarn);
+    res.shifts = big.length
+      ? { st: 'WARN', text: `крупный сдвиг у ${big.length}: ${big.slice(0, 5).map((x) => `${x.el} ${x.shift} px`).join(', ')} — при этой настройке появление идёт со сдвигом до ${CALM.shift} px за 0,6 с (проверка считает крупным от ${CALM.shiftWarn} px)` }
+      : { st: 'OK', text: `крупных сдвигов нет (помечено до прокрутки ${pending || 0}, приехало на место с ${CALM.shiftWarn} px и больше — 0)` };
+  }
+  /* мышь */
+  if (mouse) res.mouse = mouse.n ? { st: 'WARN', text: `за мышью двигается ${mouse.n}: ${mouse.list.join(', ')} — слежение за мышью и параллакс от мыши при этой настройке выключают (переходы наведения остаются)` } : { st: 'OK', text: 'за мышью ничего не ходит (события движения в четырёх точках первого экрана)' };
+  /* контент */
+  if (!rText || !nText) res.content = { st: 'WARN', text: 'не проверено: текст страницы не прочитан в одной из вкладок' };
+  else {
+    const nk = new Set(nText.hidden.map((h) => h.key)); const nt = new Set(nText.hidden.map((h) => h.text));
+    const gone = rText.hidden.filter((h) => !nk.has(h.key) && !nt.has(h.text));
+    /* Автосмена слайдов — не потеря. Вкладки меряются в разные моменты, а при настройке смена идёт вдвое реже (так
+       велит правило), поэтому активны разные слайды: слайд, видимый в обычной вкладке, в тихой спрятан. От потери
+       это отличает «обратный» блок: спрятан в обычной вкладке и виден в тихой, лежит в соседнем узле того же
+       контейнера (пути расходятся на одном уровне, у разошедшихся узлов один тег, контейнер — не body и не main),
+       причём «свой» узел в тихой вкладке спрятан целиком, а узел обратного блока целиком спрятан в обычной.
+       Такое — WARN «проверить глазами»; всё, что под это не подошло, считается потерей по прежним порогам. */
+    const rk = new Set(rText.hidden.map((h) => h.key)); const rShown = rText.shown || []; const nShown = nText.shown || [];
+    const back = rShown.length ? nText.hidden.filter((h) => !rk.has(h.key) && rShown.includes(h.key)).map((h) => h.key.split('>')) : [];
+    const under = (keys, root) => keys.some((k) => k === root || k.startsWith(root + '>'));
+    const swapped = (h) => {
+      const a = h.key.split('>');
+      return back.some((b) => {
+        let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+        if (i < 1 || i >= a.length || i >= b.length) return false;
+        if (a[i].split(':')[0] !== b[i].split(':')[0] || /^MAIN:/.test(a[i - 1])) return false;
+        return !under(rShown, a.slice(0, i + 1).join('>')) && !under(nShown, b.slice(0, i + 1).join('>'));
+      });
+    };
+    const rot = gone.filter(swapped); const lost = gone.filter((h) => !rot.includes(h)); res.lost = lost; res.rotated = rot;
+    const rotNote = rot.length ? ` · ещё ${rot.length} — смена слайдов, не потеря (${rot.slice(0, 2).map((h) => `${h.el} «${h.text}»`).join(', ')})` : '';
+    const lostChars = lost.reduce((a, h) => a + h.chars, 0);
+    const drop = nText.chars - rText.chars;
+    const list = lost.slice(0, 4).map((h) => `${h.el} «${h.text}»`).join(', ');
+    if (nText.chars > 0 && rText.chars < nText.chars * 0.5) res.content = { st: 'FAIL', text: `страница почти пустая: видно ${rText.chars} знаков текста против ${nText.chars} в обычном режиме${lost.length ? ` — не проявилось ${lost.length}: ${list}` : ' — текст не появился вовсе (печать, счётчики, подгрузка по анимации)'}` };
+    else if (lost.length >= CALM.lostFail || (lostChars >= 20 && lostChars >= nText.chars * CALM.lostShare)) res.content = { st: 'FAIL', text: `контент не проявился: ${lost.length} блоков текста (${lostChars} знаков) видны в обычном режиме и спрятаны при «меньше движения» после прокрутки всей страницы — ${list}${rotNote}` };
+    else if (lost.length) res.content = { st: 'WARN', text: `спрятано ${lost.length} (${lostChars} знаков), в обычном режиме видно: ${list} — проверить глазами (слайд автосмены или настоящая потеря)${rotNote}` };
+    else if (rot.length) res.content = { st: 'WARN', text: `похоже на автосмену слайдов: ${rot.length} блоков текста видны в обычном режиме и спрятаны при «меньше движения», а соседний слайд того же блока — наоборот (${rot.slice(0, 3).map((h) => `${h.el} «${h.text}»`).join(', ')}) — вкладки застали разные слайды, потерей не считается; проверить глазами, что слайды листаются и пауза работает` };
+    else if (drop >= 40 && rText.chars < nText.chars * 0.8) res.content = { st: 'WARN', text: `текста меньше: ${rText.chars} знаков против ${nText.chars} в обычном режиме — что не дописалось (печать текста обязана давать готовый текст сразу)` };
+    else res.content = { st: 'OK', text: `после прокрутки всей страницы виден весь текст обычного режима: ${rText.chars} знаков (обычный ${nText.chars}), спрятанного сверх обычного нет` };
+  }
+  return res;
 }
 
 /* вкладка «меньше движения» для --motion и --video: у Chrome и Edge — эмуляция на новой вкладке; у Firefox
@@ -3016,6 +3326,23 @@ async function reducedTab() {
   if (!gecko) { const p2 = await preparePage(browser, cur, prep); if (jsOff()) await disableJs(p2); return { page: p2, where: 'отдельная вкладка', close: () => p2.close().catch(() => {}) }; }
   const b2 = await launch({ browser: 'firefox', scheme: opt.scheme === 'dark' ? 'dark' : 'light', reducedMotion: true, mobile: !!cur.isMobile });
   try { const p2 = await preparePage(b2, cur, prep); return { page: p2, where: 'отдельный Firefox', close: () => b2.close().catch(() => {}) }; }
+  catch (e) { await b2.close().catch(() => {}); throw e; }
+}
+
+/* свежая вкладка обычного режима — пара к reducedTab. У Chrome и Edge режим задаётся явно (no-preference): на машине,
+   где анимации выключены в самой Windows, вкладка без эмуляции тоже была бы «меньше движения», и сравнивать было бы
+   не с чем. У Firefox режим — настройка запуска: основной браузер годится, если прогон идёт без --reduced-motion. */
+async function normalTab() {
+  const prep = { scheme: opt.scheme || 'light', reducedMotion: false };
+  if (!gecko) {
+    const p = await preparePage(browser, cur, prep);
+    await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: opt.scheme || 'light' }, { name: 'prefers-reduced-motion', value: 'no-preference' }]).catch(() => {});
+    if (jsOff()) await disableJs(p);
+    return { page: p, close: () => p.close().catch(() => {}) };
+  }
+  if (!opt['reduced-motion']) { const p = await preparePage(browser, cur, prep); return { page: p, close: () => p.close().catch(() => {}) }; }
+  const b2 = await launch({ browser: 'firefox', scheme: opt.scheme === 'dark' ? 'dark' : 'light', reducedMotion: false, mobile: !!cur.isMobile });
+  try { const p = await preparePage(b2, cur, prep); return { page: p, close: () => b2.close().catch(() => {}) }; }
   catch (e) { await b2.close().catch(() => {}); throw e; }
 }
 
@@ -3054,7 +3381,10 @@ async function videoStep() {
       await gotoRetry(p2, url); await sleep(1500);
       const r = await p2.evaluate(async () => { const out = []; for (const v of document.querySelectorAll('video[autoplay]')) { const a = v.currentTime; await new Promise((res) => setTimeout(res, 1000)); out.push(v.currentTime - a > 0.2); } return out; });
       const still = r.filter(Boolean).length;
-      line(still ? 'WARN' : 'OK', `видео при «меньше движения» (${rt.where})`, still ? `${still} из ${r.length} автоплей-видео продолжают играть — показать постер или остановить` : 'автоплей остановлен');
+      /* правило «тише»: автоплей-видео при этой настройке стоит на паузе (постер) и запускается кнопкой */
+      const btn = await p2.evaluate(() => [...document.querySelectorAll('video[autoplay]')].map((v) => { if (v.controls) return true; const box = v.closest('figure, section, div') || v.parentElement; return !!(box && [...box.querySelectorAll('button, [role="button"]')].some((b) => /воспроизв|запуст|смотреть|играть|пауз|play|pause/i.test([b.getAttribute('aria-label'), b.title, b.textContent, typeof b.className === 'string' ? b.className : ''].join(' ')) && b.getBoundingClientRect().width >= 16)); })).catch(() => []);
+      const noBtn = btn.filter((x) => !x).length;
+      line(still ? 'WARN' : 'OK', `видео при «меньше движения» (${rt.where})`, still ? `${still} из ${r.length} автоплей-видео продолжают играть — поставить на паузу с постером и видимой кнопкой запуска` : `автоплей на паузе${btn.length ? (noBtn ? `; кнопки запуска рядом нет у ${noBtn} из ${btn.length} — фоновому видео она не нужна, содержательному — нужна (controls или своя кнопка)` : '; кнопка запуска есть') : ''}`);
     } finally { await rt.close(); }
   }
   line('OK', 'вес видео', `загружено ${Math.round(mediaBytes / 1024)} КБ медиа за время проверки (${cur.width}px)${page.rwBytesFrom === 'content-length' ? ', по content-length (без CDP — потоковое без длины не в счёт)' : ''}; бюджет первого экрана — ≤2.5 МБ на desktop, ≤1 МБ на телефоне`);
@@ -3623,12 +3953,39 @@ async function selftest() {
         ['OK', /^выбор #venue/, /список формы/], ['WARN', /^выбор #loose/, /ничего не изменилось/], ['OK', /^выбор #filter/, /^DOM/], ['OK', /^eval .* = 2026-10-10$/, /совпало/],
         ['FAIL', /^выбор #hall = «Банкетный зал»$/, /^вариант недоступен \(disabled\) — человек его не выберет; доступные: main, terrace$/], ['OK', /^выбор #hall = «Веранда»$/, /в поле «terrace» — список формы/]],
       not: [[null, /^ввод в/, /маска/], ['FAIL', /^ввод в #dts$/], ['OK', /^выбор #hall = «Банкетный зал»$/]] },
-    /* --edit: «выделить всё и стереть» — Cmd+A на macOS, Ctrl+A на остальных, с командой SelectAll и el.select() про запас;
-       раньше Control+A в безголовом Chrome на macOS не выделял, и у любого поля выходил FAIL «осталось …» (29.09) */
-    { name: 'edit', file: 'edit.html', code: 0, verdict: 'OK', args: ['--edit', '#phone', '--edit', '#name'],
-      want: [['OK', /^правка #phone: стирание Backspace$/, /стёрлось до «(\+7)?»/], ['OK', /^правка #phone: вставка$/, /→ «\+7 \(900\) 123-45-67»/], ['OK', /^правка #phone: выделить всё и стереть$/, /^осталось «(\+7)?»/],
-        ['OK', /^правка #name: выделить всё и стереть$/, /^осталось «»/]],
-      not: [['FAIL', /^правка/]] },
+    /* --edit: «выделить всё и стереть» — Cmd+A на macOS, Ctrl+A на остальных, с командой SelectAll; раньше Control+A в
+       безголовом Chrome на macOS не выделял, и у любого поля выходил FAIL «осталось …» (29.09). На macOS сочетание может
+       не исполниться без вины страницы — тогда запасной el.select() и WARN (итог WARN), поэтому статус последней строки
+       и итог на darwin не закреплены; на Windows и Linux — строго OK */
+    process.platform === 'darwin'
+      ? { name: 'edit', file: 'edit.html', code: 0, args: ['--edit', '#phone', '--edit', '#name'],
+        want: [['OK', /^правка #phone: стирание Backspace$/, /стёрлось до «(\+7)?»/], ['OK', /^правка #phone: вставка$/, /→ «\+7 \(900\) 123-45-67»/], [null, /^правка #phone: выделить всё и стереть$/, /^осталось «(\+7)?»/],
+          [null, /^правка #name: выделить всё и стереть$/, /^осталось «»/]],
+        not: [['FAIL', /^правка/]] }
+      : { name: 'edit', file: 'edit.html', code: 0, verdict: 'OK', args: ['--edit', '#phone', '--edit', '#name'],
+        want: [['OK', /^правка #phone: стирание Backspace$/, /стёрлось до «(\+7)?»/], ['OK', /^правка #phone: вставка$/, /→ «\+7 \(900\) 123-45-67»/], ['OK', /^правка #phone: выделить всё и стереть$/, /^осталось «(\+7)?»$/],
+          ['OK', /^правка #name: выделить всё и стереть$/, /^осталось «»$/]],
+        not: [['FAIL', /^правка/], [null, /^правка/, /запасным путём/]] },
+    /* страница глушит сочетания с Ctrl/Cmd в поле (preventDefault в keydown): человек не может выделить всё — FAIL на
+       любой системе, запасной el.select() его не закрывает (06.10: на ветке с macOS он срабатывал везде и давал OK);
+       вставка после неудачной очистки — WARN, как на master */
+    { name: 'edit-blocked', file: 'edit-blocked.html', code: 1, verdict: 'FAIL', args: ['--edit', '#name'],
+      want: [['FAIL', /^правка #name: выделить всё и стереть$/, /^осталось «.{2,}» — сочетание (Ctrl|Cmd)\+A поле не выделило: страница отменяет нажатие/], ['WARN', /^правка #name: вставка$/, /номер искажён/]],
+      not: [['OK', /^правка #name: выделить всё и стереть$/], [null, /^правка/, /запасным путём/]] },
+    /* то же поле на «macOS» (RW_EDIT_PLATFORM=darwin: Meta+A, запасной путь разрешён): страница нажатие отменила —
+       запасной путь не берётся, FAIL остаётся */
+    { name: 'edit-blocked-mac', file: 'edit-blocked.html', code: 1, verdict: 'FAIL', env: { RW_EDIT_PLATFORM: 'darwin' }, args: ['--edit', '#name'],
+      want: [['FAIL', /^правка #name: выделить всё и стереть$/, /сочетание Cmd\+A поле не выделило: страница отменяет нажатие/]],
+      not: [['OK', /^правка #name: выделить всё и стереть$/], [null, /^правка/, /запасным путём/]] },
+    /* страница отменяет selectstart, нажатие не трогает: сочетание не выделяет, defaultPrevented — false. На Windows и Linux
+       это находка (FAIL): запасного пути нет. На macOS так же выглядит сочетание, не исполненное самим браузером, —
+       там запасной el.select() и WARN «сочетание не проверено», а не тихий OK */
+    process.platform === 'darwin'
+      ? { name: 'edit-noselect', file: 'edit-noselect.html', code: 0, verdict: 'WARN', args: ['--edit', '#name'], want: [['WARN', /^правка #name: выделить всё и стереть$/, /выделено запасным путём.*сочетание не проверено/]], not: [['OK', /^правка #name: выделить всё и стереть$/]] }
+      : { name: 'edit-noselect', file: 'edit-noselect.html', code: 1, verdict: 'FAIL', args: ['--edit', '#name'], want: [['FAIL', /^правка #name: выделить всё и стереть$/, /^осталось «.{2,}» — сочетание Ctrl\+A поле не выделило$/]], not: [['OK', /^правка #name: выделить всё и стереть$/], [null, /^правка/, /запасным путём/]] },
+    { name: 'edit-noselect-mac', file: 'edit-noselect.html', code: 0, verdict: 'WARN', env: { RW_EDIT_PLATFORM: 'darwin' }, args: ['--edit', '#name'],
+      want: [['WARN', /^правка #name: выделить всё и стереть$/, /^осталось «» — выделено запасным путём \(el\.select\(\)\): сочетание Cmd\+A в этом браузере не исполнилось, страница его не отменяла — само сочетание не проверено/]],
+      not: [['OK', /^правка #name: выделить всё и стереть$/], ['FAIL', /^правка/]] },
     { name: 'hover', file: 'hover.html', code: 0, args: ['--hover', '.nav__link', '--hover', '.clip', '--hover', '.ok', '--hover-all'],
       want: [['OK', /^наведение \.nav__link$/, /backgroundSize: 0% 2px → 100% 2px/], ['OK', /^наведение \.clip$/, /clipPath/], ['OK', /^наведение \.ok$/, /color/], ['WARN', /^наведение: мёртвый селектор, элемента нет в DOM: 1$/, /\.card:hover \.card__tip — элемента \.card \.card__tip нет в DOM/], ['WARN', /^наведение перебито другим правилом: 1$/, /\.btn:hover/],
         ['WARN', /^наведение: цели правила нет у наведённых элементов: 1$/, /\.box:hover \.box__tip — у этого \.box нет \.box__tip \(в DOM таких 1 — у других\)/]],
@@ -3862,6 +4219,70 @@ async function selftest() {
         ['WARN', /^clip-path сменилось скачком, перехода не было: img\.ph\.fw-img$/, /^transition-property: transform — clip-path в нём нет/]],
       not: [['WARN', /сменилось скачком/, /wa-img/], ['WARN', /^(opacity|transform|translate|scale|rotate|filter) сменилось скачком/]],
       checks: [(j) => { const m = motionOf(j); return m && foundOf(m) === 'div.card.cb.on,div.wa.on,img.ph.fw-img' && m.extra === 3 ? null : `в JSON motion ${JSON.stringify(m && { found: foundOf(m), extra: m.extra, tracked: m.tracked })} — ждали wa, cb и fw-img, без отметки 3`; }] },
+    /* «меньше движения — тише, а не выключено» (решение владельца 06.10.2026; образец — «Зелёный уголок», 672e720).
+       До 06.10 любая бесконечная анимация при reduce давала WARN «не останавливаются», а сайт, послушно выключивший
+       всё, у людей с выключенными анимациями Windows выглядел мёртвым. Теперь --motion открывает страницу в двух
+       свежих вкладках (с настройкой и без), прокручивает обе и сверяет четыре вещи.
+       rm-calm: строка вдвое медленнее (40 с против 20 с), кнопка «Пауза» видна и останавливает её, появления 24 px — OK */
+    { name: 'rm-calm', file: 'rm-calm.html', code: 0, verdict: 'OK', args: ['--motion'],
+      want: [['OK', /^анимации при «меньше движения»/, /^бесконечных идёт 1 — все тише обычного и останавливаются видимой кнопкой: div\.mq__track mq \(круг 40 с, кнопка button\.mq__pause\)/],
+        ['OK', /^появления при «меньше движения»$/], ['OK', /^мышь при «меньше движения»$/, /ничего не ходит/], ['OK', /^контент при «меньше движения»$/, /виден весь текст обычного режима/]],
+      not: [['WARN', /меньше движения/], ['FAIL', /меньше движения/]],
+      checks: [(j) => { const c = j && j.motion && j.motion.calm; const l = c && c.loops && c.loops[0]; return l && l.slowed === true && l.pause && l.pause.stops === true && l.iterMs === 40000 && c.loopsNormal[0].iterMs === 20000 ? null : `в JSON motion.calm ${JSON.stringify(l)} — ждали slowed, pause.stops и круг 40000 против 20000`; }] },
+    /* rm-loud: первая строка на полной скорости и без своей кнопки; вторая замедлена, но её кнопка ничего не делает;
+       появления со сдвигом 100 px; кружок ходит за мышью — три WARN; текст виден — контент OK */
+    { name: 'rm-loud', file: 'rm-loud.html', code: 0, verdict: 'WARN', warns: 3, args: ['--motion'],
+      want: [['WARN', /^анимации при «меньше движения»/, /^бесконечных идёт 2, не по правилу 2: /],
+        ['WARN', /^анимации при «меньше движения»/, /div\.mq__track mq: не замедлена: круг 20 с, в обычном режиме 20 с — нужно вдвое медленнее; видимой кнопки паузы у петли нет \(кнопки паузы на странице — 1, эту петлю ни одна не останавливает\)/],
+        ['WARN', /^анимации при «меньше движения»/, /div\.mq__track mq2: кнопка button\.mq__pause рядом петлю не останавливает/],
+        ['WARN', /^появления при «меньше движения»$/, /^крупный сдвиг у 8: .*100 px.*до 24 px за 0,6 с/], ['WARN', /^мышь при «меньше движения»$/, /^за мышью двигается 1: div#follow\.follow/],
+        ['OK', /^контент при «меньше движения»$/, /виден весь текст обычного режима/]],
+      not: [['OK', /^анимации при «меньше движения»/], ['FAIL', /меньше движения/]] },
+    /* rm-off: при настройке всё выключено, контент виден сразу — по-прежнему допустимо: OK, петель нет */
+    { name: 'rm-off', file: 'rm-off.html', code: 0, verdict: 'OK', args: ['--motion'],
+      want: [['OK', /^анимации при «меньше движения»/, /^бесконечных не идёт/], ['OK', /^появления при «меньше движения»$/], ['OK', /^контент при «меньше движения»$/, /виден весь текст обычного режима/]],
+      not: [['WARN', /меньше движения/], ['FAIL', /меньше движения/]] },
+    /* rm-hidden: стиль спрятал блоки, а скрипт появлений при настройке вышел раньше — человек видит пустые разделы: FAIL */
+    { name: 'rm-hidden', file: 'rm-hidden.html', code: 1, verdict: 'FAIL', args: ['--motion'],
+      want: [['FAIL', /^контент при «меньше движения»$/, /^страница почти пустая: видно \d+ знаков текста против \d+ в обычном режиме — не проявилось 8: h2 «Раздел 1/]],
+      not: [['OK', /^контент при «меньше движения»$/]],
+      checks: [(j) => { const c = j && j.motion && j.motion.calm; return c && c.lost && c.lost.length === 8 && c.text.chars < c.textNormal.chars * 0.5 ? null : `в JSON motion.calm.lost ${c && c.lost && c.lost.length}, знаков ${c && c.text && c.text.chars} против ${c && c.textNormal && c.textNormal.chars} — ждали 8 и меньше половины`; }] },
+    /* rm-part: не проявились только четыре заголовка (остальной текст виден) — FAIL «контент не проявился: 4 блоков»;
+       с ?one=1 — один заголовок: WARN «проверить глазами», а не FAIL (слайд автосмены выглядит так же) */
+    { name: 'rm-part', file: 'rm-part.html', code: 1, verdict: 'FAIL', args: ['--motion'],
+      want: [['FAIL', /^контент при «меньше движения»$/, /^контент не проявился: 4 блоков текста \(116 знаков\) видны в обычном режиме и спрятаны при «меньше движения»/]] },
+    { name: 'rm-part-one', url: `${U('rm-part.html')}?one=1`, code: 0, verdict: 'WARN', args: ['--motion'],
+      want: [['WARN', /^контент при «меньше движения»$/, /^спрятано 1 \(29 знаков\), в обычном режиме видно: h2 «Раздел 1.*проверить глазами/]], not: [['FAIL', /меньше движения/]] },
+    /* rm-self: вторая строка встала, пока проверялась кнопка первой (кнопка первую не останавливает). Раньше такая
+       петля получала «останавливается кнопкой» и OK без проверки; теперь — WARN «остановилась сама … не проверено» */
+    { name: 'rm-self', file: 'rm-self.html', code: 0, verdict: 'WARN', args: ['--motion'],
+      want: [['WARN', /^анимации при «меньше движения»/, /^бесконечных идёт 2, не по правилу 2: .*div\.mq__track2 mq2: петля остановилась сама до проверки кнопки/]],
+      not: [['OK', /^анимации при «меньше движения»/], ['WARN', /^анимации при «меньше движения»/, /тише и с паузой: \d/]] },
+    /* rm-rotate: автосмена слайдов по правилу (в обычном режиме раз в 2 с, при настройке раз в 4 с, кнопка паузы).
+       В слайде три блока текста (h3, p, a) — до правки это давало FAIL «контент не проявился: 3 блоков»: вкладки
+       заставали разные слайды. ?fix=1 — слайды стоят (обычный режим на третьем, тихий на первом): расхождение
+       гарантировано, ждём WARN «похоже на автосмену». Без параметра — настоящие таймеры: какой слайд застанет каждая
+       вкладка, заранее не известно (OK или WARN), но FAIL быть не должно. ?fix=1&lose=1 — рядом с автосменой три
+       заголовка разделов не проявились: это потеря, FAIL остаётся, автосмена её не прикрывает. */
+    { name: 'rm-rotate', url: `${U('rm-rotate.html')}?fix=1`, code: 0, verdict: 'WARN', warns: 1, args: ['--motion'],
+      want: [['WARN', /^контент при «меньше движения»$/, /^похоже на автосмену слайдов: 3 блоков текста .*h3 «Детские комнаты».*потерей не считается/]], not: [['FAIL', /меньше движения/]],
+      checks: [(j) => { const c = j && j.motion && j.motion.calm; return c && c.lost.length === 0 && c.rotated.length === 3 ? null : `в JSON motion.calm lost ${c && c.lost && c.lost.length}, rotated ${c && c.rotated && c.rotated.length} — ждали 0 и 3`; }] },
+    { name: 'rm-rotate-live', file: 'rm-rotate.html', code: 0, args: ['--motion'],
+      want: [[null, /^контент при «меньше движения»$/]], not: [['FAIL', /меньше движения/]],
+      checks: [(j) => { const c = j && j.motion && j.motion.calm; return c && c.lost.length === 0 ? null : `в JSON motion.calm.lost ${c && c.lost && c.lost.length} — ждали 0`; }] },
+    { name: 'rm-rotate-lose', url: `${U('rm-rotate.html')}?fix=1&lose=1`, code: 1, verdict: 'FAIL', args: ['--motion'],
+      want: [['FAIL', /^контент при «меньше движения»$/, /^контент не проявился: 3 блоков текста \(\d+ знаков\) .*h2 «Раздел 1.* · ещё 3 — смена слайдов, не потеря/]],
+      checks: [(j) => { const c = j && j.motion && j.motion.calm; return c && c.lost.length === 3 && c.rotated.length === 3 ? null : `в JSON motion.calm lost ${c && c.lost && c.lost.length}, rotated ${c && c.rotated && c.rotated.length} — ждали 3 и 3`; }] },
+    /* то же в Firefox — браузере владельца: «меньше движения» у него настройка запуска, вкладка — отдельный Firefox */
+    ...(findBrowser('firefox') ? [
+      { name: 'rm-rotate-ff', url: `${U('rm-rotate.html')}?fix=1`, code: 0, verdict: 'WARN', args: ['--browser', 'firefox', '--motion'],
+        want: [['WARN', /^контент при «меньше движения»$/, /^похоже на автосмену слайдов: 3 блоков текста/]], not: [['FAIL', /меньше движения/]] },
+      { name: 'rm-calm-ff', file: 'rm-calm.html', code: 0, verdict: 'OK', args: ['--browser', 'firefox', '--motion'],
+        want: [['OK', /^анимации при «меньше движения» \(отдельный Firefox\)$/, /все тише обычного и останавливаются видимой кнопкой: div\.mq__track mq \(круг 40 с, кнопка button\.mq__pause\)/], ['OK', /^контент при «меньше движения»$/, /виден весь текст обычного режима/]],
+        not: [['WARN', /меньше движения/], ['FAIL', /меньше движения/]] },
+      { name: 'rm-hidden-ff', file: 'rm-hidden.html', code: 1, verdict: 'FAIL', args: ['--browser', 'firefox', '--motion'],
+        want: [['FAIL', /^контент при «меньше движения»$/, /^страница почти пустая: .*не проявилось 8/]] },
+    ] : []),
     /* с «меньше движения» скачок и есть правильное поведение: ни одного WARN, в строке прокрутки — пометка */
     { name: 'jump-reduced', file: 'jump.html', code: 0, verdict: 'OK', args: ['--reduced-motion', '--scroll'],
       want: [['OK', /^прокрутка/, /переходы появления не сверялись: «меньше движения» \(reduce\)/]], not: [['WARN', /сменилось скачком/]],

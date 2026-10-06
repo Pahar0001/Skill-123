@@ -1326,7 +1326,7 @@ async function selftest() {
     /* пилюли с рамкой цвета текста на сером градиенте: рамка, outline, кольцо box-shadow и рамка обёртки с тем же
        текстом — не фон (раньше тёмные полосы рамки шли в худшие 10 % — «1:1»); контроль #333 на #7E8587 — FAIL */
     { page: 'pill-border.html', viewport: 'desktop', expect: [
-      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 6 из 6', '1 ниже нормы', '«Слабая»', 'дают 3.36:1'], not: ['Новинка', 'Сезон', 'Хит', 'Постное', 'Острое'], why: 'рамка самого элемента и обёртки с тем же текстом прячется на время снимка фона' },
+      { line: /^контраст по снимку фона/, status: 'FAIL', has: ['измерено 6 из 6', '1 ниже нормы', '«Слабая»'], num: [{ re: /худшие 10% фона дают (\d+(?:\.\d+)?):1/, min: 3.2, max: 3.5, what: 'контраст «Слабой» по худшим 10 % фона' }, { re: /при медиане (\d+(?:\.\d+)?):1/, min: 3.2, max: 3.5, what: 'контраст «Слабой» по медиане' }], not: ['Новинка', 'Сезон', 'Хит', 'Постное', 'Острое'], why: 'рамка самого элемента и обёртки с тем же текстом прячется на время снимка фона; #333 на #7E8587 — 3.36:1 расчётом, сглаживание шрифта на Windows даёт 3.33, на macOS 3.36 — сверяется число в допуске, а не строка; рамка в снимке даёт «1:1»' },
     ] },
     /* окно cookie поверх страницы: по умолчанию закрыто до замеров (и на вкладке обхода Tab — кнопка нажата мышью,
        обход с начала страницы); с --keep-consent — мерится вместе с окном */
@@ -1357,11 +1357,12 @@ async function selftest() {
     if (!j) { bad++; n++; console.log(`FAIL ${nm}: нет итога (код ${r.status}) — ${String(r.stderr || r.stdout || '').trim().slice(-300)}`); continue; }
     for (const e of c.expect) {
       n++;
-      /* absent — такой строки быть не должно; count — сколько строк с такой подписью */
+      /* absent — такой строки быть не должно; count — сколько строк с такой подписью; num — число из строки
+         (первая скобка re) в допуске [min, max]: пиксели сглаживания у систем разные, смысл — один */
       const all = j.lines.filter((l) => e.line.test(l.what));
       if (e.absent) { if (all.length) { bad++; console.log(`FAIL ${nm} ${c.viewport} ${e.line.source}: лишняя строка — ${`${all[0].what} — ${all[0].details || ''}`.slice(0, 300)}`); } else console.log(`OK   ${nm} ${c.viewport} ${e.line.source} — нет`); continue; }
       const ln = all[0]; const txt = ln ? `${ln.what} — ${ln.details || ''}` : '';
-      const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.count != null && all.length !== e.count ? [`строк ${all.length}, ждали ${e.count}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
+      const miss = !ln ? ['строки нет'] : [...(ln.status !== e.status ? [`статус ${ln.status}, ждали ${e.status}`] : []), ...(e.count != null && all.length !== e.count ? [`строк ${all.length}, ждали ${e.count}`] : []), ...(e.has || []).filter((s) => !txt.includes(s)).map((s) => `нет «${s}»`), ...(e.num || []).map((q) => { const m = txt.match(q.re); const v = m ? Number(m[1]) : NaN; return m && v >= q.min && v <= q.max ? null : `${q.what}: ${m ? v : 'числа нет'}, ждали от ${q.min} до ${q.max}`; }).filter(Boolean), ...(e.not || []).filter((s) => txt.includes(s)).map((s) => `лишнее «${s}»`)];
       if (miss.length) { bad++; console.log(`FAIL ${nm} ${c.viewport} ${e.line.source}: ${miss.join('; ')}${e.why ? ` (${e.why})` : ''}\n     ${txt.slice(0, 400)}`); }
       else console.log(`OK   ${nm} ${c.viewport} ${e.line.source} — ${ln.status}`);
     }

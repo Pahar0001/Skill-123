@@ -1,0 +1,7 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Поле, где страница глушит Ctrl+A</title><link rel="icon" href="data:,"></head>
+<body><main><h1>Заявка</h1><label for="name">Имя</label>
+<input id="name" type="text">
+<script>
+// страница глушит сочетания с Ctrl/Cmd в поле (частая ошибка самодельных масок): человек не может выделить всё
+document.getElementById('name').addEventListener('keydown', function (e) { if (e.ctrlKey || e.metaKey) e.preventDefault(); });
+</script></main></body></html>

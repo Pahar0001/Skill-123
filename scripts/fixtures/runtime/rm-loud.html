@@ -1,0 +1,32 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Меньше движения: всё как у всех</title><link rel="icon" href="data:,">
+<style>*{box-sizing:border-box}body{margin:0;font:18px/1.5 Arial,sans-serif;color:#222;background:#fff}
+.blk{min-height:70vh;padding:60px 8vw}h1,h2{margin:0 0 16px}
+.mq{overflow:hidden;white-space:nowrap;border-block:1px solid #ccc;padding:12px 0;position:relative}
+.mq__track{display:inline-block;animation:mq 20s linear infinite}
+.mq__track span{display:inline-block;padding:0 24px}
+@keyframes mq{to{transform:translateX(-50%)}}
+.mq__pause{position:absolute;right:8px;top:6px;min-width:44px;min-height:32px;font:inherit;background:#fff;border:1px solid #222;border-radius:99px;cursor:pointer}
+.js [data-rv]:not(.is-in){opacity:0;transform:translateY(100px)}
+[data-rv].is-in{transition:opacity 1s ease,transform 1s ease}
+.mq2 .mq__track{animation-name:mq2;animation-duration:16s}
+@keyframes mq2{to{transform:translateX(-50%)}}
+.follow{width:80px;height:80px;border-radius:50%;background:#c33;margin:20px 8vw}
+@media (prefers-reduced-motion: reduce){ .mq2 .mq__track{animation-duration:40s} }</style></head>
+<body><main><section class="blk"><h1>Меньше движения: всё как у всех</h1><p>Первый экран виден сразу, без ожидания анимаций.</p></section>
+<div class="mq" id="mq"><div class="mq__track"><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span><span>Замер бесплатно</span><span>Сборка за день</span><span>Гарантия два года</span></div></div>
+<div class="mq mq2"><div class="mq__track"><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span><span>Вторая строка</span><span>Кнопка есть, но не работает</span></div><button class="mq__pause" type="button" aria-label="Пауза">Пауза</button></div>
+<div class="follow" id="follow"></div>
+<section class="blk"><h2 data-rv>Раздел 1: что входит в работу</h2><p data-rv>Абзац номер 1. Показываем, как идёт работа: замер, эскиз, согласование, сборка и сдача. Текст должен быть виден человеку при любой настройке движения.</p></section>
+<section class="blk"><h2 data-rv>Раздел 2: что входит в работу</h2><p data-rv>Абзац номер 2. Показываем, как идёт работа: замер, эскиз, согласование, сборка и сдача. Текст должен быть виден человеку при любой настройке движения.</p></section>
+<section class="blk"><h2 data-rv>Раздел 3: что входит в работу</h2><p data-rv>Абзац номер 3. Показываем, как идёт работа: замер, эскиз, согласование, сборка и сдача. Текст должен быть виден человеку при любой настройке движения.</p></section>
+<section class="blk"><h2 data-rv>Раздел 4: что входит в работу</h2><p data-rv>Абзац номер 4. Показываем, как идёт работа: замер, эскиз, согласование, сборка и сдача. Текст должен быть виден человеку при любой настройке движения.</p></section>
+<script>
+document.documentElement.classList.add('js');
+(function(){ 
+  var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } }); }, { threshold: 0.01 });
+  document.querySelectorAll('[data-rv]').forEach(function(el){ io.observe(el); });
+})();
+</script><script>
+addEventListener('mousemove', function(e){ document.getElementById('follow').style.transform = 'translate(' + ((e.clientX / innerWidth - .5) * 40).toFixed(1) + 'px,' + ((e.clientY / innerHeight - .5) * 40).toFixed(1) + 'px)'; });
+</script>
+</main></body></html>

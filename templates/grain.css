@@ -69,5 +69,7 @@
   75%  {transform:translate(59px,229px)}
 }
 /* grain-keyframes:end */
+/* «Меньше движения — тише, а не выключено» (reference/motion.md): кипящее зерно — петля со скачками кадра по
+   всему экрану и без кнопки паузы, такая при этой настройке стоит; само зерно остаётся — неподвижное. */
 @media (prefers-reduced-motion: reduce){ .grain-overlay::before{animation:none} }
 @media print{ .grain-overlay{display:none!important} }

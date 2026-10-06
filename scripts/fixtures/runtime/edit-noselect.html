@@ -1,0 +1,8 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Поле, где выделение отменено без отмены нажатия</title><link rel="icon" href="data:,"></head>
+<body><main><h1>Заявка</h1><label for="name">Имя</label>
+<input id="name" type="text">
+<script>
+// страница отменяет начало выделения (selectstart), нажатие клавиш не трогает: сочетание «выделить всё» не выделяет,
+// а defaultPrevented у keydown — false. Так же выглядит безголовый Chrome на macOS, где сочетание не исполняется само.
+document.getElementById('name').addEventListener('selectstart', function (e) { e.preventDefault(); });
+</script></main></body></html>

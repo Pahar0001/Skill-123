@@ -1,0 +1,37 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Меньше движения: автосмена слайдов по правилу</title><link rel="icon" href="data:,">
+<style>*{box-sizing:border-box}body{margin:0;font:18px/1.5 Arial,sans-serif;color:#222;background:#fff}
+.blk{min-height:70vh;padding:60px 8vw}h1,h2,h3{margin:0 0 16px}
+.car{position:relative;height:260px;margin:0 8vw;border:1px solid #ccc}
+.sl{position:absolute;inset:0;padding:24px;opacity:0;visibility:hidden;transition:opacity .4s ease}
+.sl.is-active{opacity:1;visibility:visible}
+.car__pause{position:absolute;right:8px;bottom:8px;min-width:88px;min-height:36px;font:inherit;background:#fff;border:1px solid #222;border-radius:99px}
+.js [data-rv]:not(.is-in){opacity:0;transform:translateY(24px)}
+[data-rv].is-in{transition:opacity .6s ease,transform .6s ease}
+</style></head>
+<body><main><section class="blk"><h1>Автосмена: всё по правилу</h1><p>Слайды сменяются сами: в обычном режиме раз в две секунды, при «меньше движения» — раз в четыре, кнопка паузы есть.</p></section>
+<div class="car" id="car">
+<div class="sl"><h3>Кухни на заказ</h3><p>Замер бесплатно, эскиз за два дня, сборка за один день.</p><a href="#k">Смотреть кухни</a></div>
+<div class="sl"><h3>Шкафы и гардеробные</h3><p>Встроим в нишу любой глубины, фасады на выбор из сорока.</p><a href="#s">Смотреть шкафы</a></div>
+<div class="sl"><h3>Детские комнаты</h3><p>Безопасные кромки и крепления, гарантия два года на всё.</p><a href="#d">Смотреть детские</a></div>
+<div class="sl"><h3>Прихожие и обувницы</h3><p>Продумаем хранение под вашу семью, покажем на рисунке.</p><a href="#p">Смотреть прихожие</a></div>
+<button class="car__pause" type="button" aria-label="Остановить автосмену">Пауза</button></div>
+<section class="blk"><h2 data-rv>Раздел 1: как идёт работа</h2><p>Замер, эскиз, согласование, сборка и сдача. Текст виден человеку при любой настройке движения.</p></section>
+<section class="blk"><h2 data-rv>Раздел 2: сроки и гарантии</h2><p>Замер, эскиз, согласование, сборка и сдача. Текст виден человеку при любой настройке движения.</p></section>
+<section class="blk"><h2 data-rv>Раздел 3: контакты</h2><p>Замер, эскиз, согласование, сборка и сдача. Текст виден человеку при любой настройке движения.</p></section>
+<script>
+document.documentElement.classList.add('js');
+(function(){
+  var calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* ?fix=1 — слайды стоят: обычный режим на третьем («Детские комнаты»), «меньше движения» на первом — вкладки
+     проверки гарантированно застают разные слайды. Без параметра — настоящая автосмена: 2 с и 4 с. */
+  var fix = /fix=1/.test(location.search), lose = /lose=1/.test(location.search);
+  var sl = [].slice.call(document.querySelectorAll('.sl')), k = fix && !calm ? 2 : 0, on = true;
+  sl[k].classList.add('is-active');
+  if (!fix) setInterval(function(){ if (!on) return; sl[k].classList.remove('is-active'); k = (k + 1) % sl.length; sl[k].classList.add('is-active'); }, calm ? 4000 : 2000);
+  var b = document.querySelector('.car__pause');
+  b.addEventListener('click', function(){ on = !on; b.textContent = on ? 'Пауза' : 'Дальше'; });
+  /* ?lose=1 — при «меньше движения» скрипт появлений вышел раньше: три заголовка разделов остались спрятанными */
+  var io = new IntersectionObserver(function(es){ es.forEach(function(e){ if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } }); }, { threshold: 0.01 });
+  document.querySelectorAll('[data-rv]').forEach(function(el){ if (calm && lose) return; io.observe(el); });
+})();
+</script></main></body></html>

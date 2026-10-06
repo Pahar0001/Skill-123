@@ -86,7 +86,9 @@
  *          страница: кириллица (66 букв с Ёё), знаки ₽№«»„“—–… и --need; с --text — каждый знак надписи.
  *          Не прошло по правилу — ничего не записывается. Итог: файлы с размерами, строки подключения (пути
  *          от корня сайта: --root или найденный выше --out каталог с index.html, package.json или .git; не
- *          нашёлся — путь от --out с пометкой) и команда проверки отрисовкой. Сеть — только fonts.googleapis.com
+ *          нашёлся — путь от --out с пометкой; домашняя папка, временная папка системы, папки выше них и корень
+ *          диска корнем сайта не считаются, даже если там лежит package.json, — тогда --root) и команда проверки
+ *          отрисовкой. Сеть — только fonts.googleapis.com
  *          и fonts.gstatic.com.
  *          «источник:Семейство» (или --source) — из источника реестра с files.kind «css» (Fontshare): по файлу
  *          woff2 на начертание, как отдал источник, — без подмножеств и смены формата (license.noModify; у ITF
@@ -129,6 +131,7 @@
  *                      надпись» с unicode-range знаков надписи: полному разделу не мешает.
  *   --out <путь>       get: папка сайта; файлы — в <папка>/fonts/. measure: файл протокола (.json). sheet: файл листа (.png).
  *   --root <папка>     get: корень сайта — строки подключения печатаются путями от него («/assets/fonts/…»).
+ *                      Нужен, когда корень не найден сам или сайт лежит прямо в домашней папке.
  *   --selector <css>   measure: какой элемент страницы-образца мерить, по умолчанию h1 (первый видимый).
  *   --weight <вес>     measure: вес файла или семейства (по умолчанию 400; у адреса — вес элемента). decide: вес
  *                      выбора, по умолчанию — как у кандидата в match.json.
@@ -854,15 +857,48 @@ function droppedStyles(blocks, spec, italic) {
   return out;
 }
 
-/** Корень сайта для путей подключения: --root, иначе ближайшая папка от --out вверх (до 6 уровней) с index.html, package.json или .git. */
-export function siteRoot(out, rootOpt = null) {
+/* Путь в одном написании для сравнения: настоящий регистр и длинные имена (os.tmpdir() на Windows отдаёт
+   короткое «C:\Users\C225~1\…» при кириллице в имени профиля), у несуществующего хвоста — как есть. */
+function canonPath(p) {
+  let d = path.resolve(p); const tail = [];
+  for (;;) {
+    try { d = fs.realpathSync.native(d); break; } catch { const up = path.dirname(d); if (up === d) break; tail.unshift(path.basename(d)); d = up; }
+  }
+  const full = tail.length ? path.join(d, ...tail) : d;
+  return process.platform === 'win32' ? full.toLowerCase() : full;
+}
+/* Папки, которые корнем сайта не бывают: домашняя, временная папка системы и всё, что выше них, корень диска.
+   В домашней папке часто лежит случайный package.json или .git (заметки, настройки) — сайт в ней не живёт. */
+function rootStops() { return [{ dir: os.homedir(), name: 'домашняя папка' }, { dir: os.tmpdir(), name: 'временная папка системы' }]; }
+/** Корень сайта для путей подключения: --root, иначе ближайшая папка от --out вверх (до 6 уровней) с index.html,
+ *  package.json или .git. Подъём останавливается перед домашней папкой, временной папкой системы, их предками и
+ *  корнем диска: метка там — не признак сайта. Возвращает { root, how } или { root: null, skipped } — skipped
+ *  называет метку, которую не взяли (для сообщения «задайте --root»). opts.stops — границы (для самопроверки). */
+export function siteRoot(out, rootOpt = null, opts = {}) {
   if (rootOpt) return { root: path.resolve(rootOpt), how: null };
+  const stops = (opts.stops || rootStops()).map((x) => ({ name: x.name, c: canonPath(x.dir) }));
+  const sep = path.sep;
+  const stopAt = (d) => {
+    const c = canonPath(d);
+    if (path.dirname(d) === d) return 'корень диска';
+    const hit = stops.find((x) => x.c === c || x.c.startsWith(c.endsWith(sep) ? c : c + sep));
+    return hit ? (hit.c === c ? hit.name : `папка выше, чем ${hit.name}`) : null;
+  };
   let d = path.resolve(out);
   for (let i = 0; i <= 6; i++) {
     const mark = ['index.html', 'package.json', '.git'].find((n) => fs.existsSync(path.join(d, n)));
+    const stop = stopAt(d);
+    if (stop) return { root: null, skipped: mark ? `${path.join(d, mark)} есть, но ${d} — ${stop}, корнем сайта не считаю` : null };
     if (mark) return { root: d, how: `найден по ${mark}` };
     const up = path.dirname(d); if (up === d) break; d = up;
   }
+  return { root: null, skipped: null };
+}
+
+/** Ближайшая папка с .git от dir вверх (до 12 уровней) или null. */
+function gitRootOf(dir) {
+  let d = path.resolve(dir);
+  for (let i = 0; i < 12; i++) { if (fs.existsSync(path.join(d, '.git'))) return d; const up = path.dirname(d); if (up === d) break; d = up; }
   return null;
 }
 
@@ -1030,10 +1066,10 @@ async function cmdGet() {
   const pre = files.find((f) => f.subset === 'cyrillic' && f.style === 'normal') || files.find((f) => f.style === 'normal') || files[0];
   /* пути подключения — от корня сайта (--root или найденного выше --out), иначе от --out с пометкой */
   const root = siteRoot(out, opt.root !== undefined ? String(opt.root) : null);
-  const inRoot = root && !path.relative(root.root, dir).startsWith('..') && !path.isAbsolute(path.relative(root.root, dir));
-  if (root && !inRoot) warn(`--root ${root.root} не содержит папку шрифтов ${dir} — пути печатаю от --out`);
+  const inRoot = !!root.root && !path.relative(root.root, dir).startsWith('..') && !path.isAbsolute(path.relative(root.root, dir));
+  if (root.root && !inRoot) warn(`--root ${root.root} не содержит папку шрифтов ${dir} — пути печатаю от --out`);
   const href = (p) => (inRoot ? `/${path.relative(root.root, p).replace(/\\/g, '/')}` : rel(p));
-  console.log(inRoot ? `Подключить (пути от корня сайта ${root.root}${root.how ? `, ${root.how}` : ''}):` : `Подключить (пути от папки --out ${out}: корень сайта не найден — нет index.html, package.json или .git выше; страница не в этой папке — поправить путь или --root <корень сайта>):`);
+  console.log(inRoot ? `Подключить (пути от корня сайта ${root.root}${root.how ? `, ${root.how}` : ''}):` : `Подключить (пути от папки --out ${out}: корень сайта не найден — ${root.skipped || 'нет index.html, package.json или .git выше'}; страница не в этой папке — поправить путь или --root <корень сайта>):`);
   console.log(`  <link rel="preload" href="${href(path.join(dir, pre.name))}" as="font" type="font/woff2" crossorigin>`);
   console.log(`  <link rel="stylesheet" href="${href(cssFile)}">`);
   console.log(`  font-family: '${files[0].family}', ${fallbackStack(font)};`);
@@ -1144,10 +1180,17 @@ async function cmdGetSource(spec) {
   console.log('Знаки (таблица cmap файлов):');
   for (const l of lines) console.log(l);
   const root = siteRoot(out, opt.root !== undefined ? String(opt.root) : null);
-  const inRoot = root && !path.relative(root.root, dir).startsWith('..') && !path.isAbsolute(path.relative(root.root, dir));
+  const inRoot = !!root.root && !path.relative(root.root, dir).startsWith('..') && !path.isAbsolute(path.relative(root.root, dir));
   const href = (p) => (inRoot ? `/${path.relative(root.root, p).replace(/\\/g, '/')}` : rel(p));
   const pre = files.find((f) => f.style === 'normal') || files[0];
-  console.log(inRoot ? `Подключить (пути от корня сайта ${root.root}${root.how ? `, ${root.how}` : ''}):` : `Подключить (пути от папки --out ${out}: корень сайта не найден — поправить путь или --root <корень сайта>):`);
+  /* лицензия запрещает передачу файлов через публичный репозиторий (ITF FFL §02) — сказать до строк подключения:
+     выкладка «пуш в GitHub» у публичного репозитория и есть такая передача, чей бы сайт ни был */
+  const noRepo = (src.license.terms || []).some((t) => /публичн\S* репозитор/i.test(t));
+  if (noRepo) {
+    const git = gitRootOf(dir);
+    warn(`файлы «${fam.family}» нельзя класть в публичный репозиторий (${src.license.default}, ${src.license.url}) — это передача файлов другим${git ? `; папка шрифтов лежит в репозитории ${git}: если он публичный — добавить «${path.relative(git, dir).replace(/\\/g, '/')}/${slugOf(fam.family)}-*.woff2» в .gitignore и доставлять файлы на сервер отдельно` : '; до первого коммита — проверить, что репозиторий сайта закрытый, или добавить файлы в .gitignore'}`);
+  }
+  console.log(inRoot ? `Подключить (пути от корня сайта ${root.root}${root.how ? `, ${root.how}` : ''}):` : `Подключить (пути от папки --out ${out}: корень сайта не найден${root.skipped ? ` — ${root.skipped}` : ''} — поправить путь или --root <корень сайта>):`);
   console.log(`  <link rel="preload" href="${href(path.join(dir, pre.name))}" as="font" type="font/woff2" crossorigin>`);
   console.log(`  <link rel="stylesheet" href="${href(cssFile)}">`);
   console.log(`  font-family: '${fam.family}', ${fallbackStack({ cat: fam.category, stroke: fam.stroke, cls: fam.cls || [] })};`);
@@ -2387,6 +2430,23 @@ async function selftest() {
   check('trackFor: трекинг — воздух как у образца (капс — по прописным); sizeFor — по высоте прописных', sizeFor({ metrics: mA }, { ...mA, capEm: 0.8 }) === 0.9 && trackFor({ font: { textTransform: 'uppercase', letterSpacingEm: 0 }, metrics: mA }, { ...mA, widthUc: 0.9, advUc: 0.722 }) === 0 && trackFor({ font: { textTransform: 'uppercase', letterSpacingEm: -0.01 }, metrics: mA }, { ...mA, advUc: 0.6 }) === 0.04 && trackFor({ font: { textTransform: 'none', letterSpacingEm: 0 }, metrics: mA }, { ...mA, advLc: 0.55 }) === -0.03);
   const srt = siteRoot(path.join(site2, 'assets', 'x'));
   check('siteRoot: ближайшая папка с index.html вверх', srt && srt.root === site2 && /index\.html/.test(srt.how));
+  /* границы: «домашняя папка» с package.json (как C:/Users/<имя>/package.json на машине владельца) — не корень сайта */
+  {
+    const home = path.join(tmp, 'домик'); const deep = path.join(home, 'a', 'b', 'c', 'сайт-без-корня');
+    fs.mkdirSync(deep, { recursive: true }); fs.writeFileSync(path.join(home, 'package.json'), '{}');
+    const stops = [{ dir: home, name: 'домашняя папка' }];
+    const r1 = siteRoot(deep, null, { stops });
+    check('siteRoot: package.json в домашней папке — не корень сайта, причина названа', r1.root === null && /package\.json есть, но .*домик — домашняя папка/.test(r1.skipped || ''), JSON.stringify(r1));
+    const proj = path.join(home, 'a', 'проект'); fs.mkdirSync(path.join(proj, 'assets'), { recursive: true }); fs.writeFileSync(path.join(proj, 'index.html'), '');
+    const r2 = siteRoot(path.join(proj, 'assets', 'fonts'), null, { stops });
+    check('siteRoot: сайт внутри домашней папки находится как раньше', r2.root === proj && /index\.html/.test(r2.how || ''), JSON.stringify(r2));
+    const r3 = siteRoot(path.join(tmp, 'нигде', 'x'), null, { stops: [{ dir: path.join(tmp, 'нигде'), name: 'временная папка системы' }, { dir: home, name: 'домашняя папка' }] });
+    check('siteRoot: граница без метки — корень не найден, без причины; папка выше границы — тоже граница', r3.root === null && r3.skipped === null && siteRoot(path.join(tmp, 'x'), null, { stops: [{ dir: path.join(tmp, 'x', 'y'), name: 'домашняя папка' }] }).root === null, JSON.stringify(r3));
+    const rr = siteRoot(deep, home, { stops });
+    check('siteRoot: --root сильнее границ (сайт в домашней папке — явным флагом)', rr.root === path.resolve(home));
+    const real = siteRoot(path.join(os.tmpdir(), 'fonts-selftest-нет-такой', 'x'));
+    check('siteRoot: настоящая временная папка системы и всё выше неё — не корень (короткое имя C225~1 и длинное — одна папка)', real.root === null, JSON.stringify(real));
+  }
   const gl = charsOf(GLYPHS);
   check('набор знаков кандидата: латиница, 66 букв, ₽№«», все знаки листа', [...CYR_LETTERS, ...'₽№«»AZaz09'].every((ch) => gl.includes(ch)) && charsOf(SHEET.caps + SHEET.lower + SHEET.para + SHEET.jo.join('')).every((ch) => gl.includes(ch)));
 
@@ -2506,6 +2566,10 @@ async function selftest() {
     const cssFs = (() => { try { return fs.readFileSync(path.join(siteFs, 'fonts', 'fonts.css'), 'utf8'); } catch { return ''; } })();
     const fsFiles = fs.existsSync(path.join(siteFs, 'fonts')) ? fs.readdirSync(path.join(siteFs, 'fonts')).filter((n) => n.endsWith('.woff2')).sort() : [];
     check('get fontshare --latin --italic: файлы как есть (курсив — вес 401), условия лицензии в fonts.css и выводе, путь от корня', c.code === 0 && fsFiles.join() === 'probe-latin-400-italic.woff2,probe-latin-400.woff2' && fs.readFileSync(path.join(siteFs, 'fonts', 'probe-latin-400.woff2')).equals(fs.readFileSync(FX('bebas-neue-400'))) && hits.fsCss.includes('probe-latin@401') && /ITF Free Font License 2\.0 \(https:\/\/www\.fontshare\.com\/licenses\/itf-ffl\)/.test(cssFs) && /ITF FFL §02: передавать файлы другим нельзя/.test(cssFs) && /только латиница/.test(cssFs) && !/unicode-range/.test(cssFs) && /rel="preload" href="\/fonts\/probe-latin-400\.woff2"/.test(c.out) && /^Условие лицензии: ITF FFL §02/m.test(c.out), `${fsFiles.join(', ')}; ${c.out.trim().split('\n').pop()}`);
+    check('get fontshare: WARN «нельзя класть в публичный репозиторий», итог WARN, а не OK; без .git — совет проверить репозиторий', /^WARN: файлы «Probe Latin» нельзя класть в публичный репозиторий \(ITF Free Font License 2\.0/m.test(c.out) && /до первого коммита — проверить, что репозиторий сайта закрытый/.test(c.out) && /^WARN: Probe Latin — 2 файла.*предупреждений 1/m.test(c.out), c.out.trim().split('\n').pop());
+    fs.mkdirSync(path.join(siteFs, '.git'));
+    c = await run(['get', 'fontshare:Probe Latin', '--latin', '--weights', '400', '--out', siteFs], env2);
+    check('get fontshare в папке с .git: названы репозиторий и строка для .gitignore', c.code === 0 && /папка шрифтов лежит в репозитории .*сайт-fs: если он публичный — добавить «fonts\/probe-latin-\*\.woff2» в \.gitignore/.test(c.out), (c.out.match(/^WARN: файлы[^\n]*/m) || [''])[0].slice(0, 260));
     c = await run(['get', 'fontshare:Probe Latin', '--latin', '--weights', '500', '--out', siteFs], env2);
     check('get fontshare: нет веса — код 1 с весами источника', c.code === 1 && /нет веса 500: есть 400, 700/.test(c.out), c.out.trim().split('\n').pop());
     c = await run(['get', 'adobe:Acumin Pro', '--out', siteFs], env2);

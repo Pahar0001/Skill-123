@@ -3,7 +3,7 @@
  * Сверка выкладки: страница есть в проекте, но не попадает на бой.
  *
  *   node deploy-check.mjs <папка проекта> [--pages "/,/napravleniya/"] [--url https://сайт] [--out папка] [--tag имя]
- *                         [--strict] [--json <файл>|-]
+ *                         [--no-fail] [--json <файл>|-]
  *   node deploy-check.mjs --selftest
  *   node deploy-check.mjs --help   (или -h)
  *
@@ -18,6 +18,8 @@
  *             их ассеты и файлы страниц, на которые они ссылаются. Без флага — обход ссылок от главной (index.html
  *             веб-корня) плюс каждая папка первого уровня с index.html (новая страница без ссылок на неё — тоже)
  *             и .html в корне; служебные папки (tests, fixtures, tools, scripts, node_modules, coverage, .*) не берутся.
+ *             Git Bash превращает «/…» в «C:/Program Files/Git/…» — приставка снимается (lib.unmangle), путь читается
+ *             как набран; чтобы оболочка не трогала аргумент вовсе — MSYS_NO_PATHCONV=1 или пути без первой «/».
  *   --url     боевой адрес: страницы из списка ещё и запрашиваются на бою — GET (страница) и HEAD (ассет, на который
  *             упала сверка), только чтение, не больше 50 запросов вместе с пробой заглушки. «Локально есть — на бою
  *             404» — FAIL; сервер отдаёт 200 на любой адрес (заглушка SPA) — страница сверяется с заглушкой по
@@ -25,7 +27,8 @@
  *   --out     папка прогона (по умолчанию ~/.claude/site-rework/runs/<сайт из --url> или local-<имя папки>);
  *             протокол — <out>/deploy-check/<tag>.json.
  *   --tag     имя протокола, по умолчанию deploy.
- *   --strict  код выхода 1 при итоге FAIL.
+ *   --no-fail код выхода 0 даже при итоге FAIL (как у runtime). Без флага FAIL — код 1: цепочка команд перед
+ *             выкладкой на нём останавливается. --strict принимается по-старому и ничего не меняет.
  *   --json <файл>|-  протокол ещё и сюда; «-» — JSON в stdout, текст — в stderr.
  *   --selftest  стенды fixtures/deploy-check (уменьшенная копия Dockerfile KIMota777/sites без napravleniya и
  *             варианты конфигов) и свой сервер «боя» на 127.0.0.1; итог «N из N».
@@ -67,14 +70,15 @@
  * Протокол (writeJson): project, config { kind, file, webRoot, localRoot, other[] }, pages[], files[{ path, kind
  * (page|asset|file), status, why, cause (missing|ignored|misplaced|built|run|outside|jekyll), target?, sugg?, by[] }],
  * unresolved[], live { base, requests, max, fallback, pages[], assets[] } | null, lines[], verdict.
- * Код выхода: 0 — сделано (вердикт в выводе и протоколе); 1 — неверные аргументы, провал --selftest или FAIL с --strict.
+ * Код выхода: 0 — итог OK или WARN (WARN код не меняет), задан --no-fail, справка, --selftest сошёлся;
+ * 1 — итог FAIL, неверные аргументы или провал --selftest.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs, runDir, writeJson, ensureDir, capSlug } from './lib.mjs';
+import { parseArgs, runDir, writeJson, ensureDir, capSlug, unmangle } from './lib.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HELP = () => fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
@@ -642,7 +646,14 @@ async function live(res, base, { max = MAX_REQ, timeout = 10000 } = {}) {
    Командная строка
    ===================================================================== */
 const VALUES = ['pages', 'url', 'out', 'tag', 'json'];
-const FLAGS = ['help', 'h', 'strict', 'selftest'];
+const FLAGS = ['help', 'h', 'strict', 'no-fail', 'selftest'];
+/* Значение --pages → пути от корня сайта. Git Bash подменяет аргумент, начинающийся с «/», на
+   «C:/Program Files/Git/…» (вся строка «/,/contacts/» становится «C:/Program Files/Git/,/contacts/»): приставка
+   снимается у каждого куска. Без этого «/» искалась как страница «/C:/Program Files/Git/», её не было в проекте,
+   и сверка главной молча не делалась — WARN вместо FAIL. null — кусок не разобран. */
+function pagesArg(v) {
+  return String(v).split(',').map((s) => unmangle(s.trim())).filter(Boolean).map((s) => { if (/^https?:/i.test(s)) { try { return new URL(s).pathname; } catch { return null; } } return s.startsWith('/') ? s : `/${s}`; });
+}
 function report(res, log) {
   for (const l of res.lines) log(`${l.status.padEnd(5)} ${l.what}${l.details ? ` — ${l.details}` : ''}`);
   const fails = res.lines.filter((l) => l.status === 'FAIL').length, warns = res.lines.filter((l) => l.status === 'WARN').length;
@@ -666,7 +677,7 @@ async function main(argv) {
   if (opt.url !== undefined) { try { const u = new URL(String(opt.url)); if (!/^https?:$/.test(u.protocol)) throw new Error(); url = u.origin + '/'; } catch { die(`--url ${opt.url}: нужен адрес http(s)://…`); } }
   let pages = null;
   if (opt.pages !== undefined) {
-    pages = String(opt.pages).split(',').map((s) => s.trim()).filter(Boolean).map((s) => { if (/^https?:/i.test(s)) { try { return new URL(s).pathname; } catch { return null; } } return s.startsWith('/') ? s : `/${s}`; });
+    pages = pagesArg(opt.pages);
     if (pages.some((p) => p == null) || !pages.length) die(`--pages ${opt.pages}: пути через запятую («/,/napravleniya/») или адреса`);
   }
   const jsonOut = opt.json === undefined ? null : String(opt.json);
@@ -681,14 +692,36 @@ async function main(argv) {
   report(res, log);
   writeJson(file, res); log(`Сохранено: ${file}`);
   if (jsonOut === '-') process.stdout.write(JSON.stringify(res, null, 1) + '\n'); else if (jsonOut) { writeJson(path.resolve(jsonOut), res); log(`JSON: ${path.resolve(jsonOut)}`); }
-  if (opt.strict && res.verdict === 'FAIL') { log('Код выхода 1: итог FAIL (--strict)'); process.exit(1); }
+  if (res.verdict === 'FAIL' && !opt['no-fail']) { log('Код выхода 1: итог FAIL (--no-fail — код 0)'); process.exit(1); }
   process.exit(0);
 }
 
 /* =====================================================================
    Самопроверка: fixtures/deploy-check
    ===================================================================== */
-function copyDir(src, dst) { fs.cpSync(src, dst, { recursive: true }); return dst; }
+/* Копия папки файлами. Не fs.cpSync: в Node 22.21 на Windows он на кириллических путях (C:/Users/фвьшт/…) роняет
+   процесс с кодом 127 без исключения и без строки итога — та же ловушка записана в skill-audit.mjs. */
+function copyDir(src, dst) {
+  fs.mkdirSync(dst, { recursive: true });
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const a = path.join(src, e.name), b = path.join(dst, e.name);
+    if (e.isDirectory()) copyDir(a, b); else if (e.isFile()) fs.copyFileSync(a, b);
+  }
+  return dst;
+}
+/* Папки прежних оборванных самопроверок (процесс убит или упал до уборки): старше двух часов — удалить.
+   Свежие не трогаем — рядом может идти чужой прогон. */
+function sweepStale(dir = os.tmpdir(), now = Date.now()) {
+  let n = 0;
+  try {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory() || !e.name.startsWith('deploy-check-selftest-')) continue;
+      const p = path.join(dir, e.name);
+      try { if (now - fs.statSync(p).mtimeMs > 2 * 3600e3) { fs.rmSync(p, { recursive: true, force: true }); n++; } } catch { /* занята — оставить */ }
+    }
+  } catch { /* временной папки не прочитать — не беда */ }
+  return n;
+}
 function serve(root, { missing = [], spa = false } = {}) {
   const server = http.createServer((req, res) => {
     let p; try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch { res.statusCode = 400; return res.end(); }
@@ -704,8 +737,10 @@ function serve(root, { missing = [], spa = false } = {}) {
 }
 async function selftest() {
   const FX = path.join(HERE, 'fixtures', 'deploy-check');
+  sweepStale();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-check-selftest-'));
   let n = 0, bad = 0;
+  try {
   const check = (where, what, ok, got) => { n++; if (!ok) bad++; console.log(`${ok ? 'OK  ' : 'FAIL'} ${where}: ${what}${got !== undefined ? ` — ${got}` : ''}`); };
   const run = async (dir, o = {}) => { const r = await analyze(dir, o); if (o.base) { r.live = await live(r, o.base); r.lines.push(...r.live.lines); } return finish(r); };
   const fileSt = (r, p) => { const f = r.files.find((x) => x.path === p); return f ? f.status : 'нет'; };
@@ -825,8 +860,18 @@ async function selftest() {
     const c = spawnSync(process.execPath, [me, FX, '--pagez', '/'], { encoding: 'utf8' });
     const h = spawnSync(process.execPath, [me, '-h'], { encoding: 'utf8' });
     check('аргументы', 'нет папки, --url не http, неизвестный флаг — код 1; -h — справка с кодом 0', a.status === 1 && b.status === 1 && c.status === 1 && h.status === 0 && /Сверка выкладки/.test(h.stdout), `${a.status} ${b.status} ${c.status} ${h.status}`);
+    /* код выхода: FAIL — 1 без флагов (цепочка «deploy-check && выкладка» обязана остановиться), --no-fail — 0, OK — 0 */
+    const sites = path.join(FX, 'sites'); const out = path.join(tmp, 'out');
+    const cli = (...args) => spawnSync(process.execPath, [me, ...args, '--out', out], { encoding: 'utf8' });
+    const f1 = cli(sites), f2 = cli(sites, '--no-fail'), f3 = cli(sites, '--strict'), f4 = cli(path.join(tmp, 'sites-fixed'));
+    check('код выхода', 'итог FAIL — код 1 без флагов и с прежним --strict; --no-fail — 0; итог OK — 0', f1.status === 1 && /FAIL: \d+ провал/.test(f1.stdout) && f2.status === 0 && /FAIL: \d+ провал/.test(f2.stdout) && f3.status === 1 && f4.status === 0, `${f1.status} ${f2.status} ${f3.status} ${f4.status}`);
+    /* --pages из Git Bash: «/,/napravleniya/» приходит как «C:/Program Files/Git/,/napravleniya/» */
+    const m1 = pagesArg('C:/Program Files/Git/,/napravleniya/'), m2 = pagesArg('c:/program files/git/contacts/'), m3 = pagesArg('/, contacts/ ,https://x.ru/a/?q=1');
+    check('--pages из Git Bash', 'приставка «C:/Program Files/Git» снята у каждого куска; обычные пути и адреса — как были', m1.join(' ') === '/ /napravleniya/' && m2.join(' ') === '/contacts/' && m3.join(' ') === '/ /contacts/ /a/', `${m1.join(' ')} | ${m2.join(' ')} | ${m3.join(' ')}`);
+    const g = cli(sites, '--pages', 'C:/Program Files/Git/,/contacts/');
+    check('--pages из Git Bash', 'искажённый «/,/contacts/» — главная проверена: её ссылка на napravleniya/ — FAIL, код 1, строки «страницы нет в проекте» нет', g.status === 1 && /^FAIL\s+napravleniya\//m.test(g.stdout) && !/страницы нет в проекте/.test(g.stdout), `код ${g.status}; ${(g.stdout.match(/^(FAIL|WARN).*$/gm) || []).map((l) => l.slice(0, 70)).join(' | ')}`);
   }
-  fs.rmSync(tmp, { recursive: true, force: true });
+  } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* занята — уберёт следующий запуск */ } }
   console.log(`\n${bad ? 'FAIL' : 'OK'}: selftest ${n - bad} из ${n}${bad ? ` — расхождений ${bad}` : ''}`);
   return bad ? 1 : 0;
 }
