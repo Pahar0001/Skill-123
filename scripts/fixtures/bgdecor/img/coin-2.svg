@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- монета набора (стенд калибровки bgdecor): заметный предмет, файлы набора различаются только цифрой в имени -->
+  <circle cx="50" cy="52" r="44" fill="#8A5A1E"/>
+  <circle cx="50" cy="48" r="44" fill="#E0A93B" stroke="#5A3A12" stroke-width="4"/>
+  <path d="M30 34c8-8 20-2 12 8l-12 14h20" transform="translate(11 0)" fill="none" stroke="#5A3A12" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

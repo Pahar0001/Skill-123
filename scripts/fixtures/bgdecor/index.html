@@ -6,11 +6,18 @@
 <title>Стенд bgdecor: что стоит в фоне</title>
 <!--
   Стенд для `node bgdecor.mjs selftest`. Вымышленная пекарня «Опара»; все рисунки — свои, в папке img/.
-  data-expect="вид"        — здесь должна быть находка этого вида (drawing, ghost-word, margin-object, pattern);
+  data-expect="вид"        — здесь должна быть находка этого вида (drawing, ghost-word, margin-object, pattern, glow);
   data-expect-side         — сторона на экране компьютера; data-expect-count — сколько одинаковых (×N);
   data-expect-section      — заголовок раздела; data-expect-pseudo — находка на псевдоэлементе;
   data-expect-not          — здесь находок быть не должно; data-expect-why — код причины отказа в «не засчитано».
   Вёрстка: колонка содержимого 1000 px по центру (220–1220 px при окне 1440).
+  Свечения (glow) сделаны шестью способами (каждое — от 240 px: мельче — украшение блока, см. cal.html): размытая
+  картинка png фоном под кнопкой первого экрана; radial-gradient,
+  обрезанный прямым краем своей коробки; размытая картинка webp тегом img; блок с filter: blur(); radial-gradient пустого
+  блока; тень большого размытия у пустого блока.
+  Блок .note — без своего фона и рамки: рисунок в его фоне — находка (в карточке со своим фоном — нет, см. cal.html).
+  Контроль: набросок линией в 1 px с контрастом около 1,1 остаётся рисунком; круг с резким краем (radial-gradient с
+  жёсткими стопами) и фото под плавной маской свечением не становятся; буквы-призраки остаются призраками.
 -->
 <style>
   * { box-sizing: border-box; }
@@ -38,6 +45,11 @@
   /* первый экран: крупный заголовок с высоким контрастом — не призрак; слово-призрак за ним */
   #hero { overflow: hidden; padding: 90px 0 110px; }
   #hero p { max-width: 600px; }
+  /* свечения первого экрана: размытая картинка под кнопкой и половина пятна у нижнего края раздела (центр градиента — на
+     краю своей коробки: край прямой и резкий, а пятно остаётся пятном) */
+  .cta { position: relative; display: inline-block; margin: 8px 0 0; }
+  .cta__glow { position: absolute; left: 50%; top: 50%; width: 300px; height: 300px; margin: -150px 0 0 -150px; z-index: -1; opacity: 0.5; pointer-events: none; background: url(img/glow-blob.png) no-repeat center / contain; }
+  .spill { position: absolute; right: 6%; bottom: 0; width: 340px; height: 170px; z-index: -1; pointer-events: none; background: radial-gradient(170px 170px at 50% 100%, rgba(201, 111, 59, 0.42), rgba(201, 111, 59, 0)); }
   .ghost { position: absolute; left: -12px; top: 60px; margin: 0; font: 800 clamp(96px, 22vw, 320px)/0.8 Georgia, serif; white-space: nowrap; color: rgba(90, 70, 50, 0.07); pointer-events: none; }
 
   /* о пекарне: набросок за текстом, колос на поле, фото содержимого, аватар */
@@ -46,6 +58,7 @@
   .sketch { position: absolute; right: 20px; top: 6px; width: 200px; height: auto; opacity: 0.32; pointer-events: none; }
   .photo { flex: 0 0 auto; width: 400px; max-width: 100%; height: auto; border-radius: 6px; }
   .doodle { position: absolute; left: 40px; top: 110px; width: 140px; height: 220px; z-index: -1; background: url(img/sketch-wheat.svg) no-repeat center / contain; }
+  .smudge { position: absolute; right: 0; bottom: -40px; width: 280px; height: 280px; z-index: -1; pointer-events: none; }
   .author { display: flex; align-items: center; gap: 12px; margin-top: 24px; }
   .avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
 
@@ -57,6 +70,7 @@
   .shot { position: relative; height: 150px; margin: -20px -20px 14px; border-radius: 8px 8px 0 0; overflow: hidden; }
   .cover { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
   .buried { position: absolute; left: 24px; top: 24px; width: 160px; height: 120px; z-index: -1; opacity: 0.5; background: url(img/sketch-loaf.svg) no-repeat center / contain; }
+  .haze { position: absolute; left: 58%; top: 150px; width: 240px; height: 180px; z-index: -1; border-radius: 50%; background: #C96F3B; opacity: 0.45; filter: blur(40px); pointer-events: none; }
   .bit { position: absolute; width: 70px; height: auto; pointer-events: none; }
   .bit--l { left: 28px; } .bit--r { right: 28px; }
 
@@ -64,15 +78,20 @@
   .tile { margin: 0 0 18px; padding: 44px 24px; border-radius: 8px; }
   .tiled { background: #EFE9DB url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 4l6 8-6 8-6-8z' fill='%23D9CFB8'/%3E%3C/svg%3E") repeat; }
   .striped { background: repeating-linear-gradient(45deg, #EFE9DB 0 10px, #E0D6C0 10px 20px); }
-  .papered { background: url(img/wash-600.svg) repeat; background-size: 600px 600px; }
+  .washed { background: url(img/wash-600.svg) repeat; background-size: 600px 600px; }
   .noisy { background: url(img/noise-tile.svg) repeat; }
+  .aura { position: absolute; left: -120px; top: 60px; width: 380px; height: 380px; z-index: -1; pointer-events: none; background: radial-gradient(closest-side, rgba(184, 134, 43, 0.36), rgba(184, 134, 43, 0)); }
+  .hairline { position: absolute; left: 62%; top: 10px; width: 220px; height: auto; opacity: 0.1; pointer-events: none; }
   .orn-wrap { position: absolute; right: 40px; top: 90px; width: 80px; pointer-events: none; }
   .orn { display: block; width: 80px; height: 133px; color: #B8862B; }
 
   /* контакты: рисунок псевдоэлементом, рисунок фоном блока с текстом, карта, видео */
   .stampbox { position: relative; padding: 20px 240px 20px 0; min-height: 160px; }
   .stampbox::after { content: ""; position: absolute; right: 20px; top: 8px; width: 200px; height: 140px; opacity: 0.3; pointer-events: none; background: url(img/sketch-cup.svg) no-repeat center / contain; }
-  .note { margin: 18px 0; padding: 24px 220px 24px 24px; border-radius: 8px; background: #fff url(img/sketch-leaf.svg) no-repeat right 24px bottom 16px / 160px auto; }
+  .note { margin: 18px 0; padding: 24px 220px 24px 24px; background: url(img/sketch-leaf.svg) no-repeat right 24px bottom 16px / 160px auto; }
+  .halo { position: absolute; left: 90px; top: 300px; width: 10px; height: 10px; z-index: -1; border-radius: 50%; pointer-events: none; box-shadow: 0 0 90px 60px rgba(201, 111, 59, 0.35); }
+  .disc { position: absolute; right: 40px; top: 60px; width: 150px; height: 150px; z-index: -1; pointer-events: none; background: radial-gradient(closest-side, rgba(184, 134, 43, 0.32) 0 97%, rgba(184, 134, 43, 0) 100%); }
+  .vignette { display: block; width: 300px; max-width: 100%; height: 200px; margin-top: 18px; object-fit: cover; pointer-events: none; -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%); mask-image: radial-gradient(closest-side, #000 30%, transparent 100%); }
   .leaflet-container { position: relative; width: 420px; max-width: 100%; height: 200px; overflow: hidden; background: #DCE6DE; }
   .leaflet-container img { position: absolute; top: 0; width: 256px; height: 256px; pointer-events: none; }
   .video-js { position: relative; width: 320px; max-width: 100%; height: 180px; margin-top: 18px; background: #000; }
@@ -93,6 +112,8 @@
     .letters { width: 340px; height: 76px; margin-left: -170px; }
     .cards { margin-top: 60px; }
     .bit, .orn-wrap { display: none; }
+    .haze { left: auto; right: 0; width: 200px; }
+    .hairline { left: auto; right: 10px; width: 160px; }
     .stampbox { padding-right: 0; padding-bottom: 150px; }
     .stampbox::after { top: auto; bottom: 0; }
     .note { padding-right: 24px; padding-bottom: 150px; }
@@ -125,7 +146,9 @@
     <h1 data-expect-not data-expect-why="loud-word" data-name="крупный заголовок с высоким контрастом">Пекарня Опара</h1>
     <p>Печём хлеб на закваске с шести утра. Тесто подходит шестнадцать часов, поэтому к прилавку успевает только то, что замесили вчера. Мука — с мельницы за рекой, соль — обычная.</p>
     <p>Буханку можно отложить по телефону до девяти вечера.</p>
+    <p class="cta"><span class="cta__glow" data-expect="glow" data-name="свечение под кнопкой первого экрана: размытая картинка png фоном, в стилях ни blur, ни градиента"></span><a class="btn" href="#menu">Отложить буханку</a></p>
   </div>
+  <span class="spill" data-expect="glow" data-expect-side="справа" data-name="свечение radial-gradient, обрезанное прямым краем своей коробки (половина круга у низа раздела)"></span>
 </section>
 
 <section class="sec" id="about">
@@ -140,12 +163,14 @@
       </div>
       <img class="photo" src="img/photo.svg" alt="Хлеб на столе" width="400" height="267" data-expect-not data-name="фото содержимого">
     </div>
+    <img class="smudge" src="img/glow-warm.webp" alt="" aria-hidden="true" data-expect="glow" data-expect-side="справа" data-expect-section="О пекарне" data-name="свечение размытой картинкой webp на поле">
     <p class="author" data-expect-not data-name="аватар"><img class="avatar" src="img/photo.svg" alt="Анна" width="64" height="64"> Анна, пекарь</p>
   </div>
 </section>
 
 <section class="sec" id="menu">
   <span class="letters" data-expect="ghost-word" data-expect-side="за текстом" data-expect-section="Меню" data-name="буквы-призраки картинкой"></span>
+  <span class="haze" data-expect="glow" data-expect-section="Меню" data-name="свечение блоком с filter: blur()"></span>
   <img class="bit bit--l" src="img/ornament.svg" alt="" style="top: 70px" data-expect="margin-object" data-expect-side="слева" data-expect-count="3" data-name="предмет на полях слева">
   <img class="bit bit--r" src="img/ornament.svg" alt="" style="top: 250px" data-expect="margin-object" data-expect-side="справа" data-expect-count="3" data-name="предмет на полях справа">
   <img class="bit bit--l" src="img/ornament.svg" alt="" style="top: 430px" data-expect="margin-object" data-expect-side="слева" data-expect-count="3" data-name="предмет на полях слева, второй">
@@ -175,18 +200,22 @@
 </section>
 
 <section class="sec" id="delivery">
+  <span class="aura" data-expect="glow" data-expect-side="слева" data-expect-section="Доставка" data-name="свечение radial-gradient пустого блока на поле"></span>
+  <img class="hairline" src="img/sketch-thin.svg" alt="" data-expect="drawing" data-expect-section="Доставка" data-name="бледный набросок линией в 1 px (контроль: не свечение)">
   <div class="orn-wrap" data-expect="margin-object" data-expect-side="справа" data-expect-section="Доставка" data-name="орнамент символом спрайта, вне потока обёртка"><svg class="orn" aria-hidden="true" focusable="false"><use href="#orn"/></svg></div>
   <div class="wrap">
     <h2>Доставка</h2>
     <p>Возим по городу с восьми до полудня. Хлеб едет в ящиках, а не в пакетах: в пакете корка мокнет.</p>
     <div class="tile tiled" data-expect="pattern" data-name="узор мелкой плиткой"><strong>По городу</strong> — в день заказа.</div>
     <div class="tile striped" data-expect="pattern" data-name="узор полосами (градиент с повтором)"><strong>За город</strong> — по вторникам и пятницам.</div>
-    <div class="tile papered" data-expect-not data-name="крупная плитка — фактура"><strong>Кафе и магазинам</strong> — по договору.</div>
+    <div class="tile washed" data-expect-not data-name="крупная плитка без рисунка — фактура"><strong>Кафе и магазинам</strong> — по договору.</div>
     <div class="tile noisy" data-expect-not data-name="плитка с шумным именем — фактура"><strong>Самовывоз</strong> — с семи утра.</div>
   </div>
 </section>
 
 <section class="sec" id="contacts">
+  <span class="halo" data-expect="glow" data-expect-section="Контакты" data-name="свечение тенью большого размытия (box-shadow) у пустого блока"></span>
+  <span class="disc" data-expect-not data-expect-why="hard-edge" data-name="круг с резким краем (radial-gradient с жёсткими стопами)"></span>
   <div class="wrap">
     <h2>Контакты</h2>
     <div class="stampbox" data-expect="drawing" data-expect-pseudo="::after" data-expect-section="Контакты" data-name="рисунок псевдоэлементом">
@@ -204,6 +233,7 @@
       <video poster="img/photo.svg" muted playsinline></video>
       <img class="poster-pic" src="img/photo.svg" alt="">
     </div>
+    <img class="vignette" src="img/photo.svg" alt="" aria-hidden="true" data-expect-not data-expect-why="bright-in-column" data-name="фото под плавной маской (край мягкий, внутри рисунок)">
   </div>
 </section>
 

@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Стенд bgdecor: «наш сайт» для сверки</title>
 <!--
-  Вторая страница стенда: «наш сайт» для `bgdecor.mjs compare`. Рисунки в фоне и предметы на полях есть,
-  слов-призраков и узоров нет — сверка со стендом-донором (index.html) должна назвать оба пропуска.
+  Вторая страница стенда: «наш сайт» для `bgdecor.mjs compare`. Рисунки в фоне, предметы на полях и одно свечение
+  (radial-gradient) есть, слов-призраков и узоров нет — сверка со стендом-донором (index.html) должна назвать оба
+  пропуска, а свечения показать своей строкой.
 -->
 <style>
   * { box-sizing: border-box; }
@@ -22,6 +23,7 @@
   .sketch { position: absolute; right: 10px; top: 0; width: 190px; height: auto; opacity: 0.3; pointer-events: none; }
   .doodle { position: absolute; left: 40px; top: 90px; width: 140px; height: 220px; z-index: -1; background: url(img/sketch-wheat.svg) no-repeat center / contain; }
   .bit { position: absolute; width: 70px; height: auto; pointer-events: none; }
+  .aura { position: absolute; right: 0; top: 20px; width: 300px; height: 300px; z-index: -1; pointer-events: none; background: radial-gradient(closest-side, rgba(184, 134, 43, 0.36), rgba(184, 134, 43, 0)); }
   @media (max-width: 720px) { .bit { display: none; } }
 </style>
 </head>
@@ -39,6 +41,7 @@
   </div>
 </section>
 <section class="sec">
+  <span class="aura"></span>
   <img class="bit" src="img/ornament.svg" alt="" style="left: 28px; top: 70px">
   <div class="wrap">
     <h2>Как заказать</h2>

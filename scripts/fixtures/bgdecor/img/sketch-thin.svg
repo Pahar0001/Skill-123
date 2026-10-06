@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140" width="220" height="140" fill="none" stroke="#5A4632" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+  <!-- корзина с батоном тонкой линией в 1 px: контроль для вида «свечение» — бледный, но резкий набросок остаётся рисунком -->
+  <path d="M30 70h160l-14 52H44z"/>
+  <path d="M44 86h132M48 102h124M54 118h112"/>
+  <path d="M70 70v52M110 70v52M150 70v52"/>
+  <path d="M40 70c10-40 130-40 140 0"/>
+  <path d="M62 62c24-34 88-40 110-8"/>
+  <path d="M84 44l10 12M106 36l8 14M130 36l6 14"/>
+</svg>

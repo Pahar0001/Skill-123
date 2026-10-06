@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд bgdecor: плитки фона</title>
+<!--
+  Стенд `node bgdecor.mjs selftest`: плитки фона.
+    сетка редких точек (шаг 24 px) — узор, а не зерно;
+    бледная россыпь крапин без «шумного» имени — зерно: строка «фактура» с названием слоя;
+    фон-картинка, которая в блоке не повторяется (крупнее блока), — не плитка и не фактура;
+    четырнадцать разных мелких узоров при пределе 12 — предел назван в WARN.
+-->
+<style>
+  * { box-sizing: border-box; }
+  html { background: #EFE9DB; }
+  body { margin: 0; font: 17px/1.6 Arial, Helvetica, sans-serif; color: #2B2118; }
+  .wrap { width: 1000px; max-width: 100%; margin: 0 auto; padding: 40px 16px; }
+  h2 { font: 700 34px/1.1 Georgia, serif; margin: 0 0 16px; }
+  .big { margin: 0 0 20px; padding: 70px 24px; border-radius: 8px; }
+  .dotted { background: #EFE9DB url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='1.6' fill='%235A4632'/%3E%3C/svg%3E") repeat; }
+  .speckled { background: #EFE9DB url(img/sprinkle.svg) repeat; }
+  .pictured { height: 210px; background: #D9CFB8 url(img/photo.svg) left top; background-size: 760px auto; }
+  .many { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 12px; }
+  .many div { height: 96px; padding: 12px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Плитки фона</h2>
+  <div class="big dotted" data-expect="pattern" data-name="сетка редких точек плиткой — узор, а не зерно"><strong>Сетка точек.</strong> Точка в 3 px на плитку 24×24: связь соседних пикселей низкая, но это рисунок — редкие заметные знаки на ровном фоне.</div>
+  <div class="big speckled" data-expect-not data-name="бледная россыпь крапин — зерно, строка «фактура»"><strong>Россыпь.</strong> Бледные крапины по всей плитке: зерно. Строка «фактура» должна назвать слой.</div>
+  <div class="big pictured" data-expect-not data-name="фон-картинка крупнее блока — не плитка и не фактура"><strong>Картинка в фоне.</strong> Повтор включён по умолчанию, но картинка крупнее блока и в нём не повторяется.</div>
+  <h2>Четырнадцать узоров</h2>
+  <div class="many" id="many" data-name="14 разных мелких узоров при пределе 12"></div>
+</div>
+<script>
+  /* четырнадцать разных плиток: ромб, круг, крест, уголок… разного размера и цвета — у каждой свой ключ */
+  const shapes = ['M12 4l6 8-6 8-6-8z', 'M4 4h8v8H4z', 'M12 3v18M3 12h18', 'M4 20L20 4', 'M4 4l16 16', 'M3 12a9 9 0 0118 0', 'M6 6h12v12H6z', 'M12 2l10 20H2z', 'M2 12h20', 'M12 2v20', 'M5 5l14 14M19 5L5 19', 'M4 16c4-8 12-8 16 0', 'M8 4h8l4 8-4 8H8l-4-8z', 'M4 8h16M4 16h16'];
+  const box = document.getElementById('many');
+  shapes.forEach((d, i) => {
+    const size = 20 + i * 2; const stroke = i % 2 ? '%23B9AC90' : '%23C9BDA2'; const fill = 'none';
+    const svg = `%3Csvg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 24 24'%3E%3Cpath d='${d}' fill='${fill}' stroke='${stroke}' stroke-width='2'/%3E%3C/svg%3E`;
+    const el = document.createElement('div'); el.textContent = `Узор ${i + 1}`; el.style.background = `#EFE9DB url("data:image/svg+xml,${svg}") repeat`; box.appendChild(el);
+  });
+</script>
+</body>
+</html>

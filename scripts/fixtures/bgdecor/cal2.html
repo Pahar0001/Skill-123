@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Стенд bgdecor: правила доводки 06.10</title>
+<!--
+  Третий стенд `node bgdecor.mjs selftest`: правила доводки 06.10.2026. На каждое — случай «ловит» и случай «не ловит».
+  Разметка ожиданий — как в cal.html (data-expect, data-expect-not, data-expect-why, data-expect-vp, data-name).
+    1. Картинка в своей обёртке (headspace.com): absolute, заполняет обёртку без текста, обёртка стоит в потоке — содержимое.
+    2. Стена логотипов из обёрток вне потока без подписей и ссылок (копия дорожки бегущей строки, партнёры в артборде
+       Tilda) — ряд содержимого; россыпь монет на поле и кирпичики вплотную с неровным шагом (tetris-game.tilda.ws) —
+       предметы на полях.
+    3. Панель-карточка (cal.com): свой фон, тень и скругление без рамки — карточка при любой площади; такая же панель
+       без тени и рамки — нет.
+  Вёрстка: колонка 1000 px по центру (220–1220 px при окне 1440). Рисунки — из папки img/.
+-->
+<style>
+  * { box-sizing: border-box; }
+  html { background: #EFE9DB; }
+  body { margin: 0; font: 17px/1.6 Arial, Helvetica, sans-serif; color: #2B2118; overflow-x: hidden; }
+  .wrap { width: 1000px; max-width: 100%; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 1100px) { .wrap { padding: 0; } }
+  h2 { font: 700 clamp(28px, 4vw, 40px)/1.1 Georgia, serif; margin: 0 0 16px; }
+  h3 { font: 700 21px/1.2 Georgia, serif; margin: 0 0 10px; }
+  p { margin: 0 0 16px; max-width: 640px; }
+  .sec { position: relative; padding: 70px 0; min-height: 360px; }
+  .d { position: absolute; pointer-events: none; }
+
+  /* 1. картинка в своей обёртке */
+  .loop { display: flex; align-items: center; gap: 60px; margin-top: 40px; }
+  .loop__pic { position: relative; flex: 0 0 107px; width: 107px; height: 105px; }
+  .loop__pic > svg { left: 0; top: 0; width: 107px; height: 105px; }
+  .loop__text { max-width: 560px; }
+
+  /* 2. стена логотипов и россыпь: всё расставлено координатами, обёртки вне потока */
+  .wall { position: relative; width: 100%; height: 130px; }
+  .slide { position: absolute; top: 15px; width: 130px; height: 100px; pointer-events: none; }
+  .slide img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .t396__elem { position: absolute; }
+  .tn-atom { display: block; }
+  .tn-atom img { display: block; width: 100%; }
+
+  /* 3. панели */
+  .panel { position: relative; width: 1176px; max-width: calc(100% - 32px); min-height: 390px; margin: 0 auto; padding: 120px 40px 60px; text-align: center; background: #fff; border-radius: 12px; }
+  .panel--soft { box-shadow: 0 12px 30px rgba(43, 33, 24, 0.14); }
+  .panel > h2, .panel > p { position: relative; margin-left: auto; margin-right: auto; }
+  .panel__tiles { left: 50%; top: 40px; width: 852px; margin-left: -426px; opacity: 0.07; }
+
+  @media (max-width: 720px) {
+    .loop { flex-direction: column; align-items: flex-start; gap: 16px; }
+    #wall, #partners, #scatter, #pieces, #panelplain { display: none; }
+    .panel { padding: 90px 20px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<section class="sec" id="ownwrap">
+  <div class="wrap">
+    <h2>Картинка в своей обёртке</h2>
+    <div class="loop">
+      <div class="loop__pic" data-expect-not data-expect-why="bright-in-column" data-name="значок вне потока, заполняющий свою обёртку без текста, которая стоит в потоке рядом с текстом, — содержимое, не предмет на полях">
+        <svg class="d" viewBox="0 0 107 105" aria-hidden="true"><path d="M14 66c26 12 56 4 78-28" fill="none" stroke="#222" stroke-width="6" stroke-linecap="round"/><path d="M34 46c2 9 12 9 14 0M58 38c2 9 12 9 14 0" fill="none" stroke="#222" stroke-width="6" stroke-linecap="round"/></svg>
+      </div>
+      <div class="loop__text">
+        <h3>Будьте на связи</h3>
+        <p>Значок поставлен absolute внутри собственной обёртки 107×105 px, а обёртка — обычный сосед текста по строке. Место под значок отведено вёрсткой: это содержимое блока.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="wall">
+  <div class="wrap">
+    <h2>Нам доверяют</h2>
+    <p>Копия дорожки бегущей строки: шесть слайдов во всю ширину окна, каждый вне потока, под aria-hidden, с пустым alt, без ссылок. Шаг ровный, между логотипами просвет — это ряд содержимого.</p>
+  </div>
+  <div class="wall" data-expect-not data-expect-why="row" data-expect-why-vp="desktop" data-name="стена логотипов из обёрток вне потока без подписей и ссылок (ровный шаг, просветы, через колонку) — ряд содержимого">
+    <div class="slide" aria-hidden="true" style="left: 40px;"><img src="img/mark.svg" alt=""></div>
+    <div class="slide" aria-hidden="true" style="left: 270px;"><img src="img/mark.svg" alt=""></div>
+    <div class="slide" aria-hidden="true" style="left: 500px;"><img src="img/mark.svg" alt=""></div>
+    <div class="slide" aria-hidden="true" style="left: 730px;"><img src="img/mark.svg" alt=""></div>
+    <div class="slide" aria-hidden="true" style="left: 960px;"><img src="img/mark.svg" alt=""></div>
+    <div class="slide" aria-hidden="true" style="left: 1270px;"><img src="img/mark.svg" alt=""></div>
+  </div>
+</section>
+
+<section class="sec" id="partners" style="min-height: 300px;" data-expect-not data-expect-why="row" data-expect-why-vp="desktop" data-name="партнёры в артборде как у Tilda: шесть разных картинок в линию с ровным шагом — ряд содержимого (два файла те же, что у монет на поле)">
+  <div class="t396__elem" style="left: 220px; top: 30px; width: 700px;"><div class="tn-atom"><h2>Партнёры</h2></div></div>
+  <div class="t396__elem" style="left: 30px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/mark.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 290px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/coin-1.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 550px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/coin-5.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 810px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/coin-3.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 1070px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/coin-4.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 1290px; top: 120px; width: 120px;"><div class="tn-atom"><img class="tn-atom__img" src="img/coin-2.svg" alt=""></div></div>
+</section>
+
+<section class="sec" id="scatter">
+  <div class="t396__elem" style="left: 16px; top: 40px; width: 44px;" data-expect="margin-object" data-expect-vp="desktop" data-name="россыпь на поле 1: четыре монеты в обёртках вне потока, шаг ровный, но без просвета и целиком на поле"><div class="tn-atom"><img src="img/coin-1.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 66px; top: 40px; width: 44px;" data-expect="margin-object" data-expect-vp="desktop" data-name="россыпь на поле 2"><div class="tn-atom"><img src="img/coin-2.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 116px; top: 40px; width: 44px;" data-expect="margin-object" data-expect-vp="desktop" data-name="россыпь на поле 3"><div class="tn-atom"><img src="img/coin-3.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 166px; top: 40px; width: 44px;" data-expect="margin-object" data-expect-vp="desktop" data-name="россыпь на поле 4"><div class="tn-atom"><img src="img/coin-4.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 220px; top: 60px; width: 700px;"><div class="tn-atom"><h2>Россыпь на поле</h2></div></div>
+  <div class="t396__elem" style="left: 220px; top: 130px; width: 640px;"><div class="tn-atom">Четыре украшения стоят каждое в своей обёртке вне потока на одной высоте у левого края. Это предметы на полях, а не ряд.</div></div>
+</section>
+
+<section class="sec" id="pieces" style="min-height: 420px;">
+  <div class="t396__elem" style="left: 38px; top: 30px; width: 84px;" data-expect="margin-object" data-expect-vp="desktop" data-name="кирпичик у левого края 1 (девять на одной высоте через всё окно, вплотную и с неровным шагом — россыпь, не ряд)"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 122px; top: 30px; width: 84px;" data-expect="margin-object" data-expect-vp="desktop" data-name="кирпичик у левого края 2"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 290px; top: 30px; width: 84px;"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 449px; top: 30px; width: 84px;"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 532px; top: 30px; width: 84px;"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 619px; top: 30px; width: 84px;"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 824px; top: 30px; width: 84px;"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 1230px; top: 30px; width: 84px;" data-expect="margin-object" data-expect-vp="desktop" data-name="кирпичик у правого края 1"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 1312px; top: 30px; width: 84px;" data-expect="margin-object" data-expect-vp="desktop" data-name="кирпичик у правого края 2"><div class="tn-atom"><img src="img/ornament.svg" alt=""></div></div>
+  <div class="t396__elem" style="left: 220px; top: 220px; width: 700px;"><div class="tn-atom"><h2>Кирпичики вплотную</h2></div></div>
+  <div class="t396__elem" style="left: 220px; top: 290px; width: 640px;"><div class="tn-atom">Девять одинаковых фигур на одной высоте через всё окно: стоят вплотную и с неровным шагом. Это россыпь украшений, крайние — предметы на полях.</div></div>
+</section>
+
+<section class="sec" id="panelsoft">
+  <div class="panel panel--soft" data-expect-not data-expect-why="in-card" data-name="бледная сетка плиток в панели 1176×390 со своим фоном, тенью и скруглением, без рамки (35,4% окна) — карточка">
+    <img class="d panel__tiles" src="img/tiles-grid.svg" alt="">
+    <h2>Проще записываться</h2>
+    <p>Панель-призыв: белый фон, тень и скругление 12 px, рамки нет.</p>
+  </div>
+</section>
+
+<section class="sec" id="panelplain">
+  <div class="panel">
+    <img class="d panel__tiles" src="img/tiles-grid.svg" alt="" data-expect="pattern" data-expect-vp="desktop" data-name="та же сетка в панели без тени и рамки (только фон и скругление, 35,4% окна) — не карточка: узор">
+    <h2>Просто подложка</h2>
+    <p>Белая подложка со скруглением, без тени и рамки: по площади больше карточки.</p>
+  </div>
+</section>
+
+<section class="sec" id="tail">
+  <div class="wrap"><h2>Конец</h2><p>Запас высоты, чтобы страница прокручивалась.</p></div>
+</section>
+
+</body>
+</html>

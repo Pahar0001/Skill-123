@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420">
+  <!-- лента за содержимым: крупная заметная фигура с пустотами (стенд калибровки bgdecor) -->
+  <path d="M0 300C140 120 300 80 440 190s250 150 380 20 150-170 180-150v120c-60-10-90 60-180 150S560 420 420 330 180 260 0 420z" fill="#7A3FB0" fill-opacity="0.85"/>
+  <path d="M0 330C150 170 300 140 430 240s250 130 370 10" fill="none" stroke="#C9A7F0" stroke-width="10" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150" width="200" height="150" fill="none" stroke="#5A4632" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- набросок кружки: отдаётся по двум адресам вида image?url=… (стенд калибровки bgdecor) -->
+  <path d="M50 40h80v60c0 18-16 30-40 30s-40-12-40-30z"/><path d="M130 56h18c12 0 18 8 18 18s-8 20-22 20h-14"/><path d="M70 26c-4-8 6-10 2-18M92 26c-4-8 6-10 2-18M114 26c-4-8 6-10 2-18"/>
+</svg>
