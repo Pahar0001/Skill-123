@@ -30,7 +30,7 @@ def build(ctx):
                          location=(r.uniform(-spread, spread) * w, r.uniform(-spread, spread) * h, 0.5 + i * 0.2),
                          rotation=(r.uniform(-10, 10), r.uniform(-10, 10), r.uniform(0, 360)), name="card")
             ctx.rigid(c, mass=0.05, friction=0.55, bounce=0.05, shape="BOX")
-        return {"view": (0.3, -1.0, 0.75), "fov": 28, "margin": 1.12, "ground": True}
+        return {"view": (0.3, -1.0, 0.75), "fov": 28, "ground": True}
     if v == "boxes":
         n = ctx.param("count", 7, int)
         for i in range(n):
@@ -39,7 +39,7 @@ def build(ctx):
             b = ctx.box(s, bevel=0.02, material=mat, location=(r.uniform(-0.5, 0.5), r.uniform(-0.4, 0.4), 0.6 + i * 0.55),
                         rotation=(r.uniform(-25, 25), r.uniform(-25, 25), r.uniform(0, 360)), name="box")
             ctx.rigid(b, mass=s[0] * s[1] * s[2] * 8, friction=0.65, bounce=0.12, shape="BOX")
-        return {"view": (0.4, -1.0, 0.55), "fov": 30, "margin": 1.12, "ground": True}
+        return {"view": (0.4, -1.0, 0.55), "fov": 30, "ground": True}
     if v == "shelf":
         n = ctx.param("count", 8, int)
         for k, (x, z) in enumerate(((-0.9, 0.9), (0.9, 0.5))):
@@ -58,5 +58,5 @@ def build(ctx):
                 o = ctx.cylinder(0.09, 0.22, bevel=0.015, material=ctx.gloss(colors[i % len(colors)]), location=(x, r.uniform(-0.15, 0.15), 1.6 + i * 0.25),
                                  rotation=(r.uniform(-40, 40), 0, 0), name="jar")
                 ctx.rigid(o, mass=0.2, friction=0.6, bounce=0.1, shape="CYLINDER")
-        return {"view": (0.25, -1.0, 0.35), "fov": 30, "margin": 1.1, "ground": True}
+        return {"view": (0.25, -1.0, 0.35), "fov": 30, "ground": True}
     raise ValueError("вариант «%s»: есть cards, boxes, shelf" % v)

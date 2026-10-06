@@ -35,4 +35,4 @@ def build(ctx):
     grid = ctx.param("grid", 72, int)
     cl = ctx.plane((size, size), material=ctx.fabric("accent", weave=110), location=(0, 0, top + 0.35), rotation=(0, 0, 20), subdiv=grid, name="cloth")
     ctx.cloth(cl, ctx.param("fabric", "cotton"), thickness=0.006)
-    return {"view": (0.35, -1.0, 0.45), "fov": 28, "margin": 1.1, "ground": True}
+    return {"view": (0.35, -1.0, 0.45), "fov": 28, "ground": True}

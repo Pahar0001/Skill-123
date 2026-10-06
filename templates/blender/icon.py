@@ -25,20 +25,22 @@ def build(ctx):
         stamp(ctx)
     else:
         raise ValueError("вариант «%s»: есть jar, box, stamp" % v)
-    return {"view": (0.35, -1.0, 0.32), "fov": 26, "margin": 1.12, "ground": True}
+    return {"view": (0.35, -1.0, 0.32), "fov": 26, "ground": True}
 
 
 def jar(ctx):
     # стекло: закрытый цилиндр с толщиной стенки (полый внутри — мёд виден сквозь стекло, а не «в куске стекла»)
     body = ctx.cylinder(0.5, 1.1, bevel=0.06, material=ctx.glass("glass"), location=(0, 0, 0.55), name="jar-glass")
     ctx.solidify(body, 0.025)
-    ctx.cylinder(0.462, 0.78, bevel=0.05, material=ctx.glass("sun", roughness=0.04, ior=1.49), location=(0, 0, 0.44), name="jar-honey")
+    ctx.clear_shadow(body)   # свет проходит сквозь стенку к мёду: без этого он тёмный и мутный
+    # мёд — не «стекло цвета мёда» (сквозь него был бы виден тёмный купол студии), а рассеивающая толща: светится на просвет
+    ctx.cylinder(0.462, 0.78, bevel=0.05, material=ctx.honey("sun"), location=(0, 0, 0.44), name="jar-honey")
     # крышка: шлифованный металл с рёбрами по краю
     ctx.cylinder(0.53, 0.16, bevel=0.03, material=ctx.metal("metal", roughness=0.18, anisotropy=0.6), location=(0, 0, 1.17), name="jar-lid")
     for z in (1.1, 1.24):
         ctx.torus(0.528, 0.016, material=ctx.metal("metal", roughness=0.25), location=(0, 0, z), name="jar-lid-rib")
     # этикетка: открытая бумажная обечайка и глянцевая полоса печати
-    ctx.cylinder(0.508, 0.42, material=ctx.paper("kraft"), location=(0, 0, 0.52), caps=False, name="jar-label")
+    ctx.cylinder(0.508, 0.42, material=ctx.paper("paper"), location=(0, 0, 0.52), caps=False, name="jar-label")
     ctx.cylinder(0.511, 0.06, material=ctx.gloss("accent"), location=(0, 0, 0.6), caps=False, name="jar-label-print")
 
 

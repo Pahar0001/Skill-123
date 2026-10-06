@@ -3,15 +3,14 @@
 Студия для пререндера в Blender (Cycles): свет из софтбоксов, материалы-заготовки, камера по рамке
 предметов, тень на земле, прозрачный фон. Общий модуль для run.py (render, physics, glb).
 
-Планка — та же, что у templates/render3d (stage.html): студия из узких ярких плоскостей вместо HDRI,
-глянец рядом с матовым, тень под стоящим предметом, цвет из палитры сайта. Сверху — то, чего в WebGL
-нет: настоящая трассировка путей (отражения, преломление, мягкие тени, затенение в стыках), денойз и
+Планка (reference/blender.md → «Планка качества»): студия из узких ярких плоскостей вместо HDRI, глянец
+рядом с матовым, детали, тень под стоящим предметом, цвет из палитры сайта, поле кадра не уже 8 %.
+Трассировка путей даёт отражения, преломление, мягкие тени и затенение в стыках; сверху — денойз и
 тональная кривая Khronos PBR Neutral / AgX.
 
-НЕ ПРОВЕРЕНО ЗАПУСКОМ В BLENDER: при разработке (05.10.2026) Blender на машине не было. Код написан под
-Blender 4.2 LTS и новее; имена входов Principled BSDF, тональных кривых и устройств перебираются по
-спискам, чтобы пережить переименования между версиями. Первый запуск на машине владельца — проверка
-самого модуля: кадр открыть глазами.
+Код написан под Blender 4.2 LTS и новее; имена входов Principled BSDF, тональных кривых и устройств
+перебираются по спискам, чтобы пережить переименования между версиями. Что проверено настоящим запуском
+(macOS и Windows, 06.10.2026) — reference/blender.md → «Что проверено запуском».
 
 Чистые функции (палитра, цвет, поле зрения, проверка JSON-сцены) не зависят от bpy и проверяются
 обычным python3 в `blender.mjs selftest`.
@@ -48,7 +47,8 @@ DEFAULT_PALETTE = {
     "bg": "#EFEBE4",
 }
 
-MATERIAL_KINDS = ("clay", "gloss", "satin", "metal", "paper", "glass", "glow", "fabric", "rubber")
+MATERIAL_KINDS = ("clay", "gloss", "satin", "metal", "paper", "glass", "glow", "fabric", "rubber", "leafy", "honey", "printed")
+DEFAULT_MARGIN = 1.19   # поле кадра: предмет занимает 1/1.19 = 84 % стороны — по 8 % с каждого края
 SHAPES = ("box", "card", "cylinder", "sphere", "torus", "plane", "cloth", "text", "import")
 TONES = {
     # тональная кривая → какие view transform пробовать по очереди (имена разных версий Blender)
@@ -96,7 +96,7 @@ def fov_pair(fov_deg, width, height):
     return 2 * math.atan(math.tan(a / 2) * width / float(height)), a
 
 
-def fit_distance(radius, fov_deg, width, height, margin=1.12):
+def fit_distance(radius, fov_deg, width, height, margin=DEFAULT_MARGIN):
     """Расстояние, на котором сфера радиуса radius целиком в кадре с полем margin."""
     h, v = fov_pair(fov_deg, width, height)
     return radius * margin / math.sin(min(h, v) / 2)
@@ -106,6 +106,61 @@ def light_power(radiance, distance):
     """Мощность прямоугольного источника (Вт), чтобы белый матовый предмет на distance светился ≈ radiance.
     На оси площадного источника сила света I = P/π; освещённость E = I/d²; яркость белого L = E/π."""
     return radiance * math.pi * math.pi * distance * distance
+
+
+def rounded_polygon(pts, rad, seg=6):
+    """Многоугольник со скруглёнными углами: [(x, y)] → [(x, y)] (в каждом углу дуга из seg отрезков)."""
+    n = len(pts)
+    out = []
+    for i in range(n):
+        p0, p1, p2 = pts[(i - 1) % n], pts[i], pts[(i + 1) % n]
+        if rad <= 0:
+            out.append((p1[0], p1[1]))
+            continue
+        d1 = (p0[0] - p1[0], p0[1] - p1[1])
+        d2 = (p2[0] - p1[0], p2[1] - p1[1])
+        l1, l2 = math.hypot(*d1), math.hypot(*d2)
+        r1, r2 = min(rad, l1 / 2), min(rad, l2 / 2)
+        a = (p1[0] + d1[0] / l1 * r1, p1[1] + d1[1] / l1 * r1)
+        b = (p1[0] + d2[0] / l2 * r2, p1[1] + d2[1] / l2 * r2)
+        for k in range(seg + 1):
+            t = k / float(seg)
+            out.append(((1 - t) ** 2 * a[0] + 2 * (1 - t) * t * p1[0] + t * t * b[0],
+                        (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * p1[1] + t * t * b[1]))
+    return out
+
+
+def hex_points(r=1.0, k=0.16, rot=30.0, seg=6):
+    """Шестиугольник радиуса r по вершинам со скруглением углов k·r; rot — поворот, градусы."""
+    pts = [(r * math.cos(math.radians(rot + 60 * i)), r * math.sin(math.radians(rot + 60 * i))) for i in range(6)]
+    return rounded_polygon(pts, k * r, seg)
+
+
+def catmull(points, n):
+    """n + 1 точек по сглаженной кривой через points (Catmull-Rom). Точки — кортежи из трёх чисел."""
+    P = [tuple(float(c) for c in p) for p in points]
+    if len(P) < 2:
+        raise ValueError("кривой нужно хотя бы две точки")
+    first = tuple(2 * a - b for a, b in zip(P[0], P[1]))
+    last = tuple(2 * a - b for a, b in zip(P[-1], P[-2]))
+    P = [first] + P + [last]
+    segs = len(P) - 3
+    out = []
+    for i in range(n + 1):
+        t = i / float(n) * segs
+        k = min(int(t), segs - 1)
+        u = t - k
+        p0, p1, p2, p3 = P[k:k + 4]
+        out.append(tuple(0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (3 * b - a - 3 * c + d) * u ** 3)
+                         for a, b, c, d in zip(p0, p1, p2, p3)))
+    return out
+
+
+def frame_margins(points):
+    """Проекции точек в кадр (0…1 по обеим осям) → наименьшее поле до края кадра, доля стороны."""
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return min(min(xs), 1 - max(xs), min(ys), 1 - max(ys))
 
 
 def validate_spec(spec):
@@ -156,6 +211,8 @@ def validate_spec(spec):
         m = o.get("material")
         if m is not None and m not in MATERIAL_KINDS:
             errs.append("%s.material «%s» — нужно одно из %s" % (where, m, ", ".join(MATERIAL_KINDS)))
+        if m == "printed" and not o.get("image"):
+            errs.append(where + ": у material printed нужен image (png, jpg или webp рядом со сценой)")
         c = o.get("color")
         if c is not None and c not in names:
             try:
@@ -292,6 +349,10 @@ class Studio(object):
         set_input(bsdf, "Base Color", rgba)
         m.diffuse_color = rgba  # цвет в окне Blender и запасной цвет экспорта
         build(m, nt, bsdf, rgba)
+        if opts.get("vcol"):  # цвет из атрибута вершин (ctx.mesh(colors=…)): лента с тёмными ложбинами
+            vc = nt.nodes.new("ShaderNodeVertexColor")
+            vc.layer_name = str(opts["vcol"])
+            nt.links.new(vc.outputs["Color"], bsdf.inputs["Base Color"])
         m["sr_kind"] = kind
         self._mats[key] = m
         return m
@@ -314,13 +375,28 @@ class Studio(object):
             set_input(bsdf, "Sheen Roughness", 0.6)
         return self._material("clay", color, dict(roughness=roughness, coat=coat, **o), b)
 
-    def gloss(self, color="accent", roughness=0.2, coat=1.0, **o):
-        """Гладкий под плотным лаком: лента, лак, глазурь, монета. Длинные блики от софтбоксов."""
+    def _aniso(self, nt, bsdf, amount):
+        """Блик, вытянутый вдоль U развёртки (лента, атлас)."""
+        if not amount:
+            return
+        set_input(bsdf, ("Anisotropic",), amount)
+        try:
+            tg = nt.nodes.new("ShaderNodeTangent")
+            tg.direction_type = "UV_MAP"
+            nt.links.new(tg.outputs["Tangent"], bsdf.inputs["Tangent"])
+        except (KeyError, TypeError, AttributeError, RuntimeError):
+            pass
+
+    def gloss(self, color="accent", roughness=0.2, coat=1.0, metallic=0.0, anisotropy=0.0, **o):
+        """Гладкий под плотным лаком: лента, лак, глазурь, монета. Длинные блики от софтбоксов.
+        anisotropy > 0 — блик тянется вдоль U развёртки (атлас); vcol="Col" — цвет из атрибута вершин."""
         def b(m, nt, bsdf, rgba):
             set_input(bsdf, "Roughness", roughness)
+            set_input(bsdf, "Metallic", metallic)
             set_input(bsdf, ("Coat Weight", "Clearcoat"), coat)
             set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.04)
-        return self._material("gloss", color, dict(roughness=roughness, coat=coat, **o), b)
+            self._aniso(nt, bsdf, anisotropy)
+        return self._material("gloss", color, dict(roughness=roughness, coat=coat, metallic=metallic, anisotropy=anisotropy, **o), b)
 
     def satin(self, color="accent", roughness=0.36, **o):
         """Полуматовый: карточки, ламинат, крашеное дерево. Между бумагой и глянцем."""
@@ -415,9 +491,95 @@ class Studio(object):
             set_input(bsdf, "Roughness", roughness)
         return self._material("rubber", color, dict(roughness=roughness, **o), b)
 
+    def leafy(self, color="accent2", roughness=0.22, depth=0.08, glow=0.05, **o):
+        """Лист: глянец под лаком, свет проходит сквозь тонкую пластину (подповерхностное рассеяние, зелёный
+        канал глубже), светлый блеск по краю. depth — глубина рассеяния в единицах сцены (толщина листа)."""
+        def b(m, nt, bsdf, rgba):
+            set_input(bsdf, "Roughness", roughness)
+            set_input(bsdf, ("Coat Weight", "Clearcoat"), 0.9)
+            set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.06)
+            set_input(bsdf, ("Subsurface Weight", "Subsurface"), 0.5)
+            set_input(bsdf, "Subsurface Radius", (0.45, 1.0, 0.15))
+            set_input(bsdf, "Subsurface Scale", depth)
+            set_input(bsdf, ("Sheen Weight", "Sheen"), 0.4)
+            set_input(bsdf, "Sheen Roughness", 0.35)
+            set_input(bsdf, "Sheen Tint", (0.96, 1.0, 0.72, 1.0))
+            if glow:
+                set_input(bsdf, ("Emission Color", "Emission"), rgba)
+                set_input(bsdf, "Emission Strength", glow)
+        return self._material("leafy", color, dict(roughness=roughness, depth=depth, glow=glow, **o), b)
+
+    def honey(self, color="sun", depth=0.2, clarity=0.0, glow=0.22, roughness=0.05, **o):
+        """Мёд, сироп, янтарь: полупрозрачный, тёплое свечение на просвет. Свет рассеивается в толще (красный
+        канал глубже — края и тонкие места теплее), сверху плотный лак с бликом. depth — глубина рассеяния в
+        единицах сцены (порядка трети толщины слоя: больше — мутнее и зеленее, красный уходит вглубь);
+        clarity — доля прямого пропускания (сквозь мёд становится виден тёмный купол студии — темнеет);
+        glow — собственное свечение густым янтарём: заменяет свет, который в настоящем мёде приходит сзади;
+        держать до 0.4 (яркий оранжевый тональная кривая уводит в персиковый). Мёд за стеклом: стеклу —
+        ctx.clear_shadow(), иначе стенка затеняет его."""
+        def b(m, nt, bsdf, rgba):
+            deep = (rgba[0], rgba[1] * 0.8, rgba[2] * 0.45, 1.0)   # в толще мёд гуще и краснее цвета палитры
+            set_input(bsdf, "Base Color", deep)
+            set_input(bsdf, "Roughness", roughness)
+            set_input(bsdf, "IOR", 1.49)
+            set_input(bsdf, ("Subsurface Weight", "Subsurface"), 1.0)
+            set_input(bsdf, "Subsurface Radius", (1.0, 0.55, 0.2))
+            set_input(bsdf, "Subsurface Scale", depth)
+            set_input(bsdf, "Subsurface Anisotropy", 0.7)
+            set_input(bsdf, ("Transmission Weight", "Transmission"), clarity)
+            set_input(bsdf, ("Coat Weight", "Clearcoat"), 1.0)
+            set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.03)
+            if glow:
+                set_input(bsdf, ("Emission Color", "Emission"), (rgba[0], rgba[1] * 0.55, rgba[2] * 0.3, 1.0))
+                set_input(bsdf, "Emission Strength", glow)
+        return self._material("honey", color, dict(depth=depth, clarity=clarity, glow=glow, roughness=roughness, **o), b)
+
+    def printed(self, image, color="paper", roughness=0.5, coat=0.3, glow=0.0, **o):
+        """Печатная поверхность: картинка (png, jpg, webp) по UV — этикетка, экран, упаковка. Прозрачные места
+        картинки показывают color (бумага под печатью). glow > 0 — печать светится (экран). Надпись из SVG —
+        сначала в PNG (sharp); объёмная надпись — ctx.text."""
+        path = os.path.abspath(image)
+        if not os.path.isfile(path):
+            raise RuntimeError("printed: нет картинки " + path)
+
+        def b(m, nt, bsdf, rgba):
+            set_input(bsdf, "Roughness", roughness)
+            set_input(bsdf, ("Coat Weight", "Clearcoat"), coat)
+            set_input(bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.12)
+            tex = nt.nodes.new("ShaderNodeTexImage")
+            tex.image = bpy.data.images.load(path, check_existing=True)
+            tex.extension = "EXTEND"
+            mix = nt.nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            mix.inputs["A"].default_value = rgba
+            nt.links.new(tex.outputs["Alpha"], mix.inputs["Factor"])
+            nt.links.new(tex.outputs["Color"], mix.inputs["B"])
+            nt.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+            if glow:
+                nt.links.new(tex.outputs["Color"], bsdf.inputs.get("Emission Color") or bsdf.inputs["Emission"])
+                em = nt.nodes.new("ShaderNodeMath")
+                em.operation = "MULTIPLY"
+                em.inputs[1].default_value = glow
+                nt.links.new(tex.outputs["Alpha"], em.inputs[0])
+                nt.links.new(em.outputs[0], bsdf.inputs["Emission Strength"])
+        return self._material("printed", color, dict(image=path, roughness=roughness, coat=coat, glow=glow, **o), b)
+
+    def clear_shadow(self, obj):
+        """Стекло не затеняет то, что внутри: лучи теней проходят сквозь предмет (банка с мёдом, колба, витрина).
+        Без этого Cycles считает стенку непрозрачной для света — содержимое выходит тёмным и мутным."""
+        try:
+            obj.visible_shadow = False
+        except AttributeError:
+            self.warn("у этой версии Blender нет visible_shadow — содержимое за стеклом будет темнее")
+        return obj
+
     def material(self, kind, color=None, **o):
         if kind not in MATERIAL_KINDS:
             raise ValueError("материал «%s» — нужно одно из %s" % (kind, ", ".join(MATERIAL_KINDS)))
+        if kind == "printed":
+            if not o.get("image"):
+                raise ValueError("материалу printed нужен image — путь к картинке")
+            return self.printed(o.pop("image"), **(dict(o, color=color) if color is not None else o))
         fn = getattr(self, kind)
         return fn(color, **o) if color is not None else fn(**o)
 
@@ -471,10 +633,13 @@ class Studio(object):
         bm.loops.layers.uv.new("UVMap")
         return bm
 
-    def box(self, size=(1, 1, 1), bevel=0.04, material=None, location=(0, 0, 0), rotation=(0, 0, 0), name="box"):
-        """Брусок со скруглёнными рёбрами (фаска модификатором — в GLB применяется)."""
+    def box(self, size=(1, 1, 1), bevel=0.04, material=None, location=(0, 0, 0), rotation=(0, 0, 0), name="box", subdiv=0):
+        """Брусок со скруглёнными рёбрами (фаска модификатором — в GLB применяется). subdiv > 0 — грани сеткой
+        (для ctx.deform: пухлый пакет, подушка)."""
         bm = self._bm()
         bmesh.ops.create_cube(bm, size=1.0, calc_uvs=True)
+        if subdiv:
+            bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=int(subdiv), use_grid_fill=True)
         bmesh.ops.scale(bm, vec=Vector(size), verts=bm.verts)
         obj = self._mesh_obj(name, bm, material or self.clay(), location, rotation)
         return self.bevel(obj, min(bevel, min(size) * 0.49))
@@ -526,7 +691,24 @@ class Studio(object):
             pass
         return obj
 
-    def sphere(self, radius=0.5, material=None, location=(0, 0, 0), rotation=(0, 0, 0), name="sphere", segments=64):
+    def sphere(self, radius=0.5, material=None, location=(0, 0, 0), rotation=(0, 0, 0), name="sphere", segments=64, arc=1.0):
+        """Шар. arc < 1 — открытая чаша: доля от верхнего полюса вниз (0.5 — полусфера); толщину даёт ctx.solidify."""
+        if arc < 1.0:
+            rings = max(4, int(segments / 2 * arc))
+            verts, faces, uvs = [(0.0, 0.0, radius)], [], [(0.5, 1.0)]
+            for i in range(1, rings + 1):
+                th = math.pi * arc * i / rings
+                for j in range(segments):
+                    ph = 2 * math.pi * j / segments
+                    verts.append((radius * math.sin(th) * math.cos(ph), radius * math.sin(th) * math.sin(ph), radius * math.cos(th)))
+                    uvs.append((j / float(segments), 1 - i / float(rings)))
+            for j in range(segments):
+                faces.append((0, 1 + j, 1 + (j + 1) % segments))
+            for i in range(rings - 1):
+                for j in range(segments):
+                    a, b = 1 + i * segments + j, 1 + i * segments + (j + 1) % segments
+                    faces.append((a, a + segments, b + segments, b))
+            return self.mesh(verts, faces, material or self.clay(), uvs, None, location, rotation, name)
         bm = self._bm()
         try:
             bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=segments // 2, radius=radius, calc_uvs=True)
@@ -560,6 +742,171 @@ class Studio(object):
         bmesh.ops.create_grid(bm, x_segments=max(1, subdiv), y_segments=max(1, subdiv), size=0.5, calc_uvs=True)
         bmesh.ops.scale(bm, vec=Vector((size[0], size[1], 1)), verts=bm.verts)
         return self._mesh_obj(name, bm, material or self.paper(), location, rotation, smooth=subdiv > 1, sharp_angle=180)
+
+    def mesh(self, verts, faces, material=None, uvs=None, colors=None, location=(0, 0, 0), rotation=(0, 0, 0), name="mesh", sharp_angle=180, vcol="Col"):
+        """Своя сетка: verts — [(x, y, z)], faces — [(i, j, k, l)]; uvs — (u, v) на каждую вершину; colors —
+        линейные (r, g, b) на каждую вершину (ctx.color(...)[:3]) в атрибут vcol — материал читает его при vcol="Col"."""
+        me = bpy.data.meshes.new(name)
+        me.from_pydata([tuple(v) for v in verts], [], [tuple(f) for f in faces])
+        me.update()
+        if uvs is not None:
+            layer = me.uv_layers.new(name="UVMap")
+            for loop in me.loops:
+                layer.data[loop.index].uv = uvs[loop.vertex_index]
+        if colors is not None:
+            attr = me.color_attributes.new(vcol, "FLOAT_COLOR", "POINT")
+            flat = []
+            for c in colors:
+                flat.extend((c[0], c[1], c[2], 1.0))
+            attr.data.foreach_set("color", flat)
+        obj = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.location = location
+        obj.rotation_euler = tuple(math.radians(a) for a in rotation)
+        self.smooth(obj, sharp_angle)
+        if material is not None:
+            me.materials.append(material)
+        return obj
+
+    def prism(self, outline, depth=0.2, hole=None, bevel=0.03, material=None, location=(0, 0, 0), rotation=(0, 0, 0), name="prism"):
+        """Пластина по контуру: outline — [(x, y)] против часовой, толщина depth по Z, центр по толщине в нуле.
+        hole — контур отверстия с тем же числом точек (стенка ячейки сот, рамка, кольцо). Контуры — hex_points,
+        rounded_polygon из studio или свои."""
+        bm = self._bm()
+        z0, z1 = -depth / 2.0, depth / 2.0
+        ob = [bm.verts.new((x, y, z0)) for x, y in outline]
+        ot = [bm.verts.new((x, y, z1)) for x, y in outline]
+        n = len(outline)
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((ob[i], ob[j], ot[j], ot[i]))
+        if hole:
+            if len(hole) != n:
+                raise ValueError("prism: у отверстия должно быть столько же точек, сколько у контура (%d, а не %d)" % (n, len(hole)))
+            hb = [bm.verts.new((x, y, z0)) for x, y in hole]
+            ht = [bm.verts.new((x, y, z1)) for x, y in hole]
+            for i in range(n):
+                j = (i + 1) % n
+                bm.faces.new((hb[j], hb[i], ht[i], ht[j]))      # стенка отверстия смотрит внутрь
+                bm.faces.new((ot[i], ot[j], ht[j], ht[i]))      # верхнее кольцо
+                bm.faces.new((ob[j], ob[i], hb[i], hb[j]))      # нижнее кольцо
+        else:
+            bm.faces.new(ot)
+            bm.faces.new(list(reversed(ob)))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        uv = bm.loops.layers.uv.active
+        xs, ys = [p[0] for p in outline], [p[1] for p in outline]
+        w, h = (max(xs) - min(xs)) or 1.0, (max(ys) - min(ys)) or 1.0
+        for f in bm.faces:
+            for loop in f.loops:
+                loop[uv].uv = ((loop.vert.co.x - min(xs)) / w, (loop.vert.co.y - min(ys)) / h)
+        obj = self._mesh_obj(name, bm, material or self.clay(), location, rotation, sharp_angle=40)
+        return self.bevel(obj, min(bevel, depth * 0.45), segments=4)
+
+    def tube(self, points, radius=0.06, material=None, segments=80, radial=18, caps=True, location=(0, 0, 0), rotation=(0, 0, 0), name="tube"):
+        """Трубка по сглаженной кривой через points. radius — число или функция от доли длины 0…1 (стебель к верху
+        тоньше). UV: u — вдоль, v — вокруг."""
+        path = [Vector(p) for p in catmull(points, segments)]
+        rad = radius if callable(radius) else (lambda u: radius)
+        nrm = None
+        verts, uvs, faces = [], [], []
+        for i, c in enumerate(path):
+            t = (path[min(i + 1, segments)] - path[max(i - 1, 0)]).normalized()
+            if nrm is None:
+                nrm = t.orthogonal().normalized()
+            nrm = (nrm - t * nrm.dot(t)).normalized()          # перенос рамки вдоль кривой: трубка не перекручивается
+            bi = t.cross(nrm)
+            r = rad(i / float(segments))
+            for j in range(radial):
+                a = 2 * math.pi * j / radial
+                verts.append(tuple(c + (nrm * math.cos(a) + bi * math.sin(a)) * r))
+                uvs.append((i / float(segments), j / float(radial)))
+        for i in range(segments):
+            for j in range(radial):
+                a, b = i * radial + j, i * radial + (j + 1) % radial
+                faces.append((a, b, b + radial, a + radial))
+        if caps:
+            faces.append(tuple(reversed(range(radial))))
+            faces.append(tuple(range(segments * radial, (segments + 1) * radial)))
+        return self.mesh(verts, faces, material or self.gloss(), uvs, None, location, rotation, name, sharp_angle=60)
+
+    def leaf(self, length=2.0, width=1.0, thick=0.16, curl=0.25, fold=0.18, tip=0.55, twist=0.0, veins=9, material=None,
+             location=(0, 0, 0), rotation=(0, 0, 0), name="leaf", segments=96):
+        """Лист: основание в начале координат, тянется вдоль +X, лицевая сторона вверх (+Z). Заострён к кончику
+        (tip), загнут вверх (curl), сложен по жилке (fold), прожилки ёлочкой рельефом (veins), twist — скрутка, рад."""
+        rings = segments // 2
+        verts, faces = [], []
+        for i in range(rings + 1):
+            th = math.pi * i / rings
+            for j in range(segments):
+                ph = 2 * math.pi * j / segments
+                sx, sy, sz = math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)
+                u = (sx + 1) / 2.0
+                taper = 1 - tip * u ** 2.2
+                base = 0.55 + 0.45 * min(1.0, u * 4)
+                y = sy * (width / 2.0) * taper * base
+                z = sz * (thick / 2.0) * (0.6 + 0.4 * math.sin(math.pi * u))
+                z += fold * abs(y)
+                if veins and sz > 0:
+                    side = abs(sy)
+                    rib = (0.5 + 0.5 * math.cos((u * veins - side * 2.2) * 2 * math.pi)) ** 6
+                    z -= thick * 0.11 * rib * min(1.0, side * 5) * math.sin(math.pi * u) + thick * 0.2 * math.exp(-side * side * 420) * math.sin(math.pi * min(1.0, u * 1.15))
+                z += curl * length * u * u
+                if twist:
+                    a = twist * u
+                    y, z = y * math.cos(a) - z * math.sin(a), y * math.sin(a) + z * math.cos(a)
+                verts.append((u * length, y, z))
+        for i in range(rings):
+            for j in range(segments):
+                a, b = i * segments + j, i * segments + (j + 1) % segments
+                faces.append((a, b, b + segments, a + segments))
+        obj = self.mesh(verts, faces, material or self.leafy(), None, None, location, rotation, name)
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)   # полюса сферы — в одну вершину
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(obj.data)
+        bm.free()
+        return obj
+
+    def deform(self, obj, fn):
+        """Сдвинуть вершины сетки: fn(x, y, z) → (x, y, z) в координатах предмета (пухлый пакет, капля, семя)."""
+        for v in obj.data.vertices:
+            v.co = fn(v.co.x, v.co.y, v.co.z)
+        obj.data.update()
+        return obj
+
+    def group(self, objs, location=(0, 0, 0), rotation=(0, 0, 0), scale=1.0, order="XYZ"):
+        """Повернуть, сдвинуть и растянуть собранную вещь целиком (вокруг начала координат): rotation — градусы,
+        order — порядок осей Эйлера (XYZ — сначала вокруг X; ZYX — сначала вокруг Z)."""
+        from mathutils import Euler, Matrix
+        m = Matrix.Translation(Vector(location)) @ Euler(tuple(math.radians(a) for a in rotation), order).to_matrix().to_4x4() @ Matrix.Scale(scale, 4)
+        for o in objs:
+            o.matrix_basis = m @ o.matrix_basis
+        return objs
+
+    def stand(self, objs, tilt=(0, 0, 0)):
+        """Вещь собрана лёжа — в плоскости XY лицом вверх (+Z), как рисуют на листе: поставить лицом к камере.
+        tilt — наклон в градусах уже в кадре: (назад, поворот вбок, крен)."""
+        self.group(objs, rotation=(0, 0, tilt[2]))
+        self.group(objs, rotation=(0, tilt[1], 0))
+        self.group(objs, rotation=(90 + tilt[0], 0, 0))
+        return objs
+
+    def center(self, objs):
+        """Сдвинуть собранную вещь так, чтобы середина её рамки встала в начало координат."""
+        c = bounds(objs)[0]
+        return self.group(objs, location=(-c.x, -c.y, -c.z))
+
+    def curve(self, points, n=64):
+        """n + 1 точек по сглаженной кривой через points (Catmull-Rom) — путь для своей сетки."""
+        return catmull(points, n)
+
+    def palette(self, **defaults):
+        """Цвета сцены по именам: значения по умолчанию, которые перекрывает --palette. Сцена зовёт один раз в
+        начале build и дальше берёт цвета по именам — сайт подставляет свои."""
+        self.PAL = merge_palette(merge_palette(self.PAL, defaults), self.job.get("palette") or {})
+        return self.PAL
 
     def text(self, body, size=0.4, depth=0.04, material=None, location=(0, 0, 0), rotation=(0, 0, 0), font=None, name="text"):
         """Объёмная надпись → сразу сетка (в GLB уходит только сетка). Кириллица — шрифтом font=путь.ttf/otf."""
@@ -821,9 +1168,33 @@ def bounce_plane(center, radius, color):
     return _role(obj, "helper")
 
 
-def camera_fit(objs, width, height, view=(0.35, -1.0, 0.3), fov=28.0, margin=1.12, target=None, distance=None, points=None):
-    """Камера по рамке предметов: сначала по описанной сфере, затем уточнение по проекции углов рамок —
-    предмет по центру кадра (сдвиг объектива, без перекоса перспективы) и с полем margin со всех сторон."""
+def outline_points(objs, limit=12000):
+    """Вершины вычисленной геометрии предметов в мире (не больше limit, с равным шагом): по ним камера видит
+    настоящий силуэт, а не углы рамок — у цилиндра и шара углы рамки торчат далеко за предмет."""
+    dg = bpy.context.evaluated_depsgraph_get()
+    pts = []
+    for o in objs:
+        ev = o.evaluated_get(dg)
+        try:
+            me = ev.to_mesh()
+        except RuntimeError:
+            me = None
+        if me is None or not len(me.vertices):
+            pts.extend(ev.matrix_world @ Vector(c) for c in ev.bound_box)
+            continue
+        mw = ev.matrix_world.copy()
+        pts.extend(mw @ v.co for v in me.vertices)
+        ev.to_mesh_clear()
+    if len(pts) > limit:
+        step = len(pts) / float(limit)
+        pts = [pts[int(i * step)] for i in range(limit)]
+    return pts
+
+
+def camera_fit(objs, width, height, view=(0.35, -1.0, 0.3), fov=28.0, margin=DEFAULT_MARGIN, target=None, distance=None, points=None):
+    """Камера по предметам: сначала по описанной сфере, затем уточнение по проекции вершин — предмет по центру
+    кадра (сдвиг объектива, без перекоса перспективы) и с полем со всех сторон: по большей стороне предмет
+    занимает 1/margin кадра (margin 1.19 — поля по 8 %). Свои distance и target — рамка как задано (ленты)."""
     from bpy_extras.object_utils import world_to_camera_view
     scene = bpy.context.scene
     cd = bpy.data.cameras.new("camera")
@@ -848,9 +1219,12 @@ def camera_fit(objs, width, height, view=(0.35, -1.0, 0.3), fov=28.0, margin=1.1
         bpy.context.view_layer.update()
 
     place(dist)
+    if not points:
+        pts = outline_points(objs)
+    field = None
     if not distance and not target:
         big = float(max(width, height))
-        for _ in range(5):
+        for _ in range(6):
             ps = [world_to_camera_view(scene, cam, p) for p in pts]
             ps = [p for p in ps if p.z > 0]
             if not ps:
@@ -864,7 +1238,11 @@ def camera_fit(objs, width, height, view=(0.35, -1.0, 0.3), fov=28.0, margin=1.1
                 break
             dist *= span * margin
             place(dist)
-    return cam, dict(center=list(center), radius=R, distance=dist, zmin=lo.z, shift=[cd.shift_x, cd.shift_y])
+    ps = [world_to_camera_view(scene, cam, p) for p in pts]
+    ps = [p for p in ps if p.z > 0]
+    if ps:
+        field = round(frame_margins([(p.x, p.y) for p in ps]), 4)
+    return cam, dict(center=list(center), radius=R, distance=dist, zmin=lo.z, shift=[cd.shift_x, cd.shift_y], field=field)
 
 
 def setup_render(job, warn):
@@ -1051,8 +1429,10 @@ def light_scene(ctx, opt, width, height):
         g.location = (center.x, center.y, lo.z - R * 0.0005)  # чуть ниже дна: без мерцания совпавших граней
     elif not opt.get("ground") and not has_floor:
         bounce_plane(center, R, ctx.PAL.get("bg", "#EFEBE4"))
-    cam, cinfo = camera_fit(objs, width, height, view=view, fov=float(opt.get("fov", 28)), margin=float(opt.get("margin", 1.12)),
+    cam, cinfo = camera_fit(objs, width, height, view=view, fov=float(opt.get("fov", 28)), margin=float(opt.get("margin") or DEFAULT_MARGIN),
                             target=opt.get("target"), distance=opt.get("distance"), points=opt.get("points"))
+    cinfo["bleed"] = bool(opt.get("bleed"))   # сцена сама выводит предмет за край (лента через весь кадр)
+    cinfo["ground"] = bool((opt.get("ground") or has_floor) and not ctx.job.get("backdrop"))   # тень на земле: --trim режет по предмету
     return cam, cinfo
 
 
@@ -1073,7 +1453,8 @@ def build_from_spec(ctx, spec, base_dir):
         t = o["type"]
         kind = o.get("material") or {"box": "clay", "card": "satin", "cylinder": "clay", "sphere": "gloss", "torus": "gloss",
                                      "plane": "paper", "cloth": "fabric", "text": "gloss"}.get(t, "clay")
-        mat = ctx.material(kind, o.get("color")) if t != "import" else None
+        extra = {"image": o["image"] if os.path.isabs(o["image"]) else os.path.join(base_dir, o["image"])} if kind == "printed" else {}
+        mat = ctx.material(kind, o.get("color"), **extra) if t != "import" else None
         loc = tuple(o.get("location", (0, 0, 0)))
         rot = tuple(o.get("rotation", (0, 0, 0)))
         made = []
@@ -1123,7 +1504,7 @@ def build_from_spec(ctx, spec, base_dir):
     phys = spec.get("physics") or {}
     if floor_needed or phys:
         ctx.floor(z=float(phys.get("floor", 0.0)))
-    opt = {"view": cam.get("view"), "fov": cam.get("fov", 28), "margin": cam.get("margin", 1.12), "ground": spec.get("ground", True)}
+    opt = {"view": cam.get("view"), "fov": cam.get("fov", 28), "margin": cam.get("margin"), "ground": spec.get("ground", True)}
     if phys.get("frames"):
         opt["frames"] = int(phys["frames"])
     return {k: v for k, v in opt.items() if v is not None}

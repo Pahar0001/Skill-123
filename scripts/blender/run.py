@@ -16,11 +16,16 @@
 Без Blender (обычный python3) скрипт проверяет задание, ничего не строя:
     python3 run.py --validate <задание.json>   → JOB-OK … | JOB-ERROR …
 
-НЕ ПРОВЕРЕНО ЗАПУСКОМ В BLENDER (05.10.2026): при разработке Blender на машине не было. Проверены только
-синтаксис (Python 3.11) и разбор заданий. Первый запуск на машине владельца — проверка самого конвейера.
+Вывод — всегда UTF-8: blender.mjs читает его как UTF-8, а обычный python на Windows по умолчанию печатает
+в кодировке консоли (cp1251) — русские причины ошибок приходили кракозябрами.
 """
 import sys as _sys
 _sys.dont_write_bytecode = True   # Blender не оставляет __pycache__ в папке скилла
+for _s in (_sys.stdout, _sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 import importlib.util
 import json
@@ -171,7 +176,7 @@ def build(job):
     else:
         opt = studio.build_from_spec(ctx, spec, os.path.dirname(sc["file"]))
     if not isinstance(opt, dict):
-        raise RuntimeError("build(ctx) вернул %r — нужен словарь { view, fov, margin, ground } или None" % type(opt).__name__)
+        raise RuntimeError("build(ctx) вернул %r — нужен словарь { view, fov, margin, ground, bleed } или None" % type(opt).__name__)
     if not studio.items():
         raise RuntimeError("сцена ничего не построила: нет предметов с геометрией (служебные — земля, подложка — не в счёт)")
     return ctx, opt

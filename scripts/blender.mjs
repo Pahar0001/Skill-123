@@ -14,10 +14,12 @@
  *        [--bake auto|off] [--tex 1024] [--key-step 1] [--frames 120] [--no-check]
  *   node blender.mjs glb-check <файл.glb> [--poster картинка] [--shot файл.png] [--site папка] [--for item|scene] [--max-kb N]
  *   node blender.mjs vendor --out <папка сайта> [--draco]    three.js для страницы: vendor/three/… и glb-viewer.js
- *   node blender.mjs selftest [--keep]                       без Blender: аргументы, задания, Python, просмотрщик GLB
+ *   node blender.mjs selftest [--keep]                       аргументы, задания, Python, просмотрщик GLB; есть Blender —
+ *                                                            ещё и настоящие рендер, физика, экспорт GLB и doctor
  *   node blender.mjs --help | -h
  *
- * Сцена — модуль Python с функцией build(ctx) (образцы: templates/blender/icon.py, stack.py, drape.py) или
+ * Сцена — модуль Python с функцией build(ctx) (образцы в templates/blender/: icon.py, icons.py, honeycomb.py,
+ * sprout.py, ribbon.py — предметы; stack.py, drape.py — физика) или
  * описание JSON (templates/blender/cards.json). Blender запускается без окна, с заводскими настройками, со
  * скриптом scripts/blender/run.py и заданием JSON (точная команда печатается перед запуском и при --dry-run).
  * Задание пишется в папку результата (<имя>.job.json), полный вывод Blender — в <имя>.blender.log.
@@ -41,8 +43,10 @@
  *   --transparent   прозрачный фон и тень на земле в альфе (по умолчанию так); --backdrop — непрозрачная
  *                   подложка-циклорама цвета bg из палитры (цвет после тональной кривой с hex сайта точно не совпадёт)
  *   --bg            цвет поля сайта: превью <имя>-on-<bg>.jpg, лист вариантов, подложка видео mp4
- *   --trim          обрезать прозрачные поля кадра
- *   --q             качество WebP (88); --small — ширина малой копии для srcset, px (640; 0 — без неё)
+ *   --trim          обрезать прозрачные поля кадра; у предмета с тенью на земле — по самому предмету с запасом
+ *                   под тень (--trim-side 0.3, --trim-bottom 0.07 — доли ширины и высоты предмета); печатает,
+ *                   на какой доле высоты кадра стоит низ предмета (на столько кадр опускают в вёрстке)
+ *   --q             качество WebP (88); --small — ширины малых копий для srcset, px, через запятую (640; 0 — без них)
  *   --tone          тональная кривая: neutral — Khronos PBR Neutral, цвета палитры без сдвига (по умолчанию);
  *                   agx — фотографичнее, яркое уводит в пастель; filmic; standard
  *   --look          «look» тональной кривой (например "Medium High Contrast" у AgX)
@@ -72,9 +76,12 @@
  * vendor:  --out папка сайта; --draco — ещё декодер Draco. Печатает importmap для страницы.
  * selftest: --keep — не удалять временную папку.
  *
+ * Цена: без видеокарты кадр 1000×1000 на 256 сэмплов — минуты (Ryzen 7 6800H: 200 с), черновик --samples 32
+ * --w 600 --h 600 — десятки секунд; с видеокартой — секунды. Замеры — reference/blender.md.
  * Окружение: BLENDER_PATH — путь к Blender (файл или папка установки; задан — другие места не ищутся);
  * CHROME_PATH; FFMPEG_PATH; SITE_REWORK_PROJECT.
- * Вердикты: OK; WARN — сделано, посмотреть (вес сверх бюджета, не улеглось, темно); FAIL — негодно (пустой кадр,
+ * Вердикты: OK; WARN — сделано, посмотреть (вес сверх бюджета, не улеглось, темно, предмет ближе 6 % к краю
+ * кадра); FAIL — негодно (пустой кадр,
  * GLB не грузится). Коды: 0 — сделано (и при WARN); 1 — ошибка или FAIL; 2 — нет Blender или зависимостей.
  */
 import fs from 'node:fs';
@@ -96,11 +103,15 @@ const FX = path.join(HERE, 'fixtures', 'blender');
 const HELP = fs.readFileSync(SELF, 'utf8').split('*/')[0].replace(/^#!.*\n\/\*\*?\n?/, '').replace(/^ ?\* ?/gm, '');
 const COMMANDS = ['doctor', 'render', 'physics', 'glb', 'glb-check', 'vendor', 'selftest'];
 const MIN_VERSION = [4, 2];
+const FIELD_MIN = 0.06;   // предмет ближе к краю кадра — WARN (камера ставит поле 8 %)
+/* Python на Windows печатает в кодировке консоли (cp1251), а читаем мы UTF-8: без этих переменных русские
+   причины ошибок приходят кракозябрами. Blender свой Python и так держит в UTF-8; run.py перенастраивает вывод сам. */
+const PY_ENV = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
 const BUDGET = { item: { kb: 1536, verts: 150000, name: 'предмета' }, scene: { kb: 4096, verts: 400000, name: 'сцены' } };
 
 const { pos, opt } = parseArgs(process.argv.slice(2), {
   flags: ['help', 'denoise', 'no-denoise', 'transparent', 'backdrop', 'trim', 'draco', 'animation', 'video', 'webm', 'webp-frames', 'save-blend', 'dry-run', 'no-check', 'keep'],
-  values: ['out', 'name', 'variant', 'palette', 'param', 'seed', 'timeout', 'json', 'w', 'h', 'samples', 'bg', 'q', 'small', 'tone', 'look', 'exposure', 'engine', 'device',
+  values: ['out', 'name', 'variant', 'palette', 'param', 'seed', 'timeout', 'json', 'w', 'h', 'samples', 'bg', 'q', 'small', 'tone', 'look', 'exposure', 'engine', 'device', 'trim-side', 'trim-bottom',
     'frames', 'sim', 'frame-on', 'fps', 'step', 'video-samples', 'glb', 'bake', 'tex', 'key-step', 'for', 'max-kb', 'poster', 'shot', 'site'],
   commands: COMMANDS,
   strict: true,
@@ -230,20 +241,24 @@ const oldVersion = (v) => v && !v.error && (v.major < MIN_VERSION[0] || (v.major
 
 /**
  * Запуск задания в Blender. Протокол run.py — строки BLENDER-STEP/WARN/RESULT/ERROR/TRACE; прогресс Cycles
- * («Fra:… Sample 12/256») печатается не чаще раза в 15 с. Полный вывод — в log.
+ * («Fra:… Sample 12/256», Blender 4.x) печатается не чаще раза в 15 с; молчит дольше 30 с (Blender 5.x) —
+ * строка «считает: N с». Полный вывод — в log.
  */
 export function runBlender(exe, jobFile, { timeoutMin = 120, log = null, quiet = false } = {}) {
   const args = ['-b', '--factory-startup', '--python-exit-code', '3', '-P', RUN_PY, '--', jobFile];
   return new Promise((resolve) => {
-    const p = shellNeeded(exe) ? spawn([q(exe), ...args.map(q)].join(' '), { shell: true, windowsHide: true }) : spawn(exe, args, { windowsHide: true });
+    const p = shellNeeded(exe) ? spawn([q(exe), ...args.map(q)].join(' '), { shell: true, windowsHide: true, env: PY_ENV }) : spawn(exe, args, { windowsHide: true, env: PY_ENV });
     const res = { code: null, result: null, error: null, trace: [], warnings: [], steps: [] };
-    let buf = '', all = '', lastProgress = 0;
+    let buf = '', all = '', lastProgress = Date.now();
+    const t0 = Date.now();
+    /* Blender 5.x в фоновом режиме хода по сэмплам не печатает: чтобы минуты рендера на процессоре не выглядели зависанием — раз в 30 с строка «считает» */
+    const beat = quiet ? null : setInterval(() => { if (Date.now() - lastProgress >= 30000) { lastProgress = Date.now(); console.log(`     … Blender считает: ${Math.round((Date.now() - t0) / 1000)} с`); } }, 5000);
     const timer = setTimeout(() => { res.error = `Blender не уложился в ${timeoutMin} мин (--timeout) — остановлен`; p.kill('SIGKILL'); }, timeoutMin * 60000);
     const onLine = (ln) => {
       const m = /^BLENDER-(STEP|WARN|RESULT|ERROR|TRACE) ?(.*)$/.exec(ln);
       if (m) {
         const [, tag, text] = m;
-        if (tag === 'STEP') { res.steps.push(text); if (!quiet) console.log(`     · ${text}`); }
+        if (tag === 'STEP') { res.steps.push(text); lastProgress = Date.now(); if (!quiet) console.log(`     · ${text}`); }
         else if (tag === 'WARN') res.warnings.push(text);
         else if (tag === 'RESULT') { try { res.result = JSON.parse(text); } catch (e) { res.error = `итог Blender не разбирается: ${e.message}`; } }
         else if (tag === 'ERROR') res.error = text;
@@ -258,7 +273,7 @@ export function runBlender(exe, jobFile, { timeoutMin = 120, log = null, quiet =
     p.stderr.on('data', feed);
     p.on('error', (e) => { res.error = `Blender не запустился: ${e.message}`; });
     p.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimeout(timer); if (beat) clearInterval(beat);
       if (buf) onLine(buf);
       res.code = code;
       if (log) { try { ensureDir(path.dirname(log)); fs.writeFileSync(log, all); } catch { /* лог — не главное */ } }
@@ -276,7 +291,7 @@ export function threeDir() {
 }
 function findPython() {
   for (const c of process.platform === 'win32' ? ['py', 'python', 'python3'] : ['python3', 'python']) {
-    const r = spawnSync(c, c === 'py' ? ['-3', '--version'] : ['--version'], { encoding: 'utf8', timeout: 20000, windowsHide: true });
+    const r = spawnSync(c, c === 'py' ? ['-3', '--version'] : ['--version'], { encoding: 'utf8', timeout: 20000, windowsHide: true, env: PY_ENV });
     const m = /Python (\d+)\.(\d+)/.exec(`${r.stdout || ''}${r.stderr || ''}`);
     if (m && +m[1] === 3 && +m[2] >= 8) return { cmd: c === 'py' ? ['py', '-3'] : [c], version: `${m[1]}.${m[2]}` };
   }
@@ -299,7 +314,7 @@ function sceneArg(file) {
 }
 /* быстрая проверка JSON-сцены до запуска Blender (полная — studio.validate_spec в Python) */
 const SHAPES = ['box', 'card', 'cylinder', 'sphere', 'torus', 'plane', 'cloth', 'text', 'import'];
-const MATS = ['clay', 'gloss', 'satin', 'metal', 'paper', 'glass', 'glow', 'fabric', 'rubber'];
+const MATS = ['clay', 'gloss', 'satin', 'metal', 'paper', 'glass', 'glow', 'fabric', 'rubber', 'leafy', 'honey', 'printed'];
 export function specErrors(spec) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['сцена JSON — объект { objects: [...] }'];
   if (!Array.isArray(spec.objects) || !spec.objects.length) return ['нет списка objects (хотя бы один предмет)'];
@@ -308,6 +323,7 @@ export function specErrors(spec) {
     if (!o || typeof o !== 'object') { errs.push(`objects[${i}] — объект`); return; }
     if (!SHAPES.includes(o.type)) errs.push(`objects[${i}].type «${o.type}» — нужно одно из ${SHAPES.join(', ')}`);
     if (o.material != null && !MATS.includes(o.material)) errs.push(`objects[${i}].material «${o.material}» — нужно одно из ${MATS.join(', ')}`);
+    if (o.material === 'printed' && !o.image) errs.push(`objects[${i}]: у material printed нужен image (png, jpg или webp рядом со сценой)`);
   });
   return errs;
 }
@@ -367,8 +383,8 @@ function needBlender() {
   const b = findBlender();
   if (!b.exe) {
     die(`НЕ СДЕЛАНО: ${b.error}.${b.tried.length && !process.env.BLENDER_PATH ? ` Искал: ${b.tried.slice(0, 8).join('; ')}${b.tried.length > 8 ? ` и ещё ${b.tried.length - 8}` : ''}.` : ''}
-Поставить Blender 4.2 LTS или новее с blender.org (бесплатно) и/или указать путь в BLENDER_PATH; проверить — node blender.mjs doctor.
-Без Blender: пререндер в WebGL — templates/render3d (render.mjs), объём в SVG — svg3d.mjs; задание без запуска — --dry-run.`, 2);
+Поставить Blender 4.2 LTS или новее (бесплатно) и/или указать путь в BLENDER_PATH; что ставить на этой системе — node blender.mjs doctor.
+Предметы с объёмом рендерит только Blender. Без него остаются: мелкий объёмный значок в SVG — svg3d.mjs, набросок — templates/sketch2d; задание без запуска — --dry-run.`, 2);
   }
   const v = blenderVersion(b.exe);
   if (v.error) die(`FAIL Blender ${b.exe} не отвечает: ${v.error}`, 1);
@@ -384,7 +400,7 @@ export async function measureImage(sharp, buf, { opaque = false } = {}) {
   const W = info.width, H = info.height, N = W * H;
   let ref = null;
   if (opaque) { const corners = [0, W - 1, (H - 1) * W, N - 1].map((i) => [data[i * 4], data[i * 4 + 1], data[i * 4 + 2]]); ref = corners.sort((a, b) => a[0] + a[1] + a[2] - b[0] - b[1] - b[2])[1]; }
-  let filled = 0, solid = 0, lum = 0, clipped = 0, edge = 0, edgeN = 0;
+  let filled = 0, solid = 0, lum = 0, clipped = 0, edge = 0, edgeN = 0, x0 = W, x1 = -1, y0 = H, y1 = -1;
   for (let i = 0; i < N; i++) {
     const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2], a = data[i * 4 + 3];
     const on = opaque ? Math.max(Math.abs(r - ref[0]), Math.abs(g - ref[1]), Math.abs(b - ref[2])) > 14 : a > 8;
@@ -392,37 +408,69 @@ export async function measureImage(sharp, buf, { opaque = false } = {}) {
     if (on) filled++;
     if (firm) { solid++; lum += (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; if (Math.min(r, g, b) >= 250) clipped++; }
     const x = i % W, y = (i / W) | 0;
+    if (firm) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (x === 0 || y === 0 || x === W - 1 || y === H - 1) { edgeN++; if (firm && !opaque) edge++; }
   }
-  return { width: W, height: H, share: filled / N, light: solid ? lum / solid : 0, clipped: solid ? clipped / solid : 0, edge: edgeN ? edge / edgeN : 0 };
+  /* поле: от плотных пикселей предмета (тень на земле полупрозрачна — не в счёт) до ближайшего края, доля стороны */
+  const box = x1 >= x0 ? { x0, x1, y0, y1 } : null;
+  const field = box ? Math.min(x0 / W, (W - 1 - x1) / W, y0 / H, (H - 1 - y1) / H) : null;
+  return { width: W, height: H, share: filled / N, light: solid ? lum / solid : 0, clipped: solid ? clipped / solid : 0, edge: edgeN ? edge / edgeN : 0, field, box };
 }
 
-async function postStill(png, job, { label = job.name } = {}) {
+/** Рамка стоящего предмета с тенью на земле: по плотным пикселям предмета, с запасом по бокам и снизу под тень.
+ *  → { left, top, width, height, foot } — foot: на какой доле высоты новой рамки стоит низ предмета. */
+export function groundCrop(box, W, H, { side = 0.3, bottom = 0.07 } = {}) {
+  const w = box.x1 - box.x0, h = box.y1 - box.y0;
+  const left = Math.max(0, Math.round(box.x0 - w * side)), right = Math.min(W, Math.round(box.x1 + w * side));
+  const top = Math.max(0, box.y0 - 4), bot = Math.min(H, Math.round(box.y1 + h * bottom));
+  return { left, top, width: right - left, height: bot - top, foot: (box.y1 - top) / (bot - top) };
+}
+
+async function postStill(png, job, { label = job.name, bleed = false, ground = false } = {}) {
   const sharp = loadSharp();
   if (!sharp) { line('WARN', label, `нет sharp — WebP и проверки кадра не сделаны (npm i sharp --prefix ~/.claude/site-rework); PNG: ${png}`); return null; }
   if (!exists(png)) { line('FAIL', label, `Blender не записал кадр ${png}`); return null; }
   const out = path.dirname(png), base = path.basename(png, '.png');
   let buf = fs.readFileSync(png);
-  if (opt.trim && !job.backdrop) { buf = await sharp(buf).trim({ threshold: 2 }).png().toBuffer(); fs.writeFileSync(png, buf); }
+  const whole = await measureImage(sharp, buf, { opaque: !!job.backdrop });   // поле до края — по кадру до обрезки
+  let foot = null;
+  if (opt.trim && !job.backdrop) {
+    /* предмет на земле: тень расходится далеко — обрезка «по прозрачному» оставила бы предмет мелким; режем по
+       самому предмету с запасом под тень и говорим, где его низ */
+    if (ground && whole.box) {
+      const c = groundCrop(whole.box, whole.width, whole.height, { side: numOpt('trim-side', 0.3, { min: 0, max: 5 }), bottom: numOpt('trim-bottom', 0.07, { min: 0, max: 5 }) });
+      buf = await sharp(buf).extract({ left: c.left, top: c.top, width: c.width, height: c.height }).png().toBuffer();
+      foot = c.foot;
+    } else buf = await sharp(buf).trim({ threshold: 2 }).png().toBuffer();
+    fs.writeFileSync(png, buf);
+  }
   const q = numOpt('q', 88, { min: 1, max: 100, int: true });
   const webp = path.join(out, `${base}.webp`);
   await sharp(buf).webp({ quality: q, alphaQuality: 90, effort: 5 }).toFile(webp);
   const m = await measureImage(sharp, buf, { opaque: !!job.backdrop });
   const files = [png, webp];
-  const small = numOpt('small', 640, { min: 0, max: 8192, int: true });
-  if (small && m.width > small) { const f = path.join(out, `${base}-${small}.webp`); await sharp(buf).resize({ width: small }).webp({ quality: q, alphaQuality: 90, effort: 5 }).toFile(f); files.push(f); }
+  const smalls = [];
+  for (const sv of opt.small == null ? ['640'] : listOf(opt.small)) {
+    const small = Number(sv);
+    if (!Number.isInteger(small) || small < 0 || small > 8192) die(`--small ${sv}: нужны целые ширины от 0 до 8192 через запятую`);
+    if (small && m.width > small) { const f = path.join(out, `${base}-${small}.webp`); await sharp(buf).resize({ width: small }).webp({ quality: q, alphaQuality: 90, effort: 5 }).toFile(f); files.push(f); smalls.push(f); }
+    else if (small) console.log(`     малая копия ${small} px не нужна: кадр ${m.width} px не шире`);
+  }
   const bg = opt.bg != null ? normHex(opt.bg) : null;
   if (opt.bg != null && !bg) line('WARN', '--bg', `${opt.bg}: не цвет — превью не построено`);
   if (bg) { const f = path.join(out, `${base}-on-${bg.slice(1)}.jpg`); await sharp(buf).flatten({ background: bg }).jpeg({ quality: 88 }).toFile(f); files.push(f); }
   report.files.push(...files);
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
-  const detail = `${m.width}×${m.height}, заполнено ${pct(m.share)}, яркость предмета ${m.light.toFixed(2)}, webp ${kb(sizeOf(webp))}${files[2] && files[2].endsWith('.webp') ? `, малая ${kb(sizeOf(files[2]))}` : ''}`;
+  const detail = `${m.width}×${m.height}, заполнено ${pct(m.share)}, яркость предмета ${m.light.toFixed(2)}, ${whole.field != null ? `поле ${pct(whole.field)}, ` : ''}webp ${kb(sizeOf(webp))}${smalls.length ? `, малые ${smalls.map((f) => kb(sizeOf(f))).join(' и ')}` : ''}`;
   if (m.share < 0.01) line('FAIL', `${label}: пустой кадр`, `${detail} — предмет не в кадре или не построен; открыть ${png}`);
   else line('OK', label, detail);
   if (m.share >= 0.01 && m.light < 0.12) line('WARN', `${label}: темно`, `средняя яркость ${m.light.toFixed(2)} — --exposure +0.5…+1 или светлее материалы`);
   if (m.clipped > 0.03) line('WARN', `${label}: пересвет`, `${pct(m.clipped)} предмета белые без деталей — --exposure −0.5, слабее glow, --tone agx`);
-  if (m.edge > 0.02) line('WARN', `${label}: упирается в край кадра`, `${pct(m.edge)} рамки занято предметом — больше margin в ответе сцены или --frame-on all`);
-  return { png, files, ...m };
+  /* край кадра: у сцены, которая сама выводит предмет за край (bleed: лента через весь экран), это замысел */
+  if (!bleed && whole.edge > 0.02) line('WARN', `${label}: упирается в край кадра`, `${pct(whole.edge)} рамки занято предметом — больше margin в ответе сцены или --frame-on all`);
+  else if (!bleed && whole.share >= 0.01 && whole.field != null && whole.field < FIELD_MIN) line('WARN', `${label}: предмет близко к краю кадра`, `поле ${pct(whole.field)}, нужно не меньше ${pct(FIELD_MIN)} — больше margin в ответе сцены (по умолчанию 1.19 — поля по 8 %); свои distance и target — отодвинуть камеру`);
+  if (foot != null) console.log(`     низ предмета на ${pct(foot)} высоты кадра — на столько же опустить кадр в вёрстке (transform: translateY), тень ляжет ниже линии`);
+  return { png, files, ...m, field: whole.field, foot };
 }
 
 async function framesToVideo(dir, job) {
@@ -531,8 +579,11 @@ function viewerServer({ file, poster, site }) {
     hits.push(u);
     let p = null;
     /* ?below=1 — блок ниже экрана (проверка ленивого запуска): правка страницы только в этом сервере */
-    if ((u === '/viewer.html' || u === '/') && /[?&]below=1/.test(req.url)) {
-      const html = fs.readFileSync(path.join(TPL, 'viewer.html'), 'utf8').replace('</head>', '<style>.glb-viewer{margin-top:300vh}</style></head>');
+    /* ?loop=1 — анимация по кругу (проверка паузы вне экрана: сама такая анимация не остановится) */
+    if ((u === '/viewer.html' || u === '/') && /[?&](below|loop)=1/.test(req.url)) {
+      let html = fs.readFileSync(path.join(TPL, 'viewer.html'), 'utf8');
+      if (/[?&]below=1/.test(req.url)) html = html.replace('</head>', '<style>.glb-viewer{margin-top:300vh}</style></head>');
+      if (/[?&]loop=1/.test(req.url)) html = html.replaceAll('<figure class="glb-viewer"', '<figure class="glb-viewer" data-loop="repeat"');
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
       return res.end(html);
     }
@@ -559,10 +610,12 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
   const posterQ = poster ? `&poster=/poster${path.extname(poster).toLowerCase()}` : '&poster=';
   const url = `${base}/viewer.html?src=/model.glb${posterQ}`;
   const puppeteer = loadPuppeteer();
-  const browser = await puppeteer.launch({ executablePath: requireChrome(), headless: true, args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
+  const browser = await puppeteer.launch({ executablePath: requireChrome(), headless: true, protocolTimeout: 300000, args: ['--no-sandbox', '--hide-scrollbars', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--use-angle=swiftshader'] });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const state = (page) => page.evaluate(() => { const f = document.querySelector('.glb-viewer'); const c = f && f.glbViewer; return c ? { state: c.state, frames: c.frames, stats: c.stats, reduced: c.reduced } : null; });
-  const waitState = (page, list, ms = 60000) => page.waitForFunction((l) => { const f = document.querySelector('.glb-viewer'); return f && f.glbViewer && l.includes(f.glbViewer.state); }, { timeout: ms, polling: 100 }, list).then(() => true, () => false);
+  /* пределы ожидания — под нагрузкой (рядом ещё несколько браузеров): программный WebGL грузит three.js и модель до минуты */
+  const until = async (fn, ms = 10000) => { const t = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t > ms) return v; await sleep(150); } };
+  const waitState = (page, list, ms = 150000) => page.waitForFunction((l) => { const f = document.querySelector('.glb-viewer'); return f && f.glbViewer && l.includes(f.glbViewer.state); }, { timeout: ms, polling: 100 }, list).then(() => true, () => false);
   const open = async ({ vp = { width: 1200, height: 900, deviceScaleFactor: 1 }, before = null, reduced = false, query = '' } = {}) => {
     const page = await browser.newPage();
     const errors = [];
@@ -577,7 +630,7 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
     await page.setViewport(vp);
     if (reduced) await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
     if (before) await page.evaluateOnNewDocument(before);
-    await page.goto(url + query, { waitUntil: 'load', timeout: 60000 });
+    await page.goto(url + query, { waitUntil: 'load', timeout: 150000 });
     return { page, errors };
   };
   let stats = null;
@@ -592,19 +645,33 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
       line('OK', 'GLB в странице', `загрузился: сеток ${stats.meshes}, вершин ${stats.vertices}, треугольников ${stats.triangles}, анимаций ${stats.animations}${stats.duration ? ` (${stats.duration} с)` : ''}`);
       const buf = await page.evaluate(() => { const c = document.querySelector('.glb-canvas'); return { w: c.width, css: c.clientWidth }; });
       line(buf.w <= buf.css * 2 + 2 ? 'OK' : 'WARN', 'плотность холста', `буфер ${buf.w} px на ${buf.css} CSS px при DPR 3 (предел 2)`);
-      const f0 = (await state(page)).frames; await sleep(1200); const s1 = await state(page);
-      if (stats.animations) line(s1.frames > f0 && s1.stats.time > 0 ? 'OK' : 'FAIL', 'анимация идёт', `кадров за 1.2 с: ${s1.frames - f0}, время ${s1.stats.time} с`);
+      const f0 = (await state(page)).frames;
+      /* анимация: ждём первый новый кадр до 10 с (под нагрузкой за 1.2 с кадра могло не быть); покой — те же 1.2 с */
+      let s1;
+      if (stats.animations) s1 = (await until(async () => { const x = await state(page); return x.frames > f0 && x.stats.time > 0 ? x : null; })) || await state(page);
+      else { await sleep(1200); s1 = await state(page); }
+      if (stats.animations) line(s1.frames > f0 && s1.stats.time > 0 ? 'OK' : 'FAIL', 'анимация идёт', `новых кадров: ${s1.frames - f0}, время ${s1.stats.time} с`);
       else line(s1.frames === f0 ? 'OK' : 'WARN', 'в покое не рисует', `кадров за 1.2 с без движения: ${s1.frames - f0}`);
-      if (stats.animations) {
-        /* анимацию — с начала и сразу прочь с экрана: пауза проверяется, пока ей есть что играть */
-        await page.evaluate(() => { document.querySelector('.glb-viewer').glbViewer.replay(); window.scrollTo(0, document.body.scrollHeight); }); await sleep(500);
-        const a = (await state(page)).frames; await sleep(1000); const b2 = (await state(page)).frames;
-        line(b2 === a ? 'OK' : 'FAIL', 'вне экрана — пауза', `кадров за 1 с вне экрана: ${b2 - a}`);
-        await page.evaluate(() => window.scrollTo(0, 0)); await sleep(800);
-        const c = (await state(page)).frames;
-        line(c > b2 ? 'OK' : 'WARN', 'снова на экране — продолжает', `кадров после возврата: ${c - b2}`);
-      }
       line(errors.length ? 'FAIL' : 'OK', 'консоль', errors.length ? errors.slice(0, 4).join(' | ') : 'без ошибок');
+      await page.close();
+    }
+    /* 1б. пауза вне экрана — на анимации по кругу: анимация «один раз» длиной 1,6 с под нагрузкой успевала доиграть раньше,
+       чем срабатывал наблюдатель видимости, и счётчик кадров замирал сам — проверка то мигала, то проходила зря */
+    if (stats.animations) {
+      const { page } = await open({ query: '&loop=1' });
+      const ok = await waitState(page, ['ready']);
+      const looped = ok && await page.evaluate(() => document.querySelector('.glb-viewer').dataset.loop === 'repeat');
+      const f0 = ok ? (await state(page)).frames : 0;
+      const runs = ok && await until(async () => (await state(page)).frames > f0);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      let a = ok ? (await state(page)).frames : 0, stopped = false;
+      for (let k = 0; k < 30 && ok; k++) { await sleep(400); const n = (await state(page)).frames; if (n === a) { stopped = true; break; } a = n; }
+      await sleep(1000);
+      const b2 = ok ? (await state(page)).frames : 0;
+      line(ok && looped && runs && stopped && b2 === a ? 'OK' : 'FAIL', 'вне экрана — пауза', !ok ? `страница с анимацией по кругу не загрузилась: ${(await state(page) || {}).state}` : !looped ? 'анимация по кругу не включилась (data-loop) — проверка не состоялась' : !runs ? 'анимация по кругу не пошла' : `анимация по кругу; кадров за 1 с вне экрана: ${b2 - a}${stopped ? '' : ' — за 12 с вне экрана рисование не остановилось'}`);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const c = ok ? ((await until(async () => { const x = (await state(page)).frames; return x > b2 ? x : 0; })) || (await state(page)).frames) : 0;
+      line(c > b2 ? 'OK' : 'WARN', 'снова на экране — продолжает', `кадров после возврата: ${c - b2}`);
       await page.close();
     }
     /* 2. ленивый запуск: блок ниже экрана — ни three.js, ни модели; подвели — загрузилось */
@@ -616,7 +683,7 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
       const early = hits.filter((h) => h === '/model.glb' || /three\.module\.js$/.test(h));
       line(s && s.state === 'idle' && !early.length ? 'OK' : 'FAIL', 'ленивый запуск', s && s.state === 'idle' && !early.length ? 'блок ниже экрана: ни three.js, ни модели не скачано' : `состояние ${s && s.state}, скачано заранее: ${early.join(', ') || '—'}`);
       await page.evaluate(() => document.querySelector('.glb-viewer').scrollIntoView());
-      const ok = await waitState(page, ['ready'], 60000);
+      const ok = await waitState(page, ['ready']);
       line(ok ? 'OK' : 'FAIL', 'подвели к экрану — загрузилось', ok ? '' : `состояние ${(await state(page) || {}).state}`);
       await page.close();
     }
@@ -641,7 +708,7 @@ async function glbBrowser(file, { poster = null, shot = null, site = null } = {}
     {
       hits.length = 0;
       const { page } = await open({ before: () => { const g = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, ...a) { return /webgl/i.test(String(t)) ? null : g.call(this, t, ...a); }; } });
-      const ok = await waitState(page, ['fallback'], 10000);
+      const ok = await waitState(page, ['fallback'], 60000);
       const pv = await page.evaluate(() => { const i = document.querySelector('.glb-poster'); return i ? { ok: i.complete && i.naturalWidth > 0, op: getComputedStyle(i).opacity } : null; });
       const three = hits.some((h) => /three\.module\.js$/.test(h));
       const posterOk = !poster || (pv && pv.ok && pv.op !== '0');
@@ -716,12 +783,18 @@ function vendor() {
 }
 
 /* ---------------- doctor ---------------- */
+/* что ставить, по системам; размеры переносного архива Windows — замер 06.10.2026 (Blender 5.2.2 LTS) */
+const INSTALL = {
+  win32: 'поставить Blender 4.2 LTS или новее: winget install BlenderFoundation.Blender — или переносной архив .zip с download.blender.org/release (404 МБ, на диске 914 МБ, установка не нужна): распаковать и задать BLENDER_PATH=<папка>\\blender.exe',
+  darwin: 'поставить Blender 4.2 LTS или новее: .dmg с blender.org в «Программы» или brew install --cask blender; свой путь — BLENDER_PATH',
+  linux: 'поставить Blender 4.2 LTS или новее: архив с blender.org (распаковать в /opt или домашнюю папку), snap install blender --classic или flatpak install org.blender.Blender; свой путь — BLENDER_PATH',
+};
 async function doctor() {
   const items = [];
   const add = (id, name, ok, detail, impact = '', fix = '') => items.push({ id, name, ok: !!ok, detail, impact: ok ? '' : impact, fix: ok ? '' : fix });
   const b = findBlender();
   let probe = null, ver = null;
-  add('blender', 'Blender', !!b.exe, b.exe ? `${b.exe} (${b.how})` : `${b.error}${b.tried.length ? `; искал в ${b.tried.length} местах (${b.tried.slice(0, 4).join('; ')}…)` : ''}`, 'не работают render, physics и glb', 'поставить Blender 4.2 LTS или новее с blender.org (macOS — .dmg в «Программы», Windows — установщик или winget install BlenderFoundation.Blender, Linux — архив, snap или flatpak) и/или задать BLENDER_PATH');
+  add('blender', 'Blender', !!b.exe, b.exe ? `${b.exe} (${b.how})` : `${b.error}${b.tried.length ? `; искал в ${b.tried.length} местах (${b.tried.slice(0, 4).join('; ')}…)` : ''}`, 'не работают render, physics и glb', INSTALL[process.platform] || INSTALL.linux);
   if (b.exe) {
     ver = blenderVersion(b.exe);
     add('version', `версия ≥ ${MIN_VERSION.join('.')}`, !ver.error && !oldVersion(ver), ver.error || ver.text, 'конвейер писался под 4.2 LTS+: старые имена в API — вероятные ошибки', 'обновить Blender');
@@ -737,7 +810,7 @@ async function doctor() {
       if (probe) {
         const gpu = (probe.gpus || [])[0];
         add('cycles', 'Cycles', probe.cycles, probe.cycles ? 'включён' : 'выключен', 'рендер только EEVEE (--engine eevee) — без трассировки', 'сборка без Cycles: поставить официальную с blender.org');
-        add('gpu', 'видеокарта для Cycles', !!gpu, gpu ? `${gpu.type}: ${gpu.names.join(', ')}${probe.gpus.length > 1 ? ` (ещё ${probe.gpus.slice(1).map((g) => g.type).join(', ')})` : ''}` : 'нет — считает процессор', 'кадр 1000×1000 на 256 сэмплов — минуты вместо секунд; видео физики — часы: --samples 64, --video-samples 32, --step 2', 'драйвер NVIDIA (OptiX/CUDA), AMD (HIP), Apple (Metal — сам), Intel Arc (oneAPI)');
+        add('gpu', 'видеокарта для Cycles', !!gpu, gpu ? `${gpu.type}: ${gpu.names.join(', ')}${probe.gpus.length > 1 ? ` (ещё ${probe.gpus.slice(1).map((g) => g.type).join(', ')})` : ''}` : 'нет — считает процессор', 'кадр 1000×1000 на 256 сэмплов — минуты вместо секунд (Ryzen 7 6800H: 200 с); черновики — --samples 32 --w 600 --h 600; видео физики — часы: --video-samples 32, --step 2', 'драйвер NVIDIA (OptiX/CUDA), AMD (HIP), Apple (Metal — сам), Intel Arc (oneAPI)');
         add('gltf', 'экспорт glTF', probe.gltf, probe.gltf ? 'есть' : 'нет', 'не работает glb', 'включить дополнение «glTF 2.0 format» (в официальной сборке включено)');
         add('draco', 'сжатие Draco', probe.draco !== false, probe.draco === true ? 'есть' : probe.draco === false ? 'нет библиотеки' : 'не определилось (проверится при экспорте)', 'glb --draco даст GLB без сжатия', 'официальная сборка с blender.org содержит Draco');
         const vt = probe.view_transforms || [];
@@ -800,12 +873,12 @@ async function runScene(cmd) {
     }
     const res = r.result;
     const dev = res.render && res.render.device ? (res.render.device.device === 'GPU' ? `GPU ${res.render.device.type}` : 'CPU') : '';
-    if (res.stats) console.log(`     сцена: предметов ${res.stats.objects}, треугольников ${res.stats.triangles}${dev ? ` · ${dev}` : ''}${res.render && res.render.view_transform ? ` · ${res.render.view_transform}` : ''} · ${((Date.now() - t0) / 1000).toFixed(0)} с`);
+    if (res.stats) console.log(`     сцена: предметов ${res.stats.objects}, треугольников ${res.stats.triangles}${dev ? ` · ${dev}` : ''}${res.render && res.render.view_transform ? ` · ${res.render.view_transform}` : ''} ${res.seconds != null ? ` · рендер ${res.seconds} с` : ''} · всего ${((Date.now() - t0) / 1000).toFixed(0)} с`);
     if (res.simulation) {
       const s = res.simulation;
       line(s.moving && s.moving.length ? 'WARN' : 'OK', 'физика', `твёрдых тел ${s.rigid}, тканей ${(s.cloth || []).length}, кадров ${job.frames || '(из сцены)'}, ключей ${s.keys}, счёт ${s.seconds} с${s.moving && s.moving.length ? ` — не улеглось: ${s.moving.slice(0, 4).join(', ')}` : ', всё улеглось'}${s.fallen && s.fallen.length ? `; упало за край: ${s.fallen.slice(0, 4).join(', ')}` : ''}`);
     }
-    if (res.png) { const st = await postStill(res.png, job); if (st) stills.push({ ...st, label: job.variant || job.name }); }
+    if (res.png) { const st = await postStill(res.png, job, { bleed: !!(res.camera && res.camera.bleed), ground: !!(res.camera && res.camera.ground) }); if (st) stills.push({ ...st, label: job.variant || job.name }); }
     if (res.frames_dir) await framesToVideo(res.frames_dir, { ...job, frames: job.frames || (res.simulation && res.simulation.frames) || safeReaddir(res.frames_dir).filter((f) => /\.png$/i.test(f)).length * job.video.step });
     if (res.glb) {
       if (res.glb.skipped && res.glb.skipped.length) console.log(`     экспортёр этой версии не знает: ${res.glb.skipped.join(', ')}`);
@@ -849,7 +922,7 @@ async function selftest({ keep = false } = {}) {
   const GLB = path.join(FX, 'stack.glb');
   console.log(`blender selftest · стенды ${FX} · результаты ${tmp}\n`);
   const real = findBlender();
-  if (real.exe) console.log(`(Blender на машине есть: ${real.exe} — проверки с заглушкой всё равно идут на заглушке; настоящий прогон — doctor и render образца руками)\n`);
+  console.log(real.exe ? `(Blender на машине есть: ${real.exe} — в конце настоящие рендер, физика, экспорт GLB и doctor; проверки пути Node идут на заглушке)\n` : '(Blender на машине не найден — настоящие рендер, физика и экспорт будут пропущены; BLENDER_PATH)\n');
 
   /* ---------- аргументы и справка ---------- */
   let r = await run(['-h']);
@@ -904,37 +977,46 @@ async function selftest({ keep = false } = {}) {
 
   /* ---------- Python: синтаксис и чистые функции без Blender ---------- */
   const py = findPython();
-  const pyFiles = [...safeReaddir(PYDIR).filter((f) => f.endsWith('.py')).map((f) => path.join(PYDIR, f)), ...safeReaddir(TPL).filter((f) => f.endsWith('.py')).map((f) => path.join(TPL, f)), SCENE];
+  const pyFiles = [...safeReaddir(PYDIR).filter((f) => f.endsWith('.py')).map((f) => path.join(PYDIR, f)), ...safeReaddir(TPL).filter((f) => f.endsWith('.py')).map((f) => path.join(TPL, f)), SCENE, path.join(FX, 'scene-mats.py'), path.join(FX, 'scene-drop.py')];
   if (!py) skip('Python: синтаксис скриптов Blender', 'python3 не найден');
   else {
     const code = `import ast,sys\nbad=[]\nfor f in sys.argv[1:]:\n    try:\n        ast.parse(open(f,encoding='utf-8').read(), f, feature_version=(3,11))\n    except SyntaxError as e:\n        bad.append('%s:%s %s' % (f, e.lineno, e.msg))\nprint('\\n'.join(bad) or 'SYNTAX-OK')`;
-    const pr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-c', code, ...pyFiles], { encoding: 'utf8', timeout: 60000 });
+    const pr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-c', code, ...pyFiles], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
     check(`Python ${py.version}: синтаксис ${pyFiles.length} файлов под Python 3.11 (Blender 4.2+), без __pycache__`, /SYNTAX-OK/.test(pr.stdout), (pr.stdout || pr.stderr).trim());
-    const unit = `import sys, json, math\nsys.path.insert(0, ${JSON.stringify(PYDIR)})\nimport studio, physics, export, run\nr = {}\nr['hex'] = studio.parse_hex('#E7E3DD')\nr['short'] = studio.parse_hex('abc')\ntry:\n    studio.parse_hex('серый'); r['bad'] = False\nexcept ValueError:\n    r['bad'] = True\nr['lin'] = round(studio.srgb_to_linear(0.5), 4)\nr['fov'] = [round(x, 4) for x in studio.fov_pair(28, 1600, 900)]\nr['dist'] = round(studio.fit_distance(1.0, 28, 1000, 1000, 1.0), 4)\nr['power'] = round(studio.light_power(0.72, 6.5), 1)\nr['spec_ok'] = studio.validate_spec(json.load(open(${JSON.stringify(path.join(TPL, 'cards.json'))}, encoding='utf-8')))\nr['spec_bad'] = studio.validate_spec(json.load(open(${JSON.stringify(path.join(FX, 'bad-scene.json'))}, encoding='utf-8')))\nr['pal'] = studio.merge_palette(studio.DEFAULT_PALETTE, {'bone': 'E7E3DD'})['bone']\nr['presets'] = sorted(physics.CLOTH_PRESETS)\nr['proc'] = 'TEX_NOISE' in export.PROCEDURAL\nprint('UNIT ' + json.dumps(r, ensure_ascii=False))`;
-    const ur = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', unit], { encoding: 'utf8', timeout: 60000 });
+    const unit = `import sys, json, math\nsys.path.insert(0, ${JSON.stringify(PYDIR)})\nimport studio, physics, export, run\nr = {}\nr['hex'] = studio.parse_hex('#E7E3DD')\nr['short'] = studio.parse_hex('abc')\ntry:\n    studio.parse_hex('серый'); r['bad'] = False\nexcept ValueError:\n    r['bad'] = True\nr['lin'] = round(studio.srgb_to_linear(0.5), 4)\nr['fov'] = [round(x, 4) for x in studio.fov_pair(28, 1600, 900)]\nr['dist'] = round(studio.fit_distance(1.0, 28, 1000, 1000, 1.0), 4)\nr['power'] = round(studio.light_power(0.72, 6.5), 1)\nr['spec_ok'] = studio.validate_spec(json.load(open(${JSON.stringify(path.join(TPL, 'cards.json'))}, encoding='utf-8')))\nr['spec_bad'] = studio.validate_spec(json.load(open(${JSON.stringify(path.join(FX, 'bad-scene.json'))}, encoding='utf-8')))\nr['pal'] = studio.merge_palette(studio.DEFAULT_PALETTE, {'bone': 'E7E3DD'})['bone']\nr['presets'] = sorted(physics.CLOTH_PRESETS)\nr['proc'] = 'TEX_NOISE' in export.PROCEDURAL\nhp = studio.hex_points(1.0, 0.16)\nr['hexp'] = [len(hp), round(max(math.hypot(*p) for p in hp), 3), round(min(math.hypot(*p) for p in hp), 3)]\nr['sharp'] = len(studio.rounded_polygon([(0, 0), (1, 0), (0, 1)], 0))\ncm = studio.catmull([(0, 0, 0), (1, 0, 1), (2, 0, 0)], 8)\nr['cm'] = [len(cm), list(cm[0]), list(cm[4]), list(cm[-1])]\nr['field'] = studio.frame_margins([(0.1, 0.2), (0.9, 0.85)])\nr['margin'] = studio.DEFAULT_MARGIN\nr['kinds'] = list(studio.MATERIAL_KINDS)\nr['printed'] = studio.validate_spec({'objects': [{'type': 'plane', 'material': 'printed'}, {'type': 'plane', 'material': 'printed', 'image': 'a.png'}]})\nprint('UNIT ' + json.dumps(r, ensure_ascii=False))`;
+    const ur = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', unit], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
     let u = null; try { u = JSON.parse((/UNIT (.*)/.exec(ur.stdout) || [])[1]); } catch { /* ниже FAIL */ }
     check('Python без bpy: модули импортируются, чистые функции считают', !!u && u.hex[0] === 0xE7 / 255 && u.short[0] === 0xAA / 255 && u.bad === true && u.lin === 0.214 && u.fov[0] === +(28 * Math.PI / 180).toFixed(4) && u.fov[1] < u.fov[0] && Math.abs(u.dist - 1 / Math.sin(14 * Math.PI / 180)) < 1e-3 && u.power > 0 && u.pal === '#E7E3DD' && u.presets.includes('silk') && u.proc, (ur.stdout || ur.stderr).trim().slice(0, 300));
+    check('Python: контуры (шестиугольник со скруглением, острый многоугольник), кривая через точки, поле кадра', !!u && u.hexp[0] === 42 && u.hexp[1] <= 1 && u.hexp[2] > 0.8 && u.sharp === 3 && u.cm[0] === 9 && u.cm[1].join() === '0,0,0' && u.cm[2].join() === '1,0,1' && u.cm[3].join() === '2,0,0' && Math.abs(u.field - 0.1) < 1e-9, u && JSON.stringify([u.hexp, u.sharp, u.cm, u.field]));
+    check('поле кадра по умолчанию — не уже 8 % с каждого края (DEFAULT_MARGIN)', !!u && (1 - 1 / u.margin) / 2 >= 0.0795, u && String(u.margin));
+    check('материалы: leafy, honey, printed есть и в студии, и в проверке JSON-сцены Node; printed без image — ошибка с местом (обе проверки)', !!u && ['leafy', 'honey', 'printed'].every((k) => u.kinds.includes(k)) && u.kinds.length === 12 && u.printed.length === 1 && /objects\[0\].*image/.test(u.printed[0]) && specErrors({ objects: [{ type: 'plane', material: 'leafy' }, { type: 'plane', material: 'honey' }, { type: 'plane', material: 'printed', image: 'a.png' }] }).length === 0 && /objects\[0\].*image/.test(specErrors({ objects: [{ type: 'plane', material: 'printed' }] }).join()), u && JSON.stringify(u.printed));
     check('Python: JSON-сцена образца проходит, сломанная — три ошибки с местом', !!u && u.spec_ok.length === 0 && u.spec_bad.length === 3 && /teapot/.test(u.spec_bad.join()) && /chrome/.test(u.spec_bad.join()), u && JSON.stringify(u.spec_bad));
     let allOk = true; const bad = [];
     for (const name of ['render', 'var', 'phys', 'glb', 'json']) {
       for (const job of jobsOf(jf(name)) || []) {
         const f = path.join(tmp, `${job.name}-${name}.job.json`); fs.writeFileSync(f, JSON.stringify(job));
-        const vr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', path.join(PYDIR, 'run.py'), '--validate', f], { encoding: 'utf8', timeout: 60000 });
+        const vr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', path.join(PYDIR, 'run.py'), '--validate', f], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
         if (!/JOB-OK/.test(vr.stdout)) { allOk = false; bad.push(`${name}: ${(vr.stdout || vr.stderr).trim()}`); }
       }
     }
     check('run.py --validate принимает все задания, которые пишет blender.mjs', allOk, bad.join(' | '));
     const broken = path.join(tmp, 'broken.job.json');
     fs.writeFileSync(broken, JSON.stringify({ version: 1, mode: 'render', scene: { kind: 'py', file: 'rel.py' }, w: 10, palette: { a: 'x' } }));
-    const br = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', path.join(PYDIR, 'run.py'), '--validate', broken], { encoding: 'utf8', timeout: 60000 });
-    check('run.py --validate отвергает сломанное задание с причинами', br.status === 1 && /JOB-ERROR/.test(br.stdout) && /scene\.file/.test(br.stdout) && /w=10/.test(br.stdout) && /palette\.a/.test(br.stdout), br.stdout.trim().slice(0, 200));
+    const br = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', path.join(PYDIR, 'run.py'), '--validate', broken], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
+    check('run.py --validate отвергает сломанное задание с причинами — по-русски, без кракозябр (вывод Python в UTF-8)', br.status === 1 && /JOB-ERROR задание/.test(br.stdout) && /абсолютный путь/.test(br.stdout) && /scene\.file/.test(br.stdout) && /w=10/.test(br.stdout) && /palette\.a/.test(br.stdout), br.stdout.trim().slice(0, 200));
+    {
+      /* run.py печатает UTF-8 сам, без переменных окружения: так его зовут и руками, и из чужих сценариев */
+      const bare = { ...process.env }; delete bare.PYTHONUTF8; delete bare.PYTHONIOENCODING; delete bare.PYTHONLEGACYWINDOWSSTDIO;
+      const b2 = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', path.join(PYDIR, 'run.py'), '--validate', broken], { encoding: 'utf8', timeout: 60000, env: bare });
+      check('run.py сам печатает UTF-8 — причины по-русски и без переменных окружения', b2.status === 1 && /JOB-ERROR задание/.test(b2.stdout) && /абсолютный путь/.test(b2.stdout), b2.stdout.trim().slice(0, 160));
+    }
     /* код внутри Blender здесь не исполнить — ловим хотя бы опечатки: имя нигде не определено; ctx.метод сцены
        есть у Studio, а его именованные аргументы — в подписи метода */
     const lint = `import ast, builtins, sys, json\nout = []\ndef names(t):\n    d = set(dir(builtins)) | {'__file__', '__name__'}\n    for n in ast.walk(t):\n        if isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load): d.add(n.id)\n        elif isinstance(n, (ast.FunctionDef, ast.ClassDef)): d.add(n.name)\n        elif isinstance(n, ast.arg): d.add(n.arg)\n        elif isinstance(n, (ast.Import, ast.ImportFrom)): d.update((a.asname or a.name).split('.')[0] for a in n.names)\n        elif isinstance(n, ast.ExceptHandler) and n.name: d.add(n.name)\n    return d\nsig = {}\nst = ast.parse(open(sys.argv[1], encoding='utf-8').read())\nfor c in [n for n in st.body if isinstance(n, ast.ClassDef) and n.name == 'Studio']:\n    for f in c.body:\n        if isinstance(f, ast.FunctionDef): sig[f.name] = ([a.arg for a in f.args.args][1:], f.args.kwarg is not None)\n        if isinstance(f, ast.FunctionDef) and f.name == '__init__':\n            for n in ast.walk(f):\n                if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == 'self' and isinstance(n.ctx, ast.Store): sig.setdefault(n.attr, None)\nfor fn in sys.argv[2:]:\n    t = ast.parse(open(fn, encoding='utf-8').read())\n    d = names(t)\n    for n in ast.walk(t):\n        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id not in d: out.append('%s:%d имя %s не определено' % (fn, n.lineno, n.id))\n        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and isinstance(n.func.value, ast.Name) and n.func.value.id == 'ctx':\n            m = n.func.attr\n            if m not in sig: out.append('%s:%d нет ctx.%s' % (fn, n.lineno, m)); continue\n            if sig[m] is None: continue\n            params, kw = sig[m]\n            if len(n.args) > len(params) and not kw: out.append('%s:%d ctx.%s: лишние аргументы' % (fn, n.lineno, m))\n            for k in n.keywords:\n                if k.arg and k.arg not in params and not kw: out.append('%s:%d ctx.%s(%s=) — нет такого аргумента' % (fn, n.lineno, m, k.arg))\nprint('LINT ' + json.dumps(out, ensure_ascii=False))`;
-    const lr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', lint, path.join(PYDIR, 'studio.py'), ...pyFiles], { encoding: 'utf8', timeout: 60000 });
+    const lr = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', lint, path.join(PYDIR, 'studio.py'), ...pyFiles], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
     let lintOut = null; try { lintOut = JSON.parse((/LINT (.*)/.exec(lr.stdout) || [])[1]); } catch { /* ниже FAIL */ }
     check('Python: имена определены; ctx.* в сценах есть у студии, аргументы совпадают с подписью', !!lintOut && !lintOut.length, lintOut ? lintOut.slice(0, 5).join(' | ') : (lr.stdout || lr.stderr).trim().slice(0, 200));
-    const lt = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', lint, path.join(PYDIR, 'studio.py'), path.join(FX, 'typo-scene.py')], { encoding: 'utf8', timeout: 60000 });
+    const lt = spawnSync(py.cmd[0], [...py.cmd.slice(1), '-B', '-c', lint, path.join(PYDIR, 'studio.py'), path.join(FX, 'typo-scene.py')], { encoding: 'utf8', timeout: 60000, env: PY_ENV });
     let typo = null; try { typo = JSON.parse((/LINT (.*)/.exec(lt.stdout) || [])[1]); } catch { /* ниже FAIL */ }
     check('Python: сцена с опечатками — все три пойманы (аргумент, метод, имя)', !!typo && typo.length === 3 && typo.some((x) => /sise=/.test(x)) && typo.some((x) => /нет ctx\.cilinder/.test(x)) && typo.some((x) => /имя viw/.test(x)), typo && typo.join(' | '));
     const pyc = [PYDIR, TPL, FX].some((d) => fs.existsSync(path.join(d, '__pycache__')));
@@ -954,10 +1036,10 @@ async function selftest({ keep = false } = {}) {
   /* ---------- нет Blender: честный отказ ---------- */
   const NOBL = { BLENDER_PATH: path.join(tmp, 'нет-blender') };
   r = await run(['render', SCENE, '--out', 'nb'], NOBL);
-  check('render без Blender (BLENDER_PATH неверен) — НЕ СДЕЛАНО, код 2, ничего не записано, подсказка', r.code === 2 && /НЕ СДЕЛАНО: BLENDER_PATH=/.test(r.out) && /render3d/.test(r.out) && !fs.existsSync(path.join(tmp, 'nb')), last(r));
+  check('render без Blender (BLENDER_PATH неверен) — НЕ СДЕЛАНО, код 2, ничего не записано, подсказка', r.code === 2 && /НЕ СДЕЛАНО: BLENDER_PATH=/.test(r.out) && /node blender\.mjs doctor/.test(r.out) && /svg3d\.mjs/.test(r.out) && /Предметы с объёмом рендерит только Blender/.test(r.out) && !fs.existsSync(path.join(tmp, 'nb')), last(r));
   r = await run(['doctor', '--json', 'doc.json'], NOBL);
   const dj = (() => { try { return JSON.parse(fs.readFileSync(path.join(tmp, 'doc.json'), 'utf8')); } catch { return null; } })();
-  check('doctor без Blender — код 2, «что сделать» и протокол', r.code === 2 && /НЕ СДЕЛАНО: Blender не найден/.test(r.out) && /что сделать: поставить Blender 4\.2/.test(r.out) && !!dj && dj.items.find((i) => i.id === 'blender').ok === false, last(r));
+  check('doctor без Blender — код 2, «что сделать» и протокол', r.code === 2 && /НЕ СДЕЛАНО: Blender не найден/.test(r.out) && /что сделать: поставить Blender 4\.2/.test(r.out) && /BLENDER_PATH/.test(r.out) && !!dj && dj.items.find((i) => i.id === 'blender').ok === false, last(r));
 
   /* ---------- заглушка Blender: весь путь Node до и после Blender ---------- */
   const sharp = loadSharp();
@@ -976,6 +1058,24 @@ async function selftest({ keep = false } = {}) {
     const rf = (f) => fs.existsSync(path.join(tmp, 'r', f));
     check('render (заглушка): PNG → WebP, малая копия, превью на цвете сайта, задание, лог, протокол', r.code === 0 && ['scene-min.png', 'scene-min.webp', 'scene-min-200.webp', 'scene-min-on-EFEBE4.jpg', 'scene-min.job.json', 'scene-min.blender.log', 'scene-min.json'].every(rf), r.out.split('\n').filter((l) => /^(OK|WARN|FAIL)/.test(l)).join(' | '));
     check('render (заглушка): шаги и предупреждение Blender переданы, кадр не пустой', /· сцена scene-min\.py/.test(r.out) && /WARN\s+scene-min — заглушка: предупреждение сцены/.test(r.out) && /OK\s+scene-min — 400×300, заполнено/.test(r.out));
+    check('поле кадра 10 % — в строке кадра, предупреждения о крае нет', /поле 10\.\d%/.test(r.out) && !/близко к краю|упирается в край/.test(r.out), r.out.split('\n').filter((l) => /scene-min —/.test(l)).join(' | '));
+    r = await run(['render', SCENE, '--out', 't1', '--w', '300', '--h', '300'], { ...STUB, SR_STUB_MODE: 'tight' });
+    check('предмет в 3 % от края кадра — WARN «предмет близко к краю кадра» с числом и подсказкой, код 0', r.code === 0 && /WARN\s+scene-min: предмет близко к краю кадра — поле [23]\.\d%, нужно не меньше 6\.0% — больше margin/.test(r.out), r.out.split('\n').filter((l) => /^(OK|WARN|FAIL)/.test(l)).join(' | '));
+    r = await run(['render', SCENE, '--out', 't2', '--w', '300', '--h', '300'], { ...STUB, SR_STUB_MODE: 'tight', SR_STUB_BLEED: '1' });
+    check('сцена сама выводит предмет за край (bleed: лента) — того же кадра предупреждение не касается', r.code === 0 && !/близко к краю|упирается в край/.test(r.out) && /поле [23]\.\d%/.test(r.out), r.out.split('\n').filter((l) => /^(OK|WARN|FAIL)/.test(l)).join(' | '));
+    r = await run(['render', SCENE, '--out', 't3', '--w', '400', '--h', '300', '--trim', '--small', '200,100'], { ...STUB, SR_STUB_GROUND: '1' });
+    const t3 = (f) => fs.existsSync(path.join(tmp, 't3', f));
+    check('--trim у предмета на земле: рамка по предмету с запасом под тень, сказано, где низ предмета; --small списком — две малые копии', r.code === 0 && /OK\s+scene-min — 2[67]\d×18\d,/.test(r.out) && /низ предмета на 9[2-5]\.\d% высоты кадра/.test(r.out) && t3('scene-min-200.webp') && t3('scene-min-100.webp'), r.out.split('\n').filter((l) => /scene-min —|низ предмета/.test(l)).join(' | '));
+    r = await run(['render', SCENE, '--out', 't4', '--w', '400', '--h', '300', '--trim'], STUB);
+    check('--trim у парящего предмета — по прозрачным полям, как раньше (про низ предмета — ни слова)', r.code === 0 && !/низ предмета/.test(r.out) && !/OK\s+scene-min — 400×300/.test(r.out), r.out.split('\n').filter((l) => /scene-min —/.test(l)).join(' | '));
+    r = await run(['render', SCENE, '--out', 't5', '--small', 'abc'], STUB);
+    check('--small abc — ошибка, код 1', r.code === 1 && /--small abc: нужны целые ширины/.test(r.out), last(r));
+    {
+      const img = await sharp({ create: { width: 200, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).composite([{ input: await sharp({ create: { width: 100, height: 50, channels: 4, background: { r: 200, g: 80, b: 60, alpha: 1 } } }).png().toBuffer(), left: 20, top: 10 }]).png().toBuffer();
+      const mi = await measureImage(sharp, img);
+      const gc = groundCrop({ x0: 300, x1: 700, y0: 200, y1: 800 }, 1000, 1000);
+      check('measureImage: поле — от плотных пикселей до ближайшего края; groundCrop: запас по бокам и под тень, доля низа', Math.abs(mi.field - 0.1) < 1e-9 && mi.box.x0 === 20 && mi.box.y1 === 59 && gc.left === 180 && gc.top === 196 && gc.width === 640 && gc.height === 646 && Math.abs(gc.foot - 604 / 646) < 1e-9, JSON.stringify([mi.field, mi.box, gc]));
+    }
     r = await run(['render', SCENE, '--out', 'e'], { ...STUB, SR_STUB_MODE: 'empty' });
     check('пустой кадр — FAIL и код 1', r.code === 1 && /FAIL scene-min: пустой кадр/.test(r.out), last(r));
     r = await run(['render', SCENE, '--out', 'x'], { ...STUB, SR_STUB_MODE: 'error' });
@@ -1003,11 +1103,13 @@ async function selftest({ keep = false } = {}) {
     if (sharp) await sharp({ create: { width: 200, height: 200, channels: 4, background: { r: 200, g: 85, b: 61, alpha: 1 } } }).webp().toFile(poster);
     r = await run(['glb-check', GLB, ...(sharp ? ['--poster', poster] : []), '--shot', 'shot.png']);
     const ok = (re) => new RegExp(`^OK\\s+${re}`, 'm').test(r.out);
-    check('glb-check стенда (GLTFExporter): разбор, загрузка в viewer.html, кадр не пустой, код 0', r.code === 0 && ok('stack\\.glb — ') && ok('GLB в странице') && ok('кадр в странице') && fs.existsSync(path.join(tmp, 'shot.png')), r.out.split('\n').filter((l) => /^(OK|WARN|FAIL)/.test(l)).join(' | ').slice(0, 500));
-    check('viewer: анимация идёт, вне экрана пауза, снова продолжает', ok('анимация идёт') && ok('вне экрана — пауза') && ok('снова на экране'));
-    check('viewer: ленивый запуск (ни three.js, ни модели до экрана), подвели — загрузилось', ok('ленивый запуск') && ok('подвели к экрану'));
-    check('viewer: «меньше движения» — статичный конечный кадр; без WebGL — постер, three.js не скачан', ok('«меньше движения»') && ok('без WebGL'));
-    check('viewer: плотность холста ≤ 2 при DPR 3, консоль без ошибок', ok('плотность холста') && ok('консоль'));
+    /* при провале — сами строки FAIL и WARN просмотрщика (с причиной), а не начало вывода: под нагрузкой проверки мигают, и нужен текст */
+    const why = () => r.out.split('\n').filter((l) => /^(FAIL|WARN)/.test(l)).join(' | ') || last(r);
+    check('glb-check стенда (GLTFExporter): разбор, загрузка в viewer.html, кадр не пустой, код 0', r.code === 0 && ok('stack\\.glb — ') && ok('GLB в странице') && ok('кадр в странице') && fs.existsSync(path.join(tmp, 'shot.png')), why());
+    check('viewer: анимация идёт, вне экрана пауза, снова продолжает', ok('анимация идёт') && ok('вне экрана — пауза') && ok('снова на экране'), why());
+    check('viewer: ленивый запуск (ни three.js, ни модели до экрана), подвели — загрузилось', ok('ленивый запуск') && ok('подвели к экрану'), why());
+    check('viewer: «меньше движения» — статичный конечный кадр; без WebGL — постер, three.js не скачан', ok('«меньше движения»') && ok('без WebGL'), why());
+    check('viewer: плотность холста ≤ 2 при DPR 3, консоль без ошибок', ok('плотность холста') && ok('консоль'), why());
     const trunc = path.join(tmp, 'broken.glb'); fs.writeFileSync(trunc, fs.readFileSync(GLB).subarray(0, 4000));
     r = await run(['glb-check', trunc]);
     check('обрезанный GLB — FAIL и код 1', r.code === 1 && /FAIL broken\.glb — не GLB: .*обрезан/.test(r.out), last(r));
@@ -1018,11 +1120,42 @@ async function selftest({ keep = false } = {}) {
     check('glb-check --site: копия сайта (vendor) самодостаточна — грузится и рисует', r.code === 0 && /^OK\s+GLB в странице/m.test(r.out) && /^OK\s+кадр в странице/m.test(r.out), r.out.split('\n').filter((l) => /^(FAIL)/.test(l)).join(' | ') || last(r));
   }
 
-  /* ---------- что требует Blender ---------- */
-  skip('настоящий рендер Cycles (студия, материалы, тень на земле, камера по рамке)', 'Blender не запускался: bpy-код studio.py проверен только синтаксисом и чистыми функциями');
-  skip('настоящая физика (rigid body, cloth), запекание ключей, заморозка ткани', 'нужен Blender — physics.py не исполнялся');
-  skip('настоящий экспорт glTF из Blender (применение модификаторов, запекание материалов, Draco)', 'нужен Blender — export.py не исполнялся; GLB стенда собран three.js');
-  skip('doctor на настоящем Blender (Metal/OptiX/CUDA/HIP)', 'нужен Blender');
+  /* ---------- настоящий Blender: рендер, физика, экспорт, doctor ---------- */
+  if (!real.exe || !sharp) {
+    const why = !real.exe ? 'Blender на машине не найден (BLENDER_PATH) — bpy-код проверен только синтаксисом и чистыми функциями' : 'нет sharp';
+    skip('настоящий рендер Cycles (студия, все материалы и заготовки геометрии, тень на земле, поле кадра)', why);
+    skip('настоящая физика (rigid body, cloth), запекание ключей, заморозка ткани', why);
+    skip('настоящий экспорт glTF из Blender (применение модификаторов, запекание материалов, Draco)', why);
+    skip('doctor на настоящем Blender (Metal/OptiX/CUDA/HIP)', why);
+  } else {
+    const MATSCENE = path.join(FX, 'scene-mats.py'), DROP = path.join(FX, 'scene-drop.py');
+    const lines = (x) => x.out.split('\n').filter((l) => /^(OK|WARN|FAIL)/.test(l)).join(' | ').slice(0, 500);
+    const resOf = (f) => { try { return JSON.parse(fs.readFileSync(path.join(tmp, f), 'utf8')); } catch { return null; } };
+    r = await run(['doctor', '--json', 'docr.json']);
+    const dr = resOf('docr.json');
+    const has = (id) => !!dr && (dr.items.find((i) => i.id === id) || {}).ok === true;
+    check('doctor на настоящем Blender: скрипт внутри отвечает, Cycles, glTF, тень на земле, тональные кривые', r.code === 0 && !!dr && !!dr.probe && ['blender', 'version', 'probe', 'cycles', 'gltf', 'shadow', 'tone'].every(has), r.out.split('\n').filter((l) => /^(FAIL|нет)/.test(l)).join(' | ') || last(r));
+    r = await run(['render', SCENE, '--out', 'rr', '--w', '240', '--h', '240', '--samples', '8', '--bg', 'EFEBE4', '--small', '0']);
+    let rj = resOf('rr/scene-min.result.json');
+    const fieldPx = +((/поле (\d+\.\d)%/.exec(r.out) || [])[1] || -1);
+    check('настоящий рендер Cycles: кадр не пустой, шаги по-русски без кракозябр, тень на земле', r.code === 0 && /^OK\s+scene-min — 240×240, заполнено/m.test(r.out) && /· сцена scene-min\.py/.test(r.out) && /· студия: CYCLES, 8 сэмплов/.test(r.out) && !!rj && rj.camera.ground === true, lines(r) || last(r));
+    check('поле кадра: камера ставит предмет не ближе 7 % к краю (по вершинам, не по углам рамки), пиксели подтверждают', !!rj && rj.camera.field >= 0.07 && rj.camera.field <= 0.1 && fieldPx >= 6.5 && !/близко к краю|упирается в край/.test(r.out), `камера ${rj && rj.camera.field}, пиксели ${fieldPx}%`);
+    const tightScene = path.join(tmp, 'tight.json');
+    fs.writeFileSync(tightScene, JSON.stringify({ objects: [{ type: 'sphere', radius: 0.5, location: [0, 0, 0.5] }], camera: { view: [0, -1, 0.2], margin: 1.05 }, ground: false }));
+    r = await run(['render', tightScene, '--out', 'rt', '--w', '200', '--h', '200', '--samples', '4', '--small', '0']);
+    check('настоящий рендер: сцена с margin 1.05 (поле 2–3 %) — WARN «предмет близко к краю кадра»', r.code === 0 && /WARN\s+tight: предмет близко к краю кадра — поле [1-4]\.\d%/.test(r.out), lines(r) || last(r));
+    r = await run(['render', MATSCENE, '--out', 'rm', '--w', '240', '--h', '160', '--samples', '4', '--small', '0']);
+    rj = resOf('rm/scene-mats.result.json');
+    check('настоящий рендер: все 12 материалов (в т. ч. leafy, honey, printed) и заготовки геометрии строятся и рендерятся', r.code === 0 && /^OK\s+scene-mats — 240×160/m.test(r.out) && !!rj && rj.stats.objects >= 19 && !rj.warnings.length, lines(r) || r.out.split('\n').filter((l) => /BLENDER|Error|ошиб/i.test(l)).slice(-3).join(' | ') || last(r));
+    r = await run(['physics', DROP, '--out', 'rp', '--w', '200', '--h', '200', '--samples', '4', '--glb', 'rp/drop.glb', '--no-check', '--small', '0']);
+    let g = null; try { g = parseGlb(fs.readFileSync(path.join(tmp, 'rp', 'drop.glb'))); } catch { /* ниже FAIL */ }
+    check('настоящая физика: три твёрдых тела и ткань посчитаны, кадр, GLB с анимацией падения (ткань — застывшая)', r.code === 0 && /^(OK|WARN)\s+физика — твёрдых тел 3, тканей 1/m.test(r.out) && /^OK\s+scene-drop — 200×200/m.test(r.out) && !!g && g.animations >= 1 && g.duration > 0.5 && g.meshes >= 5, lines(r) || last(r));
+    r = await run(['glb', MATSCENE, '--out', 'rg/mats.glb', '--draco', ...(three && chromeOk ? [] : ['--no-check'])]);
+    g = null; try { g = parseGlb(fs.readFileSync(path.join(tmp, 'rg', 'mats.glb'))); } catch { /* ниже FAIL */ }
+    check('настоящий экспорт glTF: модификаторы применены, материалы запечены, печать картинкой, Draco, стекло с пропусканием', r.code === 0 && !!g && g.required.includes('KHR_draco_mesh_compression') && g.images.length >= 2 && g.extensions.includes('KHR_materials_transmission') && g.vertices > 3000 && !g.external.length && /запечено материалов в картинки: [1-9]/.test(r.out), `${lines(r) || last(r)} · ${g ? g.extensions.join(',') + ' картинок ' + g.images.length : 'GLB не разобран'}`);
+    if (three && chromeOk) check('GLB из настоящего Blender грузится в viewer.html и рисует непустой кадр', /^OK\s+GLB в странице/m.test(r.out) && /^OK\s+кадр в странице/m.test(r.out), lines(r));
+    else skip('GLB из настоящего Blender в viewer.html', !three ? 'нет three.js' : 'нет Chrome');
+  }
 
   if (!keep) fs.rmSync(tmp, { recursive: true, force: true }); else console.log(`\nпапка оставлена: ${tmp}`);
   console.log(`\n${total} проверок, ${failed} провалов, ${skipped} пропусков`);
@@ -1030,7 +1163,8 @@ async function selftest({ keep = false } = {}) {
 }
 
 /* Заглушка Blender для selftest: тот же порядок аргументов и протокол, что у run.py, но кадры рисует sharp,
-   а GLB берёт со стенда. Режимы: SR_STUB_MODE=empty (пустой кадр), error (ошибка сцены), moving (не улеглось). */
+   а GLB берёт со стенда. Режимы: SR_STUB_MODE=empty (пустой кадр), error (ошибка сцены), moving (не улеглось),
+   tight (предмет в 3 % от края); SR_STUB_BLEED=1 — сцена сама выводит предмет за край; SR_STUB_GROUND=1 — тень на земле. */
 function stubSource(libPath, glb) {
   return `import fs from 'node:fs';
 import path from 'node:path';
@@ -1045,18 +1179,19 @@ const done = (r) => { r.mode = job.mode; if (job.result) fs.writeFileSync(job.re
 if (job.mode === 'probe') done({ blender: '4.2.3 LTS', version: [4, 2, 3], python: '3.11.9', cycles: true, gpus: [{ type: 'METAL', names: ['Apple M2 (заглушка)'] }], gltf: true, draco: true, view_transforms: ['Khronos PBR Neutral', 'AgX', 'Filmic', 'Standard'], eevee: 'BLENDER_EEVEE_NEXT', shadow_catcher: true });
 if (mode === 'error') { say('ERROR', 'в сцене нет функции build(ctx)'); say('TRACE', 'Traceback (most recent call last):'); say('TRACE', 'RuntimeError: в сцене нет функции build(ctx)'); process.exit(3); }
 const sharp = loadSharp();
+const tight = mode === 'tight';
 fs.mkdirSync(job.out_dir, { recursive: true });
 say('STEP', 'сцена ' + path.basename(job.scene.file));
 say('WARN', 'заглушка: предупреждение сцены');
 console.log('Fra:1 Mem:12.00M (Peak 12.00M) | Time:00:00.10 | Sample 1/' + job.samples);
 const frame = async (file, k = 0) => {
-  const W = job.w, H = job.h, r = Math.round(Math.min(W, H) * 0.28), cx = Math.round(W / 2), cy = Math.round(H * (0.2 + 0.3 * k));
+  const W = job.w, H = job.h, r = Math.round(Math.min(W, H) * (tight ? 0.47 : 0.28)), cx = Math.round(W / 2), cy = Math.round(H * (tight ? 0.5 : 0.2 + 0.3 * k));
   const svg = mode === 'empty' ? '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '"/>'
     : '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '"><ellipse cx="' + cx + '" cy="' + Math.round(H * 0.82) + '" rx="' + r + '" ry="' + Math.round(r / 4) + '" fill="#000" fill-opacity="0.25"/><circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="#C8553D"/></svg>';
   await sharp(Buffer.from(svg)).png().toFile(file);
 };
 const png = path.join(job.out_dir, job.name + '.png');
-const res = { render: { engine: 'CYCLES', device: { device: 'GPU', type: 'METAL', names: ['Apple M2 (заглушка)'] }, samples: job.samples, denoise: job.denoise, view_transform: 'Khronos PBR Neutral' }, stats: { objects: 4, triangles: 1234, vertices: 900 }, warnings: [] };
+const res = { render: { engine: 'CYCLES', device: { device: 'GPU', type: 'METAL', names: ['Apple M2 (заглушка)'] }, samples: job.samples, denoise: job.denoise, view_transform: 'Khronos PBR Neutral' }, stats: { objects: 4, triangles: 1234, vertices: 900 }, warnings: [], camera: { field: tight ? 0.03 : 0.1, bleed: process.env.SR_STUB_BLEED === '1', ground: process.env.SR_STUB_GROUND === '1' } };
 if (job.mode === 'render') { await frame(png, 0.6); done({ ...res, png, seconds: 0.1 }); }
 const frames = job.frames || 60;
 res.simulation = { bodies: 3, rigid: 3, cloth: [], keys: 3 * frames, seconds: 0.2, frames, moving: mode === 'moving' ? ['card.001'] : [], fallen: [] };
