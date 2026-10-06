@@ -109,13 +109,15 @@ Claude, обфускация, невидимые знаки, лицензия, �
 ## Проверить сам site-rework
 
 ```bash
-node ~/.claude/skills/site-rework/scripts/skill-audit.mjs audit ~/.claude/skills/site-rework --skill site-rework --exclude scripts/fixtures/skill-audit,scripts/skill-audit.mjs
+node ~/.claude/skills/site-rework/scripts/skill-audit.mjs audit ~/.claude/skills/site-rework --skill site-rework --exclude scripts/fixtures/skill-audit,scripts/skill-audit.mjs,docs/SKILL-ISSUES.md,docs/skill-map.html
 ```
 
 Без `--exclude` итог — FAIL, и это не про навык: в `scripts/fixtures/skill-audit` лежат нарочно опасные
 стенды самопроверки, а в `skill-audit.mjs` — образцы опасных строк (в выражениях поиска и в самих
-проверках). С исключением (15 файлов, из них 6 вложенных навыков-стендов; строка «исключено при запуске»
-в начале и в конце) ждать итог **WARN**: 9 пунктов WARN, ни одного FAIL (06.10.2026; до стендов Blender и deploy-check было 8). WARN по делу:
+проверках). Журнал `docs/SKILL-ISSUES.md` и схема `docs/skill-map.html` исключены по той же причине: это
+рассказ о найденном (в том числе дословные опасные команды из чужих навыков и названия файлов настроек), а не
+инструкции — исполнять оттуда нечего; сами файлы перед коммитом читать глазами. С исключением (17 файлов, из них 6 вложенных навыков-стендов; строка «исключено при запуске»
+в начале и в конце) ждать итог **WARN**: 9 пунктов WARN, ни одного FAIL (07.10.2026; до стендов Blender и deploy-check было 8). WARN по делу:
 
 - сеть — `fetch` и http в скриптах, которые снимают сайты, ищут фото и шрифты (discover, mirror, texture,
   typeset, media/net и другие), `curl` в runtime, сокет в serve;

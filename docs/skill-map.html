@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Схема site-rework</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Раскладка: одна колонка-лист чертежа; схемы во всю ширину с прокруткой вбок на телефоне, таблица — в своей прокрутке */
+:root {
+  --bg: #f4f5f7; --paper: #ffffff; --fg: #1a1d24; --muted: #5a6270; --line: #cfd5de;
+  --accent: #2e55c9; --ok: #1f7a4d; --branch: #a8680f; --plan: #6a4cc2; --paid: #b3243c;
+  --font-ui: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1217; --paper: #161a21; --fg: #e6e9ef; --muted: #9aa3b1; --line: #2c333e;
+  --accent: #86a6ff; --ok: #4fc58b; --branch: #e2ac4a; --plan: #a98cf6; --paid: #f07a91; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1217; --paper: #161a21; --fg: #e6e9ef; --muted: #9aa3b1; --line: #2c333e;
+  --accent: #86a6ff; --ok: #4fc58b; --branch: #e2ac4a; --plan: #a98cf6; --paid: #f07a91; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font-ui); }
+.wrap { max-width: 1060px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 30px; }
+/* широкие схемы и таблицы прокручиваются в своих рамках, а не раздвигают страницу на телефоне */
+section, figure, header { min-width: 0; }
+figure, section { grid-template-columns: minmax(0, 1fr); }
+.keys-note code, .card code, p code { white-space: normal; overflow-wrap: anywhere; }
+header { display: grid; gap: 10px; }
+.kicker { font: 500 12px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(28px, 4.2vw, 40px); line-height: 1.1; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 21px; margin: 0 0 6px; text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.lead { color: var(--muted); font-size: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 26px; height: 12px; border-radius: 3px; border: 1.6px solid currentColor; display: inline-block; }
+.sw.st-ok { color: var(--fg); } .sw.st-new { color: var(--accent); border-width: 2.4px; }
+.sw.st-plan { color: var(--plan); border-style: dotted; } .sw.st-paid { color: var(--paid); }
+section { display: grid; gap: 12px; }
+figure { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; }
+.scroll { overflow-x: auto; }
+svg { display: block; width: 100%; height: auto; min-width: 760px; color: var(--fg); }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 90ch; }
+svg text { font-family: var(--font-ui); fill: currentColor; }
+.t-col { font: 500 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; fill: var(--muted); }
+.t-num { font: 700 26px var(--font-ui); fill: var(--accent); }
+.t-stage { font: 600 17px var(--font-ui); }
+.t-out { font-size: 11.5px; fill: var(--muted); } .t-out2 { font-size: 13px; font-weight: 500; }
+.t-chip { font: 400 11px var(--font-mono); }
+.t-agent { font-size: 12.5px; font-weight: 500; }
+.t-arrow { font-size: 11.5px; fill: var(--muted); }
+.t-bar { font: 500 11px var(--font-mono); fill: var(--muted); letter-spacing: .03em; }
+.t-loop { font: 500 11px var(--font-mono); fill: var(--branch); }
+.t-hub { font: 700 20px var(--font-ui); fill: var(--accent); } .t-hub2 { font-size: 12.5px; fill: var(--muted); }
+.t-ctitle { font-weight: 600; font-size: 14px; } .t-item { font-size: 12.5px; } .t-item.off { fill: var(--muted); text-decoration: line-through; }
+.halo { paint-order: stroke; stroke: var(--paper); stroke-width: 5px; stroke-linejoin: round; }
+.stage { fill: var(--bg); stroke: currentColor; stroke-width: 1.4; }
+.chip { fill: var(--paper); stroke-width: 1.4; }
+.chip.st-ok { stroke: currentColor; } .chip.st-new { stroke: var(--accent); stroke-width: 2.4; }
+.chip.st-plan { stroke: var(--plan); stroke-dasharray: 2 3; } .chip.st-paid { stroke: var(--paid); }
+.agent { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+.bar { fill: var(--bg); stroke: var(--line); }
+.ln { stroke: currentColor; stroke-width: 1.3; fill: none; }
+.ln-dash { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.loop { stroke: var(--branch); color: var(--branch); }
+.hubbox { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+.cluster { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+.cluster.is-new { stroke: var(--accent); stroke-width: 2; }
+.dot { stroke-width: 1.6; fill: var(--paper); }
+.dot.st-ok { stroke: currentColor; fill: currentColor; } .dot.st-new { stroke: var(--accent); fill: var(--accent); }
+.dot.st-plan { stroke: var(--plan); } .dot.st-paid { stroke: var(--paid); fill: var(--paid); } .dot.st-off { stroke: var(--muted); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.tbl { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+code { font: 13px var(--font-mono); white-space: nowrap; }
+.note { color: var(--muted); font-size: 13px; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; border: 1.4px solid currentColor; }
+.pill.st-ok { color: var(--ok); } .pill.st-new { color: var(--accent); }
+.pill.st-plan { color: var(--plan); border-style: dotted; } .pill.st-paid { color: var(--paid); }
+.muted { color: var(--muted); font-size: 13.5px; }
+.pill.k-have { color: var(--ok); } .pill.k-need { color: var(--paid); } .pill.k-opt { color: var(--plan); border-style: dotted; }
+.keys-note { background: var(--paper); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; font-size: 14px; }
+.keys-note p { max-width: 90ch; }
+td code { white-space: normal; word-break: break-word; }
+.sw.st-off { color: var(--muted); border-style: dashed; opacity: .7; }
+h3 { font-size: 16px; margin: 8px 0 0; }
+.pill.s-on { color: var(--ok); } .pill.s-off { color: var(--muted); border-style: dashed; }
+.rules { margin: 0; padding-left: 22px; display: grid; gap: 6px; max-width: 86ch; }
+.pill.s-auth { color: var(--paid); } .pill.s-name, .pill.s-manual { color: var(--plan); border-style: dotted; }
+</style>
+</head>
+<body style="margin:0">
+<div class="wrap">
+<header>
+  <div class="kicker">скилл Claude Code · состояние на 07.10.2026</div>
+  <h1>Схема site-rework</h1>
+  <p class="lead">Переработка сайта по адресу и запросу или новый сайт — в стиле сайта-образца либо с нуля по ТЗ: разведка в браузере, разбор образца, план, правки, проверка и отчёт. Сайт-образец в скилле называется донором. Ниже — путь работы по шагам и всё, что к скиллу подключено, со статусом каждой части. Сверено с кодом скилла: ветка master, коммит 29325c9, он же на GitHub. Эта же схема лежит в репозитории навыка файлом <code>docs/skill-map.html</code>, план — <code>ROADMAP.md</code>, журнал неточностей — <code>docs/SKILL-ISSUES.md</code>.</p>
+  <div class="legend" aria-label="Обозначения статуса">
+    <span><i class="sw st-ok"></i>в рабочем скилле</span>
+    <span><i class="sw st-new"></i>добавлено или дополнено 01–06.10</span>
+    <span><i class="sw st-plan"></i>в плане</span>
+    <span><i class="sw st-paid"></i>нужен ключ или оплата</span>
+    <span><i class="sw st-off"></i>выключено или не установлено</span>
+  </div>
+</header>
+
+<section aria-labelledby="h-flow">
+  <h2 id="h-flow">Путь работы</h2>
+  <p class="muted">Скрипты меряют числами, агент смотрит глазами. Каждый шаг пишет в журнал state.json; статус «проверено» ставится только с доказательством, снятым после последней правки. Правил, которые не обсуждаются, теперь семь. Седьмое добавлено 01.10: первый экран, цвет, предметы и фон показываются листом из двух-трёх вариантов до сборки, первый рабочий вариант не сдаётся.</p>
+  <figure>
+    <div class="scroll"><svg class="flow" viewBox="0 0 980 1180" role="img" aria-label="Путь работы скилла: шесть шагов от входа до отчёта, скрипты и приёмы на каждом шаге, задания агентам на пяти шагах из шести, возврат из проверки в реализацию не больше двух раз, журнал state.json вдоль всего пути">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<rect x="8" y="36" width="26" height="1128" rx="5" class="bar"/>
+<text class="t-bar" transform="translate(25 600) rotate(-90)" text-anchor="middle">журнал state.json · папка прогона runs/&lt;сайт&gt;</text>
+<text class="t-col" x="80" y="24">шаг</text>
+<text class="t-col" x="256" y="24">скрипты и приёмы</text>
+<text class="t-col" x="762" y="24">агент с глазами</text>
+<rect x="80" y="36" width="160" height="168" rx="6" class="stage"/>
+<text class="t-num" x="94" y="70">0</text>
+<text class="t-stage" x="120" y="70">Вход</text>
+<text class="t-out" x="94" y="98">на выходе:</text>
+<text class="t-out2" x="94" y="116">режим и ответы</text>
+<rect x="256" y="39" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="56" text-anchor="middle">бриф · форма</text>
+<rect x="422" y="39" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="56" text-anchor="middle">анкета · 8 вопросов</text>
+<rect x="588" y="39" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="56" text-anchor="middle">режим: 4 вида</text>
+<rect x="256" y="73" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="90" text-anchor="middle">образец: 3 или каталоги</text>
+<rect x="422" y="73" width="158" height="26" rx="4" class="chip st-paid"/>
+<text class="t-chip" x="501" y="90" text-anchor="middle">Refero MCP · поиск</text>
+<rect x="588" y="73" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="90" text-anchor="middle">Firecrawl · факты</text>
+<rect x="256" y="107" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="124" text-anchor="middle">state.mjs init</text>
+<rect x="422" y="107" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="124" text-anchor="middle">requirements · реестр</text>
+<rect x="588" y="107" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="124" text-anchor="middle">taste · WISHES</text>
+<rect x="256" y="141" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="158" text-anchor="middle">ревизия → tools.md</text>
+<rect x="422" y="141" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="158" text-anchor="middle">skill-audit · навык</text>
+<rect x="588" y="141" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="158" text-anchor="middle">serve.mjs · сервер</text>
+<rect x="256" y="175" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="192" text-anchor="middle">сервер · свой процесс</text>
+<rect x="422" y="175" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="192" text-anchor="middle">заготовки → в прогон</text>
+<rect x="588" y="175" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="192" text-anchor="middle">браузер владельца</text>
+<rect x="762" y="100" width="200" height="40" rx="20" class="agent"/>
+<text class="t-agent" x="862" y="125" text-anchor="middle">агент 6 · подбор донора</text>
+<line x1="750" y1="120" x2="758" y2="120" class="ln-dash"/>
+<line x1="160" y1="204" x2="160" y2="227" class="ln" marker-end="url(#ar)"/>
+<text class="t-arrow halo" x="170" y="220">адрес, ответы</text>
+<rect x="80" y="228" width="160" height="168" rx="6" class="stage"/>
+<text class="t-num" x="94" y="262">1</text>
+<text class="t-stage" x="120" y="262">Разведка</text>
+<text class="t-out" x="94" y="290">на выходе:</text>
+<text class="t-out2" x="94" y="308">паспорт и замеры</text>
+<rect x="256" y="231" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="248" text-anchor="middle">discover</text>
+<rect x="422" y="231" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="248" text-anchor="middle">extract · стиль образца</text>
+<rect x="588" y="231" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="248" text-anchor="middle">motion</text>
+<rect x="256" y="265" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="282" text-anchor="middle">typeset</text>
+<rect x="422" y="265" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="282" text-anchor="middle">cliche baseline</text>
+<rect x="588" y="265" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="282" text-anchor="middle">copy snapshot · lint</text>
+<rect x="256" y="299" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="316" text-anchor="middle">texture · зерно</text>
+<rect x="422" y="299" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="316" text-anchor="middle">фактура · вид числом</text>
+<rect x="588" y="299" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="316" text-anchor="middle">bgdecor · фон и свечения</text>
+<rect x="256" y="333" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="350" text-anchor="middle">tilda</text>
+<rect x="422" y="333" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="350" text-anchor="middle">mirror · serve</text>
+<rect x="588" y="333" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="350" text-anchor="middle">firecrawl map</text>
+<rect x="256" y="367" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="384" text-anchor="middle">runtime · perf · a11y</text>
+<rect x="422" y="367" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="384" text-anchor="middle">shots before</text>
+<rect x="588" y="367" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="384" text-anchor="middle">скорость через сжатие</text>
+<rect x="762" y="292" width="200" height="40" rx="20" class="agent"/>
+<text class="t-agent" x="862" y="317" text-anchor="middle">агент 1 · детали и фон донора</text>
+<line x1="750" y1="312" x2="758" y2="312" class="ln-dash"/>
+<line x1="160" y1="396" x2="160" y2="419" class="ln" marker-end="url(#ar)"/>
+<text class="t-arrow halo" x="170" y="412">паспорт, числа</text>
+<rect x="80" y="420" width="160" height="134" rx="6" class="stage"/>
+<text class="t-num" x="94" y="454">2</text>
+<text class="t-stage" x="120" y="454">План</text>
+<text class="t-out" x="94" y="482">на выходе:</text>
+<text class="t-out2" x="94" y="500">задачи P0–P5</text>
+<rect x="256" y="423" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="440" text-anchor="middle">analysis.md · паспорт</text>
+<rect x="422" y="423" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="440" text-anchor="middle">раздел «Детали»</text>
+<rect x="588" y="423" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="440" text-anchor="middle">движение → блоки</text>
+<rect x="256" y="457" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="474" text-anchor="middle">ideas.mjs · банк идей</text>
+<rect x="422" y="457" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="474" text-anchor="middle">taste · журнал вкуса</text>
+<rect x="588" y="457" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="474" text-anchor="middle">requirements plan</text>
+<rect x="256" y="491" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="508" text-anchor="middle">ui-ux-pro-max · база</text>
+<rect x="422" y="491" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="508" text-anchor="middle">authorship · эскизы</text>
+<rect x="588" y="491" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="508" text-anchor="middle">fonts · шрифт по образцу</text>
+<rect x="256" y="525" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="542" text-anchor="middle">3 плашки акцента</text>
+<rect x="422" y="525" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="542" text-anchor="middle">лист вариантов</text>
+<rect x="588" y="525" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="542" text-anchor="middle">cliche на эскизе</text>
+<rect x="762" y="467" width="200" height="40" rx="20" class="agent"/>
+<text class="t-agent" x="862" y="492" text-anchor="middle">агент 5 · движение из банка</text>
+<line x1="750" y1="487" x2="758" y2="487" class="ln-dash"/>
+<line x1="160" y1="554" x2="160" y2="577" class="ln" marker-end="url(#ar)"/>
+<text class="t-arrow halo" x="170" y="570">задачи</text>
+<rect x="80" y="578" width="160" height="236" rx="6" class="stage"/>
+<text class="t-num" x="94" y="612">3</text>
+<text class="t-stage" x="120" y="612">Реализация</text>
+<text class="t-out" x="94" y="640">на выходе:</text>
+<text class="t-out2" x="94" y="658">правки на сайте</text>
+<rect x="256" y="581" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="598" text-anchor="middle">runtime под задачу</text>
+<rect x="422" y="581" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="598" text-anchor="middle">state set · evidence</text>
+<rect x="588" y="581" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="598" text-anchor="middle">media.mjs</text>
+<rect x="256" y="615" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="632" text-anchor="middle">fonts get · кириллица</text>
+<rect x="422" y="615" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="632" text-anchor="middle">Motion</text>
+<rect x="588" y="615" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="632" text-anchor="middle">GSAP · Lenis · Three.js</text>
+<rect x="256" y="649" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="666" text-anchor="middle">decor-kit · детали</text>
+<rect x="422" y="649" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="666" text-anchor="middle">impeccable · Эмиль</text>
+<rect x="588" y="649" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="666" text-anchor="middle">copy fix · типограф</text>
+<rect x="256" y="683" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="700" text-anchor="middle">grain-tile · зерно</text>
+<rect x="422" y="683" width="158" height="26" rx="4" class="chip st-paid"/>
+<text class="t-chip" x="501" y="700" text-anchor="middle">recraft</text>
+<rect x="588" y="683" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="700" text-anchor="middle">svg3d · 3D SVG</text>
+<rect x="256" y="717" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="734" text-anchor="middle">surface-tile · фактура</text>
+<rect x="422" y="717" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="734" text-anchor="middle">sketch2d · наброски</text>
+<rect x="588" y="717" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="734" text-anchor="middle">blender · предметы</text>
+<rect x="256" y="751" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="768" text-anchor="middle">тексты в коде и базе</text>
+<rect x="422" y="751" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="768" text-anchor="middle">copy-prompt · тексты</text>
+<rect x="588" y="751" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="768" text-anchor="middle">листы снимков для глаз</text>
+<rect x="256" y="785" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="802" text-anchor="middle">состояния меню и форм</text>
+<rect x="422" y="785" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="802" text-anchor="middle">малые копии картинок</text>
+<rect x="762" y="676" width="200" height="40" rx="20" class="agent"/>
+<text class="t-agent" x="862" y="701" text-anchor="middle">агенты 3, 4 · фото, тексты</text>
+<line x1="750" y1="696" x2="758" y2="696" class="ln-dash"/>
+<line x1="160" y1="814" x2="160" y2="837" class="ln" marker-end="url(#ar)"/>
+<text class="t-arrow halo" x="170" y="830">правки</text>
+<rect x="80" y="838" width="160" height="168" rx="6" class="stage"/>
+<text class="t-num" x="94" y="872">4</text>
+<text class="t-stage" x="120" y="872">Проверка</text>
+<text class="t-out" x="94" y="900">на выходе:</text>
+<text class="t-out2" x="94" y="918">находки P0–P5</text>
+<rect x="256" y="841" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="858" text-anchor="middle">runtime · перекрытие</text>
+<rect x="422" y="841" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="858" text-anchor="middle">shots · diff</text>
+<rect x="588" y="841" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="858" text-anchor="middle">a11y</text>
+<rect x="256" y="875" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="892" text-anchor="middle">typeset</text>
+<rect x="422" y="875" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="892" text-anchor="middle">perf</text>
+<rect x="588" y="875" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="892" text-anchor="middle">cliche · copy lint</text>
+<rect x="256" y="909" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="926" text-anchor="middle">motion compare · пары</text>
+<rect x="422" y="909" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="926" text-anchor="middle">security</text>
+<rect x="588" y="909" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="926" text-anchor="middle">Lighthouse · devtools</text>
+<rect x="256" y="943" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="960" text-anchor="middle">runtime --no-js</text>
+<rect x="422" y="943" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="960" text-anchor="middle">анимации выкл. — тише</text>
+<rect x="588" y="943" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="960" text-anchor="middle">Firefox · дымовая</text>
+<rect x="256" y="977" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="994" text-anchor="middle">сверка: verify, texture</text>
+<rect x="422" y="977" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="994" text-anchor="middle">сверка: bgdecor</text>
+<rect x="588" y="977" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="994" text-anchor="middle">журнал: «не в счёт»</text>
+<rect x="762" y="902" width="200" height="40" rx="20" class="agent"/>
+<text class="t-agent" x="862" y="927" text-anchor="middle">агент 2 · глаза и клики</text>
+<line x1="750" y1="922" x2="758" y2="922" class="ln-dash"/>
+<line x1="160" y1="1006" x2="160" y2="1029" class="ln" marker-end="url(#ar)"/>
+<text class="t-arrow halo" x="170" y="1022">доказательства</text>
+<rect x="80" y="1030" width="160" height="134" rx="6" class="stage"/>
+<text class="t-num" x="94" y="1064">5</text>
+<text class="t-stage" x="120" y="1064">Отчёт</text>
+<text class="t-out" x="94" y="1092">на выходе:</text>
+<text class="t-out2" x="94" y="1110">отчёт владельцу</text>
+<rect x="256" y="1033" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="1050" text-anchor="middle">report.md</text>
+<rect x="422" y="1033" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="1050" text-anchor="middle">доказательства статусов</text>
+<rect x="588" y="1033" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="1050" text-anchor="middle">«Придумано — проверить»</text>
+<rect x="256" y="1067" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="1084" text-anchor="middle">раздел «Не проверено»</text>
+<rect x="422" y="1067" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="1084" text-anchor="middle">credits · подписи фото</text>
+<rect x="588" y="1067" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="1084" text-anchor="middle">requirements report</text>
+<rect x="256" y="1101" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="335" y="1118" text-anchor="middle">анкета в отчёте</text>
+<rect x="422" y="1101" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="501" y="1118" text-anchor="middle">как мерили скорость</text>
+<rect x="588" y="1101" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="667" y="1118" text-anchor="middle">итог сверок с донором</text>
+<rect x="256" y="1135" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="335" y="1152" text-anchor="middle">SKILL-ISSUES · WISHES</text>
+<rect x="422" y="1135" width="158" height="26" rx="4" class="chip st-ok"/>
+<text class="t-chip" x="501" y="1152" text-anchor="middle">taste add · ideas add</text>
+<rect x="588" y="1135" width="158" height="26" rx="4" class="chip st-new"/>
+<text class="t-chip" x="667" y="1152" text-anchor="middle">deploy-check · выкладка</text>
+<path d="M80 922 H56 V696 H78" class="ln loop" marker-end="url(#ar)"/>
+<text class="t-loop" transform="translate(50 809) rotate(-90)" text-anchor="middle">P0–P2 · ≤ 2 круга</text>
+</svg></div>
+    <figcaption>Шесть шагов сверху вниз. В средней колонке — скрипты и приёмы шага, справа — задание агенту с глазами. Из проверки в реализацию возвращаются только находки P0–P2 и не больше двух кругов; полная проверка — один раз перед сдачей, в ней участвуют ещё агенты-скептики. Овалы справа — задания агентам, они не новые. Толстой синей рамкой — добавленное или дополненное 01–06.10. Днём добавлены рисунки с объёмом в SVG и проверка страницы без JavaScript. Вечером, после боевого прогона: вопросы о виде в анкете, выбор образца из трёх кандидатов или каталогов, съём фона и крупной фактуры у образца, своя плитка, наброски и объёмные предметы, сверка фона, листы снимков и состояний. 02.10: сверка движения находит тот же приём, записанный другим видом; runtime ловит текст под соседним блоком и читает стили на сайте со строгой политикой безопасности; фактура называет вид плитки числом. 06.10: шрифт подбирается по замеру шрифта образца; предметы с объёмом рендерит Blender вместо собственного рендера; фон отличает свечение от рисунка; при выключенных в системе анимациях движение идёт тише, а не пропадает; перед выкладкой скрипт сверяет, попадут ли страница и её файлы на боевой сайт.</figcaption>
+  </figure>
+  <p class="muted">Важность находок и задач: P0 — сломано, P1 — крупная проблема удобства, P2 — крупная визуальная, P3 — тексты, P4 — движение, P5 — полировка. В круг правок идут P0–P2, остальное уходит списком в отчёт.</p>
+  <h3>Четыре режима</h3>
+  <div class="tbl"><table><thead><tr><th>режим</th><th>когда</th><th>с чем сверяется результат</th></tr></thead><tbody>
+<tr><td><b>Исходники</b></td><td>сайт свой, код лежит на этой машине</td><td>снимки «до» и «после»</td></tr>
+<tr><td><b>Зеркало</b></td><td>исходников нет: переработка показывается на копии чужой страницы</td><td>снимки «до» и «после» по копии</td></tr>
+<tr><td><b>Образец</b></td><td>«сделай в стиле этого сайта»: новый сайт или свой сайт в стиле сайта-образца</td><td>сам образец: шкала и цвета, фактура, фон, движение, шаблонность</td></tr>
+<tr><td><b>С нуля</b></td><td>адреса нет: требования приходят ТЗ, сообщениями, голосовыми</td><td>выбранное направление и критерии из реестра требований</td></tr>
+</tbody></table></div>
+  <h3>Семь правил</h3>
+  <ol class="rules">
+    <li>Статике не верить: всё, что зависит от скриптов, анимаций, наведения и прокрутки, запускается в браузере и открывается глазами.</li>
+    <li>Не притворяться: «проверено» ставится только с доказательством, снятым после последней правки.</li>
+    <li>Минимум достаточных инструментов, но без отказа от сложных там, где они нужны.</li>
+    <li>Не ставить своё по умолчанию: каждое решение опирается на правило образца или на задачу блока.</li>
+    <li>Любые инструменты для красоты; платное — только с согласия владельца.</li>
+    <li>Детали для красоты на каждом сайте: фон с характером, свои рисунки, предметы на полях; ровный фон — только если так выбрано в анкете <span class="pill st-new">дополнено</span></li>
+    <li>Впечатление — с высокой планки и из вариантов: первый экран, цвет, предметы и фон показываются листом до сборки <span class="pill st-new">новое</span></li>
+  </ol>
+</section>
+
+<section aria-labelledby="h-hub">
+  <h2 id="h-hub">Что подключено</h2>
+  <figure>
+    <div class="scroll"><svg class="hub" viewBox="0 0 980 580" role="img" aria-label="Что подключено к скиллу: браузеры, движки рисунка с объёмом, инструменты фона и предметов, MCP для агентов, источники и сервисы, соседние навыки, сайт и данные — со статусом каждой связи">
+<defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+<line x1="415.9" y1="240" x2="255.4" y2="136" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="298" y="191" text-anchor="middle">открывает и меряет</text>
+<line x1="380" y1="278" x2="315" y2="268" class="ln" marker-end="url(#ar2)"/>
+<line x1="490" y1="240" x2="490" y2="180" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="490" y="205" text-anchor="middle">агенты кликают</text>
+<line x1="578" y1="240" x2="666" y2="192" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="606" y="214" text-anchor="middle">кадры и шрифты</text>
+<line x1="600" y1="296" x2="665" y2="304" class="ln" marker-end="url(#ar2)"/>
+<line x1="398.3" y1="336" x2="314" y2="392" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="356.1" y="360" text-anchor="middle">читает справочники</text>
+<line x1="490" y1="336" x2="490" y2="408" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="490" y="377" text-anchor="middle">правит</text>
+<line x1="595.5" y1="336" x2="666" y2="404" class="ln" marker-end="url(#ar2)"/>
+<text class="t-arrow halo" x="606" y="386" text-anchor="middle">пишет протоколы</text>
+<rect x="380" y="240" width="220" height="96" rx="8" class="hubbox"/>
+<text class="t-hub" x="490" y="278" text-anchor="middle">site-rework</text>
+<text class="t-hub2" x="490" y="302" text-anchor="middle">SKILL.md · 34 скрипта</text>
+<text class="t-hub2" x="490" y="320" text-anchor="middle">22 справочника · 12 шаблонов</text>
+<rect x="24" y="24" width="290" height="112" rx="8" class="cluster"/>
+<text class="t-ctitle" x="38" y="47">Браузеры</text>
+<circle cx="42" cy="66" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="70">lib.mjs → puppeteer-core</text>
+<circle cx="42" cy="88" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="92">Chrome; Firefox — у трёх скриптов</text>
+<circle cx="42" cy="110" r="4" class="dot st-off"/>
+<text class="t-item off" x="54" y="114">Edge — не запускается</text>
+<rect x="24" y="200" width="290" height="134" rx="8" class="cluster is-new"/>
+<text class="t-ctitle" x="38" y="223">Объём: svg3d и Blender</text>
+<circle cx="42" cy="242" r="4" class="dot st-new"/>
+<text class="t-item" x="54" y="246">Zdog · Three.js — предметы, иконки</text>
+<circle cx="42" cy="264" r="4" class="dot st-new"/>
+<text class="t-item" x="54" y="268">CadQuery — чертёжная проекция</text>
+<circle cx="42" cy="286" r="4" class="dot st-new"/>
+<text class="t-item" x="54" y="290">vtracer · Rough.js · SVGO</text>
+<circle cx="42" cy="308" r="4" class="dot st-new"/>
+<text class="t-item" x="54" y="312">Blender 5.2 — предметы, физика, GLB</text>
+<rect x="345" y="24" width="290" height="156" rx="8" class="cluster"/>
+<text class="t-ctitle" x="359" y="47">MCP для агентов</text>
+<circle cx="363" cy="66" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="70">chrome-devtools — браузер</text>
+<circle cx="363" cy="88" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="92">motion — документация Motion</text>
+<circle cx="363" cy="110" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="114">Context7 — документация</text>
+<circle cx="363" cy="132" r="4" class="dot st-paid"/>
+<text class="t-item" x="375" y="136">refero — тариф и вход /mcp</text>
+<circle cx="363" cy="154" r="4" class="dot st-off"/>
+<text class="t-item off" x="375" y="158">playwright — дубль, выключен</text>
+<rect x="666" y="24" width="290" height="200" rx="8" class="cluster"/>
+<text class="t-ctitle" x="680" y="47">Источники и сервисы</text>
+<circle cx="684" cy="66" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="70">Pexels · Unsplash — ключи в .env</text>
+<circle cx="684" cy="88" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="92">Google Fonts · Fontshare (латиница)</text>
+<circle cx="684" cy="110" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="114">Firecrawl — ключ, 1000 в месяц</text>
+<circle cx="684" cy="132" r="4" class="dot st-new"/>
+<text class="t-item" x="696" y="136">Iconify — иконки, без ключа</text>
+<circle cx="684" cy="154" r="4" class="dot st-paid"/>
+<text class="t-item" x="696" y="158">Higgsfield — кредиты</text>
+<circle cx="684" cy="176" r="4" class="dot st-paid"/>
+<text class="t-item" x="696" y="180">Recraft — платно</text>
+<circle cx="684" cy="198" r="4" class="dot st-paid"/>
+<text class="t-item" x="696" y="202">Wikimedia Commons — нужен контакт</text>
+<rect x="666" y="240" width="290" height="134" rx="8" class="cluster is-new"/>
+<text class="t-ctitle" x="680" y="263">Фон и предметы</text>
+<circle cx="684" cy="282" r="4" class="dot st-new"/>
+<text class="t-item" x="696" y="286">крупная фактура: texture, surface-tile</text>
+<circle cx="684" cy="304" r="4" class="dot st-new"/>
+<text class="t-item" x="696" y="308">bgdecor — рисунки, буквы-призраки</text>
+<circle cx="684" cy="326" r="4" class="dot st-new"/>
+<text class="t-item" x="696" y="330">sketch2d — наброски от руки</text>
+<circle cx="684" cy="348" r="4" class="dot st-new"/>
+<text class="t-item" x="696" y="352">blender — рендер предметов</text>
+<rect x="24" y="368" width="290" height="200" rx="8" class="cluster"/>
+<text class="t-ctitle" x="38" y="391">Соседние навыки</text>
+<circle cx="42" cy="410" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="414">design-reference: extract, verify</text>
+<circle cx="42" cy="432" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="436">его cyrillic-check — кириллица шрифта</text>
+<circle cx="42" cy="454" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="458">impeccable — только справочники</text>
+<circle cx="42" cy="476" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="480">Эмиль: animate, emil-design-eng…</text>
+<circle cx="42" cy="498" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="502">motion — код на Motion</text>
+<circle cx="42" cy="520" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="524">ui-ux-pro-max — база, вручную</text>
+<circle cx="42" cy="542" r="4" class="dot st-ok"/>
+<text class="t-item" x="54" y="546">Skillry — каталог чужих навыков</text>
+<rect x="345" y="408" width="290" height="156" rx="8" class="cluster"/>
+<text class="t-ctitle" x="359" y="431">Сайт и скилл</text>
+<circle cx="363" cy="450" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="454">исходники, зеркало или папка site</text>
+<circle cx="363" cy="472" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="476">папка сайта → стенд на localhost</text>
+<circle cx="363" cy="494" r="4" class="dot st-new"/>
+<text class="t-item" x="375" y="498">сервер сайта — отдельным процессом</text>
+<circle cx="363" cy="516" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="520">выкладка — только по команде</text>
+<circle cx="363" cy="538" r="4" class="dot st-ok"/>
+<text class="t-item" x="375" y="542">скилл на GitHub — установка по README</text>
+<rect x="666" y="392" width="290" height="156" rx="8" class="cluster"/>
+<text class="t-ctitle" x="680" y="415">Данные</text>
+<circle cx="684" cy="434" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="438">runs/&lt;сайт&gt;: протоколы, снимки</text>
+<circle cx="684" cy="456" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="460">state.json — статусы</text>
+<circle cx="684" cy="478" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="482">taste/: WISHES, ideas.json</text>
+<circle cx="684" cy="500" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="504">SKILL-ISSUES.md — замечания</text>
+<circle cx="684" cy="522" r="4" class="dot st-ok"/>
+<text class="t-item" x="696" y="526">.env — ключи</text>
+</svg></div>
+    <figcaption>Скрипты открывают страницы через puppeteer-core в Chrome; runtime, shots и typeset — ещё и в Firefox. Агенты кликают через MCP chrome-devtools. Рисунки с объёмом, фактура фона, наброски и объёмные предметы собираются на этой машине, без облака и ключей; предметам нужен установленный Blender. Фото, видео и шрифты — из бесплатных источников с лицензиями, платное — только с согласия. Выкладка на сайт — только по команде владельца.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="h-intake" id="intake">
+  <h2 id="h-intake">Вопросы при запуске</h2>
+  <p class="muted">Скилл спрашивает до разведки, двумя заходами по четыре вопроса. Второй заход добавлен вечером 01.10: фон, шапку и цвет владелец называл правками уже по собранному сайту. Рекомендуемый ответ выделен; без человека берётся он, и это записывается в отчёт как допущение. У вопроса «Что главное» рекомендуемого ответа нет.</p>
+  <div class="tbl"><table><thead><tr><th>заход</th><th>вопрос</th><th>варианты</th><th>на что влияет</th></tr></thead><tbody>
+<tr><td>о работе</td><td><b>Насколько близко к образцу</b></td><td>очень близко · <b>в духе образца</b> · только вдохновение</td><td>сколько берём у образца и как строго сверяем</td></tr>
+<tr><td>о работе</td><td><b>Сколько своих идей</b></td><td>сдержанно · <b>заметно</b> · смело</td><td>сколько деталей и идей из банка</td></tr>
+<tr><td>о работе</td><td><b>Что главное</b></td><td>заявки и продажи · красота · телефон и скорость · тексты <span class="note">· можно несколько</span></td><td>порядок задач</td></tr>
+<tr><td>о работе</td><td><b>Контент</b></td><td>пришлю свой · частично есть · <b>нет — сделай сам</b></td><td>своё главнее придуманного; придуманное — списком владельцу</td></tr>
+<tr><td>о виде <span class="pill st-new">новое</span></td><td><b>Сайт-образец</b></td><td>есть, вот адрес · <b>нет — подберите три</b> · нет — дайте каталоги, выберу сам</td><td>без образца стиль сайта не выбирается</td></tr>
+<tr><td>о виде <span class="pill st-new">новое</span></td><td><b>Фон</b></td><td>ровный · <b>фактура и рисунки в тему</b> · только фактура</td><td>что снять у образца и что сделать своим</td></tr>
+<tr><td>о виде <span class="pill st-new">новое</span></td><td><b>Шапка при прокрутке</b></td><td>плотная · <b>полупрозрачная с размытием</b> · прячется при прокрутке вниз</td><td>вёрстка шапки и читаемость текста над фото</td></tr>
+<tr><td>о виде <span class="pill st-new">новое</span></td><td><b>Цвет</b></td><td>спокойнее образца · <b>близко к образцу</b> · ярче образца</td><td>акцент и поля; окончательно — на эскизе, по трём плашкам акцента рядом: спокойнее, близко, как у образца</td></tr>
+</tbody></table></div>
+  <p class="muted">Нет образца — скилл не выбирает стиль сам. Он показывает трёх кандидатов со снимками и рекомендацией или даёт десять каталогов: Refero Styles, Awwwards, Land-book, Lapa Ninja, One Page Love, Httpster, Minimal Gallery, «Сделано на Tilda», Readymag и Mobbin — последний про экраны сайтов и приложений, часть по подписке. Адреса каталогов проверены только на доступность. Те же вопросы есть в брифе и в форме брифа.</p>
+</section>
+
+<section aria-labelledby="h-bg" id="background">
+  <h2 id="h-bg">Фон, фактура и предметы</h2>
+  <p class="muted">Добавлено вечером 01.10 после боевого прогона «Зелёный уголок». Скилл считывает у образца то, чего на снимке всей страницы не видно: бумагу с прожилками, наброски, буквы за текстом, предметы на полях. Своё он делает сам; файлы образца не копируются.</p>
+  <div class="tbl"><table><thead><tr><th>инструмент</th><th>для чего</th><th>числа</th><th>на этой машине</th></tr></thead><tbody>
+<tr><td><b>texture.mjs</b><br><span class="note">крупная фактура</span></td><td>видит у образца картинку-плитку в фоне и называет её вид числом: бумага, камень, ткань или зернистая бумага; если признаков мало — «не определён», а не догадка. Отдаёт размер, яркость, шов, силу по секциям и чем наложена <span class="note">· 02.10: пороги подобраны по 41 замеру — верно найденных фактур 28 → 39 без ложных; «зерно есть» только при настоящем слое зерна</span></td><td class="num">zakroma.rest:<br>1416×1688,<br>яркость 248 ± 2,5</td><td><span class="pill st-new">дополнен</span><br><span class="note">138 из 138</span></td></tr>
+<tr><td><b>surface-tile.mjs</b></td><td>своя бесшовная плитка четырёх видов: бумага с заломами и трещинами, камень с прожилками, ткань, зернистая бумага; подгоняется под вид, яркость и заметность образца, шаг нити и направление волокон — из замера <span class="note">· лист стыков открывается глазами</span></td><td class="num">1024 px,<br>8–66 КБ</td><td><span class="pill st-new">дополнен</span><br><span class="note">96 из 96</span></td></tr>
+<tr><td><b>surface.css</b></td><td>слой: плитка лежит в фоне блока и умножается на его цвет; на тёмных полях — затемнением; текст и кнопки остаются чистыми <span class="note">· на тёмном поле пробной страницы фактура вышла на 47 % сильнее образца</span></td><td class="num">—</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>bgdecor.mjs</b></td><td>что стоит в фоне образца: рисунки, буквы-призраки, предметы и орнаменты на полях, узоры, свечения; насколько оно бледное — числом; сверка с нашим сайтом <span class="note">· 06.10: свечение — отдельный вид; значок блока, ряд логотипов и плитки внутри карточки больше не считаются украшением; страница с ошибкой не снимается как нормальная; вырезки каждой находки открываются глазами</span></td><td class="num">zakroma.rest:<br>10 и 11 предметов<br>на двух экранах</td><td><span class="pill st-new">дополнен</span><br><span class="note">177 из 177</span></td></tr>
+<tr><td><b>sketch2d</b><br><span class="note">шаблон</span></td><td>свои наброски от руки в фон: фигуры кодом, затем «рваная линия»; бледной тушью, вне текста <span class="note">· чужие картинки и наборы иконок не берутся; образец — пять ботанических рисунков</span></td><td class="num">5–16 КБ</td><td><span class="pill s-on">работает</span><br><span class="note">проверка — глазами</span></td></tr>
+<tr><td><b>blender.mjs</b><br><span class="note">с 06.10 вместо render3d</span></td><td>объёмные предметы-украшения в Blender: сцена рендерится один раз, на сайте стоят обычные картинки с прозрачным фоном; ещё умеет укладку предметов и ткань, а для живого 3D — модель GLB с просмотрщиком <span class="note">· студийный свет, двенадцать материалов (в их числе лист, мёд, печатная этикетка), тень на земле, поле кадра считается само; образцы — соты, росток, лента, девять значков, банка; под другое дело сцены пишутся заново</span></td><td class="num">черновик 600 px:<br>около 9 с;<br>чистовой 1000 px:<br>23–145 с</td><td><span class="pill st-new">новый</span><br><span class="note">70 из 70 с настоящим Blender; видеокарту эта машина для рендера не даёт — считает процессор; качество — глазами</span></td></tr>
+</tbody></table></div>
+  <p class="muted">Планка рендера — минимум первого же кадра, а не третьей переделки: достаточно сэмплов и шумоподавление, студия из софтбоксов, глянец рядом с матовым, детали, по которым предмет узнают, тень на земле, блик вдоль ленты, цвет из палитры сайта. Владелец дважды возвращал рендер на «Зелёном уголке», планка записана по итогам. Заметность фактуры — не ниже образца: первая плитка оказалась слишком тихой, владелец повторил просьбу о прожилках и мятостях; принята плитка заметнее образца. Первые кадры Blender владелец ещё не смотрел: соты и банка вышли лучше прежних, у ростка листья получились глянцевым пластиком — материал листа требует доводки. Папка прежнего рендера лежит в репозитории до его решения.</p>
+  <p class="muted">Чего инструменты не умеют. Свечение теперь отдельный вид. После доводки 06.10 пороги фона проверены на шести живых сайтах на двух экранах; полный набор из 29 сайтов не перегонялся, и новые пороги стоят на одном-двух случаях каждый. Пятно, срезанное верхом страницы или низом раздела, меряется по видимой части. Украшение на холсте, рисунок фоном на весь блок и слово, набранное картинкой слитно, не видны; украшение в углу карточки не засчитывается. Пороги фактуры с 02.10 — по 41 замеру. Вид плитки зависит от масштаба файла: зернистая бумага, уменьшенная вдвое, не узнаётся. Дерево, бетон и полупрозрачные плитки не распознаются. Тёмные поля при сверке фактуры теперь помечаются как «не сверены», а не ослабляют всю плитку. Образцы mamuka.rest и zakroma.rest сняты только на широком экране; фон донора боевого прогона — и на телефоне. Фон снимается только в Chrome; на zakroma.rest один орнамент из двух в контактах пропущен, а самопроверка съёма фона один раз упала на телефоне без найденной причины. Ключи и новые пакеты не нужны.</p>
+</section>
+
+<section aria-labelledby="h-svg3d" id="svg3d">
+  <h2 id="h-svg3d">3D SVG — рисунки с объёмом</h2>
+  <p class="muted">Добавлено днём 01.10 одним инструментом <code>svg3d.mjs</code>. Даёт предмет, а не плоский значок, и при этом обычный SVG: единицы килобайт, красится цветами сайта, виден без JavaScript. Это детали для красоты, а не «3D везде»: фото, видео или 3D по-прежнему выбираются по смыслу сайта.</p>
+  <div class="tbl"><table><thead><tr><th>движок</th><th>для чего</th><th>вес образца</th><th>на этой машине</th></tr></thead><tbody>
+<tr><td><b>Zdog</b></td><td>круглые «игрушечные» иконки шагов и разделов; предмет рядом с текстом, который доворачивается за прокруткой и мышью <span class="note">· цвета — переменными сайта; живому предмету нужны ещё библиотека Zdog и модуль поворота — около 38 КБ до сжатия, один раз на сайт</span></td><td class="num">0.9–2.5 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>Three.js SVGRenderer</b></td><td>гранёные предметы: соты, кристалл, коробки, дома <span class="note">· порядок граней исправляется, щели закрываются; другой цвет — только пересборкой</span></td><td class="num">5–8 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>CadQuery</b></td><td>схема «как устроено», чертёж изделия со скрытыми линиями пунктиром <span class="note">· красится цветом текста, прорисовывается линией из decor-kit</span></td><td class="num">1.5–13 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>scatter</b></td><td>фон-россыпь из рисунков любого движка, с пустой серединой под текст</td><td class="num">7–13 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>vtracer, potrace</b></td><td>готовый рендер или рисунок → вектор в палитре сайта <span class="note">· фото не трассировать</span></td><td class="num">2–10 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>Rough.js</b></td><td>вариант «нарисовано от руки» для чертежей и контурных значков</td><td class="num">10–50 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>Iconify</b></td><td>обычные значки интерфейса; лицензия набора пишется в <code>credits.json</code> <span class="note">· некоммерческие и GPL-наборы — отказ</span></td><td class="num">0.3–0.5 КБ</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>SVGO</b></td><td>чистка чужого SVG перед вставкой: без скриптов, внешних ссылок и растра</td><td class="num">—</td><td><span class="pill s-on">работает</span></td></tr>
+<tr><td><b>Blender Freestyle</b></td><td>линии сложных моделей <span class="note">· Blender на машине теперь есть, но эта ветка svg3d ни разу не запускалась</span></td><td class="num">—</td><td><span class="pill s-off">не проверен</span></td></tr>
+</tbody></table></div>
+  <p class="muted">Бюджеты: иконка — до 4 КБ и 40 узлов, украшение — до 15 КБ и 200, фон — до 60 КБ и 800; больше — растровый пререндер дешевле. Не для фотореализма, текстур и теней. Примеры — 7 сцен и страница в <code>templates/svg3d</code>; самопроверка — 65 проверок, 0 провалов, 1 пропуск (Blender; замер 01.10). Safari глазами не смотрели. potrace стоит только на этой машине: в списке пакетов навыка его нет, у коллеги трассировку ведёт vtracer. Рядом с объёмными предметами-картинками из раздела выше рисунки 3D SVG выглядят слабее — их место там, где рисунок мелкий. Живой предмет на Zdog при выключенных анимациях системы не грузится вовсе — это разрешено правилом «тише», но не образец; код не переведён.</p>
+</section>
+
+<section aria-labelledby="h-conn" id="tools">
+  <h2 id="h-conn">MCP, плагины и навыки</h2>
+  <div class="keys-note">
+    <p><b>Слова.</b> MCP-сервер — подключённая внешняя программа или сервис; плагин — набор навыков одним пакетом; навык — инструкция с инструментами.</p>
+    <p><b>Правило.</b> Где инструменты делают одно и то же, оставлен лучший, остальные выключены. Ненужное, но ни с чем не пересекающееся, не трогали. Ничего не удалено.</p>
+    <p><b>Как вернуть.</b> Выключено в <code>~/.claude/settings.json</code>: <code>enabledPlugins</code>, <code>skillOverrides</code>, <code>deniedMcpServers</code>, <code>disabledMcpjsonServers</code>. Вернуть — удалить строку. Копия настроек до правки — <code>~/.claude/site-rework/work-2026-09-30/settings.before-overlaps.json</code>. Коннекторы claude.ai совсем удаляются только в настройках claude.ai.</p>
+    <p><b>Оговорки.</b> Три навыка из набора Эмиля убраны из папки навыков как ненужные для сайтов: animate-expo, ask-sonner, write-swift; копии лежат в <code>~/.claude/site-rework/work-2026-09-30/craft-removed</code>. Навыки review-animations, prototype и pick-ui-library запускаются только вручную из-за строки в их собственных файлах, а пусковая часть impeccable отключена переименованием папки — настройками это не возвращается.</p>
+    <p><b>Сверено поздним вечером 01.10</b> с файлами настроек: таблицы ниже верны, с 30.09 здесь ничего не менялось.</p>
+  </div>
+  <h3>MCP-серверы</h3>
+  <div class="tbl"><table><thead><tr><th>сервер</th><th>зачем</th><th>состояние</th></tr></thead><tbody><tr><td><b>chrome-devtools</b></td><td>браузер для агентов: клики, снимки, консоль, сеть, трассировка скорости, Lighthouse <span class="note">· единственный браузерный; описан в настройках проекта sites, в других папках и на другой машине его нет</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>playwright</b></td><td>то же, плюс Firefox и WebKit <span class="note">· дубль chrome-devtools; Firefox скилл проверяет своими runtime и shots, Safari убран из плана</span></td><td><span class="pill s-off">выключен</span></td></tr><tr><td><b>motion</b></td><td>поиск по документации и примерам Motion <span class="note">· бесплатно, без аккаунта</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>Context7</b></td><td>документация библиотек: GSAP, Three.js, Lenis и других</td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>refero</b></td><td>подбор донора в Refero Styles <span class="note">· платный тариф и вход через /mcp</span></td><td><span class="pill s-auth">нужен вход</span></td></tr><tr><td><b>Higgsfield MCP</b></td><td>картинки, видео, 3D <span class="note">· кредиты — только с согласия</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>higgsfield AI</b></td><td>второй коннектор того же сервиса <span class="note">· дубль, не подключён</span></td><td><span class="pill s-off">выключен</span></td></tr><tr><td><b>Runway</b></td><td>видео <span class="note">· пересекается с Higgsfield, не подключён</span></td><td><span class="pill s-off">выключен</span></td></tr><tr><td><b>Figma</b></td><td>макеты клиента, выгрузка в Figma</td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>Claude Docs, Gmail, Google Calendar, Liquid</b></td><td>документы, почта, календарь, торговля <span class="note">· к сайтам не относятся и ни с чем не пересекаются</span></td><td><span class="pill s-on">включён</span></td></tr></tbody></table></div>
+  <h3>Плагины</h3>
+  <div class="tbl"><table><thead><tr><th>плагин</th><th>зачем</th><th>состояние</th></tr></thead><tbody><tr><td><b>design</b></td><td>критика дизайна, доступность, тексты интерфейса, дизайн-система, исследования, передача макетов; вместе с плагином ушли 6 коннекторов: Slack, Notion, Asana, Linear, Atlassian, Intercom <span class="note">· четыре навыка из семи дублируют impeccable и проверки скилла; плагин выключается только целиком; ни разу не запускался</span></td><td><span class="pill s-off">выключен</span></td></tr><tr><td><b>figma</b></td><td>навыки к коннектору Figma</td><td><span class="pill s-on">включён</span></td></tr></tbody></table></div>
+  <h3>Навыки</h3>
+  <div class="tbl"><table><thead><tr><th>навык</th><th>зачем</th><th>состояние</th></tr></thead><tbody><tr><td><b>site-rework, design-reference</b></td><td>этот скилл и снятие дизайна с образца</td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>predrelease</b></td><td>проверки перед коммитом витрины <span class="note">· только в проекте sites</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>impeccable</b></td><td>правила дизайна, критика, аудит <span class="note">· пусковая часть отключена: она скачивает и запускает постороннюю программу; скилл читает только его справочники</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>Эмиль Ковальски: animate, emil-design-eng, apple-design, mobile-native и др.</b></td><td>движение и полировка: нужно ли движение, зачем, какие кривые и длительности <span class="note">· review-animations, prototype, pick-ui-library — только вручную</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>motion</b></td><td>код на Motion: обычный JS, React, Vue <span class="note">· чтобы не перебивать animate: Эмиль решает, Motion пишет код</span></td><td><span class="pill s-name">по имени</span></td></tr><tr><td><b>ui-ux-pro-max</b></td><td>база: шрифты Google с признаком кириллицы, 119 правил удобства, заготовки GSAP, палитры по отрасли <span class="note">· описание велит браться за любую задачу по интерфейсу, стили каталога — штампы</span></td><td><span class="pill s-manual">только вручную</span></td></tr><tr><td><b>Firecrawl — 21 из 28</b></td><td>поиск, чтение и карта сайтов, обход, выгрузка, SEO-аудит, мониторинг, исследования <span class="note">· тратят кредиты: 1000 в месяц</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>с claude.ai — 30</b></td><td>pdf, docx, xlsx, pptx, deep-research, docs, canvas-design и др. <span class="note">· два выключены — в таблице ниже</span></td><td><span class="pill s-on">включён</span></td></tr><tr><td><b>встроенные Claude Code</b></td><td>artifact-design, code-review, security-review, simplify, run и др.</td><td><span class="pill s-on">включён</span></td></tr></tbody></table></div>
+  <h3>Выключено как пересечение</h3>
+  <div class="tbl"><table><thead><tr><th>выключено</th><th>вместо</th><th>почему лучше</th></tr></thead><tbody><tr><td>frontend-design</td><td><b>impeccable</b></td><td>расширенная версия того же навыка</td></tr><tr><td>webapp-testing, firecrawl-qa</td><td><b>проверки скилла и chrome-devtools</b></td><td>меряют числами и открывают localhost</td></tr><tr><td>firecrawl-interact, firecrawl-demo-walkthrough</td><td><b>chrome-devtools</b></td><td>локально и бесплатно</td></tr><tr><td>firecrawl-deep-research</td><td><b>deep-research</b></td><td>не тратит кредиты Firecrawl</td></tr><tr><td>firecrawl-developer-index</td><td><b>Context7</b></td><td>документация без кредитов</td></tr><tr><td>firecrawl-parse</td><td><b>pdf, docx, xlsx</b></td><td>файлы клиента не уходят в облако</td></tr><tr><td>firecrawl-website-design-clone</td><td><b>design-reference</b></td><td>снимает дизайн числами с живой страницы</td></tr><tr><td>плагин design</td><td><b>impeccable, a11y.mjs, copy.mjs, design-reference</b></td><td>те же задачи, уже встроены в скилл</td></tr><tr><td>MCP playwright</td><td><b>chrome-devtools</b></td><td>один браузер у агентов, без путаницы в состоянии</td></tr><tr><td>Runway, higgsfield AI</td><td><b>Higgsfield MCP</b></td><td>рабочий коннектор того же назначения</td></tr></tbody></table></div>
+  <p class="muted">Проверено и не взято: 21st.dev — компоненты на React и Tailwind, в обычный HTML только переписывать, бесплатно 2 копирования в день, вид узнаваемо шаблонный. Motion+ за $399 (разбиение текста, счётчик, бегущая строка) — только с согласия владельца.</p>
+</section>
+
+<section aria-labelledby="h-keys" id="keys">
+  <h2 id="h-keys">Ключи и доступы — что нужно от владельца</h2>
+  <div class="keys-note">
+    <p><b>Как передать ключ.</b> Добавить строку <code>ИМЯ=значение</code> в файл <code>~/.claude/site-rework/.env</code> или прислать ключ в чат — Claude положит сам. Ключ в чате не показывать другим людям.</p>
+    <p><b>Коллега.</b> Скилл ставится из GitHub по README; ключей в репозитории нет, только шаблон <code>.env.example</code>. Ключи Pexels, Unsplash и Firecrawl переданы коллеге отдельно (решение владельца 30.09), поэтому лимиты общие: Unsplash — 50 запросов в час, Firecrawl — 1000 кредитов в месяц на всех. Если коллеге Firecrawl нужен часто, пусть заведёт свой бесплатный ключ.</p>
+    <p><b>Сейчас нужен</b> только тариф Refero — если нужен подбор донора через MCP. Без него скилл всё равно предложит образец: подберёт трёх кандидатов по каталогам в браузере или отдаст десять каталогов на выбор. Инструментам фона, фактуры и предметов и стеку 3D SVG ключи не нужны. Остальное — по желанию.</p>
+  </div>
+  <div class="tbl"><table><thead><tr><th>сервис</th><th>зачем</th><th>что сделать</th><th>куда</th><th>цена</th><th>статус</th></tr></thead><tbody><tr><td><b>Pexels</b></td><td>фото и 4K-видео для сайтов</td><td>уже есть</td><td><code>.env · PEXELS_API_KEY</code></td><td>бесплатно</td><td><span class="pill k-have">есть</span></td></tr><tr><td><b>Unsplash</b></td><td>самые красивые фото</td><td>уже есть</td><td><code>.env · UNSPLASH_ACCESS_KEY, UNSPLASH_APP_NAME</code></td><td>бесплатно, 50 запросов в час</td><td><span class="pill k-have">есть</span></td></tr><tr><td><b>Firecrawl</b></td><td>карта сайта одним запросом, факты о деле со ссылками для «сделай сам», быстрый отбор доноров</td><td>уже есть (30.09)</td><td><code>.env · FIRECRAWL_API_KEY</code> <span class="note">· и хранилище Firecrawl CLI — им пользуются навыки Firecrawl; при замене ключа менять в обоих местах</span></td><td>бесплатно 1000 кредитов в месяц; скиллу — до 50 на сайт</td><td><span class="pill k-have">есть</span></td></tr><tr><td><b>Refero</b></td><td>подбор донора из 2 000+ стилей живых сайтов через MCP</td><td>оплатить тариф Pro, Team или Lifetime; в Claude Code: /mcp → refero → войти</td><td><code>вход через /mcp</code></td><td>платно; без него — каталог в браузере бесплатно</td><td><span class="pill k-need">нужен</span></td></tr><tr><td><b>Wikimedia Commons</b></td><td>ещё бесплатные фото (CC0, музеи) без ключа</td><td>не ключ, а контакт для запросов: сайт студии или рабочая почта</td><td><code>.env · MEDIA_CONTACT</code></td><td>бесплатно</td><td><span class="pill k-opt">по желанию</span></td></tr><tr><td><b>Recraft</b></td><td>свои SVG-иконки, иллюстрации и узоры генерацией — то, что не построить из фигур: персонаж, еда, сцена</td><td>recraft.ai → профиль → API → Generate (нужен баланс API)</td><td><code>.env · RECRAFT_API_TOKEN</code></td><td>платно, $0.007–0.30 за картинку; трата — только с согласия</td><td><span class="pill k-opt">по желанию</span></td></tr><tr><td><b>Higgsfield</b></td><td>генерация картинок и видео</td><td>уже подключён через claude.ai</td><td><code>коннектор claude.ai</code></td><td>платно (кредиты); трата — только с согласия</td><td><span class="pill k-have">есть</span></td></tr><tr><td><b>Pixabay</b></td><td>ещё видео до 4K</td><td>pixabay.com/api/docs — бесплатный ключ</td><td><code>.env · PIXABAY_API_KEY</code></td><td>бесплатно</td><td><span class="pill k-opt">по желанию</span></td></tr></tbody></table></div>
+  <p class="muted">Не нужны: OpenAI (только для отключённой генерации в impeccable), Smithsonian, Iconify. GitHub уже работает — ключ не нужен. В <code>.env</code> сейчас четыре строки: Pexels, две Unsplash и Firecrawl.</p>
+</section>
+
+<section aria-labelledby="h-scripts">
+  <h2 id="h-scripts">Скрипты</h2>
+  <div class="tbl"><table><thead><tr><th>скрипт</th><th>что делает</th><th>шаг</th><th>статус</th></tr></thead><tbody><tr><td><code>lib.mjs</code></td><td>общий «глаз»: браузер, экраны, прокрутка, снимки, окна при загрузке, переполнение</td><td class="num">все</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>discover.mjs</code></td><td>разведка сайта или донора: техника, содержимое, типы страниц, паспорт</td><td class="num">1</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>motion.mjs</code></td><td>движение числами и сверка донор → наш сайт <span class="note">· 02.10: находит тот же приём, записанный другим видом (привязка к прокрутке ↔ параллакс ↔ появление, бегущая строка ↔ петля), сверяет место на странице; решения больше не съезжают после пересъёмки донора</span></td><td class="num">1, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>runtime.mjs</code></td><td>робот в браузере: клики, формы, наведение, консоль, текст за краем, блок шире колонки, якоря, фокус в открытом меню; окно cookie закрывает сам <span class="note">· 02.10: текст, закрытый соседним блоком, со сверкой снимком; стили читаются и на сайте со строгой политикой безопасности, без ложного провала; 01.10, днём: страница без JavaScript (<code>--no-js</code>), «меньше движения» на открытой странице, свойство сменилось скачком без перехода; 06.10: при выключенных анимациях системы проверяет четыре вещи — петли тише и с видимой паузой, сдвиги появлений малы, за мышью ничего не ходит, контент проявился; автосмену слайдов не принимает за потерю контента; с 30.09: опечатка во флаге — ошибка с подсказкой, длинная страница снимается частями</span></td><td class="num">1, 3, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>shots.mjs · diff.mjs</code></td><td>снимки «до/после» и где изменилась картинка <span class="note">· 06.10: страница с ошибкой 404 или 500 — провал, а не снимок</span></td><td class="num">1, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>security.mjs</code></td><td>безопасность и утечки: служебные файлы, админка, формы, секреты, заголовки</td><td class="num">4</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>typeset.mjs</code></td><td>набор: строки, висячие предлоги, шрифт каждого знака, шкала кеглей, первый экран <span class="note">· Chrome и Firefox; 06.10: значок над заглавной (Й, Ё) налезает на строку выше — находка</span></td><td class="num">1, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>a11y.mjs</code></td><td>доступность: контраст (и над фото — по видимой части строки), мелкий текст, фокус, цели нажатия; окно cookie закрывает сам</td><td class="num">1, 4</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>perf.mjs</code></td><td>скорость: LCP, что прыгает при загрузке, вес, долгие задачи; окно cookie — строкой, замер как у первого посетителя</td><td class="num">1, 4</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>cliche.mjs</code></td><td>шаблонность против донора и журнала вкуса <span class="note">· с 01.10 — уже на эскизе главной и после каждой новой страницы</span></td><td class="num">1, 2, 4</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>copy.mjs · copy-rules.mjs</code></td><td>тексты: штампы, жаргон, заполнители, типограф; придуманное — списком в copy/invented.json</td><td class="num">1, 3, 4</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>media.mjs</code></td><td>фото и видео из бесплатных источников, под имена проекта, аудит карты фото</td><td class="num">3</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>svg3d.mjs</code></td><td>рисунки с объёмом чистым вектором: иконки и предметы, чертёжные проекции, фон-россыпь, растр → вектор, чистка чужого SVG <span class="note">· новый, 01.10 днём; движки — в разделе «3D SVG»; его команда «от руки» рисует и наброски для фона</span></td><td class="num">3</td><td><span class="pill st-new">новый</span></td></tr><tr><td><code>state.mjs</code></td><td>журнал задач и этапов: статусы только с доказательствами <span class="note">· 01.10, вечер: сорвавшаяся сверка с образцом (страница не открылась, сверено ноль) больше не получает галочку; в обязательных сверках появился фон</span></td><td class="num">все</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>ideas.mjs</code></td><td>банк идей: удачное с прошлых сайтов, pick под новый <span class="note">· 46 идей: 6 понравились, 5 без отзыва, 1 отвергнута, 34 не пробовали</span></td><td class="num">2, 5</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>taste.mjs</code></td><td>журнал вкуса: что пользователь принял и отверг</td><td class="num">0, 2, 5</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>requirements.mjs</code></td><td>реестр требований: цитата, критерий приёмки, задачи; обязателен для сайта с нуля</td><td class="num">0, 2, 4, 5</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>texture.mjs · grain-tile.mjs</code></td><td>фактура числом: зерно и шум, своя шумовая плитка <span class="note">· 01.10, вечер: крупная фактура — мятая бумага, камень, ткань: плитка, шов, сила по секциям, рецепт слоя и сверка с образцом; 02.10: вид плитки числом, четвёртый вид — зернистая бумага</span></td><td class="num">1, 3, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>surface-tile.mjs</code></td><td>своя бесшовная плитка крупной фактуры: бумага, камень или ткань под замер образца; лист стыков и проверка готового файла <span class="note">· новый; раздел «Фон, фактура и предметы»</span></td><td class="num">2, 3</td><td><span class="pill st-new">новый</span></td></tr><tr><td><code>bgdecor.mjs</code></td><td>что стоит в фоне: рисунки, буквы-призраки, предметы на полях, узоры; бледность числом, вырезки находок; сверка донор → наш сайт <span class="note">· 06.10: вид «свечение» и пересобранные правила приняты по сокращённой проверке — шесть живых сайтов</span></td><td class="num">1, 4</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>tilda.mjs · clicks.mjs</code></td><td>донор на Tilda; что раскрывается по клику</td><td class="num">1</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>mirror.mjs · serve.mjs</code></td><td>зеркало чужой страницы и локальный сервер со сжатием, как у хостинга</td><td class="num">0, 1</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>recraft.mjs</code></td><td>SVG-иконки и иллюстрации через Recraft <span class="note">· нет ключа</span></td><td class="num">3</td><td><span class="pill st-paid">нужен ключ</span></td></tr><tr><td><code>flags-doc.mjs</code></td><td>справочник флагов из кода</td><td class="num">—</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>firecrawl.mjs</code></td><td>карта сайта, факты о деле со ссылками, фирменный стиль кандидатов <span class="note">· ключ есть</span></td><td class="num">0, 1</td><td><span class="pill st-ok">в рабочем</span></td></tr><tr><td><code>fonts.mjs</code></td><td>шрифт по образцу: замер шрифта образца по отрисовке, кандидаты с кириллицей и лицензией на веб, лист для глаз, решение с лицензией; без образца — подбор по характеру и пары; свои файлы шрифтов под сайт <span class="note">· 06.10; Fontshare — только для латинской надписи, файлы как есть; корнем сайта больше не становится домашняя папка</span></td><td class="num">2, 3</td><td><span class="pill st-new">дополнен</span></td></tr><tr><td><code>blender.mjs</code></td><td>предметы с объёмом в Blender: проверка готовности машины, рендер, укладка и ткань, модель GLB и её проверка, библиотеки просмотрщика для сайта <span class="note">· новый, 06.10; без Blender говорит, что поставить</span></td><td class="num">3</td><td><span class="pill st-new">новый</span></td></tr><tr><td><code>deploy-check.mjs</code></td><td>сверка выкладки: попадут ли страница и её файлы на боевой сайт (Dockerfile, Vercel, Netlify, Pages, Caddy и nginx), с адресом — проверка самого боевого сайта <span class="note">· новый, 06.10; при провале код выхода 1</span></td><td class="num">4, 5</td><td><span class="pill st-new">новый</span></td></tr><tr><td><code>skill-audit.mjs</code></td><td>проверка чужого навыка (Skillry и др.) перед установкой <span class="note">· 01.10, днём: запись в настройки Claude разбирается по операциям, <code>--exclude</code> теперь и у проверки, находки в тестовых папках — отдельной группой; вечером: проверка, отвечает ли адрес, больше не считается скачиванием программы</span></td><td class="num">0</td><td><span class="pill st-new">дополнен</span></td></tr></tbody></table></div>
+  <p class="muted">Всего 34 файла скриптов и 22 справочника; 06.10 добавлены справочники по шрифтам и по Blender. Рядом со скриптами лежат двенадцать разовых инструментов прогона, новый — покадровый съём (загрузка, покой, шапка при прокрутке, наведение) — <code>templates/run-tools</code>: листы снимков, состояния по сценарию, сжатие, строки шаблонов; вердиктов и доказательств они не дают. Соседний навык design-reference даёт extract.mjs (снять стиль донора), verify.mjs (сверить результат числами) и cyrillic-check.mjs (есть ли у шрифта кириллица). Навык ui-ux-pro-max даёт search.py — поиск по базе шрифтов, палитр и правил удобства.</p>
+</section>
+
+<section aria-labelledby="h-tpl" id="templates">
+  <h2 id="h-tpl">Шаблоны и заготовки</h2>
+  <p class="muted">Готовые файлы, с которых начинают, чтобы не писать заново в каждом прогоне. Вечером 01.10 их стало одиннадцать вместо шести: пять новых вынесены из боевого прогона.</p>
+  <div class="tbl"><table><thead><tr><th>шаблон</th><th>что это</th><th>файлов</th><th>статус</th></tr></thead><tbody>
+<tr><td><code>brief.md</code></td><td>бланк запроса: адрес, режим, задача, близость к образцу, контент, ограничения <span class="note">· вечером добавлены образец, фон, шапка при прокрутке, цвет; то же в форме <code>ui/brief-form.html</code></span></td><td class="num">1</td><td><span class="pill st-new">дополнен</span></td></tr>
+<tr><td><code>report.md</code></td><td>бланк итогового отчёта: что нашли, что сделано, проверки, скорость, что не проверено <span class="note">· вечером добавлены ответы анкеты, как мерили скорость, раздел «Придумано — проверить владельцу»</span></td><td class="num">1</td><td><span class="pill st-new">дополнен</span></td></tr>
+<tr><td><code>copy-prompt.md</code></td><td>задание помощнику, который пишет тексты: факты, образец речи владельца, чего не писать, как проверить каждый абзац</td><td class="num">1</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>grain.css</code></td><td>слой мелкого зерна поверх страницы на своей плитке; сила и режим — из замера образца</td><td class="num">1</td><td><span class="pill st-ok">в рабочем</span></td></tr>
+<tr><td><code>surface.css</code></td><td>слой крупной фактуры: плитка лежит под содержимым, текст и кнопки остаются чистыми</td><td class="num">1</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>decor-kit/</code></td><td>приёмы «детали для красоты»: слова-логотипы, рисунки линией, слои фона, печать, предмет за краем, движение</td><td class="num">5</td><td><span class="pill st-ok">в рабочем</span></td></tr>
+<tr><td><code>svg3d/</code></td><td>примеры рисунков с объёмом в SVG: семь сцен, фоны-россыпи, страница-пример <span class="note">· 01.10, днём</span></td><td class="num">33</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>blender/</code></td><td>образцы сцен для Blender — банка, соты, росток, лента, значки, стопка, драпировка — и просмотрщик модели GLB для сайта <span class="note">· 06.10; прежний <code>render3d/</code> из шагов убран, папка лежит до решения владельца</span></td><td class="num">11</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>sketch2d/</code></td><td>свои наброски от руки для фона; образец — ботанические рисунки для магазина семян</td><td class="num">3</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>run-tools/</code></td><td>двенадцать разовых инструментов прогона: покадровый съём, листы снимков для глаз, состояния по сценарию, контраст в точке, прокси со сжатием, малые копии картинок, неиспользуемые классы стилей, строки шаблонов, набор текста <span class="note">· вердиктов и доказательств не дают; самопроверка есть только у набора текста — 9 из 9</span></td><td class="num">14</td><td><span class="pill st-new">новый</span></td></tr>
+<tr><td><code>deps/</code></td><td>всё для установки на новой машине: список библиотек и образец файла ключей без значений <span class="note">· 01.10, днём: добавлены библиотеки для 3D SVG</span></td><td class="num">3</td><td><span class="pill st-new">дополнен</span></td></tr>
+</tbody></table></div>
+  <p class="muted">Образцы в шаблонах blender и sketch2d — про магазин семян и мёд; в svg3d — мастерская подарков «Улей», в decor-kit — пекарня «Опара». Предметы, рисунки и сцены для другого дела пишутся заново по образцу. Наборов тестовых страниц, на которых скилл проверяет сам себя, вечером стало двадцать вместо восемнадцати: новые — для фактуры и для фона; днём добавлен набор для svg3d.</p>
+</section>
+
+<section class="cols" aria-label="Что сделано и что дальше">
+  <div class="card">
+    <h2>Сделано 01.10</h2>
+    <ul><li><b>Днём.</b> Стек «3D SVG»: <code>svg3d.mjs</code>, справочник, 7 примеров сцен; работают все движки, кроме Blender</li><li>runtime: страница без JavaScript и «меньше движения» на открытой странице — в Chrome, в Firefox скрипт предупреждает, что это не поддерживается; скачок свойства без перехода — в обоих; самопроверка 64 из 64 (Chrome 53, Firefox 11)</li><li>skill-audit: запись в настройки Claude ловится по операциям; самопроверка 80 из 80</li><li><b>Вечером.</b> Боевой прогон «Зелёный уголок» в стиле X5 Tech сдан; по ходу записано 34 замечания к скиллу: 19 закрыты в тот же вечер, ещё 5 — наполовину, 10 остались открытыми</li><li>Крупная фактура: скилл распознаёт у образца картинку-плитку в фоне — мятую бумагу, камень, ткань; какой именно материал, не различает. Самопроверка 67 из 67; на zakroma.rest — «фактура есть» вместо прежнего «слой не нужен»</li><li>Своя плитка трёх видов под замер образца; самопроверка 60 из 60. Против zakroma.rest: на светлых полях расхождение 3 %, на тёмном 47 % — сверка это ловит</li><li>Фон образца: рисунки, буквы-призраки, предметы на полях; самопроверка 41 из 41; на mamuka.rest найдено 5 рисунков и 2 слова за текстом</li><li>Анкета: четыре вопроса о виде; нет образца — три кандидата или десять каталогов; форма проверена в браузере, на 320 px ничего не вылезает</li><li>Планка рендера и шаблон объёмных предметов; наброски от руки; одиннадцать разовых инструментов прогона; задание помощнику по текстам</li><li>Правило 7: первый экран, цвет, предметы и фон — листом из вариантов до сборки</li><li>Журнал прогона больше не ставит галочку сорвавшейся сверке; самопроверка 24 из 24</li><li>Проверка чужих навыков больше не принимает вопрос «отвечает ли сервер» за скачивание программы; самопроверка 80 из 80. Аудит самого скилла — 0 провалов и 8 предупреждений, если исключить нарочно опасные примеры его собственной самопроверки</li><li>Три коммита в master: 949343d, a2b8dea, e2beb7b. На GitHub они ещё не отправлены — отправляет владелец</li></ul>
+  </div>
+  <div class="card">
+    <h2>Сделано 02.10</h2>
+    <ul><li>Из шести отложенных правок закрыты четыре и половина шестой; каждую перепроверял независимый проверяющий, и в каждой он нашёл что-то серьёзное до приёмки</li><li><b>Сверка движения.</b> Находит тот же приём, записанный другим видом, и сверяет место на странице; решения больше не съезжают после пересъёмки донора. Самопроверка 160 строк, сверка 107 из 107; на «Зелёном уголке» три ручных решения из десяти стали лишними</li><li><b>runtime.</b> Ловит текст, закрытый соседним блоком, и проверяет это снимком. Стили на сайте со строгой политикой безопасности читает без ложного провала. lib 117 из 117, runtime 95 из 95 в Chrome и Firefox; живые stripe, ikea, framer — без ложных тревог</li><li><b>Фактура.</b> Вид плитки называется числом, добавлена зернистая бумага. На наборе из 41 замера верных фактур стало 39 вместо 28, ложных 0; зерна — 36 верных вместо 19, ложных 1 вместо 18. texture 138 из 138, surface-tile 96 из 96</li><li>Проверяющий фактуры нашёл одно ослабление — порог шва. Его вернули к прежнему значению и закрепили отдельной самопроверкой</li><li>Самоаудит навыка правильной командой: 0 провалов, 8 предупреждений</li><li>Пять коммитов в master: 7fd3ad0, f9bad48, 7f10e9f, e1acd25, e4468ca. Владелец перемотал master и отправил на GitHub, master и GitHub совпадают</li></ul>
+  </div>
+  <div class="card">
+    <h2>Сделано 06.10</h2>
+    <ul><li>Сверка всего скилла шестью участками, на каждый — независимый проверяющий. Шесть коммитов в master, владелец перемотал и отправил на GitHub; секретов нет</li><li><b>Ветка с макбука:</b> шрифт по образцу, Blender, сверка выкладки, значок над заглавной, покадровый съём, работа на macOS и Linux</li><li><b>Под Windows:</b> проверка правки полей снова ловит страницу, которая глушит Ctrl+A; сверка выкладки не врёт из Git Bash и её самопроверка не умирает на кириллице в пути; шрифты не принимают домашнюю папку за корень сайта</li><li><b>Выключенные анимации — тише, а не пусто.</b> Решение владельца: появления с малым сдвигом, петли вдвое медленнее с видимой паузой, за мышью ничего не ходит. Приведены рецепты, приёмка, набор деталей и проверка в браузере</li><li><b>Четыре пункта прогона BBQ:</b> страница сайта в подпапке, ошибка 404 как «снято», затирание файлов параллельных прогонов, проверка текстов по файлу данных</li><li><b>Фон:</b> все шесть отложенных правок закрыты. 177 из 177, девять пробных поломок пойманы, шесть живых сайтов на двух экранах</li><li><b>Blender вместо своего рендера:</b> материалы, пять сцен, поля кадра; 70 из 70 с настоящим Blender</li><li>На сведённом коде: runtime 113, библиотека 149, тексты 218, набор 152, фактура 143, движение 107 из 107, шрифты 117, сверка выкладки 32, доступность 24 — без провалов; три проверки мигнули под нагрузкой и прошли повтором. Справочник флагов — 33 скрипта без расхождений; самоаудит — 0 провалов, 9 предупреждений</li></ul>
+  </div>
+  <div class="card">
+    <h2>Дальше</h2>
+    <ul><li><b>Владельцу:</b> посмотреть кадры Blender и решить, удалять ли папку прежнего рендера <span class="pill st-plan">ждёт</span></li><li><b>Первым по плану:</b> защита от настоящей отправки формы на живом сайте, затем сравнение скорости и доступности с замером «до». Весь порядок — девять пунктов в ROADMAP.md <span class="pill st-plan">в плане</span></li><li><b>Кириллица к латинским шрифтам</b> — дорисовать русские буквы шрифту без них, где лицензия разрешает. Единственный пункт плана ROADMAP.md, не начат <span class="pill st-plan">в плане</span></li><li><b>Blender:</b> независимая проверка темы не пройдена — сессия оборвалась; рядом с картинками «Зелёного уголка» черновики Blender пока хуже в большинстве пар — свет и цвета сцен не подогнаны; материал листа, плотный мёд сот и пустая этикетка банки ждут доводки; видео физики на этой машине не рендерилось <span class="pill st-plan">в плане</span></li><li><b>Фон:</b> полный набор из 29 сайтов не перегнан — пороги проверены на шести; пятно, срезанное краем раздела, и свечение на телефоне в одном случае меряются неверно <span class="pill st-plan">в плане</span></li><li>Из журнала проблем открыто около полусотни мелких пунктов. Самые заметные: нет сравнения скорости и доступности с замером «до»; проверка форм на живом сайте может отправить настоящую заявку; снимок всей страницы бывает пустым на блоках, которые проявляются при прокрутке; вход первого экрана скрипт движения не видит <span class="pill st-plan">в плане</span></li><li>Шаг выкладки: вопрос «что на кону» и сверка стенда с боевым сайтом; журнал прогона ещё не знает о сверке выкладки <span class="pill st-plan">в плане</span></li><li>Убрать отработанные ветки и рабочие копии — после перемотки</li><li>Refero — тариф и вход через /mcp, если нужен подбор образца через MCP; без него работают каталоги <span class="pill st-paid">нужна оплата</span></li></ul>
+  </div>
+</section>
+</div>
+</body>
+</html>
